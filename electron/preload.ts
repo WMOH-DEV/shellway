@@ -313,6 +313,42 @@ const api = {
       ipcRenderer.invoke('portforward:list', connectionId) as Promise<unknown[]>
   },
 
+  // ── SQL Client ──
+  sql: {
+    connect: (sqlSessionId: string, connectionId: string, config: unknown) =>
+      ipcRenderer.invoke('sql:connect', sqlSessionId, connectionId, config),
+    disconnect: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:disconnect', sqlSessionId),
+    query: (sqlSessionId: string, query: string, params?: unknown[]) =>
+      ipcRenderer.invoke('sql:query', sqlSessionId, query, params),
+    getDatabases: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:getDatabases', sqlSessionId),
+    switchDatabase: (sqlSessionId: string, database: string) =>
+      ipcRenderer.invoke('sql:switchDatabase', sqlSessionId, database),
+    getTables: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:getTables', sqlSessionId),
+    getColumns: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getColumns', sqlSessionId, table, schema),
+    getIndexes: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getIndexes', sqlSessionId, table, schema),
+    getForeignKeys: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getForeignKeys', sqlSessionId, table, schema),
+    getRowCount: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getRowCount', sqlSessionId, table, schema),
+    getPrimaryKeys: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getPrimaryKeys', sqlSessionId, table, schema),
+    isConnected: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:isConnected', sqlSessionId) as Promise<boolean>,
+
+    // Saved configs (persist credentials per SSH session)
+    configGet: (sessionId: string) =>
+      ipcRenderer.invoke('sql:config:get', sessionId),
+    configSave: (config: unknown) =>
+      ipcRenderer.invoke('sql:config:save', config),
+    configDelete: (sessionId: string) =>
+      ipcRenderer.invoke('sql:config:delete', sessionId),
+  },
+
   // ── Health ──
   health: {
     getHealth: (connectionId: string) =>

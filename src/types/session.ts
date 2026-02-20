@@ -207,7 +207,7 @@ export interface ConnectionTab {
   sessionName: string
   sessionColor?: string
   status: ConnectionStatus
-  activeSubTab: 'terminal' | 'sftp' | 'port-forwarding' | 'info' | 'log'
+  activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'info' | 'log'
   error?: string
   /** Reconnection state shown in UI overlay */
   reconnectionState?: {

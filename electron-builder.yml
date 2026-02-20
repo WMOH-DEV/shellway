@@ -38,7 +38,7 @@ mac:
         - arm64
   icon: resources/icon.icns
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   target:
     - target: AppImage

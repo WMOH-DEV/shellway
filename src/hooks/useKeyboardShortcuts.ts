@@ -47,6 +47,19 @@ export function useKeyboardShortcuts() {
         return
       }
 
+      // ── Ctrl+Shift+D: Open/switch to SQL ──
+      if (ctrl && e.shiftKey && e.key === 'D') {
+        e.preventDefault()
+        const activeTabId = useConnectionStore.getState().activeTabId
+        if (!activeTabId) return
+
+        const activeTab = useConnectionStore.getState().tabs.find((t) => t.id === activeTabId)
+        if (!activeTab || activeTab.status !== 'connected') return
+
+        useConnectionStore.getState().updateTab(activeTabId, { activeSubTab: 'sql' })
+        return
+      }
+
       // ── Ctrl+Shift+B: Toggle Terminal + SFTP split view ──
       if (ctrl && e.shiftKey && e.key === 'B') {
         e.preventDefault()

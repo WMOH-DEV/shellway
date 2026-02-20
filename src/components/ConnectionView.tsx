@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Terminal, FolderTree, ArrowRightLeft, Info, ScrollText
+  Terminal, FolderTree, Database, ArrowRightLeft, Info, ScrollText
 } from 'lucide-react'
+import { lazy, Suspense } from 'react'
+
+const SQLView = lazy(() => import('@/components/sql/SQLView').then(m => ({ default: m.SQLView })))
 import { cn } from '@/utils/cn'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { TerminalTabs } from '@/components/terminal/TerminalTabs'
@@ -18,6 +21,7 @@ import type { ConnectionTab } from '@/types/session'
 const SUB_TABS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
+  { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
   { id: 'info', label: 'Info', icon: <Info size={13} /> },
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
@@ -110,6 +114,18 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
               tab.activeSubTab !== 'sftp' && 'hidden'
             )}>
               <SFTPView connectionId={tab.id} sessionId={tab.sessionId} />
+            </div>
+          )}
+
+          {/* SQL — always mounted once visited, hidden when not active */}
+          {mountedPanels.has('sql') && (
+            <div className={cn(
+              'absolute inset-0 flex flex-col',
+              tab.activeSubTab !== 'sql' && 'hidden'
+            )}>
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading SQL Client...</div>}>
+                <SQLView connectionId={tab.id} sessionId={tab.sessionId} />
+              </Suspense>
             </div>
           )}
 
