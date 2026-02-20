@@ -1,0 +1,230 @@
+import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
+import { join } from 'path'
+import { readFile, writeFile, stat } from 'fs/promises'
+import { watch, type FSWatcher } from 'fs'
+import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { registerSessionIPC } from './ipc/session.ipc'
+import { registerSettingsIPC } from './ipc/settings.ipc'
+import { registerSSHIPC } from './ipc/ssh.ipc'
+import { registerTerminalIPC } from './ipc/terminal.ipc'
+import { registerSFTPIPC } from './ipc/sftp.ipc'
+import { registerLogIPC } from './ipc/log.ipc'
+import { registerHostKeyIPC } from './ipc/hostkey.ipc'
+import { registerClientKeyIPC } from './ipc/clientkey.ipc'
+import { registerSnippetIPC } from './ipc/snippet.ipc'
+import { registerPortForwardIPC } from './ipc/portforward.ipc'
+import { registerHealthIPC } from './ipc/health.ipc'
+import { getSettingsStore } from './ipc/settings.ipc'
+import { initNotificationService } from './services/NotificationService'
+
+/** Create the main application window */
+function createWindow(): BrowserWindow {
+  const mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 960,
+    minHeight: 600,
+    show: false,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0f1117',
+    icon: join(__dirname, '../../resources/icon.png'),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.show()
+  })
+
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  // Load the renderer
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  return mainWindow
+}
+
+// ──── Window control IPC handlers ────
+ipcMain.handle('window:minimize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  win?.minimize()
+})
+
+ipcMain.handle('window:maximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win?.isMaximized()) {
+    win.unmaximize()
+  } else {
+    win?.maximize()
+  }
+})
+
+ipcMain.handle('window:close', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  win?.close()
+})
+
+ipcMain.handle('window:isMaximized', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  return win?.isMaximized() ?? false
+})
+
+ipcMain.handle('platform:get', () => {
+  return process.platform
+})
+
+ipcMain.handle('theme:getNative', () => {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+})
+
+// ──── Dialog IPC handlers ────
+ipcMain.handle('dialog:openFile', async (_event, options: Electron.OpenDialogOptions) => {
+  const result = await dialog.showOpenDialog(options)
+  return result
+})
+
+ipcMain.handle('dialog:saveFile', async (_event, options: Electron.SaveDialogOptions) => {
+  const result = await dialog.showSaveDialog(options)
+  return result
+})
+
+ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
+  const content = await readFile(filePath, 'utf-8')
+  return content
+})
+
+ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string) => {
+  await writeFile(filePath, content, 'utf-8')
+})
+
+ipcMain.handle('shell:openPath', async (_event, filePath: string) => {
+  return shell.openPath(filePath)
+})
+
+ipcMain.handle('fs:getTempDir', () => {
+  return app.getPath('temp')
+})
+
+// ──── File watcher for auto-upload on save ────
+const activeWatchers = new Map<string, FSWatcher>()
+
+ipcMain.handle('fs:watchFile', (event, watchId: string, filePath: string) => {
+  // Clean up any existing watcher for this ID
+  const existing = activeWatchers.get(watchId)
+  if (existing) {
+    existing.close()
+    activeWatchers.delete(watchId)
+  }
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let lastSize = -1
+
+  const watcher = watch(filePath, { persistent: false }, async (eventType) => {
+    if (eventType !== 'change') return
+
+    // Debounce: editors may trigger multiple change events for a single save
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(async () => {
+      try {
+        // Check if the renderer is still alive
+        if (event.sender.isDestroyed()) {
+          // Clean up — the tab/window was closed
+          watcher.close()
+          activeWatchers.delete(watchId)
+          return
+        }
+
+        // Verify the file actually changed by checking size/mtime
+        const s = await stat(filePath)
+        if (s.size === lastSize) return // Likely a duplicate event
+        lastSize = s.size
+
+        // Notify renderer that the file was modified
+        const win = BrowserWindow.fromWebContents(event.sender)
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('fs:file-changed', watchId, filePath)
+        }
+      } catch {
+        // File may have been deleted or renderer destroyed — stop watching
+        watcher.close()
+        activeWatchers.delete(watchId)
+      }
+    }, 500)
+  })
+
+  activeWatchers.set(watchId, watcher)
+  return { success: true }
+})
+
+ipcMain.handle('fs:unwatchFile', (_event, watchId: string) => {
+  const watcher = activeWatchers.get(watchId)
+  if (watcher) {
+    watcher.close()
+    activeWatchers.delete(watchId)
+  }
+  return { success: true }
+})
+
+// ──── App lifecycle ────
+app.whenReady().then(() => {
+  electronApp.setAppUserModelId('com.shellway.app')
+
+  // Register IPC handlers
+  registerSessionIPC()
+  registerSettingsIPC()
+  registerSSHIPC()
+  registerTerminalIPC()
+  registerSFTPIPC()
+  registerLogIPC()
+  registerHostKeyIPC()
+  registerClientKeyIPC()
+  registerSnippetIPC()
+  registerPortForwardIPC()
+  registerHealthIPC()
+
+  // Initialize notification service (after settings IPC is registered)
+  initNotificationService(getSettingsStore())
+
+  // Default open or close DevTools by F12 in dev / ignore in production
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
+
+  const mainWindow = createWindow()
+
+  // Notify renderer on maximize/unmaximize
+  mainWindow.on('maximize', () => {
+    mainWindow.webContents.send('window:maximized-change', true)
+  })
+  mainWindow.on('unmaximize', () => {
+    mainWindow.webContents.send('window:maximized-change', false)
+  })
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  // Clean up all file watchers
+  for (const [, watcher] of activeWatchers) {
+    watcher.close()
+  }
+  activeWatchers.clear()
+
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
