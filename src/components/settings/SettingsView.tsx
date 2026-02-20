@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
 import { useUIStore } from '@/stores/uiStore'
-import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode } from '@/types/settings'
+import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 
 const SECTIONS: TabItem[] = [
@@ -262,6 +262,15 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 type="number"
                 value={settings.sftpBandwidthLimit}
                 onChange={(e) => update('sftpBandwidthLimit', parseInt(e.target.value) || 0)}
+              />
+              <Select
+                label="Address Bar Autocomplete"
+                value={settings.sftpAutocompleteMode}
+                onChange={(e) => update('sftpAutocompleteMode', e.target.value as SFTPAutocompleteMode)}
+                options={[
+                  { value: 'content', label: 'Content-Based (fetch folder contents)' },
+                  { value: 'history', label: 'History-Based (visited paths only)' }
+                ]}
               />
             </SettingsSection>
           )}

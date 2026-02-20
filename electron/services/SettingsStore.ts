@@ -33,6 +33,8 @@ export interface AppSettings {
   sftpPreserveTimestamps: boolean
   sftpFollowSymlinks: boolean
   sftpBandwidthLimitDown: number
+  sftpDefaultApps: Record<string, string>  // Maps file extension (e.g. '.log') → app path
+  sftpAutocompleteMode: 'content' | 'history'
 
   // Connection
   connectionKeepAliveInterval: number
@@ -90,6 +92,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   sftpPreserveTimestamps: true,
   sftpFollowSymlinks: true,
   sftpBandwidthLimitDown: 0,
+  sftpDefaultApps: {},
+  sftpAutocompleteMode: 'content',
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

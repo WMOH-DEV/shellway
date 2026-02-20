@@ -19,6 +19,9 @@ export type SFTPDoubleClickAction = 'open' | 'transfer' | 'edit'
 /** SFTP conflict resolution */
 export type SFTPConflictResolution = 'ask' | 'overwrite' | 'overwrite-newer' | 'skip' | 'rename'
 
+/** SFTP address bar autocomplete mode */
+export type SFTPAutocompleteMode = 'content' | 'history'
+
 /** Application settings — expanded with reconnection, log, and SFTP additions */
 export interface AppSettings {
   // General
@@ -52,6 +55,8 @@ export interface AppSettings {
   sftpPreserveTimestamps: boolean
   sftpFollowSymlinks: boolean
   sftpBandwidthLimitDown: number       // 0 = unlimited, in KB/s (download)
+  sftpDefaultApps: Record<string, string>  // Maps file extension (e.g. '.log') → app path
+  sftpAutocompleteMode: SFTPAutocompleteMode  // 'content' = fetch dir listings, 'history' = visited paths only
 
   // Connection
   connectionKeepAliveInterval: number  // seconds
@@ -110,6 +115,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpPreserveTimestamps: true,
   sftpFollowSymlinks: true,
   sftpBandwidthLimitDown: 0,
+  sftpDefaultApps: {},
+  sftpAutocompleteMode: 'content',
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

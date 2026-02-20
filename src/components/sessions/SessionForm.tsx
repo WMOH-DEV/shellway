@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   X, Save, Key, Server, Shield, Terminal, Palette, Monitor,
   FolderTree, Wifi, Globe, StickyNote, Cog, Plus, Trash2,
-  ChevronUp, ChevronDown, RotateCcw, AlertTriangle, Info
+  ChevronUp, ChevronDown, RotateCcw, AlertTriangle, Info,
+  Loader2, CheckCircle, XCircle, Plug
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/utils/cn'
@@ -12,6 +13,7 @@ import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { toast } from '@/components/ui/Toast'
 import type {
   Session,
   AuthMethod,
@@ -409,6 +411,50 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
       updateAuth('privateKeyPath', result.filePaths[0])
     }
   }
+
+  // ── Test Connection ──
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+
+  const handleTestConnection = useCallback(async () => {
+    if (!form.host || !form.username) {
+      toast.error('Missing fields', 'Host and username are required')
+      return
+    }
+
+    setTestState('testing')
+    const testId = `test-${Date.now()}`
+
+    try {
+      const result = await window.novadeck.ssh.connect(testId, {
+        host: form.host,
+        port: form.port,
+        username: form.username,
+        auth: form.auth,
+        proxy: form.proxy,
+        overrides: form.overrides,
+        encoding: form.encoding || 'utf-8',
+        terminalType: form.terminalType || 'xterm-256color',
+        shellCommand: form.shellCommand || '',
+        environmentVariables: form.environmentVariables || {}
+      })
+
+      if (result.success) {
+        setTestState('success')
+        toast.success('Connection successful', `Connected to ${form.host}:${form.port} as ${form.username}`)
+        // Immediately disconnect — this was only a test
+        window.novadeck.ssh.disconnect(testId).catch(() => {})
+      } else {
+        setTestState('error')
+        toast.error('Connection failed', result.error || 'Unknown error')
+      }
+    } catch (err) {
+      setTestState('error')
+      toast.error('Connection failed', String(err))
+    }
+
+    // Reset indicator after 3 seconds
+    setTimeout(() => setTestState('idle'), 3000)
+  }, [form])
 
   // ── Startup command helpers ──
   const addStartupCommand = () => {
@@ -1277,18 +1323,31 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-nd-border shrink-0">
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
+            <div className="flex items-center justify-between px-5 py-3 border-t border-nd-border shrink-0">
               <Button
-                variant="primary"
-                onClick={handleSave}
-                disabled={!form.host || !form.username}
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={!form.host || !form.username || testState === 'testing'}
               >
-                <Save size={14} />
-                {session ? 'Update' : 'Create'}
+                {testState === 'testing' && <Loader2 size={14} className="animate-spin" />}
+                {testState === 'success' && <CheckCircle size={14} className="text-nd-success" />}
+                {testState === 'error' && <XCircle size={14} className="text-nd-error" />}
+                {testState === 'idle' && <Plug size={14} />}
+                {testState === 'testing' ? 'Testing...' : testState === 'success' ? 'Connected!' : testState === 'error' ? 'Failed' : 'Test Connection'}
               </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={!form.host || !form.username}
+                >
+                  <Save size={14} />
+                  {session ? 'Update' : 'Create'}
+                </Button>
+              </div>
             </div>
           </motion.div>
         </>

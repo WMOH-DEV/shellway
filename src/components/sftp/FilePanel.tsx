@@ -23,6 +23,7 @@ import { toast } from '@/components/ui/Toast'
 import { useSFTPPathStore } from '@/stores/sftpPathStore'
 import { useBookmarkStore } from '@/stores/bookmarkStore'
 import type { FileEntry, PanelType, ViewMode } from '@/types/sftp'
+import type { SFTPAutocompleteMode } from '@/types/settings'
 
 export interface FilePanelHandle {
   refresh: () => void
@@ -75,6 +76,9 @@ export function FilePanel({
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false)
 
+  // Autocomplete mode from settings
+  const [autocompleteMode, setAutocompleteMode] = useState<SFTPAutocompleteMode>('content')
+
   // Bookmarks
   const bookmarks = useBookmarkStore((s) => s.getBookmarks(sessionId))
   const addBookmark = useBookmarkStore((s) => s.addBookmark)
@@ -85,6 +89,15 @@ export function FilePanel({
   const isCurrentPathBookmarked = bookmarks.some(
     (b) => b.path === currentPath && b.panelType === type
   )
+
+  // Load autocomplete mode from settings
+  useEffect(() => {
+    window.novadeck.settings.getAll().then((s: any) => {
+      if (s?.sftpAutocompleteMode) {
+        setAutocompleteMode(s.sftpAutocompleteMode)
+      }
+    }).catch(() => {})
+  }, [])
 
   // Close bookmark dropdown on outside click
   useEffect(() => {
@@ -552,7 +565,14 @@ export function FilePanel({
 
       {/* Breadcrumb */}
       <div className="px-2 py-1.5 shrink-0">
-        <PathBreadcrumb path={currentPath} onNavigate={navigateTo} />
+        <PathBreadcrumb
+          path={currentPath}
+          onNavigate={navigateTo}
+          connectionId={connectionId}
+          panelType={type}
+          sessionId={sessionId}
+          autocompleteMode={autocompleteMode}
+        />
       </div>
 
       {/* File list */}

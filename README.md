@@ -1,8 +1,8 @@
-# NovaDeck
+# Shellway
 
 **Premium cross-platform SSH & SFTP desktop client built with Electron, React, and TypeScript.**
 
-NovaDeck is a modern, feature-rich SSH/SFTP client inspired by industry leaders like Bitvise SSH Client, offering a polished dark-themed UI, encrypted credential storage, multi-session management, and powerful terminal + file transfer capabilities — all in a single native desktop application for Windows, macOS, and Linux.
+Shellway is a modern, feature-rich SSH/SFTP client inspired by industry leaders like Bitvise SSH Client, offering a polished dark-themed UI, encrypted credential storage, multi-session management, and powerful terminal + file transfer capabilities — all in a single native desktop application for Windows, macOS, and Linux.
 
 ---
 
@@ -132,7 +132,7 @@ NovaDeck is a modern, feature-rich SSH/SFTP client inspired by industry leaders 
 
 ### UI & Experience
 
-- **Dark Theme** — Modern dark interface with custom NovaDeck color palette
+- **Dark Theme** — Modern dark interface with custom Shellway color palette
 - **Framer Motion Animations** — Smooth transitions and micro-interactions throughout
 - **Lucide Icons** — Consistent, clean icon system
 - **Custom Title Bar** — Native-feeling frameless window with custom controls
@@ -151,27 +151,27 @@ NovaDeck is a modern, feature-rich SSH/SFTP client inspired by industry leaders 
 
 ## Architecture
 
-NovaDeck follows Electron's process isolation model:
+Shellway follows Electron's process isolation model:
 
 ```
 +---------------------------+        IPC Bridge         +---------------------------+
 |     Main Process          | <======================>  |    Renderer Process        |
 |  (Node.js / Electron)     |     (contextBridge)       |  (React / TypeScript)     |
 |                           |                           |                           |
-|  - SSHService (ssh2)      |   window.novadeck.ssh     |  - App.tsx                |
-|  - SFTPService            |   window.novadeck.sftp    |  - Zustand stores         |
-|  - LogService             |   window.novadeck.log     |  - UI Components          |
-|  - HostKeyStore           |   window.novadeck.hostkey |  - xterm.js terminal      |
-|  - SessionStore           |   window.novadeck.sessions|  - SFTP file browser      |
-|  - SettingsStore          |   window.novadeck.settings|  - Activity log panel     |
-|  - ReconnectionManager    |   window.novadeck.terminal|  - Reconnection overlay   |
+|  - SSHService (ssh2)      |   window.shellway.ssh     |  - App.tsx                |
+|  - SFTPService            |   window.shellway.sftp    |  - Zustand stores         |
+|  - LogService             |   window.shellway.log     |  - UI Components          |
+|  - HostKeyStore           |   window.shellway.hostkey |  - xterm.js terminal      |
+|  - SessionStore           |   window.shellway.sessions|  - SFTP file browser      |
+|  - SettingsStore          |   window.shellway.settings|  - Activity log panel     |
+|  - ReconnectionManager    |   window.shellway.terminal|  - Reconnection overlay   |
 |  - TransferQueue          |                           |  - Host key manager       |
 |  - Encryption utils       |                           |  - Session form (7 tabs)  |
 +---------------------------+                           +---------------------------+
 ```
 
 - **Main Process** handles all SSH/SFTP connections via `ssh2`, encrypted storage via `electron-store` + AES-256-GCM, and exposes functionality through IPC handlers.
-- **Preload Script** bridges main ↔ renderer using `contextBridge`, exposing a typed `window.novadeck` API.
+- **Preload Script** bridges main ↔ renderer using `contextBridge`, exposing a typed `window.shellway` API.
 - **Renderer Process** is a React SPA with Zustand state management, Tailwind CSS styling, and xterm.js terminal emulation.
 
 ---
@@ -223,8 +223,8 @@ Before you begin, ensure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/novadeck/novadeck.git
-cd novadeck
+git clone https://github.com/shellway/shellway.git
+cd shellway
 ```
 
 ### 2. Install Dependencies
@@ -284,7 +284,7 @@ During development (`npm run dev`):
 
 ## Building Installers
 
-NovaDeck uses `electron-builder` to package the application into native installers for each platform.
+Shellway uses `electron-builder` to package the application into native installers for each platform.
 
 ### Windows Installer
 
@@ -294,13 +294,13 @@ Generates an **NSIS installer** (`.exe`) for 64-bit Windows:
 npm run dist:win
 ```
 
-**Output:** `dist/novadeck-0.1.0-setup.exe`
+**Output:** `dist/shellway-0.1.0-setup.exe`
 
 The Windows installer:
 - Creates a desktop shortcut
 - Allows the user to choose the installation directory
-- Supports silent installation: `novadeck-0.1.0-setup.exe /S`
-- Supports custom install path: `novadeck-0.1.0-setup.exe /D=C:\MyApps\NovaDeck`
+- Supports silent installation: `shellway-0.1.0-setup.exe /S`
+- Supports custom install path: `shellway-0.1.0-setup.exe /D=C:\MyApps\Shellway`
 - Includes a proper uninstaller in Add/Remove Programs
 
 ### macOS Installer
@@ -311,7 +311,7 @@ Generates a **DMG disk image** for both Intel (x64) and Apple Silicon (arm64):
 npm run dist:mac
 ```
 
-**Output:** `dist/novadeck-0.1.0.dmg`
+**Output:** `dist/shellway-0.1.0.dmg`
 
 > **Note:** Building macOS installers requires running on macOS. Cross-compilation from Windows/Linux is not supported by electron-builder for DMG targets.
 
@@ -342,7 +342,7 @@ Generates an **AppImage** for 64-bit Linux:
 npm run build && npx electron-builder --linux
 ```
 
-**Output:** `dist/novadeck-0.1.0.AppImage`
+**Output:** `dist/shellway-0.1.0.AppImage`
 
 The AppImage:
 - Is a self-contained portable executable
@@ -363,9 +363,9 @@ All installers are written to the `dist/` directory:
 
 ```
 dist/
-  novadeck-0.1.0-setup.exe       # Windows NSIS installer
-  novadeck-0.1.0.dmg             # macOS disk image
-  novadeck-0.1.0.AppImage        # Linux AppImage
+  shellway-0.1.0-setup.exe       # Windows NSIS installer
+  shellway-0.1.0.dmg             # macOS disk image
+  shellway-0.1.0.AppImage        # Linux AppImage
   win-unpacked/                   # Unpacked Windows app (for testing)
   mac/                            # Unpacked macOS app (for testing)
 ```
@@ -378,8 +378,8 @@ The project is configured for GitHub Releases publishing:
 # electron-builder.yml
 publish:
   provider: github
-  owner: novadeck
-  repo: novadeck
+  owner: shellway
+  repo: shellway
 ```
 
 To publish a release:
@@ -398,10 +398,10 @@ npx electron-builder --mac --publish always
 ## Project Structure
 
 ```
-novadeck/
+shellway/
   electron/                      # Main process (Node.js)
     main.ts                      # Electron entry point, window creation, IPC registration
-    preload.ts                   # Context bridge — exposes window.novadeck API
+    preload.ts                   # Context bridge — exposes window.shellway API
     ipc/                         # IPC handler modules
       ssh.ipc.ts                 # SSH connection/disconnect/reconnect handlers
       sftp.ipc.ts                # SFTP file operations handlers
@@ -426,7 +426,7 @@ novadeck/
     main.tsx                     # React entry point
     App.tsx                      # Root component, event listeners, global dialogs
     index.css                    # Tailwind imports + custom theme
-    env.d.ts                     # Window type augmentation for window.novadeck
+    env.d.ts                     # Window type augmentation for window.shellway
     types/                       # Shared TypeScript types
       session.ts                 # Session, Auth, Proxy, Overrides, ConnectionTab types
       settings.ts                # AppSettings type
@@ -494,7 +494,7 @@ novadeck/
   resources/                     # Build resources (icons, entitlements)
   electron-builder.yml           # electron-builder packaging config
   electron.vite.config.ts        # electron-vite build config
-  tailwind.config.ts             # Tailwind CSS config with NovaDeck theme
+  tailwind.config.ts             # Tailwind CSS config with Shellway theme
   tsconfig.json                  # Base TypeScript config
   tsconfig.web.json              # Renderer TypeScript config
   tsconfig.node.json             # Main process TypeScript config
@@ -508,27 +508,27 @@ novadeck/
 
 ### Global Settings
 
-NovaDeck stores global settings via `electron-store` at the OS-standard config path:
+Shellway stores global settings via `electron-store` at the OS-standard config path:
 
-- **Windows:** `%APPDATA%/novadeck-settings/`
-- **macOS:** `~/Library/Application Support/novadeck-settings/`
-- **Linux:** `~/.config/novadeck-settings/`
+- **Windows:** `%APPDATA%/shellway-settings/`
+- **macOS:** `~/Library/Application Support/shellway-settings/`
+- **Linux:** `~/.config/shellway-settings/`
 
 ### Session Data
 
 Session profiles (with encrypted secrets) are stored separately:
 
-- **Windows:** `%APPDATA%/novadeck-sessions/`
-- **macOS:** `~/Library/Application Support/novadeck-sessions/`
-- **Linux:** `~/.config/novadeck-sessions/`
+- **Windows:** `%APPDATA%/shellway-sessions/`
+- **macOS:** `~/Library/Application Support/shellway-sessions/`
+- **Linux:** `~/.config/shellway-sessions/`
 
 ### Trusted Host Keys
 
 Known host keys are persisted at:
 
-- **Windows:** `%APPDATA%/novadeck-hostkeys/`
-- **macOS:** `~/Library/Application Support/novadeck-hostkeys/`
-- **Linux:** `~/.config/novadeck-hostkeys/`
+- **Windows:** `%APPDATA%/shellway-hostkeys/`
+- **macOS:** `~/Library/Application Support/shellway-hostkeys/`
+- **Linux:** `~/.config/shellway-hostkeys/`
 
 ---
 
@@ -546,7 +546,7 @@ Known host keys are persisted at:
 
 ## Security
 
-NovaDeck takes security seriously:
+Shellway takes security seriously:
 
 - **AES-256-GCM Encryption** — All passwords, passphrases, private key data, KBDI saved responses, and proxy passwords are encrypted at rest using AES-256-GCM with a per-installation master key
 - **No Plaintext Secrets** — Secrets are never written to disk in plaintext

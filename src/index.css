@@ -35,12 +35,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: #2e3348;
+    background-color: rgb(var(--nd-border));
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #3d4363;
+    background-color: rgb(var(--nd-border-hover));
   }
 
   /* ── Focus ring utility ── */
@@ -60,16 +60,44 @@
   app-region: no-drag;
 }
 
+/* ── Dark theme defaults (root) ──
+     Values are space-separated RGB channels for Tailwind opacity modifier support.
+     Usage in Tailwind: rgb(var(--nd-accent) / <alpha-value>) → enables bg-nd-accent/50 etc. ── */
+:root {
+  --nd-bg-primary: 15 17 23;
+  --nd-bg-secondary: 22 25 34;
+  --nd-bg-tertiary: 30 33 48;
+  --nd-surface: 37 40 54;
+  --nd-surface-hover: 45 48 68;
+  --nd-border: 46 51 72;
+  --nd-border-hover: 61 67 99;
+  --nd-text-primary: 228 228 231;
+  --nd-text-secondary: 161 161 170;
+  --nd-text-muted: 113 113 122;
+  --nd-accent: 59 130 246;
+  --nd-accent-hover: 37 99 235;
+  --nd-success: 34 197 94;
+  --nd-warning: 245 158 11;
+  --nd-error: 239 68 68;
+  --nd-info: 6 182 212;
+}
+
 /* ── Light theme overrides ── */
 .light {
-  --nd-bg-primary: #f8fafc;
-  --nd-bg-secondary: #f1f5f9;
-  --nd-bg-tertiary: #e2e8f0;
-  --nd-surface: #ffffff;
-  --nd-surface-hover: #f8fafc;
-  --nd-border: #e2e8f0;
-  --nd-border-hover: #cbd5e1;
-  --nd-text-primary: #0f172a;
-  --nd-text-secondary: #475569;
-  --nd-text-muted: #94a3b8;
+  --nd-bg-primary: 248 250 252;
+  --nd-bg-secondary: 241 245 249;
+  --nd-bg-tertiary: 226 232 240;
+  --nd-surface: 255 255 255;
+  --nd-surface-hover: 248 250 252;
+  --nd-border: 226 232 240;
+  --nd-border-hover: 203 213 225;
+  --nd-text-primary: 15 23 42;
+  --nd-text-secondary: 71 85 105;
+  --nd-text-muted: 148 163 184;
+  --nd-accent: 59 130 246;
+  --nd-accent-hover: 37 99 235;
+  --nd-success: 34 197 94;
+  --nd-warning: 245 158 11;
+  --nd-error: 239 68 68;
+  --nd-info: 6 182 212;
 }

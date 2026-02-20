@@ -75,7 +75,11 @@ const api = {
 
   // ── Shell ──
   shell: {
-    openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path) as Promise<string>
+    openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path) as Promise<string>,
+    openFileWithApp: (filePath: string, appPath: string) =>
+      ipcRenderer.invoke('shell:openFileWithApp', filePath, appPath) as Promise<{ success: boolean; error?: string }>,
+    openWithPicker: (filePath: string) =>
+      ipcRenderer.invoke('shell:openWithPicker', filePath) as Promise<{ appPath: string; appName: string } | null>
   },
 
   // ── SSH ──

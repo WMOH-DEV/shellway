@@ -6,6 +6,7 @@ import { FileContextMenu } from './FileContextMenu'
 import { EmptySpaceContextMenu } from './EmptySpaceContextMenu'
 import { PermissionsDialog } from './PermissionsDialog'
 import { FilePreview } from './FilePreview'
+import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
 import type { FileEntry, PanelType } from '@/types/sftp'
 
@@ -49,6 +50,13 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
 
   // File preview state
   const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
+
+  // "Set as Default App" prompt state
+  const [defaultAppPrompt, setDefaultAppPrompt] = useState<{
+    ext: string
+    appPath: string
+    appName: string
+  } | null>(null)
 
   // Panel imperative handles for refresh/rename/navigate from context menu
   const localPanelRef = useRef<FilePanelHandle | null>(null)
@@ -160,6 +168,28 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
     setPreviewEntry(entry)
   }, [])
 
+  /** Called by FileContextMenu after user picks an app via "Open With" */
+  const handleOpenWithComplete = useCallback((ext: string, appPath: string, appName: string) => {
+    setDefaultAppPrompt({ ext, appPath, appName })
+  }, [])
+
+  /** Save chosen app as default for the extension */
+  const handleSetDefaultApp = useCallback(async () => {
+    if (!defaultAppPrompt) return
+    try {
+      const current = await window.novadeck.settings.getAll() as any
+      const existing: Record<string, string> = current?.sftpDefaultApps ?? {}
+      await window.novadeck.settings.update({
+        sftpDefaultApps: { ...existing, [defaultAppPrompt.ext]: defaultAppPrompt.appPath }
+      })
+      toast.success('Default app saved', `${defaultAppPrompt.appName} will open ${defaultAppPrompt.ext} files`)
+    } catch {
+      toast.error('Failed to save default app', 'Could not update settings')
+    } finally {
+      setDefaultAppPrompt(null)
+    }
+  }, [defaultAppPrompt])
+
   // Context menu action callbacks
   const handleRefresh = useCallback(() => {
     if (contextMenu) {
@@ -238,6 +268,7 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
           onWatchTempFile={watchTempFile}
           onPermissions={handlePermissions}
           onPreview={handlePreview}
+          onOpenWithComplete={handleOpenWithComplete}
         />
       )}
 
@@ -275,6 +306,39 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
         fileName={previewEntry?.name || ''}
         fileSize={previewEntry?.size || 0}
       />
+
+      {/* "Set as Default App" confirmation prompt */}
+      <Modal
+        open={!!defaultAppPrompt}
+        onClose={() => setDefaultAppPrompt(null)}
+        title="Set Default App"
+        maxWidth="max-w-sm"
+      >
+        {defaultAppPrompt && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-nd-text-secondary">
+              Always open{' '}
+              <span className="font-mono text-nd-text-primary">{defaultAppPrompt.ext}</span>{' '}
+              files with{' '}
+              <span className="font-semibold text-nd-text-primary">{defaultAppPrompt.appName}</span>?
+            </p>
+            <div className={cn('flex gap-2 justify-end')}>
+              <button
+                onClick={() => setDefaultAppPrompt(null)}
+                className="px-3 py-1.5 text-sm rounded bg-nd-surface hover:bg-nd-surface-hover text-nd-text-secondary transition-colors"
+              >
+                Just Once
+              </button>
+              <button
+                onClick={handleSetDefaultApp}
+                className="px-3 py-1.5 text-sm rounded bg-nd-accent hover:bg-nd-accent-hover text-white transition-colors"
+              >
+                Always
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

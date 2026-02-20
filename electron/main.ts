@@ -1,7 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
-import { join } from 'path'
+import { join, basename, extname } from 'path'
 import { readFile, writeFile, stat } from 'fs/promises'
 import { watch, type FSWatcher } from 'fs'
+import { spawn } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerSessionIPC } from './ipc/session.ipc'
 import { registerSettingsIPC } from './ipc/settings.ipc'
@@ -111,6 +112,88 @@ ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string)
 
 ipcMain.handle('shell:openPath', async (_event, filePath: string) => {
   return shell.openPath(filePath)
+})
+
+/**
+ * Spawn an application to open a file.
+ * Uses 'spawn' event (Node 15.1+) to avoid race condition where ENOENT
+ * fires after synchronous resolve. The 'spawn' event confirms the process
+ * actually started; 'error' fires if it couldn't start (bad path, etc.).
+ */
+function launchAppWithFile(appPath: string, filePath: string): Promise<{ success: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>
+
+    if (process.platform === 'darwin') {
+      child = spawn('open', ['-a', appPath, filePath], { detached: true, stdio: 'ignore' })
+    } else {
+      child = spawn(appPath, [filePath], { detached: true, stdio: 'ignore' })
+    }
+
+    child.on('error', (err) => resolve({ success: false, error: err.message }))
+    child.on('spawn', () => {
+      child.unref()
+      resolve({ success: true })
+    })
+  })
+}
+
+/**
+ * Open a file with a specific application (bypass OS default).
+ */
+ipcMain.handle('shell:openFileWithApp', async (_event, filePath: string, appPath: string) => {
+  return launchAppWithFile(appPath, filePath)
+})
+
+/**
+ * Show a file picker dialog so the user can choose which app to open a file with.
+ * Returns { appPath, appName } if user chose an app, or null if cancelled.
+ * On macOS: filter for .app bundles in /Applications
+ * On Windows: filter for .exe files
+ */
+ipcMain.handle('shell:openWithPicker', async (event, filePath: string) => {
+  const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow()
+  if (!win) return null
+
+  let dialogOptions: Electron.OpenDialogOptions
+
+  if (process.platform === 'darwin') {
+    dialogOptions = {
+      title: 'Open With…',
+      defaultPath: '/Applications',
+      properties: ['openFile', 'treatPackageAsDirectory' as any],
+      filters: [{ name: 'Applications', extensions: ['app'] }]
+    }
+  } else if (process.platform === 'win32') {
+    dialogOptions = {
+      title: 'Open With…',
+      defaultPath: 'C:\\Program Files',
+      properties: ['openFile'],
+      filters: [{ name: 'Executables', extensions: ['exe'] }]
+    }
+  } else {
+    dialogOptions = {
+      title: 'Open With…',
+      properties: ['openFile'],
+      filters: [{ name: 'Executables', extensions: ['*'] }]
+    }
+  }
+
+  const result = await dialog.showOpenDialog(win, dialogOptions)
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  const appPath = result.filePaths[0]
+  const appName = basename(appPath, extname(appPath))
+
+  const openResult = await launchAppWithFile(appPath, filePath)
+  if (!openResult.success) {
+    return null
+  }
+
+  return { appPath, appName }
 })
 
 ipcMain.handle('fs:getTempDir', () => {

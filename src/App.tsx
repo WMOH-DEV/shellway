@@ -42,8 +42,19 @@ export default function App() {
 
   const { tabs, activeTabId, updateTab, setReconnectionState, addReconnectionEvent } =
     useConnectionStore()
-  const { settingsOpen, toggleSettings, hostKeyManagerOpen, toggleHostKeyManager, clientKeyManagerOpen, toggleClientKeyManager } = useUIStore()
+  const { settingsOpen, toggleSettings, hostKeyManagerOpen, toggleHostKeyManager, clientKeyManagerOpen, toggleClientKeyManager, setTheme } = useUIStore()
   const { addEntry } = useLogStore()
+
+  // ── Load persisted settings on startup ──
+  useEffect(() => {
+    window.novadeck.settings.getAll().then((saved) => {
+      if (saved?.theme) {
+        setTheme(saved.theme)
+      }
+    }).catch((err) => {
+      console.warn('Failed to load persisted settings on startup:', err)
+    })
+  }, [setTheme])
 
   // ── Host Key Verification state ──
   const [hostKeyVerify, setHostKeyVerify] = useState<HostKeyVerifyRequest | null>(null)

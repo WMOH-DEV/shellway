@@ -8,31 +8,31 @@ const config: Config = {
       colors: {
         nd: {
           bg: {
-            primary: '#0f1117',
-            secondary: '#161922',
-            tertiary: '#1e2130'
+            primary: 'rgb(var(--nd-bg-primary) / <alpha-value>)',
+            secondary: 'rgb(var(--nd-bg-secondary) / <alpha-value>)',
+            tertiary: 'rgb(var(--nd-bg-tertiary) / <alpha-value>)'
           },
           surface: {
-            DEFAULT: '#252836',
-            hover: '#2d3044'
+            DEFAULT: 'rgb(var(--nd-surface) / <alpha-value>)',
+            hover: 'rgb(var(--nd-surface-hover) / <alpha-value>)'
           },
           border: {
-            DEFAULT: '#2e3348',
-            hover: '#3d4363'
+            DEFAULT: 'rgb(var(--nd-border) / <alpha-value>)',
+            hover: 'rgb(var(--nd-border-hover) / <alpha-value>)'
           },
           text: {
-            primary: '#e4e4e7',
-            secondary: '#a1a1aa',
-            muted: '#71717a'
+            primary: 'rgb(var(--nd-text-primary) / <alpha-value>)',
+            secondary: 'rgb(var(--nd-text-secondary) / <alpha-value>)',
+            muted: 'rgb(var(--nd-text-muted) / <alpha-value>)'
           },
           accent: {
-            DEFAULT: '#3b82f6',
-            hover: '#2563eb'
+            DEFAULT: 'rgb(var(--nd-accent) / <alpha-value>)',
+            hover: 'rgb(var(--nd-accent-hover) / <alpha-value>)'
           },
-          success: '#22c55e',
-          warning: '#f59e0b',
-          error: '#ef4444',
-          info: '#06b6d4'
+          success: 'rgb(var(--nd-success) / <alpha-value>)',
+          warning: 'rgb(var(--nd-warning) / <alpha-value>)',
+          error: 'rgb(var(--nd-error) / <alpha-value>)',
+          info: 'rgb(var(--nd-info) / <alpha-value>)'
         }
       },
       fontFamily: {
