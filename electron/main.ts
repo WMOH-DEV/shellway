@@ -160,9 +160,13 @@ ipcMain.handle('shell:openWithPicker', async (event, filePath: string) => {
   if (process.platform === 'darwin') {
     dialogOptions = {
       title: 'Open With…',
+      message: 'Choose an application to open this file with',
       defaultPath: '/Applications',
-      properties: ['openFile', 'treatPackageAsDirectory' as any],
-      filters: [{ name: 'Applications', extensions: ['app'] }]
+      properties: ['openFile'],
+      filters: [
+        { name: 'Applications', extensions: ['app'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
     }
   } else if (process.platform === 'win32') {
     dialogOptions = {
