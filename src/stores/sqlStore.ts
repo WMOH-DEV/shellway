@@ -106,6 +106,7 @@ interface SQLStoreState {
   // ── Staged changes actions ──
   addStagedChange: (connectionId: string, change: StagedChange) => void
   removeStagedChange: (connectionId: string, id: string) => void
+  upsertStagedChange: (connectionId: string, change: StagedChange) => void
   clearStagedChanges: (connectionId: string) => void
 
   // ── Query editor actions ──
@@ -315,6 +316,17 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       stagedChanges: conn.stagedChanges.filter((c) => c.id !== id)
     }))),
 
+  upsertStagedChange: (connectionId, change) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => {
+      const idx = conn.stagedChanges.findIndex((c) => c.id === change.id)
+      if (idx >= 0) {
+        const updated = [...conn.stagedChanges]
+        updated[idx] = change
+        return { stagedChanges: updated }
+      }
+      return { stagedChanges: [...conn.stagedChanges, change] }
+    })),
+
   clearStagedChanges: (connectionId) =>
     set((s) => updateConn(s.connections, connectionId, () => ({ stagedChanges: [] }))),
 
@@ -412,6 +424,7 @@ export function useSQLConnection(connectionId: string) {
 
       addStagedChange: (change: StagedChange) => s.addStagedChange(connectionId, change),
       removeStagedChange: (id: string) => s.removeStagedChange(connectionId, id),
+      upsertStagedChange: (change: StagedChange) => s.upsertStagedChange(connectionId, change),
       clearStagedChanges: () => s.clearStagedChanges(connectionId),
 
       setCurrentQuery: (query: string) => s.setCurrentQuery(connectionId, query),

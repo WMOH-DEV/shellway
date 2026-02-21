@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Save, Undo2 } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { cn } from '@/utils/cn'
 import { DataGrid } from '@/components/sql/DataGrid'
 import { PaginationBar } from '@/components/sql/PaginationBar'
@@ -111,7 +112,12 @@ function buildPrimaryKey(
 ): Record<string, unknown> {
   if (pkColumns.length === 0) {
     // No primary key — use entire row as WHERE clause (risky but functional)
-    return { ...row }
+    // Strip synthetic keys injected by the grid (e.g. __rowIndex)
+    const pk: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(row)) {
+      if (!k.startsWith('__')) pk[k] = v
+    }
+    return pk
   }
   const pk: Record<string, unknown> = {}
   for (const col of pkColumns) {
@@ -138,6 +144,9 @@ export const DataTabView = React.memo(function DataTabView({
   schema,
   dbType,
 }: DataTabViewProps) {
+  // Store — staged changes for inline editing
+  const { upsertStagedChange, removeStagedChange, stagedChanges, addHistoryEntry } = useSQLConnection(connectionId)
+
   // State
   const [result, setResult] = useState<QueryResult | null>(null)
   const [columns, setColumns] = useState<QueryField[]>([])
@@ -159,6 +168,9 @@ export const DataTabView = React.memo(function DataTabView({
   // Cache key to avoid re-fetching when switching back to a loaded tab
   const cacheKeyRef = useRef<string>('')
   const resultRef = useRef<QueryResult | null>(null)
+
+  // ── Query logging helper (uses ref to avoid circular deps with executeQuery) ──
+  const logQueryRef = useRef<(query: string, timeMs: number, rowCount?: number, errorMsg?: string) => void>(() => {})
 
   // ── Query execution ──
 
@@ -206,14 +218,19 @@ export const DataTabView = React.memo(function DataTabView({
         // Check if this query is still current
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
+        const t0 = performance.now()
         const queryResponse = await (window as any).novadeck.sql.query(
           sqlSessionId,
           query,
           params
         )
+        const elapsed = performance.now() - t0
 
         // Check again after async call
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+
+        // Log the SELECT query
+        logQueryRef.current(query, elapsed, queryResponse.data?.rowCount, queryResponse.success ? undefined : queryResponse.error)
 
         // Unwrap IPC envelope { success, data, error }
         if (!queryResponse.success) {
@@ -241,13 +258,17 @@ export const DataTabView = React.memo(function DataTabView({
 
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
+        const ct0 = performance.now()
         const countResponse = await (window as any).novadeck.sql.query(
           sqlSessionId,
           countQuery,
           countParams
         )
+        const cElapsed = performance.now() - ct0
 
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+
+        logQueryRef.current(countQuery, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
 
         if (!countResponse.success) {
           throw new Error(countResponse.error ?? 'Count query failed')
@@ -314,8 +335,23 @@ export const DataTabView = React.memo(function DataTabView({
 
   // ── Handlers ──
 
+  // Clear pending changes when data context changes (page, sort, filter)
+  // Row indices are positional — navigating makes them point to different rows
+  const discardPendingChanges = useCallback(() => {
+    const currentTableChanges = stagedChanges.filter(
+      (c) => c.table === table && (c.schema ?? undefined) === (schema ?? undefined)
+    )
+    if (currentTableChanges.length > 0) {
+      for (const change of currentTableChanges) {
+        removeStagedChange(change.id)
+      }
+      originalValuesRef.current.clear()
+    }
+  }, [stagedChanges, table, schema, removeStagedChange])
+
   const handlePageChange = useCallback(
     (page: number) => {
+      discardPendingChanges()
       setPagination((prev) => ({ ...prev, page }))
       executeQuery({
         page,
@@ -325,11 +361,12 @@ export const DataTabView = React.memo(function DataTabView({
         currentFilters: filters,
       })
     },
-    [executeQuery, pagination.pageSize, sortColumn, sortDirection, filters]
+    [executeQuery, pagination.pageSize, sortColumn, sortDirection, filters, discardPendingChanges]
   )
 
   const handlePageSizeChange = useCallback(
     (pageSize: number) => {
+      discardPendingChanges()
       setPagination((prev) => ({
         ...prev,
         pageSize,
@@ -344,22 +381,50 @@ export const DataTabView = React.memo(function DataTabView({
         currentFilters: filters,
       })
     },
-    [executeQuery, sortColumn, sortDirection, filters]
+    [executeQuery, sortColumn, sortDirection, filters, discardPendingChanges]
   )
 
   const handleSort = useCallback(
-    (column: string, direction: 'asc' | 'desc') => {
-      setSortColumn(column)
-      setSortDirection(direction)
-      executeQuery({
-        page: 1,
-        pageSize: pagination.pageSize,
-        sort: column,
-        sortDir: direction,
-        currentFilters: filters,
-      })
+    (column: string | null, direction: 'asc' | 'desc') => {
+      discardPendingChanges()
+      if (column === null) {
+        setSortColumn(undefined)
+        setSortDirection('asc')
+        executeQuery({
+          page: 1,
+          pageSize: pagination.pageSize,
+          sort: undefined,
+          sortDir: undefined,
+          currentFilters: filters,
+        })
+      } else {
+        setSortColumn(column)
+        setSortDirection(direction)
+        executeQuery({
+          page: 1,
+          pageSize: pagination.pageSize,
+          sort: column,
+          sortDir: direction,
+          currentFilters: filters,
+        })
+      }
     },
-    [executeQuery, pagination.pageSize, filters]
+    [executeQuery, pagination.pageSize, filters, discardPendingChanges]
+  )
+
+  // Header context menu → add a filter for a specific column
+  const handleFilterColumn = useCallback(
+    (column: string) => {
+      const newFilter: TableFilter = {
+        id: crypto.randomUUID(),
+        enabled: true,
+        column,
+        operator: 'equals',
+        value: '',
+      }
+      setFilters((prev) => [...prev, newFilter])
+    },
+    []
   )
 
   // Ref always holds latest filters so debounced callbacks never use stale state
@@ -374,6 +439,7 @@ export const DataTabView = React.memo(function DataTabView({
     // Debounce filter application — reads filtersRef to avoid stale closures
     if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current)
     filterDebounceRef.current = setTimeout(() => {
+      discardPendingChanges()
       setPagination((prev) => ({ ...prev, page: 1 }))
       executeQuery({
         page: 1,
@@ -383,35 +449,264 @@ export const DataTabView = React.memo(function DataTabView({
         currentFilters: filtersRef.current,
       })
     }, FILTER_DEBOUNCE_MS)
-  }, [executeQuery, pagination.pageSize, sortColumn, sortDirection])
+  }, [executeQuery, pagination.pageSize, sortColumn, sortDirection, discardPendingChanges])
 
   // ── Inline editing → staged changes ──
-  const { addStagedChange } = useSQLConnection(connectionId)
+
+  // Track original (pre-edit) values per cell so we can detect reverts
+  const originalValuesRef = useRef<Map<string, unknown>>(new Map())
+
+  // Reset originals when table changes (new data context)
+  // Page/sort changes also get a fresh result set, so row indices reset
+  const resetKeyRef = useRef('')
+  useEffect(() => {
+    const key = `${table}|${schema}|${pagination.page}|${sortColumn}|${sortDirection}`
+    if (resetKeyRef.current && resetKeyRef.current !== key) {
+      originalValuesRef.current.clear()
+    }
+    resetKeyRef.current = key
+  }, [table, schema, pagination.page, sortColumn, sortDirection])
 
   const handleCellEdit = useCallback(
-    (rowIndex: number, field: string, oldValue: unknown, newValue: unknown) => {
-      if (oldValue === newValue) return
+    (rowIndex: number, field: string, _oldValue: unknown, newValue: unknown) => {
+      const cellKey = `edit-${table}-${rowIndex}-${field}`
+
+      // Capture original value on first edit of this cell
+      if (!originalValuesRef.current.has(cellKey)) {
+        originalValuesRef.current.set(cellKey, _oldValue)
+      }
+      const originalValue = originalValuesRef.current.get(cellKey)
+
+      // Check if the new value reverts back to the original (strict comparison)
+      // ag-grid returns string values from text editors, so compare stringified
+      // forms only when both are non-null/non-undefined
+      let isReverted = newValue === originalValue
+      if (!isReverted && newValue != null && originalValue != null) {
+        isReverted = String(newValue) === String(originalValue)
+      }
+
+      // Find existing staged change for this cell
+      const existingChange = stagedChanges.find((c) => c.id === cellKey)
+
+      if (isReverted) {
+        // Value was reverted to original — remove the staged change
+        if (existingChange) {
+          removeStagedChange(existingChange.id)
+        }
+        originalValuesRef.current.delete(cellKey)
+        return
+      }
 
       const row = result?.rows[rowIndex]
       if (!row) return
 
       const rowData = row as Record<string, unknown>
       const change: StagedChange = {
-        id: `edit-${table}-${rowIndex}-${field}-${Date.now()}`,
+        id: cellKey, // Stable ID per cell — allows upsert
         type: 'update',
         table,
         schema,
         primaryKey: buildPrimaryKey(rowData, primaryKeyColumns),
-        changes: { [field]: { old: oldValue, new: newValue } },
+        changes: { [field]: { old: originalValue, new: newValue } },
         rowData,
         column: field,
-        oldValue,
+        oldValue: originalValue,
         newValue,
       }
-      addStagedChange(change)
+
+      // Atomic upsert — replaces existing or inserts new
+      upsertStagedChange(change)
     },
-    [result, table, schema, primaryKeyColumns, addStagedChange]
+    [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges]
   )
+
+  // Compute edited rows/cells for visual highlighting
+  // Change IDs follow pattern: "edit-{table}-{rowIndex}-{field}"
+  const { editedRows, editedCells } = useMemo(() => {
+    const rows = new Set<number>()
+    const cells = new Set<string>()
+    const prefix = `edit-${table}-`
+    for (const change of stagedChanges) {
+      if (change.id.startsWith(prefix) && change.type === 'update') {
+        // Parse rowIndex and field from the stable ID
+        const rest = change.id.slice(prefix.length)
+        const dashIdx = rest.indexOf('-')
+        if (dashIdx !== -1) {
+          const rowIdx = parseInt(rest.slice(0, dashIdx), 10)
+          const field = rest.slice(dashIdx + 1)
+          if (!isNaN(rowIdx)) {
+            rows.add(rowIdx)
+            cells.add(`${rowIdx}-${field}`)
+          }
+        }
+      }
+    }
+    return { editedRows: rows, editedCells: cells }
+  }, [stagedChanges, table])
+
+  // ── Save staged changes to database ──
+  const [isSaving, setIsSaving] = useState(false)
+  const savingRef = useRef(false) // Synchronous guard against double-click/Ctrl+S
+
+  // Filter staged changes to only those for the current table
+  const tableChanges = useMemo(
+    () => stagedChanges.filter((c) => c.table === table && (c.schema ?? undefined) === (schema ?? undefined)),
+    [stagedChanges, table, schema]
+  )
+
+  /** Helper: log a query to the history store */
+  const logQuery = useCallback((query: string, timeMs: number, rowCount?: number, errorMsg?: string) => {
+    addHistoryEntry({
+      id: crypto.randomUUID(),
+      query,
+      database: '', // filled later from currentDatabase if needed
+      executedAt: Date.now(),
+      executionTimeMs: timeMs,
+      rowCount,
+      error: errorMsg,
+      isFavorite: false,
+    })
+  }, [addHistoryEntry])
+
+  // Keep the ref in sync so executeQuery can call it without a dep cycle
+  logQueryRef.current = logQuery
+
+  const handleSaveChanges = useCallback(async () => {
+    if (tableChanges.length === 0 || savingRef.current) return
+    savingRef.current = true
+    setIsSaving(true)
+    setError(null)
+
+    const queryApi = (window as any).novadeck.sql
+
+    try {
+      // ── BEGIN transaction ──
+      const beginT0 = performance.now()
+      const beginRes = await queryApi.query(sqlSessionId, 'BEGIN', [])
+      logQuery('BEGIN', performance.now() - beginT0, undefined, beginRes.success ? undefined : beginRes.error)
+      if (!beginRes.success) {
+        throw new Error(`BEGIN failed: ${beginRes.error}`)
+      }
+
+      const updateSQLs: string[] = []
+
+      for (const change of tableChanges) {
+        if (change.type !== 'update' || !change.primaryKey || !change.changes) continue
+
+        // Build UPDATE SQL
+        const setClauses: string[] = []
+        const params: unknown[] = []
+        let paramIdx = 1
+
+        for (const [col, { new: newVal }] of Object.entries(change.changes)) {
+          if (dbType === 'mysql') {
+            setClauses.push(`${quoteIdentifier(col, dbType)} = ?`)
+          } else {
+            setClauses.push(`${quoteIdentifier(col, dbType)} = $${paramIdx}`)
+            paramIdx++
+          }
+          params.push(newVal)
+        }
+
+        // Build WHERE clause from primary key
+        const whereParts: string[] = []
+        for (const [col, val] of Object.entries(change.primaryKey)) {
+          const quotedCol = quoteIdentifier(col, dbType)
+          if (val === null || val === undefined) {
+            whereParts.push(`${quotedCol} IS NULL`)
+          } else if (dbType === 'mysql') {
+            whereParts.push(`${quotedCol} = ?`)
+            params.push(val)
+          } else {
+            whereParts.push(`${quotedCol} = $${paramIdx}`)
+            paramIdx++
+            params.push(val)
+          }
+        }
+
+        const fullTable = buildFullTableName(change.table, change.schema, dbType)
+        const limitClause = dbType === 'mysql' ? ' LIMIT 1' : ''
+        const sql = `UPDATE ${fullTable} SET ${setClauses.join(', ')} WHERE ${whereParts.join(' AND ')}${limitClause}`
+
+        const t0 = performance.now()
+        const res = await queryApi.query(sqlSessionId, sql, params)
+        const elapsed = performance.now() - t0
+        logQuery(sql, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
+
+        if (!res.success) {
+          throw new Error(`${change.column ?? 'update'}: ${res.error}`)
+        }
+
+        updateSQLs.push(sql)
+      }
+
+      // ── COMMIT transaction ──
+      const commitT0 = performance.now()
+      const commitRes = await queryApi.query(sqlSessionId, 'COMMIT', [])
+      logQuery('COMMIT', performance.now() - commitT0, undefined, commitRes.success ? undefined : commitRes.error)
+
+      if (!commitRes.success) {
+        throw new Error(`COMMIT failed: ${commitRes.error}`)
+      }
+
+      // All changes saved — clear them
+      for (const change of tableChanges) {
+        removeStagedChange(change.id)
+        originalValuesRef.current.delete(change.id)
+      }
+
+      // Refresh data
+      executeQuery({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        sort: sortColumn,
+        sortDir: sortDirection,
+        currentFilters: filters,
+      })
+    } catch (err: any) {
+      // ── ROLLBACK on any failure ──
+      try {
+        const rbT0 = performance.now()
+        const rbRes = await queryApi.query(sqlSessionId, 'ROLLBACK', [])
+        logQuery('ROLLBACK', performance.now() - rbT0, undefined, rbRes.success ? undefined : rbRes.error)
+      } catch {
+        // Rollback failed — nothing we can do
+      }
+      setError(err.message || String(err))
+    } finally {
+      setIsSaving(false)
+      savingRef.current = false
+    }
+  }, [tableChanges, dbType, sqlSessionId, removeStagedChange, logQuery, executeQuery, pagination, sortColumn, sortDirection, filters])
+
+  const handleDiscardChanges = useCallback(() => {
+    // Only remove changes for this table, not all connection changes
+    for (const change of tableChanges) {
+      removeStagedChange(change.id)
+      originalValuesRef.current.delete(change.id)
+    }
+
+    // Refresh data to restore original values in the grid
+    executeQuery({
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      sort: sortColumn,
+      sortDir: sortDirection,
+      currentFilters: filters,
+    })
+  }, [tableChanges, removeStagedChange, executeQuery, pagination, sortColumn, sortDirection, filters])
+
+  // ── Listen for Ctrl+S save event from useSQLShortcuts ──
+  useEffect(() => {
+    const handleApplyChanges = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId) {
+        handleSaveChanges()
+      }
+    }
+    window.addEventListener('sql:apply-changes', handleApplyChanges)
+    return () => window.removeEventListener('sql:apply-changes', handleApplyChanges)
+  }, [connectionId, handleSaveChanges])
 
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns])
@@ -425,6 +720,37 @@ export const DataTabView = React.memo(function DataTabView({
         onFiltersChange={handleFiltersChange}
         onApply={handleFiltersApply}
       />
+
+      {/* Changes toolbar */}
+      {tableChanges.length > 0 && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-amber-500/30 bg-amber-500/10">
+          <span className="text-xs text-amber-400 font-medium">
+            {tableChanges.length} pending change{tableChanges.length !== 1 ? 's' : ''}
+          </span>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDiscardChanges}
+            disabled={isSaving}
+            className="!h-6 !text-xs"
+          >
+            <Undo2 size={12} />
+            Discard
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSaveChanges}
+            disabled={isSaving}
+            className="!h-6 !text-xs"
+          >
+            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            Save Changes
+          </Button>
+          <span className="text-2xs text-nd-text-muted">Ctrl+S</span>
+        </div>
+      )}
 
       {/* Error banner */}
       {error && (
@@ -448,6 +774,9 @@ export const DataTabView = React.memo(function DataTabView({
           isLoading={isLoading}
           onCellEdit={handleCellEdit}
           columnMeta={columnMeta}
+          onFilterColumn={handleFilterColumn}
+          editedRows={editedRows}
+          editedCells={editedCells}
         />
       </div>
 

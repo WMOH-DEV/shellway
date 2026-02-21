@@ -17,8 +17,8 @@ export function registerSQLIPC(): void {
     'sql:connect',
     async (_event, sqlSessionId: string, connectionId: string, config: {
       type: 'mysql' | 'postgres'; host: string; port: number
-      username: string; password: string; database: string
-      useSSHTunnel: boolean; ssl?: boolean
+      username: string; password: string; database?: string
+      useSSHTunnel: boolean; ssl?: boolean; sslMode?: string
     }) => {
       try {
         let dbHost = config.host
@@ -45,7 +45,7 @@ export function registerSQLIPC(): void {
           const ruleId = `sql-tunnel-${sqlSessionId}`
 
           const entry = await getPortForwardService().add(conn, {
-            id: ruleId, type: 'local', name: `SQL: ${config.database}`,
+            id: ruleId, type: 'local', name: `SQL: ${config.database || 'server'}`,
             sourceHost: '127.0.0.1', sourcePort: localPort,
             destinationHost: config.host, destinationPort: config.port
           })
@@ -62,11 +62,17 @@ export function registerSQLIPC(): void {
         const result = await sqlService.connect(sqlSessionId, {
           type: config.type, host: dbHost, port: dbPort,
           user: config.username, password: config.password,
-          database: config.database, ssl: config.ssl
+          database: config.database || undefined,
+          ssl: config.ssl,
+          sslMode: config.sslMode as any,
         })
 
         if (result.success) {
-          return { success: true, tunnelPort: tunnelMap.get(sqlSessionId)?.localPort }
+          return {
+            success: true,
+            tunnelPort: tunnelMap.get(sqlSessionId)?.localPort,
+            currentDatabase: result.currentDatabase,
+          }
         }
 
         if (tunnelMap.has(sqlSessionId)) await cleanupTunnel(sqlSessionId)

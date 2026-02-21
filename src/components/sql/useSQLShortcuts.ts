@@ -33,16 +33,6 @@ export function useSQLShortcuts(
   const connectionIdRef = useRef(connectionId)
   connectionIdRef.current = connectionId
 
-  // ── Check if event target is an editable element ──
-  function isInEditableElement(e: KeyboardEvent): boolean {
-    const target = e.target as HTMLElement
-    if (!target) return false
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return true
-    if (target.getAttribute('contenteditable') === 'true') return true
-    if (target.closest('.monaco-editor')) return true
-    return false
-  }
-
   // ── New query tab ──
   const addQueryTab = useCallback(() => {
     const conn = getSQLConnectionState(connectionIdRef.current)
@@ -139,9 +129,10 @@ export function useSQLShortcuts(
 
       // ── Cmd+S: Apply staged changes ──
       // Safe to override in Electron (no native "Save" meaning for a DB client)
-      // Skip if inside Monaco (Monaco handles Cmd+S internally for formatting)
+      // Skip only if inside Monaco editor (let it handle its own Cmd+S)
       if (!e.shiftKey && e.key === 's') {
-        if (isInEditableElement(e)) return
+        const target = e.target as HTMLElement
+        if (target?.closest('.monaco-editor')) return
         e.preventDefault()
         applyChanges()
         return

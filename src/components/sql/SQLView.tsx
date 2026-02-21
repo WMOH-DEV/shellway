@@ -1,12 +1,13 @@
-import { useState, useCallback, useEffect, useMemo, lazy, Suspense, memo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense, memo } from 'react'
 import { cn } from '@/utils/cn'
 import { Splitter } from '@/components/ui/Splitter'
 import { Button } from '@/components/ui/Button'
-import { Database, Plug, AlertCircle } from 'lucide-react'
+import { Database, Plug, AlertCircle, Pencil, Loader2, ScrollText } from 'lucide-react'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { SchemaSidebar } from './SchemaSidebar'
 import { SQLConnectDialog } from './SQLConnectDialog'
+import { DatabasePickerDialog } from './DatabasePickerDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { useSQLShortcuts } from './useSQLShortcuts'
@@ -16,6 +17,7 @@ import type { SQLTab } from '@/types/sql'
 const LazyDataTabView = lazy(() => import('./DataTabView'))
 const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
+const LazyQueryHistoryPanel = lazy(() => import('./QueryHistoryPanel'))
 
 // ── Loading fallback ──
 function PanelSpinner() {
@@ -35,6 +37,27 @@ function EmptyPanel() {
   )
 }
 
+// ── Tag color mapping ──
+const TAG_COLORS: Record<string, string> = {
+  development: 'bg-blue-500',
+  staging: 'bg-yellow-500',
+  production: 'bg-red-500',
+  testing: 'bg-green-500',
+}
+
+// ── Saved config display for disconnected state ──
+interface SavedConfig {
+  connectionName?: string
+  type: string
+  host: string
+  port: number
+  username: string
+  database: string
+  tag?: string
+  sslMode?: string
+  useSSHTunnel?: boolean
+}
+
 interface SQLViewProps {
   connectionId: string
   sessionId: string
@@ -48,6 +71,13 @@ const SIDEBAR_SPLIT_PERCENT = 20
  */
 const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps) {
   const [showConnectDialog, setShowConnectDialog] = useState(false)
+  const [showDatabasePicker, setShowDatabasePicker] = useState(false)
+  const [showQueryLog, setShowQueryLog] = useState(false)
+  const [dbPickerSessionId, setDbPickerSessionId] = useState<string | null>(null)
+  const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null)
+  const [savedConfigLoading, setSavedConfigLoading] = useState(true)
+  const [quickConnecting, setQuickConnecting] = useState(false)
+  const quickConnectRef = useRef(false) // Synchronous guard against double-click
 
   // ── Store selectors (scoped to this connection) ──
   const {
@@ -63,6 +93,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     filters,
     reset,
     setConnectionStatus,
+    setConnectionConfig,
+    setCurrentDatabase,
+    setSqlSessionId,
+    setTunnelPort,
     setConnectionError,
     addTab,
     removeTab,
@@ -86,6 +120,36 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     () => tabs.find((t) => t.id === activeTabId) ?? null,
     [tabs, activeTabId]
   )
+
+  // ── Load saved SQL config for disconnected state display ──
+  useEffect(() => {
+    if (connectionStatus !== 'disconnected') return
+    setSavedConfigLoading(true)
+    ;(async () => {
+      try {
+        const result = await (window as any).novadeck.sql.configGet(sessionId)
+        if (result?.success && result.data) {
+          setSavedConfig({
+            connectionName: result.data.connectionName,
+            type: result.data.type ?? 'mysql',
+            host: result.data.host ?? '127.0.0.1',
+            port: result.data.port ?? 3306,
+            username: result.data.username ?? 'root',
+            database: result.data.database ?? '',
+            tag: result.data.tag,
+            sslMode: result.data.sslMode,
+            useSSHTunnel: result.data.useSSHTunnel,
+          })
+        } else {
+          setSavedConfig(null)
+        }
+      } catch {
+        setSavedConfig(null)
+      } finally {
+        setSavedConfigLoading(false)
+      }
+    })()
+  }, [sessionId, connectionStatus])
 
   // ── Cleanup on unmount — disconnect SQL session ──
   useEffect(() => {
@@ -141,11 +205,166 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     setShowConnectDialog(true)
   }, [setConnectionStatus, setConnectionError])
 
+  // ── Quick connect from saved config ──
+  const handleQuickConnect = useCallback(async () => {
+    if (!savedConfig || quickConnectRef.current) return
+    quickConnectRef.current = true
+    setQuickConnecting(true)
+    setConnectionStatus('connecting')
+
+    const sqlSessId = `sql-${connectionId}-${crypto.randomUUID()}`
+
+    try {
+      const result = await (window as any).novadeck.sql.configGet(sessionId)
+      if (!result?.success || !result.data) {
+        throw new Error('Saved configuration not found')
+      }
+
+      const c = result.data
+      const config = {
+        type: c.type ?? 'mysql',
+        host: c.host ?? '127.0.0.1',
+        port: c.port ?? 3306,
+        username: c.username ?? 'root',
+        password: c.password ?? '',
+        database: c.database?.trim() || undefined,
+        useSSHTunnel: c.useSSHTunnel ?? true,
+        ssl: c.sslMode ? c.sslMode !== 'disabled' : c.ssl ?? false,
+        sslMode: c.sslMode,
+      }
+
+      const connectResult = await window.novadeck.sql.connect(
+        sqlSessId,
+        connectionId,
+        config
+      )
+
+      if (connectResult.success) {
+        const resolvedDb = (c.database?.trim()) || connectResult.currentDatabase || ''
+
+        setConnectionStatus('connected')
+        setConnectionConfig({
+          id: sqlSessId,
+          name: c.connectionName || `${config.type}://${config.host}:${config.port}/${resolvedDb || 'server'}`,
+          type: config.type,
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          database: resolvedDb,
+          useSSHTunnel: config.useSSHTunnel,
+          ssl: config.ssl,
+          sslMode: config.sslMode,
+          isProduction: c.tag === 'production' || c.isProduction,
+          tag: c.tag,
+          connectionName: c.connectionName,
+        })
+        setCurrentDatabase(resolvedDb)
+        setSqlSessionId(sqlSessId)
+        setTunnelPort(connectResult.tunnelPort ?? null)
+        setConnectionError(null)
+
+        // If no database was specified, show picker
+        if (!c.database?.trim()) {
+          setDbPickerSessionId(sqlSessId)
+          setShowDatabasePicker(true)
+        }
+      } else {
+        setConnectionStatus('error')
+        setConnectionError(connectResult.error || 'Connection failed')
+      }
+    } catch (err: any) {
+      setConnectionStatus('error')
+      setConnectionError(err.message || String(err))
+    } finally {
+      setQuickConnecting(false)
+      quickConnectRef.current = false
+    }
+  }, [
+    savedConfig, connectionId, sessionId, setConnectionStatus, setConnectionConfig,
+    setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionError
+  ])
+
+  // ── Handle database selection from picker ──
+  const handleDatabaseSelected = useCallback(async (database: string) => {
+    const sid = dbPickerSessionId || sqlSessionId
+    if (!sid) return
+
+    try {
+      const result = await window.novadeck.sql.switchDatabase(sid, database)
+      if (result.success) {
+        setCurrentDatabase(database)
+      } else {
+        // Postgres doesn't support switchDatabase — reconnect with the selected DB
+        const config = connectionConfig
+        if (config) {
+          // Disconnect old session
+          await window.novadeck.sql.disconnect(sid).catch(() => {})
+          // Reconnect with selected database
+          const newSid = `sql-${connectionId}-${crypto.randomUUID()}`
+          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, {
+            type: config.type,
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            database,
+            useSSHTunnel: config.useSSHTunnel,
+            ssl: config.ssl,
+            sslMode: (config as any).sslMode,
+          })
+          if (reconnResult.success) {
+            setSqlSessionId(newSid)
+            setCurrentDatabase(database)
+            setTunnelPort(reconnResult.tunnelPort ?? null)
+            // Update connectionConfig with new database
+            setConnectionConfig({ ...config, id: newSid, database })
+          }
+        }
+      }
+    } catch {
+      // switchDatabase threw (Postgres) — try reconnect approach
+      const config = connectionConfig
+      if (config) {
+        try {
+          await window.novadeck.sql.disconnect(sid).catch(() => {})
+          const newSid = `sql-${connectionId}-${crypto.randomUUID()}`
+          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, {
+            type: config.type,
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            database,
+            useSSHTunnel: config.useSSHTunnel,
+            ssl: config.ssl,
+            sslMode: (config as any).sslMode,
+          })
+          if (reconnResult.success) {
+            setSqlSessionId(newSid)
+            setCurrentDatabase(database)
+            setTunnelPort(reconnResult.tunnelPort ?? null)
+            setConnectionConfig({ ...config, id: newSid, database })
+          }
+        } catch {
+          // Reconnect also failed — leave state as-is
+        }
+      }
+    }
+    setShowDatabasePicker(false)
+    setDbPickerSessionId(null)
+  }, [dbPickerSessionId, sqlSessionId, connectionId, connectionConfig, setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionConfig])
+
+  // ── Handle onNeedDatabasePick from connect dialog ──
+  const handleNeedDatabasePick = useCallback((sid: string) => {
+    setDbPickerSessionId(sid)
+    setShowDatabasePicker(true)
+  }, [])
+
   // ── Tab actions ──
   const handleTabSelect = useCallback(
     (id: string) => {
       setActiveTab(id)
-      // Also sync selectedTable when switching to a data/structure tab
       const tab = getSQLConnectionState(connectionId).tabs.find((t) => t.id === id)
       if (tab?.table) {
         setSelectedTable(tab.table)
@@ -171,7 +390,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
 
   const handleOpenStructure = useCallback(
     (tableName: string) => {
-      // Check if a structure tab for this table already exists
       const existingTab = tabs.find(
         (t) => t.type === 'structure' && t.table === tableName
       )
@@ -250,19 +468,112 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
   if (connectionStatus === 'disconnected') {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <div className="flex flex-col items-center gap-2">
-          <Database size={32} className="text-nd-text-muted" />
-          <p className="text-sm text-nd-text-muted">Connect to a database to get started</p>
-        </div>
-        <Button variant="primary" onClick={handleOpenConnect}>
-          <Plug size={14} />
-          Connect to Database
-        </Button>
+        {savedConfigLoading ? (
+          <div className="animate-spin w-5 h-5 rounded-full border-2 border-nd-accent border-t-transparent" />
+        ) : savedConfig ? (
+          /* ── Saved connection card ── */
+          <div className="flex flex-col items-center gap-4 w-full max-w-sm">
+            <div className="w-full rounded-lg border border-nd-border bg-nd-bg-secondary p-4 space-y-3">
+              {/* Header */}
+              <div className="flex items-center gap-2">
+                <Database size={18} className="text-nd-accent shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-nd-text-primary truncate">
+                    {savedConfig.connectionName || `${savedConfig.type.toUpperCase()} Connection`}
+                  </p>
+                  {savedConfig.tag && savedConfig.tag !== 'none' && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={cn('w-2 h-2 rounded-full', TAG_COLORS[savedConfig.tag] || '')} />
+                      <span className="text-2xs text-nd-text-muted capitalize">{savedConfig.tag}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-nd-text-muted w-16 shrink-0">Type</span>
+                  <span className="text-nd-text-secondary font-mono">{savedConfig.type.toUpperCase()}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-nd-text-muted w-16 shrink-0">Host</span>
+                  <span className="text-nd-text-secondary font-mono truncate">
+                    {savedConfig.host}:{savedConfig.port}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-nd-text-muted w-16 shrink-0">User</span>
+                  <span className="text-nd-text-secondary font-mono">{savedConfig.username}</span>
+                </div>
+                {savedConfig.database && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-nd-text-muted w-16 shrink-0">Database</span>
+                    <span className="text-nd-text-secondary font-mono truncate">{savedConfig.database}</span>
+                  </div>
+                )}
+                {savedConfig.useSSHTunnel && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-nd-text-muted w-16 shrink-0">Tunnel</span>
+                    <span className="text-nd-text-secondary">SSH Tunnel</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleQuickConnect}
+                  disabled={quickConnecting}
+                >
+                  {quickConnecting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Plug size={14} />
+                  )}
+                  Connect
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={handleOpenConnect}
+                  title="Edit connection settings"
+                >
+                  <Pencil size={14} />
+                  Edit
+                </Button>
+              </div>
+            </div>
+
+            {/* New connection link */}
+            <button
+              onClick={handleOpenConnect}
+              className="text-xs text-nd-text-muted hover:text-nd-accent transition-colors"
+            >
+              Or create a new connection
+            </button>
+          </div>
+        ) : (
+          /* ── No saved config — default state ── */
+          <>
+            <div className="flex flex-col items-center gap-2">
+              <Database size={32} className="text-nd-text-muted" />
+              <p className="text-sm text-nd-text-muted">Connect to a database to get started</p>
+            </div>
+            <Button variant="primary" onClick={handleOpenConnect}>
+              <Plug size={14} />
+              Connect to Database
+            </Button>
+          </>
+        )}
 
         <SQLConnectDialog
           open={showConnectDialog}
           onClose={handleCloseConnect}
           connectionId={connectionId}
+          sessionId={sessionId}
+          onNeedDatabasePick={handleNeedDatabasePick}
         />
       </div>
     )
@@ -314,7 +625,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         </div>
         <span className="text-xs text-nd-text-muted">/</span>
         <span className="text-xs font-medium text-nd-text-primary truncate">
-          {currentDatabase}
+          {currentDatabase || '(no database)'}
         </span>
 
         <div className="flex-1" />
@@ -361,14 +672,54 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
       </div>
 
       {/* Status Bar */}
-      <SQLStatusBar {...statusBarProps} />
+      <div className="flex items-center shrink-0">
+        <div className="flex-1">
+          <SQLStatusBar {...statusBarProps} />
+        </div>
+        <button
+          onClick={() => setShowQueryLog((v) => !v)}
+          className={cn(
+            'flex items-center gap-1 px-2 h-7 text-2xs font-medium border-t border-l transition-colors',
+            showQueryLog
+              ? 'text-nd-accent border-nd-border bg-nd-bg-secondary'
+              : 'text-nd-text-muted border-nd-border bg-nd-bg-secondary hover:text-nd-text-secondary'
+          )}
+          title="Toggle query log"
+        >
+          <ScrollText size={11} />
+          Log
+        </button>
+      </div>
 
-      {/* Connect dialog (for reconnect) */}
+      {/* Query Log panel */}
+      {showQueryLog && sqlSessionId && (
+        <Suspense fallback={null}>
+          <LazyQueryHistoryPanel
+            connectionId={connectionId}
+            sqlSessionId={sqlSessionId}
+            onClose={() => setShowQueryLog(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* Connect dialog (for reconnect / edit) */}
       <SQLConnectDialog
         open={showConnectDialog}
         onClose={handleCloseConnect}
         connectionId={connectionId}
+        sessionId={sessionId}
+        onNeedDatabasePick={handleNeedDatabasePick}
       />
+
+      {/* Database picker dialog */}
+      {showDatabasePicker && (dbPickerSessionId || sqlSessionId) && (
+        <DatabasePickerDialog
+          open={showDatabasePicker}
+          onClose={() => { setShowDatabasePicker(false); setDbPickerSessionId(null) }}
+          sqlSessionId={(dbPickerSessionId || sqlSessionId)!}
+          onSelect={handleDatabaseSelected}
+        />
+      )}
     </div>
   )
 })

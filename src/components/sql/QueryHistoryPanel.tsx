@@ -10,7 +10,8 @@ import type { QueryHistoryEntry } from '@/types/sql'
 interface QueryHistoryPanelProps {
   connectionId: string
   sqlSessionId: string
-  onSelectQuery: (query: string) => void
+  /** If provided, entries become clickable to load query into editor */
+  onSelectQuery?: (query: string) => void
   onClose: () => void
 }
 
@@ -40,7 +41,7 @@ function truncateQuery(query: string, maxLines = 3): string {
 
 interface HistoryItemProps {
   entry: QueryHistoryEntry
-  onSelect: (query: string) => void
+  onSelect?: (query: string) => void
   onToggleFavorite: (id: string) => void
 }
 
@@ -50,12 +51,11 @@ const HistoryItem = React.memo(function HistoryItem({
   onToggleFavorite,
 }: HistoryItemProps) {
   const handleClick = useCallback(() => {
-    onSelect(entry.query)
+    onSelect?.(entry.query)
   }, [entry.query, onSelect])
 
   const handleDoubleClick = useCallback(() => {
-    // Double-click loads and the parent can choose to auto-execute
-    onSelect(entry.query)
+    onSelect?.(entry.query)
   }, [entry.query, onSelect])
 
   const handleStar = useCallback(

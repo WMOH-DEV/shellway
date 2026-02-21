@@ -1,6 +1,8 @@
 // ── Database connection config ──
 
 export type DatabaseType = 'mysql' | 'postgres'
+export type SSLMode = 'disabled' | 'preferred' | 'required' | 'verify-full'
+export type ConnectionTag = 'none' | 'development' | 'staging' | 'production' | 'testing'
 
 export interface DatabaseConnectionConfig {
   id: string
@@ -13,7 +15,10 @@ export interface DatabaseConnectionConfig {
   database: string
   useSSHTunnel: boolean
   ssl?: boolean
+  sslMode?: SSLMode
   isProduction?: boolean
+  tag?: ConnectionTag
+  connectionName?: string
 }
 
 // ── Schema introspection ──

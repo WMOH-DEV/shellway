@@ -184,7 +184,7 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
     } finally {
       setSchemaLoading(false)
     }
-  }, [sqlSessionId, setTables, setSchemaLoading])
+  }, [sqlSessionId, currentDatabase, setTables, setSchemaLoading])
 
   const fetchDatabases = useCallback(async () => {
     if (!sqlSessionId) return

@@ -8,6 +8,8 @@ import { encrypt, decrypt, generateMasterKey } from '../utils/encryption'
 export interface StoredSQLConfig {
   /** SSH connectionId (session.id) this SQL config belongs to */
   sessionId: string
+  /** Friendly connection name (e.g. "Production DB") */
+  connectionName?: string
   type: 'mysql' | 'postgres'
   host: string
   port: number
@@ -16,7 +18,11 @@ export interface StoredSQLConfig {
   database: string
   useSSHTunnel: boolean
   ssl: boolean
+  /** SSL mode: disabled, preferred, required, verify-full */
+  sslMode?: 'disabled' | 'preferred' | 'required' | 'verify-full'
   isProduction: boolean
+  /** Tag/environment: development, staging, production, testing */
+  tag?: 'none' | 'development' | 'staging' | 'production' | 'testing'
   /** Last successful connection time */
   lastUsed?: number
 }

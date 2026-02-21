@@ -3,7 +3,10 @@ import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GetRowIdParams, CellContextMenuEvent, GridReadyEvent } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community'
 import { cn } from '@/utils/cn'
-import { Copy, ClipboardCopy, FileJson } from 'lucide-react'
+import {
+  Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
+  XCircle, Filter, EyeOff, RotateCcw, Clipboard
+} from 'lucide-react'
 import type { QueryResult, SchemaColumn } from '@/types/sql'
 
 ModuleRegistry.registerModules([AllCommunityModule])
@@ -28,6 +31,7 @@ const shellwayDarkTheme = themeQuartz.withParams({
   fontFamily: 'inherit',
   fontSize: 13,
   headerFontSize: 12,
+  iconSize: 12,
   cellHorizontalPadding: 10,
   spacing: 4,
 })
@@ -36,19 +40,34 @@ const shellwayDarkTheme = themeQuartz.withParams({
 
 interface DataGridProps {
   result: QueryResult | null
-  onSort: (column: string, direction: 'asc' | 'desc') => void
+  /** column=null means sort was removed */
+  onSort: (column: string | null, direction: 'asc' | 'desc') => void
   isLoading: boolean
   onCellEdit?: (rowIndex: number, field: string, oldValue: unknown, newValue: unknown) => void
   /** Column metadata — used to determine which columns are editable */
   columnMeta?: SchemaColumn[]
+  /** Called when user selects "Filter with column" from header context menu */
+  onFilterColumn?: (column: string) => void
+  /** Set of row indices that have pending staged changes (for visual highlighting) */
+  editedRows?: Set<number>
+  /** Set of "rowIndex-field" keys for cells with pending changes (for cell-level highlighting) */
+  editedCells?: Set<string>
 }
 
-// ── Context menu state ──
+// ── Context menu state (cell right-click) ──
 
 interface ContextMenuState {
   x: number
   y: number
-  items: { label: string; icon: React.ReactNode; action: () => void }[]
+  items: { label: string; icon: React.ReactNode; action: () => void; separator?: boolean }[]
+}
+
+// ── Header context menu state ──
+
+interface HeaderContextMenuState {
+  x: number
+  y: number
+  column: string
 }
 
 // ── Custom cell renderers (minimal — only for NULL and boolean) ──
@@ -90,9 +109,44 @@ function isBooleanType(type: string): boolean {
 }
 
 function needsNullRenderer(type: string): boolean {
-  // Everything that isn't boolean gets the null renderer only if the column can have nulls.
-  // We apply it broadly — it's lightweight and only triggers on null values.
   return !isBooleanType(type)
+}
+
+// ── Clamp context menu position to stay within viewport ──
+
+function clampMenuPosition(x: number, y: number, menuWidth: number, menuHeight: number) {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  return {
+    left: x + menuWidth > vw ? Math.max(0, vw - menuWidth - 4) : x,
+    top: y + menuHeight > vh ? Math.max(0, vh - menuHeight - 4) : y,
+  }
+}
+
+// ── Context menu button component ──
+
+function CtxMenuItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors"
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+function CtxSeparator() {
+  return <div className="my-1 h-px bg-nd-border" />
 }
 
 // ── Component ──
@@ -103,11 +157,16 @@ export const DataGrid = React.memo(function DataGrid({
   isLoading,
   onCellEdit,
   columnMeta,
+  onFilterColumn,
+  editedRows,
+  editedCells,
 }: DataGridProps) {
   const gridRef = useRef<AgGridReact>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [headerContextMenu, setHeaderContextMenu] = useState<HeaderContextMenuState | null>(null)
 
-  // Close context menu on click outside or scroll
+  // Close cell context menu on click outside or scroll
   useEffect(() => {
     if (!contextMenu) return
     const close = () => setContextMenu(null)
@@ -118,6 +177,46 @@ export const DataGrid = React.memo(function DataGrid({
       window.removeEventListener('scroll', close, true)
     }
   }, [contextMenu])
+
+  // Close header context menu on click outside or scroll
+  useEffect(() => {
+    if (!headerContextMenu) return
+    const close = () => setHeaderContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [headerContextMenu])
+
+  // Header right-click listener (event delegation on grid container)
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleHeaderRightClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const headerCell = target.closest('.ag-header-cell')
+      if (!headerCell) return
+      // Ensure it's within the header area (not a cell that happens to match)
+      const headerArea = target.closest('.ag-header')
+      if (!headerArea) return
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      const colId = headerCell.getAttribute('col-id')
+      if (!colId) return
+
+      setHeaderContextMenu({ x: e.clientX, y: e.clientY, column: colId })
+      // Dismiss cell context menu if open
+      setContextMenu(null)
+    }
+
+    container.addEventListener('contextmenu', handleHeaderRightClick, true)
+    return () => container.removeEventListener('contextmenu', handleHeaderRightClick, true)
+  }, [])
 
   // Build a set of non-editable column names (auto-increment PKs, computed columns)
   const nonEditableColumns = useMemo(() => {
@@ -137,7 +236,6 @@ export const DataGrid = React.memo(function DataGrid({
       const col: ColDef = {
         headerName: field.name,
         field: field.name,
-        sortable: false, // server-side sorting
         resizable: true,
         filter: false,
         cellStyle: { fontSize: '13px' },
@@ -160,12 +258,33 @@ export const DataGrid = React.memo(function DataGrid({
         col.editable = true
       }
 
+      // Highlight individual edited cells
+      if (editedCells) {
+        col.cellClassRules = {
+          'ag-cell-edited': (params) => {
+            if (!params.data) return false
+            const idx = params.data.__rowIndex as number
+            return editedCells.has(`${idx}-${field.name}`)
+          },
+        }
+      }
+
       return col
     })
-  }, [result?.fields, onCellEdit, nonEditableColumns])
+  }, [result?.fields, onCellEdit, nonEditableColumns, editedCells])
 
   // Row data
   const rowData = useMemo(() => result?.rows ?? [], [result?.rows])
+
+  // Row class rules — highlight rows with staged changes
+  const getRowClass = useCallback(
+    (params: { data?: Record<string, unknown> }) => {
+      if (!editedRows || !params.data) return ''
+      const idx = params.data.__rowIndex as number
+      return editedRows.has(idx) ? 'ag-row-edited' : ''
+    },
+    [editedRows]
+  )
 
   // Stable row IDs
   const getRowId = useCallback(
@@ -173,18 +292,20 @@ export const DataGrid = React.memo(function DataGrid({
     []
   )
 
-  // Default column settings
+  // Default column settings — sortable with no-op comparator (server-side sorting only)
   const defaultColDef = useMemo<ColDef>(
     () => ({
-      sortable: false,
+      sortable: true,
       resizable: true,
       filter: false,
       suppressHeaderMenuButton: true,
+      comparator: () => 0, // Prevent client-side sorting; server-side only
+      unSortIcon: true,
     }),
     []
   )
 
-  // Handle header click for server-side sorting
+  // Handle header click for server-side sorting (asc → desc → none)
   const onSortChanged = useCallback(() => {
     if (!gridRef.current?.api) return
     const sortModel = gridRef.current.api.getColumnState().filter((c) => c.sort)
@@ -193,6 +314,9 @@ export const DataGrid = React.memo(function DataGrid({
       if (colId && sort) {
         onSort(colId, sort as 'asc' | 'desc')
       }
+    } else {
+      // Sort was removed (3rd click cycle)
+      onSort(null, 'asc')
     }
   }, [onSort])
 
@@ -205,7 +329,7 @@ export const DataGrid = React.memo(function DataGrid({
     [onCellEdit]
   )
 
-  // Right-click context menu
+  // Right-click context menu on cells
   const onCellContextMenu = useCallback((event: CellContextMenuEvent) => {
     const nativeEvent = event.event as MouseEvent | undefined
     nativeEvent?.preventDefault()
@@ -231,7 +355,6 @@ export const DataGrid = React.memo(function DataGrid({
         icon: <FileJson size={13} />,
         action: () => {
           if (rowData) {
-            // Omit the internal __rowIndex field
             const { __rowIndex, ...clean } = rowData
             navigator.clipboard.writeText(JSON.stringify(clean, null, 2))
           }
@@ -266,6 +389,59 @@ export const DataGrid = React.memo(function DataGrid({
     })
   }, [])
 
+  // ── Header context menu actions ──
+
+  const handleHeaderCopyName = useCallback((column: string) => {
+    navigator.clipboard.writeText(column)
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleHeaderSortAsc = useCallback((column: string) => {
+    gridRef.current?.api?.applyColumnState({
+      state: [{ colId: column, sort: 'asc' }],
+      defaultState: { sort: null },
+    })
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleHeaderSortDesc = useCallback((column: string) => {
+    gridRef.current?.api?.applyColumnState({
+      state: [{ colId: column, sort: 'desc' }],
+      defaultState: { sort: null },
+    })
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleHeaderRemoveSort = useCallback(() => {
+    gridRef.current?.api?.applyColumnState({
+      defaultState: { sort: null },
+    })
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleHeaderFilterColumn = useCallback((column: string) => {
+    onFilterColumn?.(column)
+    setHeaderContextMenu(null)
+  }, [onFilterColumn])
+
+  const handleHeaderHideColumn = useCallback((column: string) => {
+    gridRef.current?.api?.setColumnsVisible([column], false)
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleHeaderResetColumns = useCallback(() => {
+    const api = gridRef.current?.api
+    if (!api) return
+    // Unhide all columns first
+    const allCols = api.getColumns()?.map((c) => c.getColId()) ?? []
+    if (allCols.length > 0) {
+      api.setColumnsVisible(allCols, true)
+    }
+    api.resetColumnState()
+    api.autoSizeAllColumns()
+    setHeaderContextMenu(null)
+  }, [])
+
   // Auto-size columns on first data render
   const onGridReady = useCallback((event: GridReadyEvent) => {
     if (result?.fields?.length) {
@@ -289,6 +465,7 @@ export const DataGrid = React.memo(function DataGrid({
 
   return (
     <div
+      ref={containerRef}
       className={cn(
         'h-full w-full relative',
         isLoading && 'opacity-60 pointer-events-none'
@@ -301,6 +478,7 @@ export const DataGrid = React.memo(function DataGrid({
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
         getRowId={getRowId}
+        getRowClass={getRowClass}
         animateRows={false}
         suppressRowVirtualisation={false}
         rowSelection="multiple"
@@ -322,25 +500,73 @@ export const DataGrid = React.memo(function DataGrid({
         loading={isLoading && !result}
       />
 
-      {/* Floating context menu */}
+      {/* Floating cell context menu */}
       {contextMenu && (
         <div
           className="fixed z-50 min-w-[180px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={clampMenuPosition(contextMenu.x, contextMenu.y, 200, contextMenu.items.length * 30 + 8)}
         >
           {contextMenu.items.map((item) => (
-            <button
+            <CtxMenuItem
               key={item.label}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors"
+              icon={item.icon}
+              label={item.label}
               onClick={() => {
                 item.action()
                 setContextMenu(null)
               }}
-            >
-              {item.icon}
-              {item.label}
-            </button>
+            />
           ))}
+        </div>
+      )}
+
+      {/* Floating header context menu */}
+      {headerContextMenu && (
+        <div
+          className="fixed z-50 min-w-[240px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
+          style={clampMenuPosition(headerContextMenu.x, headerContextMenu.y, 260, 280)}
+        >
+          <CtxMenuItem
+            icon={<Clipboard size={13} />}
+            label="Copy name"
+            onClick={() => handleHeaderCopyName(headerContextMenu.column)}
+          />
+
+          <CtxSeparator />
+
+          <CtxMenuItem
+            icon={<Filter size={13} />}
+            label="Filter with column"
+            onClick={() => handleHeaderFilterColumn(headerContextMenu.column)}
+          />
+          <CtxMenuItem
+            icon={<EyeOff size={13} />}
+            label="Hide this column"
+            onClick={() => handleHeaderHideColumn(headerContextMenu.column)}
+          />
+          <CtxMenuItem
+            icon={<RotateCcw size={13} />}
+            label="Reset column Positions and Widths"
+            onClick={handleHeaderResetColumns}
+          />
+
+          <CtxSeparator />
+
+          <CtxMenuItem
+            icon={<ArrowUpAZ size={13} />}
+            label="Sort Ascending"
+            onClick={() => handleHeaderSortAsc(headerContextMenu.column)}
+          />
+          <CtxMenuItem
+            icon={<ArrowDownAZ size={13} />}
+            label="Sort Descending"
+            onClick={() => handleHeaderSortDesc(headerContextMenu.column)}
+          />
+          <CtxMenuItem
+            icon={<XCircle size={13} />}
+            label="Remove sort"
+            onClick={handleHeaderRemoveSort}
+          />
         </div>
       )}
     </div>

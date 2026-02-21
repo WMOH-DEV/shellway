@@ -6,14 +6,17 @@ import { EventEmitter } from 'events'
 
 export type DatabaseType = 'mysql' | 'postgres'
 
+export type SSLMode = 'disabled' | 'preferred' | 'required' | 'verify-full'
+
 export interface DBConfig {
   type: DatabaseType
   host: string
   port: number
   user: string
   password: string
-  database: string
+  database?: string
   ssl?: boolean
+  sslMode?: SSLMode
 }
 
 export interface DBQueryResult {
@@ -44,19 +47,39 @@ export class SQLService extends EventEmitter {
   async connect(
     sqlSessionId: string,
     config: DBConfig
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; currentDatabase?: string }> {
     // Disconnect existing if any
     await this.disconnect(sqlSessionId).catch(() => {})
 
     try {
+      let result: { success: boolean; error?: string }
       if (config.type === 'mysql') {
-        return await this.connectMySQL(sqlSessionId, config)
+        result = await this.connectMySQL(sqlSessionId, config)
       } else if (config.type === 'postgres') {
-        return await this.connectPostgres(sqlSessionId, config)
+        result = await this.connectPostgres(sqlSessionId, config)
+      } else {
+        return { success: false, error: `Unsupported database type: ${config.type}` }
       }
-      return { success: false, error: `Unsupported database type: ${config.type}` }
+
+      if (result.success) {
+        const currentDatabase = this.getCurrentDatabase(sqlSessionId) ?? undefined
+        return { ...result, currentDatabase }
+      }
+      return result
     } catch (err: any) {
       return { success: false, error: err.message || String(err) }
+    }
+  }
+
+  /** Resolve SSL options from sslMode or legacy ssl boolean */
+  private resolveSSL(config: DBConfig): any {
+    const mode = config.sslMode ?? (config.ssl ? 'preferred' : 'disabled')
+    switch (mode) {
+      case 'disabled': return undefined
+      case 'preferred': return {}
+      case 'required': return { rejectUnauthorized: false }
+      case 'verify-full': return { rejectUnauthorized: true }
+      default: return undefined
     }
   }
 
@@ -65,23 +88,33 @@ export class SQLService extends EventEmitter {
     config: DBConfig
   ): Promise<{ success: boolean; error?: string }> {
     const mysql = await import('mysql2/promise')
+    const dbName = config.database?.trim() || undefined
     const conn = await mysql.createConnection({
       host: config.host,
       port: config.port,
       user: config.user,
       password: config.password,
-      database: config.database,
-      ssl: config.ssl ? {} : undefined,
+      database: dbName,
+      ssl: this.resolveSSL(config),
       connectTimeout: 10000,
       supportBigNumbers: true,
       bigNumberStrings: true,
       dateStrings: true
     })
 
+    // Discover current database if none specified
+    let currentDb = dbName ?? ''
+    if (!currentDb) {
+      try {
+        const [rows] = await conn.execute('SELECT DATABASE() as db')
+        currentDb = (rows as any)?.[0]?.db ?? ''
+      } catch { /* ignore */ }
+    }
+
     this.connections.set(sqlSessionId, {
       type: 'mysql',
       conn,
-      database: config.database
+      database: currentDb
     })
 
     return { success: true }
@@ -92,22 +125,33 @@ export class SQLService extends EventEmitter {
     config: DBConfig
   ): Promise<{ success: boolean; error?: string }> {
     const { Client } = await import('pg')
+    const dbName = config.database?.trim() || undefined
+    const sslOpts = this.resolveSSL(config)
     const client = new Client({
       host: config.host,
       port: config.port,
       user: config.user,
       password: config.password,
-      database: config.database,
-      ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
+      database: dbName, // pg defaults to username if undefined
+      ssl: sslOpts ? (sslOpts.rejectUnauthorized !== undefined ? sslOpts : { rejectUnauthorized: false }) : undefined,
       connectionTimeoutMillis: 10000
     })
 
     await client.connect()
 
+    // Discover current database
+    let currentDb = dbName ?? ''
+    if (!currentDb) {
+      try {
+        const res = await client.query('SELECT current_database() as db')
+        currentDb = res.rows?.[0]?.db ?? ''
+      } catch { /* ignore */ }
+    }
+
     this.connections.set(sqlSessionId, {
       type: 'postgres',
       conn: client,
-      database: config.database
+      database: currentDb
     })
 
     return { success: true }
