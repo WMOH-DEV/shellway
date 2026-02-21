@@ -130,6 +130,28 @@ Shellway is a modern, feature-rich SSH/SFTP client inspired by industry leaders 
 - **Auto-Start** — Automatically start port forwards on connection
 - **Enable/Disable** — Toggle individual rules on and off
 
+### SQL Client
+
+- **MySQL & PostgreSQL Support** — Connect to databases through SSH tunnels with full query capabilities
+- **Saved Connection Configs** — Database credentials persist per SSH session for one-click reconnect
+- **Enhanced Connection Form** — Connection name, tag/environment labels (Development/Staging/Production/Testing), SSL mode selection, optional database name
+- **Database Picker** — Connect without specifying a database, then choose from a searchable list
+- **Schema Sidebar** — Browse databases, tables, and views in a collapsible tree
+- **Data Grid (ag-grid)** — High-performance data browsing with sortable columns, pagination, and inline cell editing
+- **Inline Editing with Change Tracking** — Edit cells directly; changes are tracked against original values with smart revert detection
+- **Visual Edit Feedback** — Edited rows get an amber highlight, edited cells get a left accent border; highlights clear on save/discard/revert
+- **Transactional Saves** — All pending changes are saved atomically via BEGIN/COMMIT with ROLLBACK on failure
+- **Column Width Persistence** — Resize columns and widths are saved per table, restored automatically on next open
+- **Server-Side Sorting** — Click column headers to sort (asc → desc → none); sort cycles via server queries
+- **Filter Bar** — Add column filters with operators (equals, contains, greater than, IS NULL, raw SQL, etc.)
+- **Header Context Menu** — Right-click column headers for: Copy name, Filter, Hide column, Sort, Reset positions
+- **Cell Context Menu** — Right-click cells for: Copy cell, Copy row as JSON, Copy row as INSERT
+- **Query Editor** — Monaco-based SQL editor with syntax highlighting, auto-complete, and multi-query execution
+- **Query History & Log** — All executed queries (SELECT, COUNT, UPDATE, BEGIN/COMMIT) logged with timestamps and execution time
+- **Bottom Query Log Panel** — Toggleable log panel in the status bar showing real-time query activity with copy support
+- **Export** — Export query results to CSV, JSON, or SQL INSERT statements
+- **Keyboard Shortcuts** — Ctrl+Enter (run query), Ctrl+S (save changes), Ctrl+Shift+N (new query tab), Ctrl+. (cycle tab type)
+
 ### UI & Experience
 
 - **Dark Theme** — Modern dark interface with custom Shellway color palette
@@ -191,6 +213,8 @@ Shellway follows Electron's process isolation model:
 | Proxy | [socks](https://github.com/JoshGlazebrook/socks) (SOCKS4/5 & HTTP CONNECT) |
 | Storage | [electron-store](https://github.com/sindresorhus/electron-store) (AES-256-GCM encrypted) |
 | Animations | [Framer Motion](https://www.framer.com/motion/) 11 |
+| SQL Data Grid | [AG Grid](https://www.ag-grid.com/) 35 |
+| SQL Editor | [Monaco Editor](https://microsoft.github.io/monaco-editor/) (via @monaco-editor/react) |
 | Icons | [Lucide React](https://lucide.dev/) |
 
 ---
@@ -410,6 +434,7 @@ shellway/
       settings.ipc.ts            # Settings read/write handlers
       log.ipc.ts                 # Activity log handlers
       hostkey.ipc.ts             # Host key management handlers
+      sql.ipc.ts                 # SQL client handlers (connect, query, disconnect)
     services/                    # Business logic services
       SSHService.ts              # SSH connection manager (ssh2 wrapper)
       SFTPService.ts             # SFTP file operations
@@ -419,6 +444,8 @@ shellway/
       ReconnectionManager.ts     # Exponential backoff reconnection
       HostKeyStore.ts            # Trusted host key management
       TransferQueue.ts           # File transfer queue with concurrency
+      SQLService.ts              # SQL client (MySQL/PostgreSQL via SSH tunnel)
+      SQLConfigStore.ts          # Saved database connection configs
     utils/
       encryption.ts              # AES-256-GCM encryption/decryption
 
@@ -434,6 +461,7 @@ shellway/
       hostkey.ts                 # TrustedHostKey type
       sftp.ts                    # SFTP-specific types
       transfer.ts                # Transfer state types
+      sql.ts                     # SQL client types (SSLMode, StagedChange, QueryHistoryEntry)
     stores/                      # Zustand state stores
       connectionStore.ts         # Active connections & tabs
       sessionStore.ts            # Session profiles
@@ -441,6 +469,7 @@ shellway/
       logStore.ts                # Per-session log entries
       hostkeyStore.ts            # Host key management state
       transferStore.ts           # File transfer state
+      sqlStore.ts                # SQL client state (connections, staged changes, history)
     hooks/                       # React hooks
       useSession.ts              # Session-related hooks
       useKeyboardShortcuts.ts    # Global keyboard shortcut handler
@@ -480,6 +509,18 @@ shellway/
       port-forwarding/
         PortForwardingView.tsx   # Port forwarding rule manager
       settings/                  # Global settings UI
+      sql/                       # SQL client components
+        SQLView.tsx              # Main SQL panel with query log toggle
+        SQLConnectDialog.tsx     # Database connection form (name, tag, SSL)
+        DatabasePickerDialog.tsx # Searchable database list modal
+        SchemaSidebar.tsx        # Database/table/view tree browser
+        DataGrid.tsx             # ag-grid wrapper (column widths, context menus, editing)
+        DataTabView.tsx          # Table data view with change tracking & transactional save
+        QueryEditor.tsx          # Monaco-based SQL query editor
+        SQLStatusBar.tsx         # Status bar with inline save/discard actions
+        SQLQueryLog.tsx          # Compact real-time query log panel
+        QueryHistoryPanel.tsx    # Query history browser
+        useSQLShortcuts.ts       # SQL-specific keyboard shortcuts
       snippets/                  # Command snippet manager
       ui/                        # Reusable UI primitives
         Button.tsx               # Button (primary/secondary/ghost/danger/outline)
@@ -541,6 +582,12 @@ Known host keys are persisted at:
 | `Ctrl+Shift+B` | Toggle split view (Terminal + SFTP) |
 | `Ctrl+1` | Switch to Terminal sub-tab |
 | `Ctrl+2` | Switch to SFTP sub-tab |
+| `Ctrl+3` | Switch to SQL sub-tab |
+| **SQL Client** | |
+| `Ctrl+Enter` | Execute SQL query |
+| `Ctrl+S` | Save pending cell edits |
+| `Ctrl+Shift+N` | New query tab |
+| `Ctrl+.` | Cycle SQL tab type (Data → Query → History) |
 
 ---
 

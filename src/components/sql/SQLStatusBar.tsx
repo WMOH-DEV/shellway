@@ -1,5 +1,5 @@
-import { memo } from 'react'
-import { AlertTriangle, Filter, GitCommitHorizontal } from 'lucide-react'
+import { memo, useCallback } from 'react'
+import { AlertTriangle, Filter, GitCommitHorizontal, Save, Undo2, Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Badge } from '@/components/ui/Badge'
 
@@ -12,6 +12,9 @@ interface SQLStatusBarProps {
   filterCount?: number
   changeCount?: number
   isProduction?: boolean
+  isSaving?: boolean
+  onSave?: () => void
+  onDiscard?: () => void
 }
 
 export const SQLStatusBar = memo(function SQLStatusBar({
@@ -23,15 +26,22 @@ export const SQLStatusBar = memo(function SQLStatusBar({
   filterCount,
   changeCount,
   isProduction,
+  isSaving,
+  onSave,
+  onDiscard,
 }: SQLStatusBarProps) {
+  const hasChanges = changeCount !== undefined && changeCount > 0
+
   return (
     <div
       className={cn(
         'flex items-center gap-0 h-7 px-2 text-2xs font-medium border-t',
         'select-none shrink-0 overflow-hidden',
-        isProduction
-          ? 'border-nd-error/40 bg-nd-error/5'
-          : 'border-nd-border bg-nd-bg-secondary'
+        hasChanges
+          ? 'border-amber-500/40 bg-amber-500/5'
+          : isProduction
+            ? 'border-nd-error/40 bg-nd-error/5'
+            : 'border-nd-border bg-nd-bg-secondary'
       )}
     >
       {/* Production badge */}
@@ -82,12 +92,32 @@ export const SQLStatusBar = memo(function SQLStatusBar({
         </StatusItem>
       )}
 
-      {/* Change count */}
-      {changeCount !== undefined && changeCount > 0 && (
-        <StatusItem className="text-nd-warning">
-          <GitCommitHorizontal size={11} />
-          {changeCount} {changeCount === 1 ? 'change' : 'changes'}
-        </StatusItem>
+      {/* Changes: count + save/discard actions */}
+      {hasChanges && (
+        <>
+          <StatusItem className="text-amber-400">
+            <GitCommitHorizontal size={11} />
+            {changeCount} {changeCount === 1 ? 'change' : 'changes'}
+          </StatusItem>
+          <div className="w-px h-3 bg-nd-border mx-1.5" />
+          <button
+            onClick={onDiscard}
+            disabled={isSaving}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors disabled:opacity-40"
+          >
+            <Undo2 size={10} />
+            Discard
+          </button>
+          <button
+            onClick={onSave}
+            disabled={isSaving}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-40"
+          >
+            {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+            Save
+          </button>
+          <span className="text-[9px] text-nd-text-muted ml-1">Ctrl+S</span>
+        </>
       )}
     </div>
   )

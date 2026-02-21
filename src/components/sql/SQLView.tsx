@@ -3,6 +3,7 @@ import { cn } from '@/utils/cn'
 import { Splitter } from '@/components/ui/Splitter'
 import { Button } from '@/components/ui/Button'
 import { Database, Plug, AlertCircle, Pencil, Loader2, ScrollText } from 'lucide-react'
+import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { SchemaSidebar } from './SchemaSidebar'
@@ -17,7 +18,7 @@ import type { SQLTab } from '@/types/sql'
 const LazyDataTabView = lazy(() => import('./DataTabView'))
 const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
-const LazyQueryHistoryPanel = lazy(() => import('./QueryHistoryPanel'))
+// QueryHistoryPanel is still used by QueryEditor for its own history panel
 
 // ── Loading fallback ──
 function PanelSpinner() {
@@ -453,6 +454,22 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     }
   }, [activeTab, sqlSessionId, connectionConfig, connectionId])
 
+  // ── Save / Discard dispatchers (status bar → DataTabView via events) ──
+  const handleStatusBarSave = useCallback(() => {
+    if (!sqlSessionId) return
+    window.dispatchEvent(
+      new CustomEvent('sql:apply-changes', {
+        detail: { sqlSessionId, connectionId },
+      })
+    )
+  }, [sqlSessionId, connectionId])
+
+  const handleStatusBarDiscard = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('sql:discard-changes', { detail: { connectionId } })
+    )
+  }, [connectionId])
+
   // ── Status bar props ──
   const statusBarProps = useMemo(() => {
     return {
@@ -671,10 +688,20 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         />
       </div>
 
+      {/* Query Log bottom panel */}
+      {showQueryLog && (
+        <div
+          className="shrink-0 border-t border-nd-border bg-nd-bg-secondary overflow-hidden"
+          style={{ height: 160 }}
+        >
+          <SQLQueryLog connectionId={connectionId} />
+        </div>
+      )}
+
       {/* Status Bar */}
       <div className="flex items-center shrink-0">
         <div className="flex-1">
-          <SQLStatusBar {...statusBarProps} />
+          <SQLStatusBar {...statusBarProps} onSave={handleStatusBarSave} onDiscard={handleStatusBarDiscard} />
         </div>
         <button
           onClick={() => setShowQueryLog((v) => !v)}
@@ -690,17 +717,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
           Log
         </button>
       </div>
-
-      {/* Query Log panel */}
-      {showQueryLog && sqlSessionId && (
-        <Suspense fallback={null}>
-          <LazyQueryHistoryPanel
-            connectionId={connectionId}
-            sqlSessionId={sqlSessionId}
-            onClose={() => setShowQueryLog(false)}
-          />
-        </Suspense>
-      )}
 
       {/* Connect dialog (for reconnect / edit) */}
       <SQLConnectDialog

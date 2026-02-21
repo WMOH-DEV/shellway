@@ -52,6 +52,8 @@ interface DataGridProps {
   editedRows?: Set<number>
   /** Set of "rowIndex-field" keys for cells with pending changes (for cell-level highlighting) */
   editedCells?: Set<string>
+  /** Unique key for persisting column widths (e.g. "sql-colw:mysql:host:3306:mydb:users") */
+  columnWidthsKey?: string
 }
 
 // ── Context menu state (cell right-click) ──
@@ -160,6 +162,7 @@ export const DataGrid = React.memo(function DataGrid({
   onFilterColumn,
   editedRows,
   editedCells,
+  columnWidthsKey,
 }: DataGridProps) {
   const gridRef = useRef<AgGridReact>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -191,6 +194,9 @@ export const DataGrid = React.memo(function DataGrid({
   }, [headerContextMenu])
 
   // Header right-click listener (event delegation on grid container)
+  // Attach header right-click handler — re-run when result changes
+  // (the container div is conditionally rendered based on result/isLoading)
+  const hasGrid = !!(result || isLoading)
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -216,7 +222,7 @@ export const DataGrid = React.memo(function DataGrid({
 
     container.addEventListener('contextmenu', handleHeaderRightClick, true)
     return () => container.removeEventListener('contextmenu', handleHeaderRightClick, true)
-  }, [])
+  }, [hasGrid])
 
   // Build a set of non-editable column names (auto-increment PKs, computed columns)
   const nonEditableColumns = useMemo(() => {
@@ -285,6 +291,13 @@ export const DataGrid = React.memo(function DataGrid({
     },
     [editedRows]
   )
+
+  // Force ag-grid to re-evaluate row/cell classes when edited sets change
+  useEffect(() => {
+    if (!gridRef.current?.api) return
+    // redrawRows re-evaluates getRowClass and cellClassRules for all visible rows
+    gridRef.current.api.redrawRows()
+  }, [editedRows, editedCells])
 
   // Stable row IDs
   const getRowId = useCallback(
@@ -439,15 +452,81 @@ export const DataGrid = React.memo(function DataGrid({
     }
     api.resetColumnState()
     api.autoSizeAllColumns()
+    // Clear saved column widths so next open auto-sizes too
+    if (columnWidthsKeyRef.current) {
+      try { localStorage.removeItem(columnWidthsKeyRef.current) } catch {}
+    }
     setHeaderContextMenu(null)
   }, [])
 
   // Auto-size columns on first data render
-  const onGridReady = useCallback((event: GridReadyEvent) => {
-    if (result?.fields?.length) {
-      event.api.autoSizeAllColumns()
+  // ── Column width persistence ──
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const columnWidthsKeyRef = useRef(columnWidthsKey)
+  columnWidthsKeyRef.current = columnWidthsKey
+
+  const onColumnResized = useCallback((event: { finished?: boolean; source?: string }) => {
+    // Only persist after user finishes dragging — ignore programmatic resizes
+    if (!event.finished || !columnWidthsKeyRef.current) return
+    if (event.source !== 'uiColumnResized') return
+
+    // Debounce to avoid writing on every pixel of drag
+    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
+    resizeTimerRef.current = setTimeout(() => {
+      if (!gridRef.current?.api || !columnWidthsKeyRef.current) return
+      const state = gridRef.current.api.getColumnState()
+      const widths: Record<string, number> = {}
+      for (const col of state) {
+        if (col.colId && col.width) {
+          widths[col.colId] = col.width
+        }
+      }
+      try {
+        localStorage.setItem(columnWidthsKeyRef.current, JSON.stringify(widths))
+      } catch {
+        // Storage full or unavailable — ignore
+      }
+    }, 300)
+  }, [])
+
+  const onGridReady = useCallback((_event: GridReadyEvent) => {
+    // Column sizing is handled in the useEffect below (after data loads)
+  }, [])
+
+  // Restore saved column widths or auto-size when data first loads
+  const prevWidthContextRef = useRef<string>('')
+  useEffect(() => {
+    if (!gridRef.current?.api || !result?.fields?.length) return
+
+    // Run when columns OR table identity changes (handles tables with same column names)
+    const contextKey = `${columnWidthsKey}|${result.fields.map((f) => f.name).join(',')}`
+    if (contextKey === prevWidthContextRef.current) return
+    prevWidthContextRef.current = contextKey
+
+    // Try to restore saved column widths
+    if (columnWidthsKey) {
+      try {
+        const saved = localStorage.getItem(columnWidthsKey)
+        if (saved) {
+          const widths: Record<string, number> = JSON.parse(saved)
+          // Check that at least some saved columns match current fields
+          const hasMatch = result.fields.some((f) => widths[f.name] !== undefined)
+          if (hasMatch) {
+            const state = gridRef.current.api.getColumnState().map((col) => ({
+              ...col,
+              width: widths[col.colId!] ?? col.width,
+            }))
+            gridRef.current.api.applyColumnState({ state })
+            return // Skip auto-size — we have saved widths
+          }
+        }
+      } catch {
+        // Corrupted data — fall through to auto-size
+      }
     }
-  }, [result?.fields?.length])
+
+    gridRef.current.api.autoSizeAllColumns()
+  }, [result?.fields, columnWidthsKey])
 
   // Inject __rowIndex for stable identity
   const rowDataWithIndex = useMemo(
@@ -491,6 +570,7 @@ export const DataGrid = React.memo(function DataGrid({
         onCellValueChanged={onCellValueChanged}
         onCellContextMenu={onCellContextMenu}
         onGridReady={onGridReady}
+        onColumnResized={onColumnResized}
         noRowsOverlayComponent={() => (
           <span className="text-nd-text-muted text-sm">No rows found</span>
         )}

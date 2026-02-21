@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Loader2, Save, Undo2 } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
+import { Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { DataGrid } from '@/components/sql/DataGrid'
 import { PaginationBar } from '@/components/sql/PaginationBar'
@@ -144,8 +143,8 @@ export const DataTabView = React.memo(function DataTabView({
   schema,
   dbType,
 }: DataTabViewProps) {
-  // Store — staged changes for inline editing
-  const { upsertStagedChange, removeStagedChange, stagedChanges, addHistoryEntry } = useSQLConnection(connectionId)
+  // Store — staged changes + connection info for inline editing
+  const { upsertStagedChange, removeStagedChange, stagedChanges, addHistoryEntry, connectionConfig, currentDatabase } = useSQLConnection(connectionId)
 
   // State
   const [result, setResult] = useState<QueryResult | null>(null)
@@ -696,7 +695,7 @@ export const DataTabView = React.memo(function DataTabView({
     })
   }, [tableChanges, removeStagedChange, executeQuery, pagination, sortColumn, sortDirection, filters])
 
-  // ── Listen for Ctrl+S save event from useSQLShortcuts ──
+  // ── Listen for save/discard events from shortcuts + status bar ──
   useEffect(() => {
     const handleApplyChanges = (e: Event) => {
       const detail = (e as CustomEvent).detail
@@ -704,12 +703,37 @@ export const DataTabView = React.memo(function DataTabView({
         handleSaveChanges()
       }
     }
+    const handleDiscardEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId) {
+        handleDiscardChanges()
+      }
+    }
     window.addEventListener('sql:apply-changes', handleApplyChanges)
-    return () => window.removeEventListener('sql:apply-changes', handleApplyChanges)
-  }, [connectionId, handleSaveChanges])
+    window.addEventListener('sql:discard-changes', handleDiscardEvent)
+    return () => {
+      window.removeEventListener('sql:apply-changes', handleApplyChanges)
+      window.removeEventListener('sql:discard-changes', handleDiscardEvent)
+    }
+  }, [connectionId, handleSaveChanges, handleDiscardChanges])
 
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns])
+
+  // Stable key for persisting column widths per table across sessions
+  // Format: sql-colw:{type}:{host}:{port}:{database}:{schema}.{table}
+  const columnWidthsKey = useMemo(() => {
+    if (!connectionConfig) return undefined
+    const parts = [
+      'sql-colw',
+      connectionConfig.type,
+      connectionConfig.host,
+      connectionConfig.port,
+      currentDatabase || connectionConfig.database || '_',
+      schema ? `${schema}.${table}` : table,
+    ]
+    return parts.join(':')
+  }, [connectionConfig, currentDatabase, schema, table])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -720,37 +744,6 @@ export const DataTabView = React.memo(function DataTabView({
         onFiltersChange={handleFiltersChange}
         onApply={handleFiltersApply}
       />
-
-      {/* Changes toolbar */}
-      {tableChanges.length > 0 && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-amber-500/30 bg-amber-500/10">
-          <span className="text-xs text-amber-400 font-medium">
-            {tableChanges.length} pending change{tableChanges.length !== 1 ? 's' : ''}
-          </span>
-          <div className="flex-1" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDiscardChanges}
-            disabled={isSaving}
-            className="!h-6 !text-xs"
-          >
-            <Undo2 size={12} />
-            Discard
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSaveChanges}
-            disabled={isSaving}
-            className="!h-6 !text-xs"
-          >
-            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-            Save Changes
-          </Button>
-          <span className="text-2xs text-nd-text-muted">Ctrl+S</span>
-        </div>
-      )}
 
       {/* Error banner */}
       {error && (
@@ -777,6 +770,7 @@ export const DataTabView = React.memo(function DataTabView({
           onFilterColumn={handleFilterColumn}
           editedRows={editedRows}
           editedCells={editedCells}
+          columnWidthsKey={columnWidthsKey}
         />
       </div>
 
