@@ -71,7 +71,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   startOnBoot: false,
   checkForUpdates: true,
 
-  terminalFontFamily: 'JetBrains Mono',
+  terminalFontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
   terminalFontSize: 14,
   terminalLineHeight: 1.4,
   terminalScrollback: 10000,
@@ -130,6 +130,12 @@ export class SettingsStore {
         settings: DEFAULT_SETTINGS
       }
     })
+
+    // Migrate: old default 'JetBrains Mono' → include fallback fonts
+    const saved = this.store.get('settings') as Partial<AppSettings> | undefined
+    if (saved?.terminalFontFamily === 'JetBrains Mono') {
+      this.store.set('settings.terminalFontFamily', DEFAULT_SETTINGS.terminalFontFamily)
+    }
   }
 
   /** Get all settings */

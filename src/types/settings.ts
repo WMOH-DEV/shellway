@@ -94,7 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startOnBoot: false,
   checkForUpdates: true,
 
-  terminalFontFamily: 'JetBrains Mono',
+  terminalFontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
   terminalFontSize: 14,
   terminalLineHeight: 1.4,
   terminalScrollback: 10000,
