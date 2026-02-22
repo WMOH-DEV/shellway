@@ -14,6 +14,8 @@ import { QuickConnect } from './QuickConnect'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
+import { ExportDialog } from './ExportDialog'
+import { ImportDialog } from './ImportDialog'
 import { sessionTemplates, type SessionTemplate } from '@/data/sessionTemplates'
 import type { Session } from '@/types/session'
 import { v4 as uuid } from 'uuid'
@@ -38,11 +40,10 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     editSession,
     deleteSession,
     duplicateSession,
-    exportSessions,
-    importSessions
+    reload: reloadSessions,
   } = useSession()
 
-  const { searchQuery, setSearchQuery, selectedSessionId, setSelectedSession } = useSessionStore()
+  const { searchQuery, setSearchQuery } = useSessionStore()
   const { tabs, activeTabId, removeTab } = useConnectionStore()
   const { sessionFormRequested, clearSessionFormRequest } = useUIStore()
 
@@ -57,6 +58,10 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null)
+
+  // Export/Import dialogs
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   // Groups
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -164,16 +169,15 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     [duplicateSession]
   )
 
-  const handleExport = useCallback(async () => {
-    const ok = await exportSessions()
-    if (ok) toast.success('Sessions exported')
-  }, [exportSessions])
+  const handleExport = useCallback(() => {
+    setExportDialogOpen(true)
+  }, [])
 
-  const handleImport = useCallback(async () => {
-    const count = await importSessions()
-    if (count > 0) toast.success(`Imported ${count} sessions`)
-    else toast.info('No new sessions imported')
-  }, [importSessions])
+  const handleImport = useCallback(() => {
+    setImportDialogOpen(true)
+  }, [])
+
+
 
   const handleQuickConnect = useCallback(
     (host: string, port: number, username: string) => {
@@ -325,10 +329,8 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
               <SessionCard
                 key={session.id}
                 session={session}
-                isSelected={session.id === selectedSessionId}
                 isActiveTab={isSessionActiveTab(session.id)}
                 connectionStatus={getConnectionStatus(session.id)}
-                onSelect={() => setSelectedSession(session.id)}
                 onConnect={() => onConnect(session)}
                 onConnectTerminal={() => onConnect(session, 'terminal')}
                 onConnectSFTP={() => onConnect(session, 'sftp')}
@@ -380,6 +382,19 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
           </Button>
         </div>
       </Modal>
+
+      {/* Export dialog */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+      />
+
+      {/* Import dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onComplete={reloadSessions}
+      />
     </>
   )
 }

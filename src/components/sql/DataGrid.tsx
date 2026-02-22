@@ -1,15 +1,15 @@
-import React, { useMemo, useCallback, useRef, useState, useEffect, memo } from 'react'
+import React, { useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GetRowIdParams, CellContextMenuEvent, GridReadyEvent } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community'
 import { cn } from '@/utils/cn'
 import {
   Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
-  XCircle, Filter, EyeOff, Eye, RotateCcw, Clipboard,
-  ExternalLink, Columns3, X
+  XCircle, Filter, EyeOff, RotateCcw, Clipboard,
+  ExternalLink,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
-import type { QueryResult, SchemaColumn, SchemaForeignKey } from '@/types/sql'
+import type { QueryResult, SchemaColumn } from '@/types/sql'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -90,6 +90,14 @@ interface DataGridProps {
   foreignKeys?: ForeignKeyMap
   /** Called when user clicks FK arrow — navigate to referenced table */
   onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
+  /** Called when hidden columns list changes (for external column picker in PaginationBar) */
+  onHiddenColumnsChange?: (hiddenColumns: string[]) => void
+}
+
+/** Imperative handle exposed by DataGrid via ref */
+export interface DataGridHandle {
+  toggleColumn: (colId: string, show: boolean) => void
+  showAllColumns: () => void
 }
 
 // ── Context menu state (cell right-click) ──
@@ -230,7 +238,7 @@ function CtxSeparator() {
 
 // ── Component ──
 
-export const DataGrid = React.memo(function DataGrid({
+export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProps>(function DataGrid({
   result,
   onSort,
   isLoading,
@@ -242,13 +250,12 @@ export const DataGrid = React.memo(function DataGrid({
   columnWidthsKey,
   foreignKeys,
   onNavigateFK,
-}: DataGridProps) {
+  onHiddenColumnsChange,
+}, ref) {
   const gridRef = useRef<AgGridReact>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [headerContextMenu, setHeaderContextMenu] = useState<HeaderContextMenuState | null>(null)
-  const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
-  const [showColumnPicker, setShowColumnPicker] = useState(false)
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
   const gridTheme = resolvedTheme === 'light' ? shellwayLightTheme : shellwayDarkTheme
 
@@ -275,16 +282,6 @@ export const DataGrid = React.memo(function DataGrid({
       window.removeEventListener('scroll', close, true)
     }
   }, [headerContextMenu])
-
-  // Close column picker on Escape
-  useEffect(() => {
-    if (!showColumnPicker) return
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowColumnPicker(false)
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [showColumnPicker])
 
   // Header right-click listener (event delegation on grid container)
   // Attach header right-click handler — re-run when result changes
@@ -589,7 +586,10 @@ export const DataGrid = React.memo(function DataGrid({
     // Column sizing is handled in the useEffect below (after data loads)
   }, [])
 
-  // ── Track hidden columns for the visibility bar ──
+  // ── Track hidden columns for external column picker ──
+  const onHiddenColumnsChangeRef = useRef(onHiddenColumnsChange)
+  onHiddenColumnsChangeRef.current = onHiddenColumnsChange
+
   const syncHiddenColumns = useCallback(() => {
     const api = gridRef.current?.api
     if (!api) return
@@ -597,7 +597,7 @@ export const DataGrid = React.memo(function DataGrid({
       .filter((c) => c.hide)
       .map((c) => c.colId!)
       .filter(Boolean)
-    setHiddenColumns(hidden)
+    onHiddenColumnsChangeRef.current?.(hidden)
   }, [])
 
   // Listen for column visibility changes
@@ -607,18 +607,12 @@ export const DataGrid = React.memo(function DataGrid({
 
   // Reset hidden columns when table changes, then sync after state restore
   useEffect(() => {
-    setHiddenColumns([])
-    setShowColumnPicker(false)
+    onHiddenColumnsChangeRef.current?.([])
     const t = setTimeout(syncHiddenColumns, 100)
     return () => clearTimeout(t)
   }, [result?.fields, syncHiddenColumns])
 
   // ── Column visibility toggle helpers ──
-  const handleShowColumn = useCallback((colId: string) => {
-    gridRef.current?.api?.setColumnsVisible([colId], true)
-    syncHiddenColumns()
-  }, [syncHiddenColumns])
-
   const handleShowAllColumns = useCallback(() => {
     const api = gridRef.current?.api
     if (!api) return
@@ -631,6 +625,12 @@ export const DataGrid = React.memo(function DataGrid({
     gridRef.current?.api?.setColumnsVisible([colId], visible)
     syncHiddenColumns()
   }, [syncHiddenColumns])
+
+  // Expose column visibility controls to parent via ref
+  useImperativeHandle(ref, () => ({
+    toggleColumn: handleToggleColumn,
+    showAllColumns: handleShowAllColumns,
+  }), [handleToggleColumn, handleShowAllColumns])
 
   // Restore saved column widths or auto-size when data first loads
   const prevWidthContextRef = useRef<string>('')
@@ -721,80 +721,6 @@ export const DataGrid = React.memo(function DataGrid({
         loading={isLoading && !result}
       />
 
-      {/* Hidden columns bar */}
-      {hiddenColumns.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center gap-1.5 px-2 py-1 bg-nd-bg-secondary/95 border-t border-nd-border backdrop-blur-sm">
-          <button
-            onClick={() => setShowColumnPicker((v) => !v)}
-            className={cn(
-              'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium transition-colors',
-              showColumnPicker
-                ? 'text-nd-accent bg-nd-accent/10'
-                : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface'
-            )}
-          >
-            <Columns3 size={11} />
-            Columns
-          </button>
-          <div className="w-px h-3 bg-nd-border" />
-          <span className="text-2xs text-nd-text-muted">{hiddenColumns.length} hidden:</span>
-          <div className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none">
-            {hiddenColumns.map((col) => (
-              <button
-                key={col}
-                onClick={() => handleShowColumn(col)}
-                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-nd-surface text-2xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors shrink-0"
-                title={`Show "${col}"`}
-              >
-                <Eye size={10} />
-                {col}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={handleShowAllColumns}
-            className="text-2xs text-nd-accent hover:text-nd-accent/80 transition-colors shrink-0 px-1"
-          >
-            Show all
-          </button>
-        </div>
-      )}
-
-      {/* Column picker popover */}
-      {showColumnPicker && (
-        <div className="absolute bottom-8 left-1 z-20 w-56 max-h-64 overflow-y-auto rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg">
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-nd-border">
-            <span className="text-xs font-medium text-nd-text-secondary">Columns</span>
-            <button
-              onClick={() => setShowColumnPicker(false)}
-              className="p-0.5 rounded text-nd-text-muted hover:text-nd-text-primary transition-colors"
-            >
-              <X size={12} />
-            </button>
-          </div>
-          {result?.fields?.map((field) => {
-            const isHidden = hiddenColumns.includes(field.name)
-            return (
-              <label
-                key={field.name}
-                className="flex items-center gap-2 px-3 py-1 text-xs text-nd-text-secondary hover:bg-nd-surface-hover cursor-pointer transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={!isHidden}
-                  onChange={() => handleToggleColumn(field.name, isHidden)}
-                  className="accent-nd-accent w-3 h-3"
-                />
-                <span className="truncate">{field.name}</span>
-                {foreignKeys?.[field.name] && (
-                  <ExternalLink size={10} className="shrink-0 text-nd-text-muted" />
-                )}
-              </label>
-            )
-          })}
-        </div>
-      )}
-
       {/* Floating cell context menu */}
       {contextMenu && (
         <div
@@ -866,4 +792,4 @@ export const DataGrid = React.memo(function DataGrid({
       )}
     </div>
   )
-})
+}))

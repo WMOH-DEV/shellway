@@ -12,6 +12,11 @@ const snippetStore = new SnippetStore()
  *   snippet:delete        → boolean
  *   snippet:getCategories → string[]
  */
+/** Get the SnippetStore singleton (for use by other services) */
+export function getSnippetStore(): SnippetStore {
+  return snippetStore
+}
+
 export function registerSnippetIPC(): void {
   ipcMain.handle('snippet:getAll', () => {
     return snippetStore.getAll()

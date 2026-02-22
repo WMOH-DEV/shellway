@@ -16,6 +16,7 @@ import { registerSnippetIPC } from './ipc/snippet.ipc'
 import { registerPortForwardIPC } from './ipc/portforward.ipc'
 import { registerHealthIPC } from './ipc/health.ipc'
 import { registerSQLIPC } from './ipc/sql.ipc'
+import { registerExportIPC } from './ipc/export.ipc'
 import { getSettingsStore } from './ipc/settings.ipc'
 import { initNotificationService } from './services/NotificationService'
 
@@ -282,6 +283,7 @@ app.whenReady().then(() => {
   registerPortForwardIPC()
   registerHealthIPC()
   registerSQLIPC()
+  registerExportIPC()
 
   // Initialize notification service (after settings IPC is registered)
   initNotificationService(getSettingsStore())

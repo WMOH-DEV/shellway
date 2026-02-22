@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { SessionStore, type StoredSession } from '../services/SessionStore'
+import { getSQLConfigStore } from './sql.ipc'
 
 const sessionStore = new SessionStore()
 
@@ -18,6 +19,11 @@ const sessionStore = new SessionStore()
  *   session:export    → StoredSession[]
  *   session:import    → number
  */
+/** Get the SessionStore singleton (for use by other services) */
+export function getSessionStore(): SessionStore {
+  return sessionStore
+}
+
 export function registerSessionIPC(): void {
   ipcMain.handle('session:getAll', () => {
     return sessionStore.getAll()
@@ -36,11 +42,20 @@ export function registerSessionIPC(): void {
   })
 
   ipcMain.handle('session:delete', (_event, id: string) => {
-    return sessionStore.delete(id)
+    const deleted = sessionStore.delete(id)
+    if (deleted) {
+      try { getSQLConfigStore().delete(id) } catch { /* config may not exist */ }
+    }
+    return deleted
   })
 
   ipcMain.handle('session:deleteMany', (_event, ids: string[]) => {
-    return sessionStore.deleteMany(ids)
+    const count = sessionStore.deleteMany(ids)
+    const sqlConfigStore = getSQLConfigStore()
+    for (const id of ids) {
+      try { sqlConfigStore.delete(id) } catch { /* config may not exist */ }
+    }
+    return count
   })
 
   ipcMain.handle('session:touch', (_event, id: string) => {

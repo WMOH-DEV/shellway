@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { DataGrid, type ForeignKeyMap } from '@/components/sql/DataGrid'
+import { DataGrid, type ForeignKeyMap, type DataGridHandle } from '@/components/sql/DataGrid'
 import { PaginationBar } from '@/components/sql/PaginationBar'
 import { FilterBar } from '@/components/sql/FilterBar'
 import { buildWhereClause } from '@/utils/sqlFilterBuilder'
@@ -159,6 +159,10 @@ export const DataTabView = React.memo(function DataTabView({
   const [primaryKeyColumns, setPrimaryKeyColumns] = useState<string[]>([])
   const [columnMeta, setColumnMeta] = useState<SchemaColumn[]>([])
   const [foreignKeyMap, setForeignKeyMap] = useState<ForeignKeyMap>({})
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
+
+  // Ref for DataGrid imperative handle (column visibility controls)
+  const dataGridRef = useRef<DataGridHandle>(null)
 
   // Refs for cancellation, debouncing, and race condition prevention
   const abortRef = useRef<AbortController | null>(null)
@@ -815,6 +819,19 @@ export const DataTabView = React.memo(function DataTabView({
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns])
 
+  // Column visibility callbacks for PaginationBar ↔ DataGrid
+  const handleHiddenColumnsChange = useCallback((cols: string[]) => {
+    setHiddenColumns(cols)
+  }, [])
+
+  const handleToggleColumn = useCallback((colId: string, show: boolean) => {
+    dataGridRef.current?.toggleColumn(colId, show)
+  }, [])
+
+  const handleShowAllColumns = useCallback(() => {
+    dataGridRef.current?.showAllColumns()
+  }, [])
+
   // Stable key for persisting column widths per table across sessions
   // Format: sql-colw:{type}:{host}:{port}:{database}:{schema}.{table}
   const columnWidthsKey = useMemo(() => {
@@ -857,6 +874,7 @@ export const DataTabView = React.memo(function DataTabView({
       {/* Data Grid */}
       <div className="relative flex-1 overflow-hidden">
         <DataGrid
+          ref={dataGridRef}
           result={result}
           onSort={handleSort}
           isLoading={isLoading}
@@ -868,6 +886,7 @@ export const DataTabView = React.memo(function DataTabView({
           columnWidthsKey={columnWidthsKey}
           foreignKeys={foreignKeyMap}
           onNavigateFK={handleNavigateFK}
+          onHiddenColumnsChange={handleHiddenColumnsChange}
         />
       </div>
 
@@ -877,6 +896,11 @@ export const DataTabView = React.memo(function DataTabView({
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
         executionTimeMs={executionTimeMs}
+        fields={result?.fields}
+        hiddenColumns={hiddenColumns}
+        foreignKeys={foreignKeyMap}
+        onToggleColumn={handleToggleColumn}
+        onShowAllColumns={handleShowAllColumns}
       />
     </div>
   )

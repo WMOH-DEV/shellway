@@ -11,6 +11,11 @@ import { getSSHService } from './ssh.ipc'
 const sqlService = new SQLService()
 const sqlConfigStore = new SQLConfigStore()
 
+/** Get the SQLConfigStore singleton (for use by other services) */
+export function getSQLConfigStore(): SQLConfigStore {
+  return sqlConfigStore
+}
+
 // Track SSH tunnel mappings: sqlSessionId -> { connectionId, ruleId, localPort }
 const tunnelMap = new Map<string, { connectionId: string; ruleId: string; localPort: number }>()
 

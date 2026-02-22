@@ -40,7 +40,35 @@ const api = {
     getGroups: () => ipcRenderer.invoke('session:getGroups') as Promise<string[]>,
     setGroups: (groups: string[]) => ipcRenderer.invoke('session:setGroups', groups),
     export: () => ipcRenderer.invoke('session:export'),
-    import: (sessions: unknown[]) => ipcRenderer.invoke('session:import', sessions)
+    import: (sessions: unknown[]) => ipcRenderer.invoke('session:import', sessions),
+
+    // Advanced export/import (v2 — with encryption, SQL configs, settings, snippets, host keys)
+    exportBuild: (options: Record<string, unknown>) =>
+      ipcRenderer.invoke('export:build', options) as Promise<{ success: boolean; data?: string; error?: string }>,
+    exportParse: (fileContent: string, password?: string) =>
+      ipcRenderer.invoke('export:parse', fileContent, password) as Promise<{
+        success: boolean; error?: string;
+        data?: {
+          format: string; version: number; exportedAt: number; appVersion: string;
+          includesCredentials: boolean;
+          payload: {
+            sessions: unknown[]; sqlConfigs: unknown[]; settings: unknown;
+            snippets: unknown[]; hostKeys: unknown[]; groups: string[];
+            snippetCategories: string[];
+          };
+        };
+      }>,
+    exportApply: (payload: unknown, options: Record<string, unknown>) =>
+      ipcRenderer.invoke('export:apply', payload, options) as Promise<{
+        success: boolean; error?: string;
+        data?: {
+          sessions: { added: number; skipped: number; overwritten: number };
+          sqlConfigs: { added: number; skipped: number; overwritten: number };
+          settings: boolean;
+          snippets: { added: number; skipped: number };
+          hostKeys: { added: number; skipped: number };
+        };
+      }>
   },
 
   // ── Settings ──

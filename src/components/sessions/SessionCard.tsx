@@ -9,11 +9,9 @@ import type { Session, ConnectionStatus } from '@/types/session'
 
 interface SessionCardProps {
   session: Session
-  isSelected: boolean
   /** Whether this session's connection is the currently viewed tab */
   isActiveTab?: boolean
   connectionStatus?: ConnectionStatus
-  onSelect: () => void
   onConnect: () => void
   onConnectTerminal?: () => void
   onConnectSFTP?: () => void
@@ -27,10 +25,8 @@ interface SessionCardProps {
 
 export function SessionCard({
   session,
-  isSelected,
   isActiveTab,
   connectionStatus,
-  onSelect,
   onConnect,
   onConnectTerminal,
   onConnectSFTP,
@@ -78,12 +74,10 @@ export function SessionCard({
     }
   }
 
-  // Single click behavior: if connected → switch to it, otherwise → select
+  // Single click behavior: if connected → switch to its tab
   const handleClick = () => {
     if (hasConnection) {
       onConnect() // This switches to the existing tab via AppShell.handleConnect
-    } else {
-      onSelect()
     }
   }
 
@@ -106,10 +100,8 @@ export function SessionCard({
           // Connected but not active = subtle indicator
           : hasConnection
             ? 'bg-nd-surface/80 border-l-2 border-l-nd-success/50 border border-nd-border/50 px-2 py-2'
-            // Not connected
-            : isSelected
-              ? 'bg-nd-surface border border-nd-border px-2.5 py-2'
-              : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2'
+            // Not connected — hover only, no persistent selection
+            : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2'
       )}
     >
       {/* Status / color dot */}
