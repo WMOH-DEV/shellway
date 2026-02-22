@@ -1,8 +1,9 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { useUIStore } from '@/stores/uiStore'
 import { toast } from '@/components/ui/Toast'
 import type { Session, ConnectionTab } from '@/types/session'
 import { v4 as uuid } from 'uuid'
@@ -36,6 +37,7 @@ export function AppShell({ children }: AppShellProps) {
         sessionId: session.id,
         sessionName: session.name,
         sessionColor: session.color,
+        type: 'ssh',
         status: 'connecting',
         activeSubTab: defaultSubTab || 'terminal'
       }
@@ -82,6 +84,32 @@ export function AppShell({ children }: AppShellProps) {
     [addTab, tabs]
   )
 
+  /** Handle opening a standalone database connection tab */
+  const handleConnectDatabase = useCallback(() => {
+    const tabId = uuid()
+    const sessionId = `db-${tabId}`
+
+    const tab: ConnectionTab = {
+      id: tabId,
+      sessionId,
+      sessionName: 'Database',
+      type: 'database',
+      status: 'disconnected',
+      activeSubTab: 'sql'
+    }
+
+    addTab(tab)
+  }, [addTab])
+
+  // Listen for database connect requests from WelcomeScreen
+  const { databaseConnectRequested, clearDatabaseConnectRequest } = useUIStore()
+  useEffect(() => {
+    if (databaseConnectRequested) {
+      handleConnectDatabase()
+      clearDatabaseConnectRequest()
+    }
+  }, [databaseConnectRequested, clearDatabaseConnectRequest, handleConnectDatabase])
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
       {/* Title bar */}
@@ -90,7 +118,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Main area: sidebar + content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <Sidebar onConnect={handleConnect} />
+        <Sidebar onConnect={handleConnect} onConnectDatabase={handleConnectDatabase} />
 
         {/* Content area */}
         <main className="flex-1 overflow-hidden">{children}</main>

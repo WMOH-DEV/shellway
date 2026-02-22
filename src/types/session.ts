@@ -203,9 +203,12 @@ export type ConnectionStatus =
 /** Active connection tab */
 export interface ConnectionTab {
   id: string
+  /** For SSH tabs: the saved session ID. For database tabs: a synthetic `db-{uuid}` key. */
   sessionId: string
   sessionName: string
   sessionColor?: string
+  /** Tab type — 'ssh' (default) for full SSH sessions, 'database' for standalone SQL connections */
+  type?: 'ssh' | 'database'
   status: ConnectionStatus
   activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'info' | 'log'
   error?: string

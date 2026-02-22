@@ -5,12 +5,15 @@ import {
   ChevronRight,
   Shield,
   KeyRound,
-  Plus
+  Plus,
+  Database,
+  X
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useUIStore } from '@/stores/uiStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
 import { SessionManager } from '@/components/sessions/SessionManager'
 import { SessionForm, type SessionFormData } from '@/components/sessions/SessionForm'
 import { useSession } from '@/hooks/useSession'
@@ -20,6 +23,7 @@ import type { Session } from '@/types/session'
 
 interface SidebarProps {
   onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp') => void
+  onConnectDatabase: () => void
 }
 
 /**
@@ -27,7 +31,7 @@ interface SidebarProps {
  * Session cards double as connection tabs: single-click switches, close disconnects.
  * Collapsible to icon-only (48px) with compact session avatars.
  */
-export function Sidebar({ onConnect }: SidebarProps) {
+export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
   const { sidebarOpen, toggleSidebar, toggleSettings, toggleHostKeyManager, toggleClientKeyManager } = useUIStore()
   const { sessions } = useSessionStore()
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
@@ -80,7 +84,9 @@ export function Sidebar({ onConnect }: SidebarProps) {
       e.stopPropagation()
       const tab = tabs.find((t) => t.sessionId === sessionId)
       if (tab) {
-        window.novadeck.ssh.disconnect?.(tab.id).catch(() => {})
+        if (tab.type !== 'database') {
+          window.novadeck.ssh.disconnect?.(tab.id).catch(() => {})
+        }
         removeTab(tab.id)
       }
     },
@@ -116,41 +122,97 @@ export function Sidebar({ onConnect }: SidebarProps) {
           {/* SessionManager handles everything — sessions are both saved items AND connection tabs */}
           <SessionManager onConnect={onConnect} />
 
+          {/* Standalone database tabs — shown below the session list */}
+          {tabs.filter((t) => t.type === 'database').length > 0 && (
+            <div className="shrink-0 border-t border-nd-border px-2 py-1.5">
+              <span className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider px-1 mb-1 block">
+                Databases
+              </span>
+              <div className="flex flex-col gap-0.5">
+                {tabs.filter((t) => t.type === 'database').map((dbTab) => {
+                  const isActive = dbTab.id === activeTabId
+                  return (
+                    <button
+                      key={dbTab.id}
+                      onClick={() => setActiveTab(dbTab.id)}
+                      className={cn(
+                        'group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors',
+                        isActive
+                          ? 'bg-nd-accent/10 text-nd-accent border border-nd-accent/30'
+                          : 'text-nd-text-secondary hover:bg-nd-surface'
+                      )}
+                    >
+                      <Database size={13} className={isActive ? 'text-nd-accent' : 'text-nd-text-muted'} />
+                      <span className="truncate">{dbTab.sessionName || 'Database'}</span>
+                      <span
+                        role="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          // Explicitly disconnect SQL session before removing tab
+                          const sqlState = getSQLConnectionState(dbTab.id)
+                          if (sqlState.sqlSessionId) {
+                            window.novadeck.sql.disconnect(sqlState.sqlSessionId).catch(() => {})
+                          }
+                          useSQLStore.getState().removeConnection(dbTab.id)
+                          removeTab(dbTab.id)
+                        }}
+                        className="ml-auto p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
+                        title="Close"
+                      >
+                        <X size={12} />
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Bottom Actions */}
-          <div className="shrink-0 border-t border-nd-border px-3 py-2 flex items-center gap-1">
-            <Tooltip content="Settings" side="top">
-              <button
-                onClick={toggleSettings}
-                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-              >
-                <Settings size={15} />
-              </button>
-            </Tooltip>
-            <Tooltip content="Client Key Manager" side="top">
-              <button
-                onClick={toggleClientKeyManager}
-                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-              >
-                <KeyRound size={15} />
-              </button>
-            </Tooltip>
-            <Tooltip content="Host Key Manager" side="top">
-              <button
-                onClick={toggleHostKeyManager}
-                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-              >
-                <Shield size={15} />
-              </button>
-            </Tooltip>
-            <div className="flex-1" />
-            <span className="text-2xs text-nd-text-muted">{sessions.length} sessions</span>
+          <div className="shrink-0 border-t border-nd-border px-3 py-2 flex flex-col gap-1.5">
+            {/* Database quick connect */}
+            <button
+              onClick={onConnectDatabase}
+              className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-nd-text-secondary hover:text-nd-accent hover:bg-nd-accent/10 transition-colors"
+            >
+              <Database size={14} />
+              <span>Connect to Database</span>
+            </button>
+            <div className="flex items-center gap-1">
+              <Tooltip content="Settings" side="top">
+                <button
+                  onClick={toggleSettings}
+                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+                >
+                  <Settings size={15} />
+                </button>
+              </Tooltip>
+              <Tooltip content="Client Key Manager" side="top">
+                <button
+                  onClick={toggleClientKeyManager}
+                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+                >
+                  <KeyRound size={15} />
+                </button>
+              </Tooltip>
+              <Tooltip content="Host Key Manager" side="top">
+                <button
+                  onClick={toggleHostKeyManager}
+                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+                >
+                  <Shield size={15} />
+                </button>
+              </Tooltip>
+              <div className="flex-1" />
+              <span className="text-2xs text-nd-text-muted">{sessions.length} sessions</span>
+            </div>
           </div>
         </>
       ) : (
         /* ── Collapsed icon-only view ── */
         <div className="flex flex-col items-center flex-1 overflow-hidden">
-          {/* New session button */}
-          <div className="shrink-0 py-1.5 w-full flex justify-center border-b border-nd-border">
+          {/* Action buttons */}
+          <div className="shrink-0 py-1.5 w-full flex flex-col items-center gap-0.5 border-b border-nd-border">
             <Tooltip content="New Session" side="right">
               <button
                 onClick={() => useUIStore.getState().requestSessionForm()}
@@ -159,8 +221,17 @@ export function Sidebar({ onConnect }: SidebarProps) {
                 <Plus size={16} />
               </button>
             </Tooltip>
+            <Tooltip content="Connect to Database" side="right">
+              <button
+                onClick={onConnectDatabase}
+                className="flex items-center justify-center w-9 h-7 rounded-md text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface transition-colors"
+              >
+                <Database size={15} />
+              </button>
+            </Tooltip>
           </div>
           <div className="flex flex-col items-center gap-0.5 py-1.5 flex-1 overflow-y-auto scrollbar-none w-full">
+            {/* SSH session avatars */}
             {sessions.map((session) => {
                 const tab = tabs.find((t) => t.sessionId === session.id)
                 const isConnected = tab?.status === 'connected'
@@ -213,6 +284,40 @@ export function Sidebar({ onConnect }: SidebarProps) {
                   </Tooltip>
                 )
               })}
+
+            {/* Standalone database tab avatars */}
+            {tabs.filter((t) => t.type === 'database').map((dbTab) => {
+              const isActive = dbTab.id === activeTabId
+              const isDbConnected = dbTab.status === 'connected'
+              const isDbConnecting = dbTab.status === 'connecting'
+              return (
+                <Tooltip
+                  key={dbTab.id}
+                  content={dbTab.sessionName || 'Database'}
+                  side="right"
+                >
+                  <button
+                    onClick={() => setActiveTab(dbTab.id)}
+                    className={cn(
+                      'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
+                      isActive
+                        ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
+                        : 'bg-nd-surface/80 hover:bg-nd-surface'
+                    )}
+                  >
+                    <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
+                      <Database size={12} className="text-white/90" />
+                    </div>
+                    {isDbConnected && (
+                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
+                    )}
+                    {isDbConnecting && (
+                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
+                    )}
+                  </button>
+                </Tooltip>
+              )
+            })}
           </div>
 
           {/* Bottom actions */}

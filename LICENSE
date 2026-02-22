@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 WaeL M.El-Saied
+Copyright (c) 2026 Wael Mohamed Essaid <owner@waelzone.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -11,6 +11,12 @@ furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
+
+ATTRIBUTION REQUIREMENT: The original author attribution — "Wael Mohamed Essaid"
+and the associated copyright notice — must be preserved in all copies, forks,
+derivative works, and substantial portions of the Software. This attribution
+may not be removed, altered, or obscured without prior written permission
+from the original author.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

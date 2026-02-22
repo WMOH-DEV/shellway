@@ -49,6 +49,11 @@ interface UIState {
   // ── Quick Connect focus (triggered from WelcomeScreen) ──
   quickConnectFocusKey: number
   requestQuickConnectFocus: () => void
+
+  // ── Database connect (triggered from WelcomeScreen) ──
+  databaseConnectRequested: boolean
+  requestDatabaseConnect: () => void
+  clearDatabaseConnectRequest: () => void
 }
 
 /** Resolve theme value to actual 'dark' | 'light' */
@@ -127,5 +132,10 @@ export const useUIStore = create<UIState>((set) => ({
 
   // ── Quick Connect focus ──
   quickConnectFocusKey: 0,
-  requestQuickConnectFocus: () => set((s) => ({ quickConnectFocusKey: s.quickConnectFocusKey + 1 }))
+  requestQuickConnectFocus: () => set((s) => ({ quickConnectFocusKey: s.quickConnectFocusKey + 1 })),
+
+  // ── Database connect ──
+  databaseConnectRequested: false,
+  requestDatabaseConnect: () => set({ databaseConnectRequested: true }),
+  clearDatabaseConnectRequest: () => set({ databaseConnectRequested: false }),
 }))

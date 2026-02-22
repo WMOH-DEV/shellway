@@ -5,9 +5,15 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Toggle } from '@/components/ui/Toggle'
-import { Loader2, CheckCircle2, XCircle, Save } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, Save, FolderOpen } from 'lucide-react'
 import { useSQLConnection } from '@/stores/sqlStore'
+import { useConnectionStore } from '@/stores/connectionStore'
 import type { DatabaseType, SSLMode, ConnectionTag } from '@/types/sql'
+
+const SSH_AUTH_OPTIONS = [
+  { value: 'password', label: 'Password' },
+  { value: 'privatekey', label: 'Private Key' },
+]
 
 interface SQLConnectDialogProps {
   open: boolean
@@ -15,6 +21,8 @@ interface SQLConnectDialogProps {
   connectionId: string
   /** Stable SSH session ID — used for persisting SQL config */
   sessionId: string
+  /** When true, defaults to direct connection (no SSH tunnel). Used for standalone DB tabs. */
+  isStandalone?: boolean
   /** Called after connecting without a database — triggers database picker */
   onNeedDatabasePick?: (sqlSessionId: string) => void
 }
@@ -59,19 +67,29 @@ export function SQLConnectDialog({
   onClose,
   connectionId,
   sessionId,
+  isStandalone,
   onNeedDatabasePick,
 }: SQLConnectDialogProps) {
   const [connectionName, setConnectionName] = useState('')
   const [type, setType] = useState<DatabaseType>('mysql')
-  const [host, setHost] = useState('127.0.0.1')
+  const [host, setHost] = useState(isStandalone ? '' : '127.0.0.1')
   const [port, setPort] = useState('3306')
   const [username, setUsername] = useState('root')
   const [password, setPassword] = useState('')
   const [database, setDatabase] = useState('')
-  const [useSSHTunnel, setUseSSHTunnel] = useState(true)
+  const [useSSHTunnel, setUseSSHTunnel] = useState(!isStandalone)
   const [sslMode, setSslMode] = useState<SSLMode>('disabled')
   const [tag, setTag] = useState<ConnectionTag>('none')
   const [loadedSaved, setLoadedSaved] = useState(false)
+
+  // SSH tunnel config (for standalone mode)
+  const [sshHost, setSshHost] = useState('')
+  const [sshPort, setSshPort] = useState('22')
+  const [sshUsername, setSshUsername] = useState('')
+  const [sshAuthMethod, setSshAuthMethod] = useState<'password' | 'privatekey'>('password')
+  const [sshPassword, setSshPassword] = useState('')
+  const [sshPrivateKeyPath, setSshPrivateKeyPath] = useState('')
+  const [sshPassphrase, setSshPassphrase] = useState('')
 
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,12 +97,17 @@ export function SQLConnectDialog({
   const [testError, setTestError] = useState<string | null>(null)
   const connectingRef = useRef(false) // Synchronous guard against double-click
 
+  // Reset loaded state when dialog closes so it reloads fresh next time
+  useEffect(() => {
+    if (!open) setLoadedSaved(false)
+  }, [open])
+
   // Load saved SQL config when dialog opens
   useEffect(() => {
     if (!open || loadedSaved) return
     ;(async () => {
       try {
-        const result = await (window as any).novadeck.sql.configGet(sessionId)
+        const result = await window.novadeck.sql.configGet(sessionId)
         if (result?.success && result.data) {
           const c = result.data
           setConnectionName(c.connectionName ?? '')
@@ -95,9 +118,17 @@ export function SQLConnectDialog({
           setUsername(c.username ?? 'root')
           setPassword(c.password ?? '')
           setDatabase(c.database ?? '')
-          setUseSSHTunnel(c.useSSHTunnel ?? true)
+          setUseSSHTunnel(c.useSSHTunnel ?? !isStandalone)
           setSslMode(c.sslMode ?? (c.ssl ? 'preferred' : 'disabled'))
           setTag(c.tag ?? (c.isProduction ? 'production' : 'none'))
+          // SSH tunnel fields
+          setSshHost(c.sshHost ?? '')
+          setSshPort(String(c.sshPort ?? 22))
+          setSshUsername(c.sshUsername ?? '')
+          setSshAuthMethod(c.sshAuthMethod ?? 'password')
+          setSshPassword(c.sshPassword ?? '')
+          setSshPrivateKeyPath(c.sshPrivateKeyPath ?? '')
+          setSshPassphrase(c.sshPassphrase ?? '')
         }
       } catch {
         // Ignore — just use defaults
@@ -127,41 +158,74 @@ export function SQLConnectDialog({
   )
 
   const buildConfig = useCallback(
-    () => ({
-      type,
-      host,
-      port: Number(port),
-      username,
-      password,
-      database: database.trim() || undefined,
-      useSSHTunnel,
-      ssl: sslMode !== 'disabled',
-      sslMode,
-    }),
-    [type, host, port, username, password, database, useSSHTunnel, sslMode]
-  )
-
-  const handleSave = useCallback(async () => {
-    try {
-      await (window as any).novadeck.sql.configSave({
-        sessionId,
-        connectionName,
+    () => {
+      const cfg: Record<string, unknown> = {
         type,
         host,
         port: Number(port),
         username,
         password,
-        database: database.trim(),
+        database: database.trim() || undefined,
         useSSHTunnel,
         ssl: sslMode !== 'disabled',
         sslMode,
-        isProduction: tag === 'production',
-        tag,
-      })
+      }
+
+      // Attach SSH config for standalone tunnels
+      if (isStandalone && useSSHTunnel && sshHost) {
+        cfg.sshConfig = {
+          host: sshHost,
+          port: Number(sshPort) || 22,
+          username: sshUsername,
+          authMethod: sshAuthMethod,
+          password: sshAuthMethod === 'password' ? sshPassword : undefined,
+          privateKeyPath: sshAuthMethod === 'privatekey' ? sshPrivateKeyPath : undefined,
+          passphrase: sshAuthMethod === 'privatekey' ? sshPassphrase : undefined,
+        }
+      }
+
+      return cfg
+    },
+    [type, host, port, username, password, database, isStandalone, useSSHTunnel, sslMode,
+     sshHost, sshPort, sshUsername, sshAuthMethod, sshPassword, sshPrivateKeyPath, sshPassphrase]
+  )
+
+  const buildSavePayload = useCallback(() => {
+    return {
+      sessionId,
+      connectionName,
+      type,
+      host,
+      port: Number(port),
+      username,
+      password,
+      database: database.trim(),
+      useSSHTunnel,
+      ssl: sslMode !== 'disabled',
+      sslMode,
+      isProduction: tag === 'production',
+      tag,
+      // SSH tunnel fields (persisted for standalone mode)
+      ...(isStandalone && useSSHTunnel ? {
+        sshHost,
+        sshPort: Number(sshPort) || 22,
+        sshUsername,
+        sshAuthMethod,
+        sshPassword: sshAuthMethod === 'password' ? sshPassword : undefined,
+        sshPrivateKeyPath: sshAuthMethod === 'privatekey' ? sshPrivateKeyPath : undefined,
+        sshPassphrase: sshAuthMethod === 'privatekey' ? sshPassphrase : undefined,
+      } : {}),
+    }
+  }, [sessionId, connectionName, type, host, port, username, password, database, useSSHTunnel, sslMode, tag,
+      isStandalone, sshHost, sshPort, sshUsername, sshAuthMethod, sshPassword, sshPrivateKeyPath, sshPassphrase])
+
+  const handleSave = useCallback(async () => {
+    try {
+      await window.novadeck.sql.configSave(buildSavePayload())
     } catch {
       // Ignore save errors
     }
-  }, [sessionId, connectionName, type, host, port, username, password, database, useSSHTunnel, sslMode, tag])
+  }, [buildSavePayload])
 
   const handleTestConnection = useCallback(async () => {
     setTestStatus('testing')
@@ -231,21 +295,13 @@ export function SQLConnectDialog({
         setConnectionError(null)
 
         // Persist SQL config for next time
-        ;(window as any).novadeck.sql.configSave({
-          sessionId,
-          connectionName,
-          type,
-          host,
-          port: Number(port),
-          username,
-          password,
-          database: dbTrimmed,
-          useSSHTunnel,
-          ssl: sslMode !== 'disabled',
-          sslMode,
-          isProduction,
-          tag,
-        }).catch(() => {})
+        window.novadeck.sql.configSave(buildSavePayload()).catch(() => {})
+
+        // Update tab name for standalone database tabs
+        if (isStandalone) {
+          const tabName = connectionName || `${type.toUpperCase()} · ${resolvedDb || host}`
+          useConnectionStore.getState().updateTab(connectionId, { sessionName: tabName })
+        }
 
         onClose()
 
@@ -268,8 +324,8 @@ export function SQLConnectDialog({
       connectingRef.current = false
     }
   }, [
-    connectionId, sessionId, connectionName, type, host, port, username, password, database,
-    useSSHTunnel, sslMode, tag, buildConfig, onClose, onNeedDatabasePick,
+    connectionId, connectionName, type, host, port, username, password, database,
+    useSSHTunnel, sslMode, tag, isStandalone, buildConfig, buildSavePayload, onClose, onNeedDatabasePick,
     setConnectionStatus, setConnectionConfig, setCurrentDatabase,
     setSqlSessionId, setTunnelPort, setConnectionError
   ])
@@ -326,7 +382,7 @@ export function SQLConnectDialog({
             label="Host"
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            placeholder="127.0.0.1"
+            placeholder={isStandalone ? 'localhost or IP address' : '127.0.0.1'}
           />
           <Input
             label="Port"
@@ -375,7 +431,7 @@ export function SQLConnectDialog({
           onChange={(e) => setSslMode(e.target.value as SSLMode)}
         />
 
-        {/* Toggles */}
+        {/* SSH Tunnel toggle */}
         <div className="flex flex-col gap-3 pt-1">
           <Toggle
             checked={useSSHTunnel}
@@ -383,6 +439,98 @@ export function SQLConnectDialog({
             label="Route through SSH tunnel"
           />
         </div>
+
+        {/* SSH Tunnel configuration (standalone mode only — SSH session tabs use the active SSH connection) */}
+        {isStandalone && useSSHTunnel && (
+          <div className="flex flex-col gap-3 rounded-lg border border-nd-border bg-nd-bg-secondary/50 p-3">
+            <p className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider">SSH Server</p>
+
+            {/* SSH Host + Port */}
+            <div className="grid grid-cols-[1fr_80px] gap-3">
+              <Input
+                label="SSH Host"
+                value={sshHost}
+                onChange={(e) => setSshHost(e.target.value)}
+                placeholder="server.example.com"
+              />
+              <Input
+                label="SSH Port"
+                value={sshPort}
+                onChange={(e) => setSshPort(e.target.value)}
+                placeholder="22"
+                type="number"
+              />
+            </div>
+
+            {/* SSH Username */}
+            <Input
+              label="SSH Username"
+              value={sshUsername}
+              onChange={(e) => setSshUsername(e.target.value)}
+              placeholder="root"
+            />
+
+            {/* SSH Auth method */}
+            <Select
+              label="Authentication"
+              options={SSH_AUTH_OPTIONS}
+              value={sshAuthMethod}
+              onChange={(e) => setSshAuthMethod(e.target.value as 'password' | 'privatekey')}
+            />
+
+            {sshAuthMethod === 'password' ? (
+              <Input
+                label="SSH Password"
+                type="password"
+                value={sshPassword}
+                onChange={(e) => setSshPassword(e.target.value)}
+                placeholder="SSH Password"
+              />
+            ) : (
+              <>
+                {/* Private Key Path */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-nd-text-secondary">Private Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={sshPrivateKeyPath}
+                      onChange={(e) => setSshPrivateKeyPath(e.target.value)}
+                      placeholder="Path to private key file"
+                      className="flex-1 h-8 rounded-md border border-nd-border bg-nd-surface px-3 text-xs text-nd-text-primary placeholder:text-nd-text-muted outline-none focus:border-nd-accent transition-colors"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        const result = await (window as any).novadeck.dialog.openFile({
+                          title: 'Select SSH Private Key',
+                          filters: [{ name: 'All Files', extensions: ['*'] }],
+                          properties: ['openFile'],
+                        })
+                        if (result?.filePaths?.[0]) {
+                          setSshPrivateKeyPath(result.filePaths[0])
+                        }
+                      }}
+                    >
+                      <FolderOpen size={14} />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Passphrase */}
+                <Input
+                  label="Passphrase"
+                  type="password"
+                  value={sshPassphrase}
+                  onChange={(e) => setSshPassphrase(e.target.value)}
+                  placeholder="Key passphrase (if any)"
+                />
+              </>
+            )}
+          </div>
+        )}
 
         {/* Test connection */}
         <div className="flex items-center gap-2">

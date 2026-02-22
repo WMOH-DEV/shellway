@@ -58,7 +58,7 @@ export function StatusBar() {
       <div className="w-px h-3 bg-nd-border" />
 
       {/* App info */}
-      <span className="text-2xs text-nd-text-muted">Shellway v0.1.0</span>
+      <span className="text-2xs text-nd-text-muted">Shellway v{__APP_VERSION__}</span>
     </footer>
   )
 }

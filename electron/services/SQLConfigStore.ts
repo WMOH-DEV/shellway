@@ -1,12 +1,13 @@
 import Store from 'electron-store'
+import { safeStorage } from 'electron'
 import { encrypt, decrypt, generateMasterKey } from '../utils/encryption'
 
 /**
- * Stored SQL connection configuration — persisted per SSH session.
- * Passwords are encrypted at rest using the same AES-256-GCM pattern as SessionStore.
+ * Stored SQL connection configuration — persisted per session (SSH or standalone DB).
+ * Passwords and SSH credentials are encrypted at rest using AES-256-GCM.
  */
 export interface StoredSQLConfig {
-  /** SSH connectionId (session.id) this SQL config belongs to */
+  /** Session key — SSH session.id for SSH tabs, or `db-{uuid}` for standalone DB tabs */
   sessionId: string
   /** Friendly connection name (e.g. "Production DB") */
   connectionName?: string
@@ -25,6 +26,22 @@ export interface StoredSQLConfig {
   tag?: 'none' | 'development' | 'staging' | 'production' | 'testing'
   /** Last successful connection time */
   lastUsed?: number
+
+  // ── SSH tunnel configuration (for standalone DB connections) ──
+  /** SSH server host for tunnel */
+  sshHost?: string
+  /** SSH server port (default 22) */
+  sshPort?: number
+  /** SSH username */
+  sshUsername?: string
+  /** SSH auth method: password or privatekey */
+  sshAuthMethod?: 'password' | 'privatekey'
+  /** SSH password (encrypted at rest) */
+  sshPassword?: string
+  /** Path to SSH private key file */
+  sshPrivateKeyPath?: string
+  /** SSH private key passphrase (encrypted at rest) */
+  sshPassphrase?: string
 }
 
 interface StoreSchema {
@@ -49,12 +66,33 @@ export class SQLConfigStore {
       },
     })
 
-    let key = this.store.get('masterKey')
-    if (!key) {
-      key = generateMasterKey()
-      this.store.set('masterKey', key)
+    // Use Electron safeStorage (OS keychain) to protect the master key.
+    // The key is encrypted via DPAPI (Windows), Keychain (macOS), or libsecret (Linux)
+    // before being persisted, so reading the JSON file alone doesn't expose it.
+    const encryptedKey = this.store.get('masterKey')
+    if (encryptedKey && safeStorage.isEncryptionAvailable()) {
+      try {
+        this.masterKey = safeStorage.decryptString(Buffer.from(encryptedKey, 'base64'))
+      } catch {
+        // Decryption failed (e.g. OS keychain changed) — generate a new key.
+        // Existing encrypted passwords will fall back to empty string on decrypt failure.
+        const newKey = generateMasterKey()
+        this.masterKey = newKey
+        this.store.set('masterKey', safeStorage.encryptString(newKey).toString('base64'))
+      }
+    } else if (encryptedKey && !safeStorage.isEncryptionAvailable()) {
+      // safeStorage unavailable — treat stored value as plaintext (legacy / fallback)
+      this.masterKey = encryptedKey
+    } else {
+      // No key stored yet — generate and protect with safeStorage
+      const newKey = generateMasterKey()
+      this.masterKey = newKey
+      if (safeStorage.isEncryptionAvailable()) {
+        this.store.set('masterKey', safeStorage.encryptString(newKey).toString('base64'))
+      } else {
+        this.store.set('masterKey', newKey)
+      }
     }
-    this.masterKey = key
   }
 
   /** Get SQL config for a given SSH session. Returns null if none saved. */
@@ -99,17 +137,28 @@ export class SQLConfigStore {
     if (copy.password) {
       copy.password = encrypt(copy.password, this.masterKey)
     }
+    if (copy.sshPassword) {
+      copy.sshPassword = encrypt(copy.sshPassword, this.masterKey)
+    }
+    if (copy.sshPassphrase) {
+      copy.sshPassphrase = encrypt(copy.sshPassphrase, this.masterKey)
+    }
     return copy
   }
 
   private decryptSecrets(config: StoredSQLConfig): StoredSQLConfig {
     const copy = { ...config }
     if (copy.password) {
-      try {
-        copy.password = decrypt(copy.password, this.masterKey)
-      } catch {
-        copy.password = ''
-      }
+      try { copy.password = decrypt(copy.password, this.masterKey) }
+      catch { copy.password = '' }
+    }
+    if (copy.sshPassword) {
+      try { copy.sshPassword = decrypt(copy.sshPassword, this.masterKey) }
+      catch { copy.sshPassword = '' }
+    }
+    if (copy.sshPassphrase) {
+      try { copy.sshPassphrase = decrypt(copy.sshPassphrase, this.masterKey) }
+      catch { copy.sshPassphrase = '' }
     }
     return copy
   }

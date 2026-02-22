@@ -1,4 +1,4 @@
-import { Wifi, Plus, Zap, Shield, FolderTree, Terminal } from 'lucide-react'
+import { Wifi, Plus, Zap, Shield, FolderTree, Terminal, Database } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useUIStore } from '@/stores/uiStore'
 
@@ -7,7 +7,7 @@ import { useUIStore } from '@/stores/uiStore'
  * Displayed in the main content area.
  */
 export function WelcomeScreen() {
-  const { requestSessionForm, requestQuickConnectFocus, sidebarOpen, toggleSidebar } = useUIStore()
+  const { requestSessionForm, requestQuickConnectFocus, requestDatabaseConnect, sidebarOpen, toggleSidebar } = useUIStore()
 
   const handleCreateSession = () => {
     // Ensure sidebar is open so the form can be seen
@@ -34,7 +34,7 @@ export function WelcomeScreen() {
       </h1>
       <p className="text-sm text-nd-text-secondary mb-8 text-center max-w-md">
         Your gateway to secure server management. Connect via SSH, transfer files with SFTP,
-        and forward ports — all from one beautiful interface.
+        manage databases — all from one beautiful interface.
       </p>
 
       {/* Quick actions */}
@@ -47,10 +47,14 @@ export function WelcomeScreen() {
           <Zap size={16} />
           Quick Connect
         </Button>
+        <Button variant="secondary" size="lg" onClick={requestDatabaseConnect}>
+          <Database size={16} />
+          Database
+        </Button>
       </div>
 
       {/* Feature highlights */}
-      <div className="grid grid-cols-3 gap-6 max-w-2xl">
+      <div className="grid grid-cols-4 gap-5 max-w-3xl">
         <FeatureCard
           icon={<Terminal size={20} />}
           title="SSH Terminal"
@@ -60,6 +64,11 @@ export function WelcomeScreen() {
           icon={<FolderTree size={20} />}
           title="SFTP Manager"
           description="Dual-pane file manager with drag-and-drop, previews, and sync"
+        />
+        <FeatureCard
+          icon={<Database size={20} />}
+          title="SQL Client"
+          description="Connect to MySQL & PostgreSQL directly or through SSH tunnels"
         />
         <FeatureCard
           icon={<Shield size={20} />}

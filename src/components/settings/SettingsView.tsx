@@ -316,7 +316,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   <Wifi size={28} className="text-white" />
                 </div>
                 <h3 className="text-lg font-bold text-nd-text-primary">Shellway</h3>
-                <p className="text-sm text-nd-text-secondary mt-0.5">v0.1.0</p>
+                <p className="text-sm text-nd-text-secondary mt-0.5">v{__APP_VERSION__}</p>
                 <p className="text-xs text-nd-text-muted mt-1">Premium SSH & SFTP Desktop Client</p>
               </div>
 
@@ -362,7 +362,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
               {/* Copyright */}
               <div className="mt-5 pt-4 border-t border-nd-border text-center">
                 <p className="text-2xs text-nd-text-muted">
-                  &copy; {new Date().getFullYear()} Shellway. All rights reserved.
+                  &copy; {new Date().getFullYear()} Wael Mohamed Essaid. All rights reserved.
                 </p>
                 <p className="text-2xs text-nd-text-muted mt-1">
                   Licensed under MIT License

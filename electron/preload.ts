@@ -342,11 +342,11 @@ const api = {
 
     // Saved configs (persist credentials per SSH session)
     configGet: (sessionId: string) =>
-      ipcRenderer.invoke('sql:config:get', sessionId),
-    configSave: (config: unknown) =>
-      ipcRenderer.invoke('sql:config:save', config),
+      ipcRenderer.invoke('sql:config:get', sessionId) as Promise<{ success: boolean; data?: Record<string, any>; error?: string }>,
+    configSave: (config: Record<string, unknown>) =>
+      ipcRenderer.invoke('sql:config:save', config) as Promise<{ success: boolean; error?: string }>,
     configDelete: (sessionId: string) =>
-      ipcRenderer.invoke('sql:config:delete', sessionId),
+      ipcRenderer.invoke('sql:config:delete', sessionId) as Promise<{ success: boolean; error?: string }>,
   },
 
   // ── Health ──

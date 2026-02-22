@@ -69,11 +69,15 @@ interface SavedConfig {
   tag?: string
   sslMode?: string
   useSSHTunnel?: boolean
+  sshHost?: string
+  sshUsername?: string
 }
 
 interface SQLViewProps {
   connectionId: string
   sessionId: string
+  /** When true, this is a standalone database view (not nested inside an SSH ConnectionView) */
+  isStandalone?: boolean
 }
 
 // ── Sidebar percentage for splitter (240px / typical width ~1200px) ──
@@ -82,7 +86,7 @@ const SIDEBAR_SPLIT_PERCENT = 20
 /**
  * Main SQL panel component — manages connection lifecycle, tab routing, and layout.
  */
-const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps) {
+const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }: SQLViewProps) {
   const [showConnectDialog, setShowConnectDialog] = useState(false)
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
@@ -119,12 +123,29 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
   } = useSQLConnection(connectionId)
 
   // ── Check if SQL sub-tab is actually the active one (not hidden behind Terminal/SFTP) ──
+  // In standalone mode, SQL is always the active view — no sub-tab switching.
   const isSQLSubTabActive = useConnectionStore(
     useCallback((s) => {
+      if (isStandalone) return true
       const tab = s.tabs.find((t) => t.id === connectionId)
       return tab?.activeSubTab === 'sql'
-    }, [connectionId])
+    }, [connectionId, isStandalone])
   )
+
+  // ── Sync SQL connection status to the connection tab (for standalone mode) ──
+  useEffect(() => {
+    if (!isStandalone) return
+    const statusMap: Record<string, string> = {
+      connected: 'connected',
+      connecting: 'connecting',
+      disconnected: 'disconnected',
+      error: 'error',
+    }
+    const tabStatus = statusMap[connectionStatus]
+    if (tabStatus) {
+      useConnectionStore.getState().updateTab(connectionId, { status: tabStatus as any })
+    }
+  }, [isStandalone, connectionId, connectionStatus])
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
   useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive)
@@ -141,7 +162,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     setSavedConfigLoading(true)
     ;(async () => {
       try {
-        const result = await (window as any).novadeck.sql.configGet(sessionId)
+        const result = await window.novadeck.sql.configGet(sessionId)
         if (result?.success && result.data) {
           setSavedConfig({
             connectionName: result.data.connectionName,
@@ -153,6 +174,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
             tag: result.data.tag,
             sslMode: result.data.sslMode,
             useSSHTunnel: result.data.useSSHTunnel,
+            sshHost: result.data.sshHost,
+            sshUsername: result.data.sshUsername,
           })
         } else {
           setSavedConfig(null)
@@ -282,7 +305,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
       }
 
       const c = result.data
-      const config = {
+      const config: any = {
         type: c.type ?? 'mysql',
         host: c.host ?? '127.0.0.1',
         port: c.port ?? 3306,
@@ -292,6 +315,19 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         useSSHTunnel: c.useSSHTunnel ?? true,
         ssl: c.sslMode ? c.sslMode !== 'disabled' : c.ssl ?? false,
         sslMode: c.sslMode,
+      }
+
+      // Attach SSH config for standalone tunnels (saved from previous connection)
+      if (isStandalone && c.useSSHTunnel && c.sshHost) {
+        config.sshConfig = {
+          host: c.sshHost,
+          port: c.sshPort || 22,
+          username: c.sshUsername || '',
+          authMethod: c.sshAuthMethod || 'password',
+          password: c.sshAuthMethod === 'password' ? c.sshPassword : undefined,
+          privateKeyPath: c.sshAuthMethod === 'privatekey' ? c.sshPrivateKeyPath : undefined,
+          passphrase: c.sshAuthMethod === 'privatekey' ? c.sshPassphrase : undefined,
+        }
       }
 
       const connectResult = await window.novadeck.sql.connect(
@@ -325,6 +361,12 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         setTunnelPort(connectResult.tunnelPort ?? null)
         setConnectionError(null)
 
+        // Update tab name for standalone database tabs
+        if (isStandalone) {
+          const tabName = c.connectionName || `${config.type.toUpperCase()} · ${resolvedDb || config.host}`
+          useConnectionStore.getState().updateTab(connectionId, { sessionName: tabName })
+        }
+
         // If no database was specified, show picker
         if (!c.database?.trim()) {
           setDbPickerSessionId(sqlSessId)
@@ -342,9 +384,48 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
       quickConnectRef.current = false
     }
   }, [
-    savedConfig, connectionId, sessionId, setConnectionStatus, setConnectionConfig,
+    savedConfig, connectionId, sessionId, isStandalone, setConnectionStatus, setConnectionConfig,
     setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionError
   ])
+
+  // ── Build reconnect config, preserving SSH tunnel settings for standalone tabs ──
+  const buildReconnectConfig = useCallback(async (config: typeof connectionConfig, database: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reconnectCfg: Record<string, any> = {
+      type: config!.type,
+      host: config!.host,
+      port: config!.port,
+      username: config!.username,
+      password: config!.password,
+      database,
+      useSSHTunnel: config!.useSSHTunnel,
+      ssl: config!.ssl,
+      sslMode: (config as any)?.sslMode,
+    }
+
+    // For standalone DB tabs with SSH tunnels, restore sshConfig from saved config
+    if (isStandalone && config!.useSSHTunnel) {
+      try {
+        const saved = await window.novadeck.sql.configGet(sessionId)
+        if (saved?.success && saved.data?.sshHost) {
+          const c = saved.data
+          reconnectCfg.sshConfig = {
+            host: c.sshHost,
+            port: c.sshPort || 22,
+            username: c.sshUsername || '',
+            authMethod: c.sshAuthMethod || 'password',
+            password: c.sshAuthMethod === 'password' ? c.sshPassword : undefined,
+            privateKeyPath: c.sshAuthMethod === 'privatekey' ? c.sshPrivateKeyPath : undefined,
+            passphrase: c.sshAuthMethod === 'privatekey' ? c.sshPassphrase : undefined,
+          }
+        }
+      } catch {
+        // Config fetch failed — proceed without SSH (will likely fail, but let the backend report it)
+      }
+    }
+
+    return reconnectCfg
+  }, [isStandalone, sessionId])
 
   // ── Handle database selection from picker ──
   const handleDatabaseSelected = useCallback(async (database: string) => {
@@ -359,26 +440,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         // Postgres doesn't support switchDatabase — reconnect with the selected DB
         const config = connectionConfig
         if (config) {
-          // Disconnect old session
           await window.novadeck.sql.disconnect(sid).catch(() => {})
-          // Reconnect with selected database
           const newSid = `sql-${connectionId}-${crypto.randomUUID()}`
-          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, {
-            type: config.type,
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            password: config.password,
-            database,
-            useSSHTunnel: config.useSSHTunnel,
-            ssl: config.ssl,
-            sslMode: (config as any).sslMode,
-          })
+          const reconnectCfg = await buildReconnectConfig(config, database)
+          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, reconnectCfg)
           if (reconnResult.success) {
             setSqlSessionId(newSid)
             setCurrentDatabase(database)
             setTunnelPort(reconnResult.tunnelPort ?? null)
-            // Update connectionConfig with new database
             setConnectionConfig({ ...config, id: newSid, database })
           }
         }
@@ -390,17 +459,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         try {
           await window.novadeck.sql.disconnect(sid).catch(() => {})
           const newSid = `sql-${connectionId}-${crypto.randomUUID()}`
-          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, {
-            type: config.type,
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            password: config.password,
-            database,
-            useSSHTunnel: config.useSSHTunnel,
-            ssl: config.ssl,
-            sslMode: (config as any).sslMode,
-          })
+          const reconnectCfg = await buildReconnectConfig(config, database)
+          const reconnResult = await window.novadeck.sql.connect(newSid, connectionId, reconnectCfg)
           if (reconnResult.success) {
             setSqlSessionId(newSid)
             setCurrentDatabase(database)
@@ -414,7 +474,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
     }
     setShowDatabasePicker(false)
     setDbPickerSessionId(null)
-  }, [dbPickerSessionId, sqlSessionId, connectionId, connectionConfig, setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionConfig])
+  }, [dbPickerSessionId, sqlSessionId, connectionId, connectionConfig, buildReconnectConfig, setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionConfig])
 
   // ── Handle onNeedDatabasePick from connect dialog ──
   const handleNeedDatabasePick = useCallback((sid: string) => {
@@ -585,7 +645,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
                 {savedConfig.useSSHTunnel && (
                   <div className="flex items-center gap-2">
                     <span className="text-nd-text-muted w-16 shrink-0">Tunnel</span>
-                    <span className="text-nd-text-secondary">SSH Tunnel</span>
+                    <span className="text-nd-text-secondary font-mono truncate">
+                      {savedConfig.sshHost
+                        ? `${savedConfig.sshUsername || 'root'}@${savedConfig.sshHost}`
+                        : 'SSH Tunnel'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -643,6 +707,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
           onClose={handleCloseConnect}
           connectionId={connectionId}
           sessionId={sessionId}
+          isStandalone={isStandalone}
           onNeedDatabasePick={handleNeedDatabasePick}
         />
       </div>
@@ -838,6 +903,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         onClose={handleCloseConnect}
         connectionId={connectionId}
         sessionId={sessionId}
+        isStandalone={isStandalone}
         onNeedDatabasePick={handleNeedDatabasePick}
       />
 

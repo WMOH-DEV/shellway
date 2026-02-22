@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ToastContainer } from '@/components/ui/Toast'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
 import { ConnectionView } from '@/components/ConnectionView'
+import { DatabaseView } from '@/components/DatabaseView'
 import { cn } from '@/utils/cn'
 import { SettingsView } from '@/components/settings/SettingsView'
 import { HostKeyManager } from '@/components/keys/HostKeyManager'
@@ -226,7 +227,11 @@ export default function App() {
           key={tab.id}
           className={cn('h-full', tab.id !== activeTabId && 'hidden')}
         >
-          <ConnectionView tab={tab} />
+          {tab.type === 'database' ? (
+            <DatabaseView tab={tab} />
+          ) : (
+            <ConnectionView tab={tab} />
+          )}
         </div>
       ))}
 
