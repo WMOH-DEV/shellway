@@ -14,6 +14,10 @@ interface SessionCardProps {
   isActiveTab?: boolean
   /** Whether this card has keyboard focus (arrow-key navigation) */
   isFocused?: boolean
+  /** Whether a drag is hovering over this card (show drop indicator) */
+  isDragOver?: boolean
+  /** Whether this card is currently being dragged */
+  isDragging?: boolean
   connectionStatus?: ConnectionStatus
   onConnect: () => void
   onConnectTerminal?: () => void
@@ -24,12 +28,20 @@ interface SessionCardProps {
   onDelete: () => void
   /** Called to disconnect / close the connection tab */
   onDisconnect?: () => void
+  // Drag events
+  onDragStart?: (e: React.DragEvent) => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDragLeave?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent) => void
+  onDragEnd?: (e: React.DragEvent) => void
 }
 
 export function SessionCard({
   session,
   isActiveTab,
   isFocused,
+  isDragOver,
+  isDragging,
   connectionStatus,
   onConnect,
   onConnectTerminal,
@@ -39,6 +51,11 @@ export function SessionCard({
   onDuplicate,
   onDelete,
   onDisconnect,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: SessionCardProps) {
   const isConnected = connectionStatus === 'connected'
   const isConnecting = connectionStatus === 'connecting' || connectionStatus === 'authenticating'
@@ -96,8 +113,14 @@ export function SessionCard({
     <ContextMenu items={menuItems} onSelect={handleMenuSelect}>
     <div
       data-session-id={session.id}
+      draggable
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={cn(
         'group relative flex items-center gap-2.5 rounded-md cursor-pointer transition-colors',
         // Active tab = accent left border + filled bg
@@ -109,7 +132,10 @@ export function SessionCard({
             // Not connected — hover only, no persistent selection
             : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2',
         // Keyboard focus ring
-        isFocused && 'ring-1 ring-nd-accent/60 bg-nd-surface/40'
+        isFocused && 'ring-1 ring-nd-accent/60 bg-nd-surface/40',
+        // Drag states
+        isDragging && 'opacity-50',
+        isDragOver && 'border-t-2 border-t-nd-accent'
       )}
     >
       {/* Status / color dot */}

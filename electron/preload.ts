@@ -37,6 +37,7 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke('session:delete', id),
     deleteMany: (ids: string[]) => ipcRenderer.invoke('session:deleteMany', ids),
     touch: (id: string) => ipcRenderer.invoke('session:touch', id),
+    reorder: (orderedIds: string[]) => ipcRenderer.invoke('session:reorder', orderedIds),
     getGroups: () => ipcRenderer.invoke('session:getGroups') as Promise<string[]>,
     setGroups: (groups: string[]) => ipcRenderer.invoke('session:setGroups', groups),
     export: () => ipcRenderer.invoke('session:export'),

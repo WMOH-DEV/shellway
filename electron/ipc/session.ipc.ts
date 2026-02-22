@@ -62,6 +62,11 @@ export function registerSessionIPC(): void {
     sessionStore.touch(id)
   })
 
+  ipcMain.handle('session:reorder', (_event, orderedIds: string[]) => {
+    if (!Array.isArray(orderedIds) || !orderedIds.every((id) => typeof id === 'string')) return
+    sessionStore.reorder(orderedIds)
+  })
+
   ipcMain.handle('session:getGroups', () => {
     return sessionStore.getGroups()
   })

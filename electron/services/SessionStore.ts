@@ -55,6 +55,9 @@ export interface StoredSession {
   createdAt: number
   updatedAt: number
   isModified?: boolean
+
+  // Ordering
+  sortOrder?: number
 }
 
 interface StoreSchema {
@@ -142,6 +145,19 @@ export class SessionStore {
     const deleted = sessions.length - filtered.length
     this.store.set('sessions', filtered)
     return deleted
+  }
+
+  /** Reorder sessions — accepts an ordered array of session IDs */
+  reorder(orderedIds: string[]): void {
+    const sessions = this.store.get('sessions', [])
+    const idToOrder = new Map(orderedIds.map((id, i) => [id, i]))
+    for (const session of sessions) {
+      const order = idToOrder.get(session.id)
+      if (order !== undefined) {
+        session.sortOrder = order
+      }
+    }
+    this.store.set('sessions', sessions)
   }
 
   /** Update last connected timestamp */

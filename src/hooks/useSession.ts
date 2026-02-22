@@ -75,6 +75,22 @@ export function useSession() {
     [removeSession]
   )
 
+  /** Reorder sessions — persists new sort order to backend */
+  const reorderSessions = useCallback(
+    async (orderedIds: string[]) => {
+      await window.novadeck.sessions.reorder(orderedIds)
+      // Update local store with new sortOrder
+      const store = useSessionStore.getState()
+      const idToOrder = new Map(orderedIds.map((id, i) => [id, i]))
+      const updated = store.sessions.map((s) => {
+        const order = idToOrder.get(s.id)
+        return order !== undefined ? { ...s, sortOrder: order } : s
+      })
+      setSessions(updated)
+    },
+    [setSessions]
+  )
+
   /** Mark session as recently connected */
   const touchSession = useCallback(async (id: string) => {
     await window.novadeck.sessions.touch(id)
@@ -148,6 +164,7 @@ export function useSession() {
     deleteSession,
     duplicateSession,
     deleteSessions,
+    reorderSessions,
     touchSession,
     exportSessions,
     importSessions,

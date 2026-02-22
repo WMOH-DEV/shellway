@@ -29,6 +29,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     editSession,
     deleteSession,
     duplicateSession,
+    reorderSessions,
     reload: reloadSessions,
   } = useSession()
 
@@ -104,9 +105,12 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     )
   }, [sessions, searchQuery])
 
-  // Sort: keep original creation order (createdAt), then alphabetical as fallback
+  // Sort: prefer explicit sortOrder, then creation order, then alphabetical
   const sortedSessions = useMemo(() => {
     return [...filteredSessions].sort((a, b) => {
+      const aOrder = a.sortOrder ?? Infinity
+      const bOrder = b.sortOrder ?? Infinity
+      if (aOrder !== bOrder) return aOrder - bOrder
       const aCreated = a.createdAt ?? 0
       const bCreated = b.createdAt ?? 0
       if (aCreated !== bCreated) return aCreated - bCreated
@@ -147,6 +151,76 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     const el = listRef.current?.querySelector(`[data-session-id="${CSS.escape(session.id)}"]`)
     el?.scrollIntoView({ block: 'nearest' })
   }, [focusedIndex, visibleSessions])
+
+  // Drag-to-reorder
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+
+  // Get group of a session by ID
+  const getSessionGroup = useCallback(
+    (id: string) => sessions.find((s) => s.id === id)?.group ?? null,
+    [sessions]
+  )
+
+  const handleDragStart = useCallback((sessionId: string, e: React.DragEvent) => {
+    setDraggedId(sessionId)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((sessionId: string, e: React.DragEvent) => {
+    if (!draggedId || sessionId === draggedId) return
+    // Only allow drop within same group
+    if (getSessionGroup(draggedId) !== getSessionGroup(sessionId)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverId(sessionId)
+  }, [draggedId, getSessionGroup])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverId(null)
+  }, [])
+
+  const handleDrop = useCallback((targetId: string) => {
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null)
+      setDragOverId(null)
+      return
+    }
+    // Only allow drop within same group
+    if (getSessionGroup(draggedId) !== getSessionGroup(targetId)) {
+      setDraggedId(null)
+      setDragOverId(null)
+      return
+    }
+
+    // Use the FULL sorted session list (not filtered) to compute new order
+    const allSorted = [...sessions].sort((a, b) => {
+      const aO = a.sortOrder ?? Infinity
+      const bO = b.sortOrder ?? Infinity
+      if (aO !== bO) return aO - bO
+      const aC = a.createdAt ?? 0
+      const bC = b.createdAt ?? 0
+      if (aC !== bC) return aC - bC
+      return a.name.localeCompare(b.name)
+    })
+    const ids = allSorted.map((s) => s.id)
+    const fromIdx = ids.indexOf(draggedId)
+    const toIdx = ids.indexOf(targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+
+    ids.splice(fromIdx, 1)
+    const insertIdx = ids.indexOf(targetId)
+    ids.splice(insertIdx, 0, draggedId)
+
+    reorderSessions(ids)
+    setDraggedId(null)
+    setDragOverId(null)
+  }, [draggedId, sessions, reorderSessions, getSessionGroup])
+
+  const handleDragEnd = useCallback((_e: React.DragEvent) => {
+    setDraggedId(null)
+    setDragOverId(null)
+  }, [])
 
   // Handlers
   const handleSave = useCallback(
@@ -353,6 +427,8 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 session={session}
                 isActiveTab={isSessionActiveTab(session.id)}
                 isFocused={focusedIndex >= 0 && visibleSessions[focusedIndex]?.id === session.id}
+                isDragOver={dragOverId === session.id}
+                isDragging={draggedId === session.id}
                 connectionStatus={getConnectionStatus(session.id)}
                 onConnect={() => onConnect(session)}
                 onConnectTerminal={() => onConnect(session, 'terminal')}
@@ -363,6 +439,11 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                   setFormOpen(true)
                 }}
                 onDuplicate={() => handleDuplicate(session.id)}
+                onDragStart={(e) => handleDragStart(session.id, e)}
+                onDragOver={(e) => handleDragOver(session.id, e)}
+                onDragLeave={handleDragLeave}
+                onDrop={() => handleDrop(session.id)}
+                onDragEnd={handleDragEnd}
                 onDelete={() => setDeleteTarget(session)}
                 onDisconnect={() => handleDisconnect(session.id)}
               />

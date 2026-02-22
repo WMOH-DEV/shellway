@@ -188,6 +188,9 @@ export interface Session {
   createdAt: number
   updatedAt: number
   isModified?: boolean                       // Unsaved changes indicator
+
+  // Ordering
+  sortOrder?: number                         // Manual sort position (lower = higher)
 }
 
 /** Connection status — includes reconnection-related paused states */
