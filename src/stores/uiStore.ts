@@ -46,10 +46,6 @@ interface UIState {
   requestSessionForm: () => void
   clearSessionFormRequest: () => void
 
-  // ── Quick Connect focus (triggered from WelcomeScreen) ──
-  quickConnectFocusKey: number
-  requestQuickConnectFocus: () => void
-
   // ── Database connect (triggered from WelcomeScreen) ──
   databaseConnectRequested: boolean
   requestDatabaseConnect: () => void
@@ -129,10 +125,6 @@ export const useUIStore = create<UIState>((set) => ({
   sessionFormRequested: false,
   requestSessionForm: () => set({ sessionFormRequested: true }),
   clearSessionFormRequest: () => set({ sessionFormRequested: false }),
-
-  // ── Quick Connect focus ──
-  quickConnectFocusKey: 0,
-  requestQuickConnectFocus: () => set((s) => ({ quickConnectFocusKey: s.quickConnectFocusKey + 1 })),
 
   // ── Database connect ──
   databaseConnectRequested: false,

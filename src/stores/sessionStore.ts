@@ -4,8 +4,6 @@ import type { Session } from '@/types/session'
 interface SessionState {
   /** All saved sessions */
   sessions: Session[]
-  /** Currently selected session ID (for sidebar detail view) */
-  selectedSessionId: string | null
   /** Search query for filtering sessions */
   searchQuery: string
 
@@ -13,13 +11,11 @@ interface SessionState {
   addSession: (session: Session) => void
   updateSession: (id: string, updates: Partial<Session>) => void
   removeSession: (id: string) => void
-  setSelectedSession: (id: string | null) => void
   setSearchQuery: (query: string) => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
   sessions: [],
-  selectedSessionId: null,
   searchQuery: '',
 
   setSessions: (sessions) => set({ sessions }),
@@ -36,10 +32,8 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   removeSession: (id) =>
     set((state) => ({
-      sessions: state.sessions.filter((s) => s.id !== id),
-      selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId
+      sessions: state.sessions.filter((s) => s.id !== id)
     })),
 
-  setSelectedSession: (id) => set({ selectedSessionId: id }),
   setSearchQuery: (query) => set({ searchQuery: query })
 }))

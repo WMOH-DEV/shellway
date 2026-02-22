@@ -1,4 +1,4 @@
-import { Wifi, Plus, Zap, Shield, FolderTree, Terminal, Database } from 'lucide-react'
+import { Wifi, Plus, Shield, FolderTree, Terminal, Database } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useUIStore } from '@/stores/uiStore'
 
@@ -7,18 +7,12 @@ import { useUIStore } from '@/stores/uiStore'
  * Displayed in the main content area.
  */
 export function WelcomeScreen() {
-  const { requestSessionForm, requestQuickConnectFocus, requestDatabaseConnect, sidebarOpen, toggleSidebar } = useUIStore()
+  const { requestSessionForm, requestDatabaseConnect, sidebarOpen, toggleSidebar } = useUIStore()
 
   const handleCreateSession = () => {
     // Ensure sidebar is open so the form can be seen
     if (!sidebarOpen) toggleSidebar()
     requestSessionForm()
-  }
-
-  const handleQuickConnect = () => {
-    // Ensure sidebar is open and focus the quick connect input
-    if (!sidebarOpen) toggleSidebar()
-    requestQuickConnectFocus()
   }
 
   return (
@@ -42,10 +36,6 @@ export function WelcomeScreen() {
         <Button variant="primary" size="lg" onClick={handleCreateSession}>
           <Plus size={16} />
           Create Session
-        </Button>
-        <Button variant="secondary" size="lg" onClick={handleQuickConnect}>
-          <Zap size={16} />
-          Quick Connect
         </Button>
         <Button variant="secondary" size="lg" onClick={requestDatabaseConnect}>
           <Database size={16} />

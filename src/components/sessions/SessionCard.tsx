@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Dropdown } from '@/components/ui/Dropdown'
+import { ContextMenu } from '@/components/ui/ContextMenu'
 import { Tooltip } from '@/components/ui/Tooltip'
 import type { Session, ConnectionStatus } from '@/types/session'
 
@@ -11,6 +12,8 @@ interface SessionCardProps {
   session: Session
   /** Whether this session's connection is the currently viewed tab */
   isActiveTab?: boolean
+  /** Whether this card has keyboard focus (arrow-key navigation) */
+  isFocused?: boolean
   connectionStatus?: ConnectionStatus
   onConnect: () => void
   onConnectTerminal?: () => void
@@ -26,6 +29,7 @@ interface SessionCardProps {
 export function SessionCard({
   session,
   isActiveTab,
+  isFocused,
   connectionStatus,
   onConnect,
   onConnectTerminal,
@@ -89,7 +93,9 @@ export function SessionCard({
   }
 
   return (
+    <ContextMenu items={menuItems} onSelect={handleMenuSelect}>
     <div
+      data-session-id={session.id}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={cn(
@@ -101,7 +107,9 @@ export function SessionCard({
           : hasConnection
             ? 'bg-nd-surface/80 border-l-2 border-l-nd-success/50 border border-nd-border/50 px-2 py-2'
             // Not connected — hover only, no persistent selection
-            : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2'
+            : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2',
+        // Keyboard focus ring
+        isFocused && 'ring-1 ring-nd-accent/60 bg-nd-surface/40'
       )}
     >
       {/* Status / color dot */}
@@ -218,5 +226,6 @@ export function SessionCard({
         )}
       </div>
     </div>
+    </ContextMenu>
   )
 }

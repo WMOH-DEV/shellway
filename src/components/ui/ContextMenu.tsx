@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type ReactNode } from 'react'
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/utils/cn'
 
@@ -21,6 +21,7 @@ interface ContextMenuProps {
 
 export function ContextMenu({ children, items, onSelect, className }: ContextMenuProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -29,15 +30,24 @@ export function ContextMenu({ children, items, onSelect, className }: ContextMen
 
   const close = useCallback(() => setPosition(null), [])
 
-  // Close on click outside or scroll
+  // Close on mousedown outside menu, any right-click, Escape, or scroll
   useEffect(() => {
     if (!position) return
-    const handler = () => close()
-    document.addEventListener('click', handler)
-    document.addEventListener('scroll', handler, true)
+    const onMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) return
+      close()
+    }
+    const onDismiss = () => close()
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('contextmenu', onDismiss)
+    document.addEventListener('scroll', onDismiss, true)
+    document.addEventListener('keydown', onKeyDown)
     return () => {
-      document.removeEventListener('click', handler)
-      document.removeEventListener('scroll', handler, true)
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('contextmenu', onDismiss)
+      document.removeEventListener('scroll', onDismiss, true)
+      document.removeEventListener('keydown', onKeyDown)
     }
   }, [position, close])
 
@@ -50,6 +60,7 @@ export function ContextMenu({ children, items, onSelect, className }: ContextMen
       <AnimatePresence>
         {position && (
           <motion.div
+            ref={menuRef}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}

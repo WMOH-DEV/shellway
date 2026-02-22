@@ -1,8 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import {
-  Plus, Download, Upload, Search, ChevronDown,
-  Globe, Database, Container, Cloud, Cpu, Terminal
-} from 'lucide-react'
+import { Plus, Download, Upload, Search } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -10,20 +7,12 @@ import { useUIStore } from '@/stores/uiStore'
 import { SessionCard } from './SessionCard'
 import { SessionGroups } from './SessionGroups'
 import { SessionForm, type SessionFormData } from './SessionForm'
-import { QuickConnect } from './QuickConnect'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
 import { ExportDialog } from './ExportDialog'
 import { ImportDialog } from './ImportDialog'
-import { sessionTemplates, type SessionTemplate } from '@/data/sessionTemplates'
 import type { Session } from '@/types/session'
-import { v4 as uuid } from 'uuid'
-
-/** Map template icon name to Lucide component */
-const TEMPLATE_ICONS: Record<string, typeof Globe> = {
-  Globe, Database, Container, Cloud, Cpu, Terminal
-}
 
 interface SessionManagerProps {
   onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp') => void
@@ -50,11 +39,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   // Form state
   const [formOpen, setFormOpen] = useState(false)
   const [editingSession, setEditingSession] = useState<Session | null>(null)
-  const [templateDefaults, setTemplateDefaults] = useState<Partial<Session> | null>(null)
-
-  // Template dropdown
-  const [templateMenuOpen, setTemplateMenuOpen] = useState(false)
-  const templateMenuRef = useRef<HTMLDivElement>(null)
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null)
@@ -67,34 +51,45 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [groups, setGroups] = useState<string[]>([])
 
+  // Search visibility: auto-show when ≥5 sessions, toggleable when <5
+  const fewSessions = sessions.length < 5
+  const [searchForced, setSearchForced] = useState(false)
+  const searchVisible = !fewSessions || searchForced || !!searchQuery
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Ctrl+F to toggle search — scoped to sidebar (skip when in terminal/forms/modals)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        // Don't intercept when focus is inside an input, textarea, terminal, or modal
+        const active = document.activeElement
+        if (active && (
+          active.tagName === 'TEXTAREA' ||
+          (active.tagName === 'INPUT' && active !== searchInputRef.current) ||
+          active.closest('.xterm, [role="dialog"]')
+        )) return
+
+        e.preventDefault()
+        if (fewSessions) {
+          setSearchForced(true)
+          requestAnimationFrame(() => searchInputRef.current?.focus())
+        } else {
+          searchInputRef.current?.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [fewSessions])
+
   // React to session form requests from WelcomeScreen
   useEffect(() => {
     if (sessionFormRequested) {
       setEditingSession(null)
-      setTemplateDefaults(null)
       setFormOpen(true)
       clearSessionFormRequest()
     }
   }, [sessionFormRequested, clearSessionFormRequest])
-
-  // Close template menu on click outside
-  useEffect(() => {
-    if (!templateMenuOpen) return
-    const handleClick = (e: MouseEvent) => {
-      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target as Node)) {
-        setTemplateMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [templateMenuOpen])
-
-  const handleSelectTemplate = useCallback((template: SessionTemplate) => {
-    setTemplateMenuOpen(false)
-    setEditingSession(null)
-    setTemplateDefaults(template.defaults as Partial<Session>)
-    setFormOpen(true)
-  }, [])
 
   // Compute filtered sessions
   const filteredSessions = useMemo(() => {
@@ -118,6 +113,40 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
       return a.name.localeCompare(b.name)
     })
   }, [filteredSessions])
+
+  // Compute flat list of visible sessions (respecting collapsed groups)
+  const visibleSessions = useMemo(() => {
+    const ungrouped = sortedSessions.filter((s) => !s.group)
+    const grouped = new Map<string, Session[]>()
+    sortedSessions.filter((s) => s.group).forEach((s) => {
+      const g = s.group!
+      if (!grouped.has(g)) grouped.set(g, [])
+      grouped.get(g)!.push(s)
+    })
+    const result = [...ungrouped]
+    grouped.forEach((sessions, groupName) => {
+      if (expandedGroups.has(groupName)) result.push(...sessions)
+    })
+    return result
+  }, [sortedSessions, expandedGroups])
+
+  // Keyboard navigation
+  const [focusedIndex, setFocusedIndex] = useState(-1)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Reset focused index when visible list changes
+  useEffect(() => {
+    setFocusedIndex(-1)
+  }, [searchQuery, sessions.length, expandedGroups])
+
+  // Scroll focused session into view
+  useEffect(() => {
+    if (focusedIndex < 0) return
+    const session = visibleSessions[focusedIndex]
+    if (!session) return
+    const el = listRef.current?.querySelector(`[data-session-id="${CSS.escape(session.id)}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [focusedIndex, visibleSessions])
 
   // Handlers
   const handleSave = useCallback(
@@ -177,28 +206,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     setImportDialogOpen(true)
   }, [])
 
-
-
-  const handleQuickConnect = useCallback(
-    (host: string, port: number, username: string) => {
-      // Create a temporary session for quick connect
-      const session: Session = {
-        id: uuid(),
-        name: `${username}@${host}`,
-        host,
-        port,
-        username,
-        auth: { initialMethod: 'password' },
-        proxy: { type: 'none', host: '', port: 1080, requiresAuth: false },
-        overrides: {},
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      }
-      onConnect(session)
-    },
-    [onConnect]
-  )
-
   const toggleGroup = useCallback((group: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev)
@@ -231,71 +238,37 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
 
   return (
     <>
-      {/* Quick connect */}
-      <div className="px-3 py-2 shrink-0">
-        <QuickConnect onConnect={handleQuickConnect} />
-      </div>
-
-      {/* Search */}
-      <div className="px-3 pb-2 shrink-0">
-        <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-nd-text-muted" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sessions..."
-            className="w-full h-7 pl-8 pr-3 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
-          />
-        </div>
-      </div>
-
       {/* New session + actions */}
-      <div className="px-3 pb-2 shrink-0 flex gap-1.5">
+      <div className="px-3 pt-2 pb-2 shrink-0 flex gap-1.5">
         <Button
           variant="primary"
           size="sm"
           className="flex-1"
           onClick={() => {
             setEditingSession(null)
-            setTemplateDefaults(null)
             setFormOpen(true)
           }}
         >
           <Plus size={14} />
           New Session
         </Button>
-        <div className="relative" ref={templateMenuRef}>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setTemplateMenuOpen((v) => !v)}
-            title="From template"
-          >
-            <ChevronDown size={14} />
-          </Button>
-          {templateMenuOpen && (
-            <div className="absolute left-0 top-full mt-1 w-56 rounded-lg border border-nd-border bg-nd-bg-secondary shadow-xl z-50 py-1">
-              <p className="px-3 py-1.5 text-2xs font-semibold text-nd-text-muted uppercase tracking-wider">Templates</p>
-              {sessionTemplates.map((tpl) => {
-                const Icon = TEMPLATE_ICONS[tpl.icon] || Terminal
-                return (
-                  <button
-                    key={tpl.name}
-                    onClick={() => handleSelectTemplate(tpl)}
-                    className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-nd-surface transition-colors"
-                  >
-                    <Icon size={14} className="text-nd-accent mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-nd-text-primary truncate">{tpl.name}</p>
-                      <p className="text-2xs text-nd-text-muted truncate">{tpl.description}</p>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            if (searchVisible && fewSessions) {
+              setSearchQuery('')
+              setSearchForced(false)
+            } else {
+              setSearchForced(true)
+              requestAnimationFrame(() => searchInputRef.current?.focus())
+            }
+          }}
+          title="Search sessions (Ctrl+F)"
+          className={searchVisible ? 'text-nd-accent' : ''}
+        >
+          <Search size={14} />
+        </Button>
         <Button variant="ghost" size="icon" onClick={handleImport} title="Import sessions">
           <Download size={14} />
         </Button>
@@ -304,8 +277,57 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
         </Button>
       </div>
 
+      {/* Search input — appears below buttons when visible */}
+      {searchVisible && (
+        <div className="px-3 pb-2 shrink-0">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-nd-text-muted" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                if (fewSessions && !searchForced) setSearchForced(true)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('')
+                  setSearchForced(false)
+                  searchInputRef.current?.blur()
+                }
+              }}
+              placeholder="Search sessions..."
+              className="w-full h-7 pl-8 pr-3 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Session list */}
-      <div className="flex-1 overflow-y-auto px-2">
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto px-2 outline-none"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          const len = visibleSessions.length
+          if (len === 0) return
+
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setFocusedIndex((i) => (i < len - 1 ? i + 1 : 0))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setFocusedIndex((i) => (i > 0 ? i - 1 : len - 1))
+          } else if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < len) {
+            e.preventDefault()
+            onConnect(visibleSessions[focusedIndex])
+          } else if (e.key === 'Escape') {
+            setFocusedIndex(-1)
+            listRef.current?.blur()
+          }
+        }}
+      >
         {sortedSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="w-12 h-12 rounded-xl bg-nd-surface flex items-center justify-center mb-3">
@@ -330,6 +352,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 key={session.id}
                 session={session}
                 isActiveTab={isSessionActiveTab(session.id)}
+                isFocused={focusedIndex >= 0 && visibleSessions[focusedIndex]?.id === session.id}
                 connectionStatus={getConnectionStatus(session.id)}
                 onConnect={() => onConnect(session)}
                 onConnectTerminal={() => onConnect(session, 'terminal')}
@@ -354,10 +377,8 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
         onClose={() => {
           setFormOpen(false)
           setEditingSession(null)
-          setTemplateDefaults(null)
         }}
         session={editingSession}
-        templateDefaults={templateDefaults}
         groups={groups}
         onSave={handleSave}
       />
