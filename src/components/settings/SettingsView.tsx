@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Settings,
   Monitor,
@@ -28,7 +28,7 @@ import { FontPicker } from '@/components/settings/FontPicker'
 import { useUIStore } from '@/stores/uiStore'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
-import { THEME_NAMES } from '@/data/terminalThemes'
+import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
 
 const ACCENT_PRESETS = [
   '#3b82f6', // Blue (default)
@@ -105,10 +105,10 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
   }, [setTheme])
 
   return (
-    <Modal open={open} onClose={onClose} title="Settings" maxWidth="max-w-2xl">
-      <div className="flex gap-4 min-h-[400px] -mx-5 -mb-4">
+    <Modal open={open} onClose={onClose} title="Settings" maxWidth="max-w-2xl" className="!overflow-hidden">
+      <div className="flex gap-4 h-[min(520px,calc(85vh-80px))] -mx-5 -mb-4">
         {/* Section nav */}
-        <div className="w-44 border-r border-nd-border py-2 shrink-0">
+        <div className="w-44 border-r border-nd-border py-2 shrink-0 overflow-y-auto">
           {SECTIONS.map((section) => (
             <button
               key={section.id}
@@ -127,7 +127,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
         </div>
 
         {/* Section content */}
-        <div className="flex-1 py-2 pr-5 overflow-y-auto">
+        <div className="flex-1 py-2 px-5 overflow-y-auto">
           {activeSection === 'general' && (
             <>
               <SettingsSection title="General">
@@ -248,186 +248,213 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
           )}
 
           {activeSection === 'terminal' && (
-            <SettingsSection title="Terminal">
-              <FontPicker
-                label="Font Family"
-                value={settings.terminalFontFamily}
-                onChange={(font) => update('terminalFontFamily', font)}
+            <>
+              <TerminalPreview
+                fontFamily={settings.terminalFontFamily}
                 fontSize={settings.terminalFontSize}
+                lineHeight={settings.terminalLineHeight}
+                colorScheme={settings.terminalColorScheme}
+                cursorStyle={settings.terminalCursorStyle}
+                cursorBlink={settings.terminalCursorBlink}
               />
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Font Size"
-                  type="number"
-                  value={settings.terminalFontSize}
-                  onChange={(e) => update('terminalFontSize', parseInt(e.target.value) || 14)}
+
+              <div className="mt-3 flex flex-col gap-3">
+                <FontPicker
+                  label="Font Family"
+                  value={settings.terminalFontFamily}
+                  onChange={(font) => update('terminalFontFamily', font)}
                 />
-                <Input
-                  label="Line Height"
-                  type="number"
-                  value={settings.terminalLineHeight}
-                  onChange={(e) => update('terminalLineHeight', parseFloat(e.target.value) || 1.4)}
+                <div className="grid grid-cols-3 gap-3">
+                  <Input
+                    label="Font Size"
+                    type="number"
+                    value={settings.terminalFontSize}
+                    onChange={(e) => update('terminalFontSize', parseInt(e.target.value) || 14)}
+                  />
+                  <Input
+                    label="Line Height"
+                    type="number"
+                    value={settings.terminalLineHeight}
+                    onChange={(e) => update('terminalLineHeight', parseFloat(e.target.value) || 1.4)}
+                  />
+                  <Input
+                    label="Scrollback"
+                    type="number"
+                    value={settings.terminalScrollback}
+                    onChange={(e) => update('terminalScrollback', parseInt(e.target.value) || 10000)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Color Scheme"
+                    value={settings.terminalColorScheme}
+                    onChange={(e) => update('terminalColorScheme', e.target.value)}
+                    options={THEME_NAMES}
+                  />
+                  <Select
+                    label="Cursor Style"
+                    value={settings.terminalCursorStyle}
+                    onChange={(e) => update('terminalCursorStyle', e.target.value as CursorStyle)}
+                    options={[
+                      { value: 'block', label: 'Block' },
+                      { value: 'underline', label: 'Underline' },
+                      { value: 'bar', label: 'Bar' }
+                    ]}
+                  />
+                </div>
+                <Select
+                  label="Bell"
+                  value={settings.terminalBell}
+                  onChange={(e) => update('terminalBell', e.target.value as BellBehavior)}
+                  options={[
+                    { value: 'none', label: 'Disabled' },
+                    { value: 'sound', label: 'Sound' },
+                    { value: 'visual', label: 'Visual Flash' }
+                  ]}
                 />
+                <div className="flex flex-col gap-2 pt-1">
+                  <Toggle
+                    checked={settings.terminalCursorBlink}
+                    onChange={(v) => update('terminalCursorBlink', v)}
+                    label="Cursor blink"
+                  />
+                  <Toggle
+                    checked={settings.terminalCopyOnSelect}
+                    onChange={(v) => update('terminalCopyOnSelect', v)}
+                    label="Copy on select"
+                  />
+                  <Toggle
+                    checked={settings.terminalRightClickPaste}
+                    onChange={(v) => update('terminalRightClickPaste', v)}
+                    label="Right-click paste"
+                  />
+                </div>
               </div>
-              <Input
-                label="Scrollback Lines"
-                type="number"
-                value={settings.terminalScrollback}
-                onChange={(e) => update('terminalScrollback', parseInt(e.target.value) || 10000)}
-              />
-              <Select
-                label="Color Scheme"
-                value={settings.terminalColorScheme}
-                onChange={(e) => update('terminalColorScheme', e.target.value)}
-                options={THEME_NAMES}
-              />
-              <Select
-                label="Cursor Style"
-                value={settings.terminalCursorStyle}
-                onChange={(e) => update('terminalCursorStyle', e.target.value as CursorStyle)}
-                options={[
-                  { value: 'block', label: 'Block' },
-                  { value: 'underline', label: 'Underline' },
-                  { value: 'bar', label: 'Bar' }
-                ]}
-              />
-              <Toggle
-                checked={settings.terminalCursorBlink}
-                onChange={(v) => update('terminalCursorBlink', v)}
-                label="Cursor blink"
-              />
-              <Toggle
-                checked={settings.terminalCopyOnSelect}
-                onChange={(v) => update('terminalCopyOnSelect', v)}
-                label="Copy on select"
-              />
-              <Toggle
-                checked={settings.terminalRightClickPaste}
-                onChange={(v) => update('terminalRightClickPaste', v)}
-                label="Right-click paste"
-              />
-              <Select
-                label="Bell"
-                value={settings.terminalBell}
-                onChange={(e) => update('terminalBell', e.target.value as BellBehavior)}
-                options={[
-                  { value: 'none', label: 'Disabled' },
-                  { value: 'sound', label: 'Sound' },
-                  { value: 'visual', label: 'Visual Flash' }
-                ]}
-              />
-            </SettingsSection>
+            </>
           )}
 
           {activeSection === 'sftp' && (
-            <SettingsSection title="SFTP">
-              <Select
-                label="Default View Mode"
-                value={settings.sftpDefaultViewMode}
-                onChange={(e) => update('sftpDefaultViewMode', e.target.value as SFTPViewMode)}
-                options={[
-                  { value: 'list', label: 'List / Detail View' },
-                  { value: 'grid', label: 'Grid / Icon View' }
-                ]}
-              />
-              <Toggle
-                checked={settings.sftpShowHiddenFiles}
-                onChange={(v) => update('sftpShowHiddenFiles', v)}
-                label="Show hidden files by default"
-              />
-              <Input
-                label="Concurrent Transfers"
-                type="number"
-                value={settings.sftpConcurrentTransfers}
-                onChange={(e) => update('sftpConcurrentTransfers', parseInt(e.target.value) || 3)}
-              />
-              <Input
-                label="Bandwidth Limit (KB/s, 0 = unlimited)"
-                type="number"
-                value={settings.sftpBandwidthLimit}
-                onChange={(e) => update('sftpBandwidthLimit', parseInt(e.target.value) || 0)}
-              />
-              <Select
-                label="Address Bar Autocomplete"
-                value={settings.sftpAutocompleteMode}
-                onChange={(e) => update('sftpAutocompleteMode', e.target.value as SFTPAutocompleteMode)}
-                options={[
-                  { value: 'content', label: 'Content-Based (fetch folder contents)' },
-                  { value: 'history', label: 'History-Based (visited paths only)' }
-                ]}
-              />
-              <Select
-                label="Double-Click Action"
-                value={settings.sftpDoubleClickAction}
-                onChange={(e) => update('sftpDoubleClickAction', e.target.value as SFTPDoubleClickAction)}
-                options={[
-                  { value: 'open', label: 'Open / Navigate' },
-                  { value: 'transfer', label: 'Transfer to Other Panel' },
-                  { value: 'edit', label: 'Open in Editor' }
-                ]}
-              />
-              <Input
-                label="Default Local Directory"
-                value={settings.sftpDefaultLocalDirectory}
-                onChange={(e) => update('sftpDefaultLocalDirectory', e.target.value)}
-                placeholder="Leave empty for home directory"
-              />
-              <Select
-                label="Default Conflict Resolution"
-                value={settings.sftpDefaultConflictResolution}
-                onChange={(e) => update('sftpDefaultConflictResolution', e.target.value as SFTPConflictResolution)}
-                options={[
-                  { value: 'ask', label: 'Ask Every Time' },
-                  { value: 'overwrite', label: 'Overwrite' },
-                  { value: 'overwrite-newer', label: 'Overwrite if Newer' },
-                  { value: 'skip', label: 'Skip' },
-                  { value: 'rename', label: 'Rename' }
-                ]}
-              />
-              <Toggle
-                checked={settings.sftpPreserveTimestamps}
-                onChange={(v) => update('sftpPreserveTimestamps', v)}
-                label="Preserve file timestamps on transfer"
-              />
-              <Toggle
-                checked={settings.sftpFollowSymlinks}
-                onChange={(v) => update('sftpFollowSymlinks', v)}
-                label="Follow symbolic links"
-              />
-            </SettingsSection>
+            <>
+              <SettingsSection title="File Browser">
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Default View Mode"
+                    value={settings.sftpDefaultViewMode}
+                    onChange={(e) => update('sftpDefaultViewMode', e.target.value as SFTPViewMode)}
+                    options={[
+                      { value: 'list', label: 'List / Detail View' },
+                      { value: 'grid', label: 'Grid / Icon View' }
+                    ]}
+                  />
+                  <Select
+                    label="Double-Click Action"
+                    value={settings.sftpDoubleClickAction}
+                    onChange={(e) => update('sftpDoubleClickAction', e.target.value as SFTPDoubleClickAction)}
+                    options={[
+                      { value: 'open', label: 'Open / Navigate' },
+                      { value: 'transfer', label: 'Transfer' },
+                      { value: 'edit', label: 'Open in Editor' }
+                    ]}
+                  />
+                </div>
+                <Select
+                  label="Address Bar Autocomplete"
+                  value={settings.sftpAutocompleteMode}
+                  onChange={(e) => update('sftpAutocompleteMode', e.target.value as SFTPAutocompleteMode)}
+                  options={[
+                    { value: 'content', label: 'Content-Based (fetch folder contents)' },
+                    { value: 'history', label: 'History-Based (visited paths only)' }
+                  ]}
+                />
+                <Input
+                  label="Default Local Directory"
+                  value={settings.sftpDefaultLocalDirectory}
+                  onChange={(e) => update('sftpDefaultLocalDirectory', e.target.value)}
+                  placeholder="Leave empty for home directory"
+                />
+                <Toggle
+                  checked={settings.sftpShowHiddenFiles}
+                  onChange={(v) => update('sftpShowHiddenFiles', v)}
+                  label="Show hidden files by default"
+                />
+                <Toggle
+                  checked={settings.sftpFollowSymlinks}
+                  onChange={(v) => update('sftpFollowSymlinks', v)}
+                  label="Follow symbolic links"
+                />
+              </SettingsSection>
+
+              <div className="mt-4">
+                <SettingsSection title="Transfers">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="Concurrent Transfers"
+                      type="number"
+                      value={settings.sftpConcurrentTransfers}
+                      onChange={(e) => update('sftpConcurrentTransfers', parseInt(e.target.value) || 3)}
+                    />
+                    <Input
+                      label="Bandwidth (KB/s, 0 = no limit)"
+                      type="number"
+                      value={settings.sftpBandwidthLimit}
+                      onChange={(e) => update('sftpBandwidthLimit', parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+                  <Select
+                    label="Conflict Resolution"
+                    value={settings.sftpDefaultConflictResolution}
+                    onChange={(e) => update('sftpDefaultConflictResolution', e.target.value as SFTPConflictResolution)}
+                    options={[
+                      { value: 'ask', label: 'Ask Every Time' },
+                      { value: 'overwrite', label: 'Overwrite' },
+                      { value: 'overwrite-newer', label: 'Overwrite if Newer' },
+                      { value: 'skip', label: 'Skip' },
+                      { value: 'rename', label: 'Rename' }
+                    ]}
+                  />
+                  <Toggle
+                    checked={settings.sftpPreserveTimestamps}
+                    onChange={(v) => update('sftpPreserveTimestamps', v)}
+                    label="Preserve file timestamps"
+                  />
+                </SettingsSection>
+              </div>
+            </>
           )}
 
           {activeSection === 'connection' && (
             <SettingsSection title="Connection">
-              <Input
-                label="Keep-Alive Interval (seconds)"
-                type="number"
-                value={settings.connectionKeepAliveInterval}
-                onChange={(e) =>
-                  update('connectionKeepAliveInterval', parseInt(e.target.value) || 30)
-                }
-              />
-              <Input
-                label="Connection Timeout (seconds)"
-                type="number"
-                value={settings.connectionTimeout}
-                onChange={(e) => update('connectionTimeout', parseInt(e.target.value) || 15)}
-              />
-              <Input
-                label="Reconnect Attempts"
-                type="number"
-                value={settings.connectionReconnectAttempts}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value)
-                  update('connectionReconnectAttempts', isNaN(v) ? 3 : v)
-                }}
-              />
-              <Input
-                label="Reconnect Delay (seconds)"
-                type="number"
-                value={settings.connectionReconnectDelay}
-                onChange={(e) => update('connectionReconnectDelay', parseInt(e.target.value) || 5)}
-              />
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Keep-Alive Interval (sec)"
+                  type="number"
+                  value={settings.connectionKeepAliveInterval}
+                  onChange={(e) =>
+                    update('connectionKeepAliveInterval', parseInt(e.target.value) || 30)
+                  }
+                />
+                <Input
+                  label="Connection Timeout (sec)"
+                  type="number"
+                  value={settings.connectionTimeout}
+                  onChange={(e) => update('connectionTimeout', parseInt(e.target.value) || 15)}
+                />
+                <Input
+                  label="Reconnect Attempts"
+                  type="number"
+                  value={settings.connectionReconnectAttempts}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value)
+                    update('connectionReconnectAttempts', isNaN(v) ? 3 : v)
+                  }}
+                />
+                <Input
+                  label="Reconnect Delay (sec)"
+                  type="number"
+                  value={settings.connectionReconnectDelay}
+                  onChange={(e) => update('connectionReconnectDelay', parseInt(e.target.value) || 5)}
+                />
+              </div>
             </SettingsSection>
           )}
 
@@ -538,6 +565,100 @@ function AboutCard({
       <div>
         <h4 className="text-sm font-medium text-nd-text-primary">{title}</h4>
         <p className="text-2xs text-nd-text-muted mt-0.5 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+const PREVIEW_LINES = [
+  { prompt: true, text: '~$', cmd: ' ssh root@192.168.1.10' },
+  { prompt: false, text: '  Welcome to Ubuntu 24.04 LTS' },
+  { prompt: true, text: '~$', cmd: ' ls -la /etc/nginx' },
+  { prompt: true, text: '~$', cmd: '' },
+]
+
+function TerminalPreview({
+  fontFamily,
+  fontSize,
+  lineHeight,
+  colorScheme,
+  cursorStyle,
+  cursorBlink,
+}: {
+  fontFamily: string
+  fontSize: number
+  lineHeight: number
+  colorScheme: string
+  cursorStyle: string
+  cursorBlink: boolean
+}) {
+  const theme = TERMINAL_THEMES[colorScheme] || TERMINAL_THEMES['default']
+  const primaryFont = fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+
+  // Cursor element styles
+  const cursorWidth = cursorStyle === 'bar' ? 2 : fontSize * 0.6
+  const cursorHeight = cursorStyle === 'underline' ? 2 : fontSize * lineHeight
+  const cursorTop = cursorStyle === 'underline' ? fontSize * lineHeight - 2 : 0
+
+  return (
+    <div className="rounded-lg overflow-hidden border border-nd-border shadow-sm">
+      {/* Title bar */}
+      <div
+        className="flex items-center gap-2 px-3 py-1.5"
+        style={{ backgroundColor: theme.background, borderBottom: `1px solid ${theme.selectionBackground}` }}
+      >
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+          <div className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
+          <div className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+        </div>
+        <span
+          className="flex-1 text-center text-2xs opacity-50"
+          style={{ color: theme.foreground, fontFamily: `"${primaryFont}", monospace` }}
+        >
+          root@server — zsh
+        </span>
+      </div>
+
+      {/* Terminal body */}
+      <div
+        className="px-3 py-1.5 overflow-hidden"
+        style={{
+          backgroundColor: theme.background,
+          fontFamily: `"${primaryFont}", monospace`,
+          fontSize: `${fontSize}px`,
+          lineHeight: lineHeight,
+        }}
+      >
+        {PREVIEW_LINES.map((line, i) => (
+          <div key={i} className="whitespace-pre flex items-center" style={{ minHeight: `${fontSize * lineHeight}px` }}>
+            {line.prompt ? (
+              <>
+                <span style={{ color: theme.green }}>{line.text}</span>
+                <span style={{ color: theme.foreground }}>{line.cmd}</span>
+                {/* Show cursor on the last prompt line */}
+                {i === PREVIEW_LINES.length - 1 && (
+                  <span
+                    className={cn(cursorBlink && 'animate-pulse')}
+                    style={{
+                      display: 'inline-block',
+                      width: `${cursorWidth}px`,
+                      height: `${cursorHeight}px`,
+                      backgroundColor: theme.cursor,
+                      position: 'relative',
+                      top: `${cursorTop}px`,
+                      marginLeft: '1px',
+                      opacity: 0.8,
+                      borderRadius: cursorStyle === 'bar' ? '1px' : 0,
+                    }}
+                  />
+                )}
+              </>
+            ) : (
+              <span style={{ color: theme.foreground }}>{line.text}</span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )

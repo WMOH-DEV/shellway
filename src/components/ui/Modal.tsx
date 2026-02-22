@@ -64,7 +64,7 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className={cn(
-              'relative z-10 w-full rounded-lg',
+              'relative z-10 w-full rounded-lg max-h-[85vh] flex flex-col',
               'bg-nd-bg-secondary border border-nd-border shadow-2xl',
               maxWidth,
               className
@@ -84,7 +84,7 @@ export function Modal({
             )}
 
             {/* Body */}
-            <div className="px-5 py-4">{children}</div>
+            <div className="px-5 py-4 overflow-y-auto min-h-0">{children}</div>
           </motion.div>
         </div>
       )}

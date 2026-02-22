@@ -830,7 +830,6 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
                             label="Font Family"
                             value={form.overrides.terminal?.fontFamily ?? ''}
                             onChange={(font) => updateOverrides('terminal', 'fontFamily', font)}
-                            fontSize={form.overrides.terminal?.fontSize ?? 14}
                           />
                           <div className="grid grid-cols-2 gap-3">
                             <Input

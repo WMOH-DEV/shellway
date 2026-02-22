@@ -274,7 +274,9 @@ let isQuitting = false
 function setupTray(mainWindow: BrowserWindow): void {
   if (tray) return // Already created
 
-  const iconPath = join(__dirname, '../../resources/icon.png')
+  // Windows: prefer .ico for crisp tray icon; others: .png
+  const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  const iconPath = join(__dirname, '../../resources', iconFile)
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
   tray = new Tray(trayIcon)
   tray.setToolTip('Shellway')

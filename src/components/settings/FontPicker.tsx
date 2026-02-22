@@ -6,17 +6,10 @@ import { getAvailableMonospaceFonts } from '@/utils/fontDetector'
 interface FontPickerProps {
   value: string
   onChange: (font: string) => void
-  fontSize?: number
   label?: string
 }
 
-const PREVIEW_LINES = [
-  '$ ssh root@server.com',
-  'The quick brown fox 0O1lI',
-  '{} [] () <> != === =>',
-]
-
-export function FontPicker({ value, onChange, fontSize = 14, label }: FontPickerProps) {
+export function FontPicker({ value, onChange, label }: FontPickerProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -183,22 +176,11 @@ export function FontPicker({ value, onChange, fontSize = 14, label }: FontPicker
             })}
           </div>
 
-          {/* Preview */}
-          <div className="border-t border-nd-border px-3 py-2">
-            <div className="text-2xs text-nd-text-muted mb-1.5">Preview</div>
-            <div
-              className="rounded-md px-3 py-2 leading-relaxed overflow-hidden"
-              style={{
-                fontFamily: `"${primaryFont}", monospace`,
-                fontSize: `${fontSize}px`,
-                backgroundColor: '#0f1117',
-                color: '#e4e4e7',
-              }}
-            >
-              {PREVIEW_LINES.map((line, i) => (
-                <div key={i} className="whitespace-pre">{line}</div>
-              ))}
-            </div>
+          {/* Font count */}
+          <div className="border-t border-nd-border px-3 py-1.5">
+            <span className="text-2xs text-nd-text-muted">
+              {filtered.length} of {availableFonts.length} fonts
+            </span>
           </div>
         </div>
       )}
