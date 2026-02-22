@@ -14,6 +14,7 @@ import { Toggle } from '@/components/ui/Toggle'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { toast } from '@/components/ui/Toast'
+import { FontPicker } from '@/components/settings/FontPicker'
 import type {
   Session,
   AuthMethod,
@@ -825,11 +826,11 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
 
                       <div className={cn(form.useGlobalTerminal && 'opacity-40 pointer-events-none')}>
                         <div className="flex flex-col gap-3 mt-2">
-                          <Input
+                          <FontPicker
                             label="Font Family"
-                            placeholder="JetBrains Mono"
                             value={form.overrides.terminal?.fontFamily ?? ''}
-                            onChange={(e) => updateOverrides('terminal', 'fontFamily', e.target.value)}
+                            onChange={(font) => updateOverrides('terminal', 'fontFamily', font)}
+                            fontSize={form.overrides.terminal?.fontSize ?? 14}
                           />
                           <div className="grid grid-cols-2 gap-3">
                             <Input

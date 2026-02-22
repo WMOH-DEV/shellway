@@ -24,6 +24,7 @@ import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
+import { FontPicker } from '@/components/settings/FontPicker'
 import { useUIStore } from '@/stores/uiStore'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
@@ -248,10 +249,11 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
 
           {activeSection === 'terminal' && (
             <SettingsSection title="Terminal">
-              <Input
+              <FontPicker
                 label="Font Family"
                 value={settings.terminalFontFamily}
-                onChange={(e) => update('terminalFontFamily', e.target.value)}
+                onChange={(font) => update('terminalFontFamily', font)}
+                fontSize={settings.terminalFontSize}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Input
