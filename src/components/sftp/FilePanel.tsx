@@ -22,8 +22,9 @@ import { Spinner } from '@/components/ui/Spinner'
 import { toast } from '@/components/ui/Toast'
 import { useSFTPPathStore } from '@/stores/sftpPathStore'
 import { useBookmarkStore } from '@/stores/bookmarkStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import type { FileEntry, PanelType, ViewMode } from '@/types/sftp'
-import type { SFTPAutocompleteMode } from '@/types/settings'
+import type { SFTPAutocompleteMode, SFTPDoubleClickAction } from '@/types/settings'
 
 export interface FilePanelHandle {
   refresh: () => void
@@ -65,6 +66,9 @@ export function FilePanel({
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [showHidden, setShowHidden] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+
+  // Look up session overrides for SFTP defaults
+  const session = useSessionStore((s) => s.sessions.find((sess) => sess.id === sessionId))
   const [history, setHistory] = useState<string[]>([savedPath || '/'])
   const [historyIndex, setHistoryIndex] = useState(0)
   const initializedRef = useRef(false)
@@ -79,6 +83,9 @@ export function FilePanel({
   // Autocomplete mode from settings
   const [autocompleteMode, setAutocompleteMode] = useState<SFTPAutocompleteMode>('content')
 
+  // Double-click action from settings
+  const [doubleClickAction, setDoubleClickAction] = useState<SFTPDoubleClickAction>('open')
+
   // Bookmarks
   const bookmarks = useBookmarkStore((s) => s.getBookmarks(sessionId))
   const addBookmark = useBookmarkStore((s) => s.addBookmark)
@@ -90,14 +97,28 @@ export function FilePanel({
     (b) => b.path === currentPath && b.panelType === type
   )
 
-  // Load autocomplete mode from settings
+  // Load SFTP defaults from global settings, then apply session overrides
   useEffect(() => {
     window.novadeck.settings.getAll().then((s: any) => {
       if (s?.sftpAutocompleteMode) {
         setAutocompleteMode(s.sftpAutocompleteMode)
       }
+      // View mode: session override > global setting > 'list'
+      const globalViewMode = s?.sftpDefaultViewMode ?? 'list'
+      const sessionViewMode = session?.overrides?.sftp?.defaultViewMode
+      setViewMode(sessionViewMode ?? globalViewMode)
+
+      // Show hidden: session override > global setting > false
+      const globalShowHidden = s?.sftpShowHiddenFiles ?? false
+      const sessionShowHidden = session?.overrides?.sftp?.showHiddenFiles
+      setShowHidden(sessionShowHidden ?? globalShowHidden)
+
+      // Double-click action: session override > global setting > 'open'
+      const globalDoubleClick = s?.sftpDoubleClickAction ?? 'open'
+      const sessionDoubleClick = session?.overrides?.sftp?.doubleClickAction
+      setDoubleClickAction(sessionDoubleClick ?? globalDoubleClick)
     }).catch(() => {})
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close bookmark dropdown on outside click
   useEffect(() => {
@@ -169,6 +190,24 @@ export function FilePanel({
       }
 
       if (type === 'local') {
+        // Use sftpDefaultLocalDirectory from global settings if set, otherwise homedir
+        let defaultDir = ''
+        try {
+          const s = await window.novadeck.settings.getAll() as any
+          defaultDir = s?.sftpDefaultLocalDirectory ?? ''
+        } catch { /* ignore */ }
+
+        if (defaultDir) {
+          try {
+            await loadDirectory(defaultDir)
+            setHistory([defaultDir])
+            setHistoryIndex(0)
+            return
+          } catch {
+            // Configured directory inaccessible — fall back to homedir
+          }
+        }
+
         const home = await window.novadeck.sftp.localHomedir()
         navigateTo(home)
       } else {
@@ -211,16 +250,31 @@ export function FilePanel({
     }
   }, [currentPath, navigateTo])
 
-  /** Handle file double-click/enter */
+  /** Handle file double-click/enter — behavior depends on doubleClickAction setting */
   const handleOpen = useCallback(
     (entry: FileEntry) => {
       if (entry.isDirectory) {
+        // Directories always navigate regardless of doubleClickAction
         navigateTo(entry.path)
-      } else {
-        // TODO: open file preview / editor
+        return
+      }
+
+      switch (doubleClickAction) {
+        case 'transfer':
+          // TODO: trigger transfer of the file to the opposite panel
+          toast.info('Transfer', `Transfer for "${entry.name}" is not yet implemented`)
+          break
+        case 'edit':
+          // TODO: open file in editor
+          toast.info('Edit', `Editor for "${entry.name}" is not yet implemented`)
+          break
+        case 'open':
+        default:
+          // TODO: open file preview / editor
+          break
       }
     },
-    [navigateTo]
+    [navigateTo, doubleClickAction]
   )
 
   /** Handle selection */

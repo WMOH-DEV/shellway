@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Plus, X, Terminal as TerminalIcon, Search,
   ChevronUp, ChevronDown, Trash2, Code2
@@ -10,6 +10,10 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { Button } from '@/components/ui/Button'
 import { v4 as uuid } from 'uuid'
 import type { SearchAddon } from '@xterm/addon-search'
+import { useConnectionStore } from '@/stores/connectionStore'
+import { useSessionStore } from '@/stores/sessionStore'
+import { resolveTerminalSettings, type ResolvedTerminalSettings } from '@/utils/resolveSettings'
+import type { AppSettings } from '@/types/settings'
 
 interface TerminalTabsProps {
   connectionId: string
@@ -26,6 +30,23 @@ interface TerminalTab {
  * Single unified bar: shell tabs on left, search + tools on right.
  */
 export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsProps) {
+  // ── Resolve terminal settings: global + session overrides ──
+  const [resolvedSettings, setResolvedSettings] = useState<ResolvedTerminalSettings | undefined>()
+
+  // Look up the session overrides from stores
+  const connectionTab = useConnectionStore((s) => s.tabs.find((t) => t.id === connectionId))
+  const session = useSessionStore((s) =>
+    connectionTab ? s.sessions.find((sess) => sess.id === connectionTab.sessionId) : undefined
+  )
+
+  useEffect(() => {
+    window.novadeck.settings.getAll().then((globalSettings: AppSettings) => {
+      const termOverrides = session?.overrides?.terminal
+      const resolved = resolveTerminalSettings(globalSettings, termOverrides)
+      setResolvedSettings(resolved)
+    })
+  }, [session?.overrides?.terminal])
+
   const [tabs, setTabs] = useState<TerminalTab[]>(() => [
     { id: uuid(), name: 'Shell 1' }
   ])
@@ -216,6 +237,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
               connectionId={connectionId}
               connectionStatus={connectionStatus}
               isActive={tab.id === activeTabId}
+              terminalSettings={resolvedSettings}
               onSearchAddon={(addon) => registerSearchAddon(tab.id, addon)}
               onSearchRequest={() => {
                 setIsSearchOpen(true)

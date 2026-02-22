@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import {
   Settings,
   ChevronLeft,
@@ -37,6 +37,19 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
 
   const width = sidebarOpen ? 260 : 48
+
+  // Sort sessions for collapsed view (same logic as SessionManager)
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const aOrder = a.sortOrder ?? Infinity
+      const bOrder = b.sortOrder ?? Infinity
+      if (aOrder !== bOrder) return aOrder - bOrder
+      const aCreated = a.createdAt ?? 0
+      const bCreated = b.createdAt ?? 0
+      if (aCreated !== bCreated) return aCreated - bCreated
+      return a.name.localeCompare(b.name)
+    })
+  }, [sessions])
 
   // ── Session form for collapsed sidebar "+" button ──
   const { createSession } = useSession()
@@ -232,7 +245,7 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
           </div>
           <div className="flex flex-col items-center gap-0.5 py-1.5 flex-1 overflow-y-auto scrollbar-none w-full">
             {/* SSH session avatars */}
-            {sessions.map((session) => {
+            {sortedSessions.map((session) => {
                 const tab = tabs.find((t) => t.sessionId === session.id)
                 const isConnected = tab?.status === 'connected'
                 const isConnecting = tab?.status === 'connecting' || tab?.status === 'authenticating'

@@ -14,6 +14,7 @@ import { HostKeyVerifyDialog } from '@/components/keys/HostKeyVerifyDialog'
 import { KBDIDialog } from '@/components/sessions/KBDIDialog'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
+import { applyAccentColor, applyDensity } from '@/utils/appearance'
 import { useLogStore } from '@/stores/logStore'
 import { toast } from '@/components/ui/Toast'
 
@@ -51,6 +52,12 @@ export default function App() {
     window.novadeck.settings.getAll().then((saved) => {
       if (saved?.theme) {
         setTheme(saved.theme)
+      }
+      if (saved?.accentColor) {
+        applyAccentColor(saved.accentColor)
+      }
+      if (saved?.density) {
+        applyDensity(saved.density)
       }
     }).catch((err) => {
       console.warn('Failed to load persisted settings on startup:', err)

@@ -4,6 +4,7 @@ import { getLogService, LogService } from '../services/LogService'
 import { getClientKeyStore } from './clientkey.ipc'
 import { getNotificationService } from '../services/NotificationService'
 import { getHealthService } from './health.ipc'
+import { getSettingsStore } from './settings.ipc'
 
 const sshService = new SSHService()
 
@@ -15,6 +16,7 @@ const sshService = new SSHService()
  * SSHService expects: { host, port, username, authMethod, password, privateKeyPath, ..., proxy, ... }
  */
 function mapToConnectionConfig(raw: any): SSHConnectionConfig {
+  const globalSettings = getSettingsStore().getAll()
   const auth = raw.auth || {}
   const proxy = raw.proxy
   const sshOverrides = raw.overrides?.ssh
@@ -59,10 +61,10 @@ function mapToConnectionConfig(raw: any): SSHConnectionConfig {
     gssapiDelegateCreds: auth.gssapiDelegateCreds,
     gssapiSPN: auth.gssapiSPN,
 
-    // Connection options — from overrides or defaults
-    keepAliveInterval: sshOverrides?.keepAliveInterval ?? 30,
+    // Connection options — session overrides → global settings → hardcoded fallback
+    keepAliveInterval: sshOverrides?.keepAliveInterval ?? globalSettings.connectionKeepAliveInterval,
     keepAliveCountMax: sshOverrides?.keepAliveCountMax ?? 3,
-    readyTimeout: sshOverrides?.connectionTimeout ?? 15,
+    readyTimeout: sshOverrides?.connectionTimeout ?? globalSettings.connectionTimeout,
     compression: sshOverrides?.compression,
   }
 
@@ -90,15 +92,24 @@ function mapToConnectionConfig(raw: any): SSHConnectionConfig {
     }
   }
 
-  // Reconnection config from overrides
-  if (sshOverrides?.reconnectAttempts !== undefined) {
+  // Reconnection config — global settings as base, session overrides on top
+  {
+    const enabled = sshOverrides?.reconnectAttempts !== undefined
+      ? sshOverrides.reconnectAttempts !== 0
+      : globalSettings.reconnectionEnabled
+    const maxAttempts = sshOverrides?.reconnectAttempts ?? globalSettings.reconnectionMaxAttempts
+    const initialDelay = sshOverrides?.reconnectDelay ?? globalSettings.reconnectionInitialDelay
+    const maxDelay = globalSettings.reconnectionMaxDelay
+    const backoffMultiplier = globalSettings.reconnectionBackoffMultiplier
+    const jitter = globalSettings.reconnectionJitter
+
     config.reconnection = {
-      enabled: (sshOverrides.reconnectAttempts ?? 0) !== 0,
-      maxAttempts: sshOverrides.reconnectAttempts ?? 0,
-      initialDelay: sshOverrides.reconnectDelay ?? 1,
-      maxDelay: 120,
-      backoffMultiplier: 2,
-      jitter: true,
+      enabled,
+      maxAttempts,
+      initialDelay,
+      maxDelay,
+      backoffMultiplier,
+      jitter,
       resetAfterSuccess: true,
     }
   }

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeTheme, dialog, Tray, Menu, nativeImage } from 'electron'
 import { join, basename, extname } from 'path'
 import { readFile, writeFile, stat } from 'fs/promises'
 import { watch, type FSWatcher } from 'fs'
@@ -19,6 +19,7 @@ import { registerSQLIPC } from './ipc/sql.ipc'
 import { registerExportIPC } from './ipc/export.ipc'
 import { getSettingsStore } from './ipc/settings.ipc'
 import { initNotificationService } from './services/NotificationService'
+import { getLogService } from './services/LogService'
 
 /** Create the main application window */
 function createWindow(): BrowserWindow {
@@ -266,6 +267,50 @@ ipcMain.handle('fs:unwatchFile', (_event, watchId: string) => {
   return { success: true }
 })
 
+// ──── Tray support ────
+let tray: Tray | null = null
+let isQuitting = false
+
+function setupTray(mainWindow: BrowserWindow): void {
+  if (tray) return // Already created
+
+  const iconPath = join(__dirname, '../../resources/icon.png')
+  const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  tray = new Tray(trayIcon)
+  tray.setToolTip('Shellway')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Window',
+      click: () => {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
+    }
+  ])
+  tray.setContextMenu(contextMenu)
+
+  tray.on('double-click', () => {
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
+
+function destroyTray(): void {
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
+}
+
 // ──── App lifecycle ────
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.shellway.app')
@@ -302,6 +347,34 @@ app.whenReady().then(() => {
   mainWindow.on('unmaximize', () => {
     mainWindow.webContents.send('window:maximized-change', false)
   })
+
+  // Ensure isQuitting is set for all quit paths (Cmd+Q, taskbar close, etc.)
+  app.on('before-quit', () => {
+    isQuitting = true
+  })
+
+  // ──── Apply settings on startup ────
+  const settingsStore = getSettingsStore()
+  const initialSettings = settingsStore.getAll()
+
+  // Minimize to Tray: intercept close to hide window instead
+  if (initialSettings.minimizeToTray && process.platform !== 'darwin') {
+    setupTray(mainWindow)
+    mainWindow.on('close', (e) => {
+      if (!isQuitting) {
+        e.preventDefault()
+        mainWindow.hide()
+      }
+    })
+  }
+
+  // Start on Boot: sync login item setting
+  app.setLoginItemSettings({ openAtLogin: initialSettings.startOnBoot })
+
+  // Log settings: apply maxEntries and debugMode from saved settings
+  const logService = getLogService()
+  logService.setMaxEntries(initialSettings.logMaxEntries)
+  logService.setDebugMode(initialSettings.logDebugMode)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

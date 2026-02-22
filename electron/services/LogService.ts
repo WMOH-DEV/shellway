@@ -13,15 +13,22 @@ const DEFAULT_MAX_ENTRIES = 5000
 export class LogService extends EventEmitter {
   private entries: Map<string, LogEntry[]> = new Map()
   private maxEntries: number
+  private debugMode: boolean
 
-  constructor(maxEntries: number = DEFAULT_MAX_ENTRIES) {
+  constructor(maxEntries: number = DEFAULT_MAX_ENTRIES, debugMode: boolean = false) {
     super()
     this.maxEntries = maxEntries
+    this.debugMode = debugMode
   }
 
   /** Set the maximum number of log entries per session */
   setMaxEntries(max: number): void {
     this.maxEntries = max
+  }
+
+  /** Enable or disable debug-level log entries */
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled
   }
 
   /** Add a log entry for a session */
@@ -32,6 +39,21 @@ export class LogService extends EventEmitter {
     message: string,
     details?: string
   ): LogEntry {
+    // Suppress debug-level entries when debug mode is off
+    if (level === 'debug' && !this.debugMode) {
+      // Still create the entry object so callers get a return value,
+      // but don't store or emit it
+      return {
+        id: randomUUID(),
+        timestamp: Date.now(),
+        level,
+        source,
+        message,
+        details,
+        sessionId
+      }
+    }
+
     const entry: LogEntry = {
       id: randomUUID(),
       timestamp: Date.now(),

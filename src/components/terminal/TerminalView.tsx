@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { cn } from '@/utils/cn'
+import type { ResolvedTerminalSettings } from '@/utils/resolveSettings'
 
 interface TerminalViewProps {
   /** Unique ID for this shell */
@@ -15,10 +16,8 @@ interface TerminalViewProps {
   connectionStatus?: string
   /** Whether this terminal is the active/visible one */
   isActive: boolean
-  /** Font family */
-  fontFamily?: string
-  /** Font size */
-  fontSize?: number
+  /** Resolved terminal settings (global + session overrides) */
+  terminalSettings?: ResolvedTerminalSettings
   /** Callback when terminal is ready (for search addon) */
   onSearchAddon?: (addon: SearchAddon) => void
   /** Callback when user presses Ctrl+F in terminal */
@@ -32,13 +31,25 @@ interface TerminalViewProps {
  * xterm.js terminal wrapper with fit, web-links, and search addons.
  * Connects to a remote shell via IPC.
  */
+// Hardcoded defaults used when no settings are provided
+const DEFAULTS = {
+  fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
+  fontSize: 14,
+  lineHeight: 1.4,
+  cursorBlink: true,
+  cursorStyle: 'block' as const,
+  scrollback: 10000,
+  copyOnSelect: false,
+  rightClickPaste: false,
+  bellBehavior: 'none' as const
+}
+
 export function TerminalView({
   shellId,
   connectionId,
   connectionStatus,
   isActive,
-  fontFamily = 'JetBrains Mono, Fira Code, Consolas, monospace',
-  fontSize = 14,
+  terminalSettings,
   onSearchAddon,
   onSearchRequest,
   onClearHandler,
@@ -59,13 +70,23 @@ export function TerminalView({
   useEffect(() => {
     if (!containerRef.current) return
 
+    const fontFamily = terminalSettings?.fontFamily ?? DEFAULTS.fontFamily
+    const fontSize = terminalSettings?.fontSize ?? DEFAULTS.fontSize
+    const lineHeight = terminalSettings?.lineHeight ?? DEFAULTS.lineHeight
+    const cursorBlink = terminalSettings?.cursorBlink ?? DEFAULTS.cursorBlink
+    const cursorStyle = terminalSettings?.cursorStyle ?? DEFAULTS.cursorStyle
+    const scrollback = terminalSettings?.scrollbackLines ?? DEFAULTS.scrollback
+    const copyOnSelect = terminalSettings?.copyOnSelect ?? DEFAULTS.copyOnSelect
+    const rightClickPaste = terminalSettings?.rightClickPaste ?? DEFAULTS.rightClickPaste
+    const bellBehavior = terminalSettings?.bellBehavior ?? DEFAULTS.bellBehavior
+
     const terminal = new Terminal({
       fontFamily,
       fontSize,
-      lineHeight: 1.4,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      scrollback: 10000,
+      lineHeight,
+      cursorBlink,
+      cursorStyle,
+      scrollback,
       allowProposedApi: true,
       theme: {
         background: '#0f1117',
@@ -183,9 +204,62 @@ export function TerminalView({
       return true
     })
 
+    // ── Copy on select ──
+    let unsubSelection: (() => void) | undefined
+    if (copyOnSelect) {
+      const disposable = terminal.onSelectionChange(() => {
+        const sel = terminal.getSelection()
+        if (sel) {
+          navigator.clipboard.writeText(sel)
+        }
+      })
+      unsubSelection = () => disposable.dispose()
+    }
+
+    // ── Right-click paste ──
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!rightClickPaste) return
+      e.preventDefault()
+      navigator.clipboard.readText().then((text) => {
+        if (text) terminal.paste(text)
+      })
+    }
+    containerRef.current.addEventListener('contextmenu', handleContextMenu)
+
+    // ── Bell behavior ──
+    const bellDisposable = terminal.onBell(() => {
+      if (bellBehavior === 'sound') {
+        // Play a short beep using Web Audio API
+        try {
+          const ctx = new AudioContext()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.value = 800
+          gain.gain.value = 0.1
+          osc.start()
+          osc.stop(ctx.currentTime + 0.1)
+        } catch {
+          // Audio not available — ignore silently
+        }
+      } else if (bellBehavior === 'visual') {
+        // Flash the terminal container briefly
+        const el = containerRef.current
+        if (el) {
+          el.style.filter = 'brightness(1.5)'
+          setTimeout(() => { el.style.filter = '' }, 150)
+        }
+      }
+      // 'none' — do nothing
+    })
+
     return () => {
       unsubData()
       unsubExit()
+      unsubSelection?.()
+      bellDisposable.dispose()
+      containerRef.current?.removeEventListener('contextmenu', handleContextMenu)
       resizeObserver.disconnect()
       terminal.dispose()
       terminalRef.current = null

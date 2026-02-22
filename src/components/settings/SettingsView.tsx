@@ -16,6 +16,7 @@ import {
   Bell
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { applyAccentColor, applyDensity } from '@/utils/appearance'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -24,8 +25,21 @@ import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
 import { useUIStore } from '@/stores/uiStore'
-import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode } from '@/types/settings'
+import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
+
+const ACCENT_PRESETS = [
+  '#3b82f6', // Blue (default)
+  '#8b5cf6', // Violet
+  '#ec4899', // Pink
+  '#f43f5e', // Rose
+  '#ef4444', // Red
+  '#f97316', // Orange
+  '#eab308', // Yellow
+  '#22c55e', // Green
+  '#14b8a6', // Teal
+  '#06b6d4', // Cyan
+]
 
 const SECTIONS: TabItem[] = [
   { id: 'general', label: 'General', icon: <Settings size={13} /> },
@@ -65,6 +79,16 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
       if (key === 'theme') {
         setTheme(value as Theme)
       }
+
+      // Apply accent color immediately
+      if (key === 'accentColor') {
+        applyAccentColor(value as string)
+      }
+
+      // Apply density immediately
+      if (key === 'density') {
+        applyDensity(value as InterfaceDensity)
+      }
     },
     [settings, setTheme]
   )
@@ -73,6 +97,8 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
     await window.novadeck.settings.reset()
     setSettings(DEFAULT_SETTINGS)
     setTheme(DEFAULT_SETTINGS.theme)
+    applyAccentColor(DEFAULT_SETTINGS.accentColor)
+    applyDensity(DEFAULT_SETTINGS.density)
     toast.info('Settings reset to defaults')
   }, [setTheme])
 
@@ -143,6 +169,22 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   </div>
                 </SettingsSection>
               </div>
+
+              <div className="mt-6">
+                <SettingsSection title="Logging">
+                  <Input
+                    label="Max Log Entries (per session)"
+                    type="number"
+                    value={settings.logMaxEntries}
+                    onChange={(e) => update('logMaxEntries', parseInt(e.target.value) || 5000)}
+                  />
+                  <Toggle
+                    checked={settings.logDebugMode}
+                    onChange={(v) => update('logDebugMode', v)}
+                    label="Show debug-level SSH events"
+                  />
+                </SettingsSection>
+              </div>
             </>
           )}
 
@@ -158,6 +200,39 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   { value: 'system', label: 'System' }
                 ]}
               />
+
+              {/* Accent Color */}
+              <div>
+                <label className="block text-sm font-medium text-nd-text-secondary mb-2">
+                  Accent Color
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {ACCENT_PRESETS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => update('accentColor', color)}
+                        className={cn(
+                          'w-6 h-6 rounded-full border-2 transition-all shrink-0',
+                          settings.accentColor === color
+                            ? 'border-nd-text-primary scale-110'
+                            : 'border-transparent hover:border-nd-border-hover'
+                        )}
+                        style={{ backgroundColor: color }}
+                        title={color}
+                      />
+                    ))}
+                  </div>
+                  <input
+                    type="color"
+                    value={settings.accentColor}
+                    onChange={(e) => update('accentColor', e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer border border-nd-border bg-transparent shrink-0"
+                    title="Custom color"
+                  />
+                </div>
+              </div>
+
               <Select
                 label="Interface Density"
                 value={settings.density}
@@ -271,6 +346,44 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   { value: 'content', label: 'Content-Based (fetch folder contents)' },
                   { value: 'history', label: 'History-Based (visited paths only)' }
                 ]}
+              />
+              <Select
+                label="Double-Click Action"
+                value={settings.sftpDoubleClickAction}
+                onChange={(e) => update('sftpDoubleClickAction', e.target.value as SFTPDoubleClickAction)}
+                options={[
+                  { value: 'open', label: 'Open / Navigate' },
+                  { value: 'transfer', label: 'Transfer to Other Panel' },
+                  { value: 'edit', label: 'Open in Editor' }
+                ]}
+              />
+              <Input
+                label="Default Local Directory"
+                value={settings.sftpDefaultLocalDirectory}
+                onChange={(e) => update('sftpDefaultLocalDirectory', e.target.value)}
+                placeholder="Leave empty for home directory"
+              />
+              <Select
+                label="Default Conflict Resolution"
+                value={settings.sftpDefaultConflictResolution}
+                onChange={(e) => update('sftpDefaultConflictResolution', e.target.value as SFTPConflictResolution)}
+                options={[
+                  { value: 'ask', label: 'Ask Every Time' },
+                  { value: 'overwrite', label: 'Overwrite' },
+                  { value: 'overwrite-newer', label: 'Overwrite if Newer' },
+                  { value: 'skip', label: 'Skip' },
+                  { value: 'rename', label: 'Rename' }
+                ]}
+              />
+              <Toggle
+                checked={settings.sftpPreserveTimestamps}
+                onChange={(v) => update('sftpPreserveTimestamps', v)}
+                label="Preserve file timestamps on transfer"
+              />
+              <Toggle
+                checked={settings.sftpFollowSymlinks}
+                onChange={(v) => update('sftpFollowSymlinks', v)}
+                label="Follow symbolic links"
               />
             </SettingsSection>
           )}

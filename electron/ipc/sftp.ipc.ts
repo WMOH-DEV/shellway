@@ -3,6 +3,8 @@ import { promises as fsp } from 'fs'
 import { join, basename } from 'path'
 import { homedir } from 'os'
 import { getSSHService } from './ssh.ipc'
+import { getSettingsStore } from './settings.ipc'
+import { getSessionStore } from './session.ipc'
 import { SFTPService, type FileEntry } from '../services/SFTPService'
 import { TransferQueue, type TransferItem } from '../services/TransferQueue'
 import { getLogService, LogService } from '../services/LogService'
@@ -31,8 +33,12 @@ export function registerSFTPIPC(): void {
       const sftpService = new SFTPService(sftpWrapper)
       sftpServices.set(connectionId, sftpService)
 
-      // Create transfer queue
-      const queue = new TransferQueue(3)
+      // Create transfer queue — read concurrency from session override > global setting > default (3)
+      const globalSettings = getSettingsStore().getAll()
+      const globalConcurrency = globalSettings.sftpConcurrentTransfers ?? 3
+      const sessionData = conn.sessionId ? getSessionStore().getById(conn.sessionId) : undefined
+      const concurrency = sessionData?.overrides?.sftp?.concurrentTransfers ?? globalConcurrency
+      const queue = new TransferQueue(concurrency)
       queue.setSFTPService(sftpService)
       transferQueues.set(connectionId, queue)
 

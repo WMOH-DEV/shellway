@@ -1,5 +1,6 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 import { SettingsStore, type AppSettings } from '../services/SettingsStore'
+import { getLogService } from '../services/LogService'
 
 const settingsStore = new SettingsStore()
 
@@ -21,7 +22,28 @@ export function registerSettingsIPC(): void {
   })
 
   ipcMain.handle('settings:update', (_event, updates: Partial<AppSettings>) => {
-    return settingsStore.update(updates)
+    const result = settingsStore.update(updates)
+
+    // startOnBoot — sync OS login item when changed
+    if ('startOnBoot' in updates) {
+      app.setLoginItemSettings({ openAtLogin: !!updates.startOnBoot })
+    }
+
+    // logMaxEntries — update LogService cap when changed
+    if ('logMaxEntries' in updates && typeof updates.logMaxEntries === 'number') {
+      getLogService().setMaxEntries(updates.logMaxEntries)
+    }
+
+    // logDebugMode — update LogService debug filtering when changed
+    if ('logDebugMode' in updates && typeof updates.logDebugMode === 'boolean') {
+      getLogService().setDebugMode(updates.logDebugMode)
+    }
+
+    // checkForUpdates — placeholder: auto-update integration requires electron-updater
+    // setup which is out of scope. This setting is persisted but not yet wired to an
+    // actual update mechanism.
+
+    return result
   })
 
   ipcMain.handle('settings:reset', () => {
