@@ -27,6 +27,7 @@ import { toast } from '@/components/ui/Toast'
 import { useUIStore } from '@/stores/uiStore'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
+import { THEME_NAMES } from '@/data/terminalThemes'
 
 const ACCENT_PRESETS = [
   '#3b82f6', // Blue (default)
@@ -271,6 +272,12 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 type="number"
                 value={settings.terminalScrollback}
                 onChange={(e) => update('terminalScrollback', parseInt(e.target.value) || 10000)}
+              />
+              <Select
+                label="Color Scheme"
+                value={settings.terminalColorScheme}
+                onChange={(e) => update('terminalColorScheme', e.target.value)}
+                options={THEME_NAMES}
               />
               <Select
                 label="Cursor Style"

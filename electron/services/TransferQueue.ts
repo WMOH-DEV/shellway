@@ -31,6 +31,13 @@ export class TransferQueue extends EventEmitter {
   private maxConcurrent = 3
   private sftpService: SFTPService | null = null
 
+  /** Bandwidth limits in KB/s (0 = unlimited) */
+  bandwidthLimitUp: number = 0
+  bandwidthLimitDown: number = 0
+
+  /** Whether to preserve file timestamps on transfer */
+  preserveTimestamps: boolean = true
+
   constructor(maxConcurrent: number = 3) {
     super()
     this.maxConcurrent = maxConcurrent
@@ -170,9 +177,15 @@ export class TransferQueue extends EventEmitter {
   private async executeTransfer(item: TransferItem): Promise<void> {
     try {
       if (item.direction === 'download') {
-        await this.sftpService!.download(item.sourcePath, item.destinationPath, item.id)
+        await this.sftpService!.download(
+          item.sourcePath, item.destinationPath, item.id,
+          this.bandwidthLimitDown, this.preserveTimestamps
+        )
       } else {
-        await this.sftpService!.upload(item.sourcePath, item.destinationPath, item.id)
+        await this.sftpService!.upload(
+          item.sourcePath, item.destinationPath, item.id,
+          this.bandwidthLimitUp, this.preserveTimestamps
+        )
       }
 
       if (item.status === 'active') {

@@ -2,6 +2,36 @@ import { type SFTPWrapper, type FileEntry as SSH2FileEntry, type Stats } from 's
 import { createReadStream, createWriteStream, promises as fsp } from 'fs'
 import { join, basename, dirname, posix } from 'path'
 import { EventEmitter } from 'events'
+import { Transform, TransformCallback } from 'stream'
+
+/**
+ * ThrottleTransform — limits throughput to a given KB/s rate.
+ * Used to enforce bandwidth limits on SFTP transfers.
+ */
+class ThrottleTransform extends Transform {
+  private bytesPerSecond: number
+  private transferred = 0
+  private startTime = Date.now()
+
+  constructor(kbPerSecond: number) {
+    super()
+    this.bytesPerSecond = kbPerSecond * 1024
+  }
+
+  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+    this.transferred += chunk.length
+    const elapsed = (Date.now() - this.startTime) / 1000
+    const expectedTime = this.transferred / this.bytesPerSecond
+    const delay = Math.max(0, (expectedTime - elapsed) * 1000)
+
+    if (delay > 0) {
+      setTimeout(() => { this.push(chunk); callback() }, delay)
+    } else {
+      this.push(chunk)
+      callback()
+    }
+  }
+}
 
 export interface FileEntry {
   name: string
@@ -30,9 +60,9 @@ export class SFTPService extends EventEmitter {
   }
 
   /** List directory contents */
-  async readdir(remotePath: string): Promise<FileEntry[]> {
+  async readdir(remotePath: string, followSymlinks: boolean = true): Promise<FileEntry[]> {
     return new Promise((resolve, reject) => {
-      this.sftp.readdir(remotePath, (err, list) => {
+      this.sftp.readdir(remotePath, async (err, list) => {
         if (err) {
           reject(err)
           return
@@ -56,6 +86,23 @@ export class SFTPService extends EventEmitter {
             group: attrs.gid ?? 0
           }
         })
+
+        // Resolve symlinks: get real type/size and target path
+        if (followSymlinks) {
+          for (const entry of entries) {
+            if (!entry.isSymlink) continue
+            try {
+              const target = await this.readlink(entry.path)
+              entry.symlinkTarget = target
+              // stat follows symlinks — gives us the real type and size
+              const realStat = await this.stat(entry.path)
+              entry.isDirectory = realStat.isDirectory
+              entry.size = realStat.size
+            } catch {
+              // Broken symlink — keep original entry as-is
+            }
+          }
+        }
 
         resolve(entries)
       })
@@ -207,61 +254,125 @@ export class SFTPService extends EventEmitter {
   /**
    * Download a file from remote to local.
    * Emits 'progress' events with (transferId, transferred, total).
+   * @param bandwidthLimit KB/s, 0 = unlimited
+   * @param preserveTimestamps If true, set local file timestamps to match remote
    */
   async download(
     remotePath: string,
     localPath: string,
-    transferId: string
+    transferId: string,
+    bandwidthLimit: number = 0,
+    preserveTimestamps: boolean = false
   ): Promise<void> {
     const stats = await this.stat(remotePath)
     const totalBytes = stats.size
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const readStream = this.sftp.createReadStream(remotePath)
       const writeStream = createWriteStream(localPath)
       let transferred = 0
 
-      readStream.on('data', (chunk: Buffer) => {
-        transferred += chunk.length
-        this.emit('progress', transferId, transferred, totalBytes)
-      })
+      if (bandwidthLimit > 0) {
+        const throttle = new ThrottleTransform(bandwidthLimit)
 
-      readStream.on('error', reject)
-      writeStream.on('error', reject)
-      writeStream.on('finish', resolve)
+        throttle.on('data', (chunk: Buffer) => {
+          transferred += chunk.length
+          this.emit('progress', transferId, transferred, totalBytes)
+        })
 
-      readStream.pipe(writeStream)
+        readStream.on('error', reject)
+        throttle.on('error', reject)
+        writeStream.on('error', reject)
+        writeStream.on('finish', resolve)
+
+        readStream.pipe(throttle).pipe(writeStream)
+      } else {
+        readStream.on('data', (chunk: Buffer) => {
+          transferred += chunk.length
+          this.emit('progress', transferId, transferred, totalBytes)
+        })
+
+        readStream.on('error', reject)
+        writeStream.on('error', reject)
+        writeStream.on('finish', resolve)
+
+        readStream.pipe(writeStream)
+      }
     })
+
+    // Preserve timestamps: apply remote mtime/atime to local file
+    if (preserveTimestamps) {
+      try {
+        // stats.modifiedAt and stats.accessedAt are already in ms (converted in statsToEntry / readdir)
+        const atime = stats.accessedAt
+        const mtime = stats.modifiedAt
+        await fsp.utimes(localPath, atime, mtime)
+      } catch (err) {
+        // Log but don't fail the transfer
+        console.warn(`[SFTP] Failed to preserve timestamps for ${localPath}:`, err)
+      }
+    }
   }
 
   /**
    * Upload a file from local to remote.
    * Emits 'progress' events with (transferId, transferred, total).
+   * @param bandwidthLimit KB/s, 0 = unlimited
+   * @param preserveTimestamps If true, set remote file timestamps to match local
    */
   async upload(
     localPath: string,
     remotePath: string,
-    transferId: string
+    transferId: string,
+    bandwidthLimit: number = 0,
+    preserveTimestamps: boolean = false
   ): Promise<void> {
     const localStats = await fsp.stat(localPath)
     const totalBytes = localStats.size
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const readStream = createReadStream(localPath)
       const writeStream = this.sftp.createWriteStream(remotePath)
       let transferred = 0
 
-      readStream.on('data', (chunk: Buffer) => {
-        transferred += chunk.length
-        this.emit('progress', transferId, transferred, totalBytes)
-      })
+      if (bandwidthLimit > 0) {
+        const throttle = new ThrottleTransform(bandwidthLimit)
 
-      readStream.on('error', reject)
-      writeStream.on('error', reject)
-      writeStream.on('finish', resolve)
+        throttle.on('data', (chunk: Buffer) => {
+          transferred += chunk.length
+          this.emit('progress', transferId, transferred, totalBytes)
+        })
 
-      readStream.pipe(writeStream)
+        readStream.on('error', reject)
+        throttle.on('error', reject)
+        writeStream.on('error', reject)
+        writeStream.on('finish', resolve)
+
+        readStream.pipe(throttle).pipe(writeStream)
+      } else {
+        readStream.on('data', (chunk: Buffer) => {
+          transferred += chunk.length
+          this.emit('progress', transferId, transferred, totalBytes)
+        })
+
+        readStream.on('error', reject)
+        writeStream.on('error', reject)
+        writeStream.on('finish', resolve)
+
+        readStream.pipe(writeStream)
+      }
     })
+
+    // Preserve timestamps: apply local atime/mtime to remote file
+    if (preserveTimestamps) {
+      try {
+        // localStats.atimeMs and .mtimeMs are in milliseconds
+        await this.utimes(remotePath, localStats.atimeMs, localStats.mtimeMs)
+      } catch (err) {
+        // Log but don't fail the transfer
+        console.warn(`[SFTP] Failed to preserve timestamps for ${remotePath}:`, err)
+      }
+    }
   }
 
   /** Read a text file */
@@ -298,6 +409,17 @@ export class SFTPService extends EventEmitter {
     } catch {
       return false
     }
+  }
+
+  /** Set file access and modification times on remote */
+  async utimes(remotePath: string, atime: number, mtime: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // ssh2 sftp.utimes expects seconds, not milliseconds
+      this.sftp.utimes(remotePath, Math.floor(atime / 1000), Math.floor(mtime / 1000), (err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
   }
 
   /** Destroy/close the SFTP session */

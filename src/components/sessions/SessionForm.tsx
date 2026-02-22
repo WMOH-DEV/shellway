@@ -23,6 +23,7 @@ import type {
   StartupCommand,
   SessionViewPreferences
 } from '@/types/session'
+import { THEME_NAMES } from '@/data/terminalThemes'
 
 // ── Props ──
 
@@ -867,11 +868,11 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
                             value={form.overrides.terminal?.scrollbackLines ?? 10000}
                             onChange={(e) => updateOverrides('terminal', 'scrollbackLines', parseInt(e.target.value) || 10000)}
                           />
-                          <Input
+                          <Select
                             label="Color Scheme"
-                            placeholder="default"
-                            value={form.overrides.terminal?.colorScheme ?? ''}
+                            value={form.overrides.terminal?.colorScheme ?? 'default'}
                             onChange={(e) => updateOverrides('terminal', 'colorScheme', e.target.value)}
+                            options={THEME_NAMES}
                           />
                           <div className="grid grid-cols-2 gap-3">
                             <Toggle

@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { promises as fsp } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, parse as parsePath, posix } from 'path'
 import { homedir } from 'os'
 import { getSSHService } from './ssh.ipc'
 import { getSettingsStore } from './settings.ipc'
@@ -9,6 +9,193 @@ import { SFTPService, type FileEntry } from '../services/SFTPService'
 import { TransferQueue, type TransferItem } from '../services/TransferQueue'
 import { getLogService, LogService } from '../services/LogService'
 import { getNotificationService } from '../services/NotificationService'
+import type { SFTPConflictResolution } from '../../src/types/settings'
+
+// ── Conflict resolution helpers ──
+
+/**
+ * Generate a conflict-free path by appending a counter suffix.
+ * file.txt → file (1).txt → file (2).txt, etc.
+ * Works for both local and remote via the `existsFn` callback.
+ */
+async function getConflictFreePath(
+  basePath: string,
+  existsFn: (p: string) => Promise<boolean>,
+  pathModule: { dir: string; name: string; ext: string }
+): Promise<string> {
+  let counter = 1
+  let candidate: string
+  do {
+    candidate = join(pathModule.dir, `${pathModule.name} (${counter})${pathModule.ext}`)
+    counter++
+  } while (await existsFn(candidate))
+  return candidate
+}
+
+/** Same as getConflictFreePath but uses posix paths (for remote) */
+async function getConflictFreeRemotePath(
+  basePath: string,
+  existsFn: (p: string) => Promise<boolean>
+): Promise<string> {
+  const dir = posix.dirname(basePath)
+  const ext = posix.extname(basePath)
+  const name = posix.basename(basePath, ext)
+  let counter = 1
+  let candidate: string
+  do {
+    candidate = posix.join(dir, `${name} (${counter})${ext}`)
+    counter++
+  } while (await existsFn(candidate))
+  return candidate
+}
+
+interface FileInfo {
+  name: string
+  size: number
+  modifiedAt: number
+}
+
+interface ConflictResult {
+  action: 'proceed' | 'skip' | 'conflict'
+  /** Modified destination path (only for 'rename' policy) */
+  destinationPath?: string
+  /** File info for 'ask' policy conflict response */
+  existingFile?: FileInfo
+  newFile?: FileInfo
+}
+
+/**
+ * Determine what to do when the destination already exists.
+ * Returns an action: proceed (overwrite/enqueue), skip, or conflict (ask the user).
+ */
+async function resolveTransferConflict(opts: {
+  policy: SFTPConflictResolution
+  direction: 'download' | 'upload'
+  sourcePath: string
+  destinationPath: string
+  sftp: SFTPService
+}): Promise<ConflictResult> {
+  const { policy, direction, sourcePath, destinationPath, sftp } = opts
+
+  // Check if destination exists
+  let destExists: boolean
+  if (direction === 'download') {
+    try {
+      await fsp.stat(destinationPath)
+      destExists = true
+    } catch {
+      destExists = false
+    }
+  } else {
+    destExists = await sftp.exists(destinationPath)
+  }
+
+  if (!destExists) {
+    return { action: 'proceed' }
+  }
+
+  // Destination exists — apply policy
+  switch (policy) {
+    case 'overwrite':
+      return { action: 'proceed' }
+
+    case 'skip':
+      return { action: 'skip' }
+
+    case 'overwrite-newer': {
+      // Get source mtime
+      let sourceMtime: number
+      let destMtime: number
+      if (direction === 'download') {
+        const remoteStat = await sftp.stat(sourcePath)
+        sourceMtime = remoteStat.modifiedAt
+        const localStat = await fsp.stat(destinationPath)
+        destMtime = localStat.mtimeMs
+      } else {
+        const localStat = await fsp.stat(sourcePath)
+        sourceMtime = localStat.mtimeMs
+        const remoteStat = await sftp.stat(destinationPath)
+        destMtime = remoteStat.modifiedAt
+      }
+      return sourceMtime > destMtime ? { action: 'proceed' } : { action: 'skip' }
+    }
+
+    case 'rename': {
+      let newDest: string
+      if (direction === 'download') {
+        const parsed = parsePath(destinationPath)
+        const localExistsFn = async (p: string) => {
+          try { await fsp.access(p); return true } catch { return false }
+        }
+        newDest = await getConflictFreePath(destinationPath, localExistsFn, parsed)
+      } else {
+        const remoteExistsFn = (p: string) => sftp.exists(p)
+        newDest = await getConflictFreeRemotePath(destinationPath, remoteExistsFn)
+      }
+      return { action: 'proceed', destinationPath: newDest }
+    }
+
+    case 'ask':
+    default: {
+      // Gather info about both files for the renderer dialog
+      let existingFile: FileInfo
+      let newFile: FileInfo
+      if (direction === 'download') {
+        const localStat = await fsp.stat(destinationPath)
+        existingFile = {
+          name: basename(destinationPath),
+          size: localStat.size,
+          modifiedAt: localStat.mtimeMs
+        }
+        const remoteStat = await sftp.stat(sourcePath)
+        newFile = {
+          name: basename(sourcePath),
+          size: remoteStat.size,
+          modifiedAt: remoteStat.modifiedAt
+        }
+      } else {
+        const remoteStat = await sftp.stat(destinationPath)
+        existingFile = {
+          name: basename(destinationPath),
+          size: remoteStat.size,
+          modifiedAt: remoteStat.modifiedAt
+        }
+        const localStat = await fsp.stat(sourcePath)
+        newFile = {
+          name: basename(sourcePath),
+          size: localStat.size,
+          modifiedAt: localStat.mtimeMs
+        }
+      }
+      return { action: 'conflict', existingFile, newFile }
+    }
+  }
+}
+
+/**
+ * Read the effective conflict resolution policy.
+ * Priority: explicit resolution param > session override > global setting > 'ask'
+ */
+function getEffectiveConflictPolicy(
+  connectionId: string,
+  explicitResolution?: string
+): SFTPConflictResolution {
+  if (explicitResolution) {
+    return explicitResolution as SFTPConflictResolution
+  }
+
+  const sshService = getSSHService()
+  const conn = sshService.get(connectionId)
+  const sessionData = conn?.sessionId ? getSessionStore().getById(conn.sessionId) : undefined
+  const sessionPolicy = sessionData?.overrides?.sftp?.defaultConflictResolution
+
+  if (sessionPolicy) {
+    return sessionPolicy
+  }
+
+  const globalSettings = getSettingsStore().getAll()
+  return globalSettings.sftpDefaultConflictResolution ?? 'ask'
+}
 
 /** Active SFTP services by connectionId */
 const sftpServices = new Map<string, SFTPService>()
@@ -33,12 +220,16 @@ export function registerSFTPIPC(): void {
       const sftpService = new SFTPService(sftpWrapper)
       sftpServices.set(connectionId, sftpService)
 
-      // Create transfer queue — read concurrency from session override > global setting > default (3)
+      // Create transfer queue — read settings from session override > global setting > default
       const globalSettings = getSettingsStore().getAll()
-      const globalConcurrency = globalSettings.sftpConcurrentTransfers ?? 3
       const sessionData = conn.sessionId ? getSessionStore().getById(conn.sessionId) : undefined
-      const concurrency = sessionData?.overrides?.sftp?.concurrentTransfers ?? globalConcurrency
+      const sftpOverrides = sessionData?.overrides?.sftp
+
+      const concurrency = sftpOverrides?.concurrentTransfers ?? globalSettings.sftpConcurrentTransfers ?? 3
       const queue = new TransferQueue(concurrency)
+      queue.bandwidthLimitUp = sftpOverrides?.bandwidthLimitUp ?? globalSettings.sftpBandwidthLimit ?? 0
+      queue.bandwidthLimitDown = sftpOverrides?.bandwidthLimitDown ?? globalSettings.sftpBandwidthLimitDown ?? 0
+      queue.preserveTimestamps = sftpOverrides?.preserveTimestamps ?? globalSettings.sftpPreserveTimestamps ?? true
       queue.setSFTPService(sftpService)
       transferQueues.set(connectionId, queue)
 
@@ -74,7 +265,14 @@ export function registerSFTPIPC(): void {
     const sftp = sftpServices.get(connectionId)
     if (!sftp) return { success: false, error: 'SFTP not open' }
     try {
-      const entries = await sftp.readdir(remotePath)
+      // Read followSymlinks from session override > global setting > default (true)
+      const sshService = getSSHService()
+      const conn = sshService.get(connectionId)
+      const globalSettings = getSettingsStore().getAll()
+      const sessionData = conn?.sessionId ? getSessionStore().getById(conn.sessionId) : undefined
+      const followSymlinks = sessionData?.overrides?.sftp?.followSymlinks ?? globalSettings.sftpFollowSymlinks ?? true
+
+      const entries = await sftp.readdir(remotePath, followSymlinks)
       return { success: true, data: entries }
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'readdir failed' }
@@ -216,19 +414,53 @@ export function registerSFTPIPC(): void {
     transferId: string,
     remotePath: string,
     localPath: string,
-    totalBytes: number
+    totalBytes: number,
+    resolution?: string
   ) => {
     const queue = transferQueues.get(connectionId)
     if (!queue) return { success: false, error: 'Transfer queue not initialized' }
-    queue.enqueue({
-      id: transferId,
-      fileName: basename(remotePath),
-      sourcePath: remotePath,
-      destinationPath: localPath,
-      direction: 'download',
-      totalBytes
-    })
-    return { success: true }
+
+    const sftp = sftpServices.get(connectionId)
+    if (!sftp) return { success: false, error: 'SFTP not open' }
+
+    try {
+      const policy = getEffectiveConflictPolicy(connectionId, resolution)
+      const result = await resolveTransferConflict({
+        policy,
+        direction: 'download',
+        sourcePath: remotePath,
+        destinationPath: localPath,
+        sftp
+      })
+
+      if (result.action === 'skip') {
+        return { success: true, skipped: true }
+      }
+
+      if (result.action === 'conflict') {
+        return {
+          success: false,
+          conflict: true,
+          existingFile: result.existingFile,
+          newFile: result.newFile
+        }
+      }
+
+      // 'proceed' — use possibly renamed destination
+      const finalLocalPath = result.destinationPath ?? localPath
+
+      queue.enqueue({
+        id: transferId,
+        fileName: basename(remotePath),
+        sourcePath: remotePath,
+        destinationPath: finalLocalPath,
+        direction: 'download',
+        totalBytes
+      })
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'Conflict check failed' }
+    }
   })
 
   ipcMain.handle('sftp:upload', async (
@@ -237,19 +469,53 @@ export function registerSFTPIPC(): void {
     transferId: string,
     localPath: string,
     remotePath: string,
-    totalBytes: number
+    totalBytes: number,
+    resolution?: string
   ) => {
     const queue = transferQueues.get(connectionId)
     if (!queue) return { success: false, error: 'Transfer queue not initialized' }
-    queue.enqueue({
-      id: transferId,
-      fileName: basename(localPath),
-      sourcePath: localPath,
-      destinationPath: remotePath,
-      direction: 'upload',
-      totalBytes
-    })
-    return { success: true }
+
+    const sftp = sftpServices.get(connectionId)
+    if (!sftp) return { success: false, error: 'SFTP not open' }
+
+    try {
+      const policy = getEffectiveConflictPolicy(connectionId, resolution)
+      const result = await resolveTransferConflict({
+        policy,
+        direction: 'upload',
+        sourcePath: localPath,
+        destinationPath: remotePath,
+        sftp
+      })
+
+      if (result.action === 'skip') {
+        return { success: true, skipped: true }
+      }
+
+      if (result.action === 'conflict') {
+        return {
+          success: false,
+          conflict: true,
+          existingFile: result.existingFile,
+          newFile: result.newFile
+        }
+      }
+
+      // 'proceed' — use possibly renamed destination
+      const finalRemotePath = result.destinationPath ?? remotePath
+
+      queue.enqueue({
+        id: transferId,
+        fileName: basename(localPath),
+        sourcePath: localPath,
+        destinationPath: finalRemotePath,
+        direction: 'upload',
+        totalBytes
+      })
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'Conflict check failed' }
+    }
   })
 
   // ── Transfer queue controls ──

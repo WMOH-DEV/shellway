@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { cn } from '@/utils/cn'
+import { TERMINAL_THEMES } from '@/data/terminalThemes'
 import type { ResolvedTerminalSettings } from '@/utils/resolveSettings'
 
 interface TerminalViewProps {
@@ -88,30 +89,7 @@ export function TerminalView({
       cursorStyle,
       scrollback,
       allowProposedApi: true,
-      theme: {
-        background: '#0f1117',
-        foreground: '#e4e4e7',
-        cursor: '#e4e4e7',
-        cursorAccent: '#0f1117',
-        selectionBackground: '#3b82f640',
-        selectionForeground: '#e4e4e7',
-        black: '#1e2130',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#a855f7',
-        cyan: '#06b6d4',
-        white: '#e4e4e7',
-        brightBlack: '#71717a',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#fbbf24',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#c084fc',
-        brightCyan: '#22d3ee',
-        brightWhite: '#ffffff'
-      }
+      theme: TERMINAL_THEMES[terminalSettings?.colorScheme ?? 'default'] ?? TERMINAL_THEMES['default']
     })
 
     // Addons
