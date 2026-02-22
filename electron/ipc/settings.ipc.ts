@@ -39,6 +39,12 @@ export function registerSettingsIPC(): void {
       getLogService().setDebugMode(updates.logDebugMode)
     }
 
+    // minimizeToTray — toggle tray + close behavior at runtime
+    if ('minimizeToTray' in updates) {
+      const setTray = (global as any).__shellway_setMinimizeToTray
+      if (setTray) setTray(!!updates.minimizeToTray)
+    }
+
     // checkForUpdates — placeholder: auto-update integration requires electron-updater
     // setup which is out of scope. This setting is persisted but not yet wired to an
     // actual update mechanism.

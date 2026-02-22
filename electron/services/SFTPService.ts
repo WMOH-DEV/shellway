@@ -15,6 +15,7 @@ class ThrottleTransform extends Transform {
 
   constructor(kbPerSecond: number) {
     super()
+    if (kbPerSecond <= 0) throw new Error('ThrottleTransform requires positive KB/s value')
     this.bytesPerSecond = kbPerSecond * 1024
   }
 
@@ -71,7 +72,7 @@ export class SFTPService extends EventEmitter {
         const entries: FileEntry[] = list.map((item: SSH2FileEntry) => {
           const attrs = item.attrs
           const isDirectory = (attrs.mode! & 0o40000) !== 0
-          const isSymlink = (attrs.mode! & 0o120000) === 0o120000
+          const isSymlink = (attrs.mode! & 0o170000) === 0o120000
 
           return {
             name: item.filename,

@@ -415,9 +415,10 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 label="Reconnect Attempts"
                 type="number"
                 value={settings.connectionReconnectAttempts}
-                onChange={(e) =>
-                  update('connectionReconnectAttempts', parseInt(e.target.value) || 3)
-                }
+                onChange={(e) => {
+                  const v = parseInt(e.target.value)
+                  update('connectionReconnectAttempts', isNaN(v) ? 3 : v)
+                }}
               />
               <Input
                 label="Reconnect Delay (seconds)"

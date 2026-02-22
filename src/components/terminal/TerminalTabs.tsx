@@ -223,8 +223,9 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       </div>
 
       {/* Terminal views — relative+overflow-hidden ensures ResizeObserver fires on height changes */}
+      {/* Defer rendering until settings are resolved to avoid creating terminals with hardcoded defaults */}
       <div className="flex-1 relative overflow-hidden">
-        {tabs.map((tab) => (
+        {resolvedSettings && tabs.map((tab) => (
           <div
             key={tab.id}
             className={cn(

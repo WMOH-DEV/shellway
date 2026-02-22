@@ -357,15 +357,26 @@ app.whenReady().then(() => {
   const settingsStore = getSettingsStore()
   const initialSettings = settingsStore.getAll()
 
-  // Minimize to Tray: intercept close to hide window instead
-  if (initialSettings.minimizeToTray && process.platform !== 'darwin') {
+  // Minimize to Tray: always attach the close handler so it can be toggled at runtime
+  let minimizeToTrayEnabled = initialSettings.minimizeToTray && process.platform !== 'darwin'
+  if (minimizeToTrayEnabled) {
     setupTray(mainWindow)
-    mainWindow.on('close', (e) => {
-      if (!isQuitting) {
-        e.preventDefault()
-        mainWindow.hide()
-      }
-    })
+  }
+  mainWindow.on('close', (e) => {
+    if (minimizeToTrayEnabled && !isQuitting) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  })
+
+  // Expose tray toggle for settings.ipc.ts
+  ;(global as any).__shellway_setMinimizeToTray = (enabled: boolean) => {
+    minimizeToTrayEnabled = enabled && process.platform !== 'darwin'
+    if (minimizeToTrayEnabled) {
+      setupTray(mainWindow)
+    } else {
+      destroyTray()
+    }
   }
 
   // Start on Boot: sync login item setting

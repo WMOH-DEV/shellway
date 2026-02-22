@@ -143,13 +143,13 @@ export function resolveSFTPSettings(
   const base: ResolvedSFTPSettings = {
     defaultViewMode: global.sftpDefaultViewMode,
     showHiddenFiles: global.sftpShowHiddenFiles,
-    doubleClickAction: 'open',
-    defaultConflictResolution: 'ask',
+    doubleClickAction: global.sftpDoubleClickAction ?? 'open',
+    defaultConflictResolution: global.sftpDefaultConflictResolution ?? 'ask',
     concurrentTransfers: global.sftpConcurrentTransfers,
     bandwidthLimitUp: global.sftpBandwidthLimit,
-    bandwidthLimitDown: global.sftpBandwidthLimit,
-    preserveTimestamps: true,
-    followSymlinks: true
+    bandwidthLimitDown: global.sftpBandwidthLimitDown,
+    preserveTimestamps: global.sftpPreserveTimestamps ?? true,
+    followSymlinks: global.sftpFollowSymlinks ?? true
   }
 
   if (!overrides) return base

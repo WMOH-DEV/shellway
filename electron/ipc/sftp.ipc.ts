@@ -18,18 +18,17 @@ import type { SFTPConflictResolution } from '../../src/types/settings'
  * file.txt → file (1).txt → file (2).txt, etc.
  * Works for both local and remote via the `existsFn` callback.
  */
+const MAX_RENAME_ATTEMPTS = 10000
+
 async function getConflictFreePath(
-  basePath: string,
   existsFn: (p: string) => Promise<boolean>,
   pathModule: { dir: string; name: string; ext: string }
 ): Promise<string> {
-  let counter = 1
-  let candidate: string
-  do {
-    candidate = join(pathModule.dir, `${pathModule.name} (${counter})${pathModule.ext}`)
-    counter++
-  } while (await existsFn(candidate))
-  return candidate
+  for (let counter = 1; counter <= MAX_RENAME_ATTEMPTS; counter++) {
+    const candidate = join(pathModule.dir, `${pathModule.name} (${counter})${pathModule.ext}`)
+    if (!(await existsFn(candidate))) return candidate
+  }
+  throw new Error('Too many conflicting files — could not find a unique name')
 }
 
 /** Same as getConflictFreePath but uses posix paths (for remote) */
@@ -40,13 +39,11 @@ async function getConflictFreeRemotePath(
   const dir = posix.dirname(basePath)
   const ext = posix.extname(basePath)
   const name = posix.basename(basePath, ext)
-  let counter = 1
-  let candidate: string
-  do {
-    candidate = posix.join(dir, `${name} (${counter})${ext}`)
-    counter++
-  } while (await existsFn(candidate))
-  return candidate
+  for (let counter = 1; counter <= MAX_RENAME_ATTEMPTS; counter++) {
+    const candidate = posix.join(dir, `${name} (${counter})${ext}`)
+    if (!(await existsFn(candidate))) return candidate
+  }
+  throw new Error('Too many conflicting files — could not find a unique name')
 }
 
 interface FileInfo {
@@ -103,21 +100,25 @@ async function resolveTransferConflict(opts: {
       return { action: 'skip' }
 
     case 'overwrite-newer': {
-      // Get source mtime
-      let sourceMtime: number
-      let destMtime: number
-      if (direction === 'download') {
-        const remoteStat = await sftp.stat(sourcePath)
-        sourceMtime = remoteStat.modifiedAt
-        const localStat = await fsp.stat(destinationPath)
-        destMtime = localStat.mtimeMs
-      } else {
-        const localStat = await fsp.stat(sourcePath)
-        sourceMtime = localStat.mtimeMs
-        const remoteStat = await sftp.stat(destinationPath)
-        destMtime = remoteStat.modifiedAt
+      try {
+        let sourceMtime: number
+        let destMtime: number
+        if (direction === 'download') {
+          const remoteStat = await sftp.stat(sourcePath)
+          sourceMtime = remoteStat.modifiedAt
+          const localStat = await fsp.stat(destinationPath)
+          destMtime = localStat.mtimeMs
+        } else {
+          const localStat = await fsp.stat(sourcePath)
+          sourceMtime = localStat.mtimeMs
+          const remoteStat = await sftp.stat(destinationPath)
+          destMtime = remoteStat.modifiedAt
+        }
+        return sourceMtime > destMtime ? { action: 'proceed' } : { action: 'skip' }
+      } catch {
+        // Cannot determine file age — fall back to overwrite
+        return { action: 'proceed' }
       }
-      return sourceMtime > destMtime ? { action: 'proceed' } : { action: 'skip' }
     }
 
     case 'rename': {
@@ -127,7 +128,7 @@ async function resolveTransferConflict(opts: {
         const localExistsFn = async (p: string) => {
           try { await fsp.access(p); return true } catch { return false }
         }
-        newDest = await getConflictFreePath(destinationPath, localExistsFn, parsed)
+        newDest = await getConflictFreePath(localExistsFn, parsed)
       } else {
         const remoteExistsFn = (p: string) => sftp.exists(p)
         newDest = await getConflictFreeRemotePath(destinationPath, remoteExistsFn)

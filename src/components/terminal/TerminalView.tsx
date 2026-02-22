@@ -205,31 +205,30 @@ export function TerminalView({
     containerRef.current.addEventListener('contextmenu', handleContextMenu)
 
     // ── Bell behavior ──
+    // Reuse a single AudioContext to avoid resource leaks (browsers cap at ~6)
+    let audioCtx: AudioContext | null = null
     const bellDisposable = terminal.onBell(() => {
       if (bellBehavior === 'sound') {
-        // Play a short beep using Web Audio API
         try {
-          const ctx = new AudioContext()
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
+          if (!audioCtx) audioCtx = new AudioContext()
+          const osc = audioCtx.createOscillator()
+          const gain = audioCtx.createGain()
           osc.connect(gain)
-          gain.connect(ctx.destination)
+          gain.connect(audioCtx.destination)
           osc.frequency.value = 800
           gain.gain.value = 0.1
           osc.start()
-          osc.stop(ctx.currentTime + 0.1)
+          osc.stop(audioCtx.currentTime + 0.1)
         } catch {
           // Audio not available — ignore silently
         }
       } else if (bellBehavior === 'visual') {
-        // Flash the terminal container briefly
         const el = containerRef.current
         if (el) {
           el.style.filter = 'brightness(1.5)'
           setTimeout(() => { el.style.filter = '' }, 150)
         }
       }
-      // 'none' — do nothing
     })
 
     return () => {
@@ -237,6 +236,7 @@ export function TerminalView({
       unsubExit()
       unsubSelection?.()
       bellDisposable.dispose()
+      audioCtx?.close().catch(() => {})
       containerRef.current?.removeEventListener('contextmenu', handleContextMenu)
       resizeObserver.disconnect()
       terminal.dispose()
