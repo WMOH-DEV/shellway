@@ -113,7 +113,25 @@ export function useSQLShortcuts(
         return
       }
 
+      // ── F5: Refresh data (no modifier needed) ──
+      if (e.key === 'F5') {
+        e.preventDefault()
+        window.dispatchEvent(
+          new CustomEvent('sql:refresh-data', {
+            detail: { sqlSessionId: sqlSessionRef.current, connectionId: connectionIdRef.current },
+          })
+        )
+        return
+      }
+
       if (!ctrl) return
+
+      // ── Ctrl+B: Toggle sidebar ──
+      if (!e.shiftKey && e.key === 'b') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('sql:toggle-sidebar'))
+        return
+      }
 
       // ── Cmd+Enter: Run query ──
       // (Monaco also handles this internally, but we dispatch for non-Monaco contexts)

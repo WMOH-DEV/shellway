@@ -43,7 +43,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   } = useSession()
 
   const { searchQuery, setSearchQuery, selectedSessionId, setSelectedSession } = useSessionStore()
-  const { tabs } = useConnectionStore()
+  const { tabs, activeTabId, removeTab } = useConnectionStore()
   const { sessionFormRequested, clearSessionFormRequest } = useUIStore()
 
   // Form state
@@ -104,12 +104,12 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     )
   }, [sessions, searchQuery])
 
-  // Sort: recently connected first, then alphabetical
+  // Sort: keep original creation order (createdAt), then alphabetical as fallback
   const sortedSessions = useMemo(() => {
     return [...filteredSessions].sort((a, b) => {
-      if (a.lastConnected && b.lastConnected) return b.lastConnected - a.lastConnected
-      if (a.lastConnected) return -1
-      if (b.lastConnected) return 1
+      const aCreated = a.createdAt ?? 0
+      const bCreated = b.createdAt ?? 0
+      if (aCreated !== bCreated) return aCreated - bCreated
       return a.name.localeCompare(b.name)
     })
   }, [filteredSessions])
@@ -208,6 +208,22 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     const tab = tabs.find((t) => t.sessionId === sessionId)
     return tab?.status
   }
+
+  const isSessionActiveTab = (sessionId: string) => {
+    const tab = tabs.find((t) => t.sessionId === sessionId)
+    return tab?.id === activeTabId
+  }
+
+  const handleDisconnect = useCallback(
+    (sessionId: string) => {
+      const tab = tabs.find((t) => t.sessionId === sessionId)
+      if (tab) {
+        window.novadeck.ssh.disconnect?.(tab.id).catch(() => {})
+        removeTab(tab.id)
+      }
+    },
+    [tabs, removeTab]
+  )
 
   return (
     <>
@@ -310,6 +326,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 key={session.id}
                 session={session}
                 isSelected={session.id === selectedSessionId}
+                isActiveTab={isSessionActiveTab(session.id)}
                 connectionStatus={getConnectionStatus(session.id)}
                 onSelect={() => setSelectedSession(session.id)}
                 onConnect={() => onConnect(session)}
@@ -322,6 +339,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 }}
                 onDuplicate={() => handleDuplicate(session.id)}
                 onDelete={() => setDeleteTarget(session)}
+                onDisconnect={() => handleDisconnect(session.id)}
               />
             )}
           />

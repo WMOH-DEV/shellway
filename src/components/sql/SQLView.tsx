@@ -2,7 +2,19 @@ import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense, memo
 import { cn } from '@/utils/cn'
 import { Splitter } from '@/components/ui/Splitter'
 import { Button } from '@/components/ui/Button'
-import { Database, Plug, AlertCircle, Pencil, Loader2, ScrollText } from 'lucide-react'
+import {
+  Database,
+  Plug,
+  Unplug,
+  AlertCircle,
+  Pencil,
+  Loader2,
+  ScrollText,
+  RefreshCw,
+  Plus,
+  PanelLeft,
+  PanelBottom,
+} from 'lucide-react'
 import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -74,6 +86,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
   const [showConnectDialog, setShowConnectDialog] = useState(false)
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(true)
   const [dbPickerSessionId, setDbPickerSessionId] = useState<string | null>(null)
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null)
   const [savedConfigLoading, setSavedConfigLoading] = useState(true)
@@ -151,6 +164,53 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
       }
     })()
   }, [sessionId, connectionStatus])
+
+  // ── Listen for sidebar toggle from keyboard shortcut ──
+  useEffect(() => {
+    const handler = () => setShowSidebar((v) => !v)
+    window.addEventListener('sql:toggle-sidebar', handler)
+    return () => window.removeEventListener('sql:toggle-sidebar', handler)
+  }, [])
+
+  // ── FK navigation — open referenced table with a filter ──
+  useEffect(() => {
+    const handleNavigateFK = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId !== connectionId) return
+
+      const { table: refTable, filterColumn, filterValue } = detail
+
+      // Open or focus the data tab for the referenced table
+      const existingTab = tabs.find((t) => t.type === 'data' && t.table === refTable)
+      let tabId: string
+      if (existingTab) {
+        tabId = existingTab.id
+        setActiveTab(tabId)
+      } else {
+        tabId = crypto.randomUUID()
+        const newTab: SQLTab = {
+          id: tabId,
+          type: 'data',
+          label: refTable,
+          table: refTable,
+        }
+        addTab(newTab)
+      }
+      setSelectedTable(refTable)
+
+      // Dispatch filter event after a tick so the DataTabView has mounted
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('sql:set-filter', {
+            detail: { connectionId, table: refTable, column: filterColumn, value: String(filterValue) },
+          })
+        )
+      }, 100)
+    }
+
+    window.addEventListener('sql:navigate-fk', handleNavigateFK)
+    return () => window.removeEventListener('sql:navigate-fk', handleNavigateFK)
+  }, [connectionId, tabs, setActiveTab, addTab, setSelectedTable])
 
   // ── Cleanup on unmount — disconnect SQL session ──
   useEffect(() => {
@@ -410,51 +470,44 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
   )
 
   // ── Tab content renderer ──
-  const renderTabContent = useCallback(() => {
-    if (!activeTab || !sqlSessionId || !connectionConfig) return <EmptyPanel />
+  // Track which tabs have been visited — mount on first visit, keep alive after
+  const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(new Set())
 
-    const dbType = connectionConfig.type
+  useEffect(() => {
+    if (!activeTabId) return
+    setMountedTabIds((prev) => {
+      if (prev.has(activeTabId)) return prev
+      return new Set([...prev, activeTabId])
+    })
+  }, [activeTabId])
 
-    switch (activeTab.type) {
-      case 'data':
-        return activeTab.table ? (
-          <LazyDataTabView
-            connectionId={connectionId}
-            sqlSessionId={sqlSessionId}
-            table={activeTab.table}
-            schema={activeTab.schema}
-            dbType={dbType}
-          />
-        ) : (
-          <EmptyPanel />
-        )
-
-      case 'query':
-        return (
-          <LazyQueryEditor
-            connectionId={connectionId}
-            sqlSessionId={sqlSessionId}
-            dbType={dbType}
-          />
-        )
-
-      case 'structure':
-        return activeTab.table ? (
-          <LazyStructureTabView
-            sqlSessionId={sqlSessionId}
-            table={activeTab.table}
-            schema={activeTab.schema}
-          />
-        ) : (
-          <EmptyPanel />
-        )
-
-      default:
-        return <EmptyPanel />
-    }
-  }, [activeTab, sqlSessionId, connectionConfig, connectionId])
+  // Clean up mounted tab IDs when tabs are removed
+  useEffect(() => {
+    const tabIds = new Set(tabs.map((t) => t.id))
+    setMountedTabIds((prev) => {
+      const next = new Set([...prev].filter((id) => tabIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [tabs])
 
   // ── Save / Discard dispatchers (status bar → DataTabView via events) ──
+  // ── Refresh data in the active data tab ──
+  const handleRefreshData = useCallback(() => {
+    if (!sqlSessionId) return
+    window.dispatchEvent(
+      new CustomEvent('sql:refresh-data', {
+        detail: { sqlSessionId, connectionId },
+      })
+    )
+  }, [sqlSessionId, connectionId])
+
+  // ── Open database picker ──
+  const handleSwitchDatabase = useCallback(() => {
+    if (!sqlSessionId) return
+    setDbPickerSessionId(sqlSessionId)
+    setShowDatabasePicker(true)
+  }, [sqlSessionId])
+
   const handleStatusBarSave = useCallback(() => {
     if (!sqlSessionId) return
     window.dispatchEvent(
@@ -630,65 +683,143 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
   }
 
   // ── Connected state ──
+  const mainContent = (
+    <div className="flex flex-col h-full">
+      {/* SQL Tab Bar */}
+      <SQLTabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelect={handleTabSelect}
+        onClose={handleTabClose}
+        onNewQuery={handleNewQuery}
+      />
+
+      {/* Tab content area — keep all visited tabs mounted, hide inactive via CSS */}
+      <div className="flex-1 overflow-hidden relative">
+        {(!sqlSessionId || !connectionConfig) ? (
+          <EmptyPanel />
+        ) : (
+          tabs.map((tab) => {
+            if (!mountedTabIds.has(tab.id)) return null
+            const isActive = tab.id === activeTabId
+            const dbType = connectionConfig.type
+
+            return (
+              <div
+                key={tab.id}
+                className={cn('h-full', !isActive && 'hidden')}
+              >
+                <Suspense fallback={<PanelSpinner />}>
+                  {tab.type === 'data' && tab.table ? (
+                    <LazyDataTabView
+                      connectionId={connectionId}
+                      sqlSessionId={sqlSessionId}
+                      table={tab.table}
+                      schema={tab.schema}
+                      dbType={dbType}
+                    />
+                  ) : tab.type === 'query' ? (
+                    <LazyQueryEditor
+                      connectionId={connectionId}
+                      sqlSessionId={sqlSessionId}
+                      dbType={dbType}
+                    />
+                  ) : tab.type === 'structure' && tab.table ? (
+                    <LazyStructureTabView
+                      sqlSessionId={sqlSessionId}
+                      table={tab.table}
+                      schema={tab.schema}
+                    />
+                  ) : (
+                    <EmptyPanel />
+                  )}
+                </Suspense>
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="flex flex-col h-full">
-      {/* Connection toolbar */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-nd-border bg-nd-bg-secondary shrink-0">
-        <div className="flex items-center gap-1.5">
+      {/* ── Connection toolbar ── */}
+      <div className="flex items-center gap-0 px-1 h-8 border-b border-nd-border bg-nd-bg-secondary shrink-0">
+        {/* Left group: sidebar toggle + connection info */}
+        <ToolbarButton
+          icon={<PanelLeft size={14} />}
+          title={showSidebar ? 'Hide sidebar (Ctrl+B)' : 'Show sidebar (Ctrl+B)'}
+          active={showSidebar}
+          onClick={() => setShowSidebar((v) => !v)}
+        />
+        <ToolbarSep />
+        <div className="flex items-center gap-1.5 px-1.5">
           <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
           <span className="text-xs text-nd-text-secondary">
             {connectionConfig?.type?.toUpperCase()}
           </span>
+          <span className="text-xs text-nd-text-muted">/</span>
+          <button
+            onClick={handleSwitchDatabase}
+            className="text-xs font-medium text-nd-text-primary truncate hover:text-nd-accent transition-colors"
+            title="Switch database"
+          >
+            {currentDatabase || '(no database)'}
+          </button>
         </div>
-        <span className="text-xs text-nd-text-muted">/</span>
-        <span className="text-xs font-medium text-nd-text-primary truncate">
-          {currentDatabase || '(no database)'}
-        </span>
 
         <div className="flex-1" />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleDisconnect}
+        {/* Right group: actions */}
+        <ToolbarButton
+          icon={<RefreshCw size={13} />}
+          title="Refresh data (F5)"
+          onClick={handleRefreshData}
+        />
+        <ToolbarButton
+          icon={<Plus size={14} />}
+          title="New query tab (Ctrl+Shift+N)"
+          onClick={handleNewQuery}
+        />
+        <ToolbarButton
+          icon={<Database size={13} />}
+          title="Switch database"
+          onClick={handleSwitchDatabase}
+        />
+        <ToolbarSep />
+        <ToolbarButton
+          icon={<PanelBottom size={14} />}
+          title={showQueryLog ? 'Hide query log' : 'Show query log'}
+          active={showQueryLog}
+          onClick={() => setShowQueryLog((v) => !v)}
+        />
+        <ToolbarSep />
+        <ToolbarButton
+          icon={<Unplug size={13} />}
           title="Disconnect"
-          className="!h-6 !w-6"
-        >
-          <Plug size={12} className="text-nd-text-muted" />
-        </Button>
-      </div>
-
-      {/* Main content: sidebar + (tab bar + content) */}
-      <div className="flex-1 overflow-hidden">
-        <Splitter
-          left={<SchemaSidebar connectionId={connectionId} />}
-          right={
-            <div className="flex flex-col h-full">
-              {/* SQL Tab Bar */}
-              <SQLTabBar
-                tabs={tabs}
-                activeTabId={activeTabId}
-                onSelect={handleTabSelect}
-                onClose={handleTabClose}
-                onNewQuery={handleNewQuery}
-              />
-
-              {/* Tab content area */}
-              <div className="flex-1 overflow-hidden">
-                <Suspense fallback={<PanelSpinner />}>
-                  {renderTabContent()}
-                </Suspense>
-              </div>
-            </div>
-          }
-          direction="horizontal"
-          defaultSplit={SIDEBAR_SPLIT_PERCENT}
-          minSize={180}
-          className="h-full"
+          onClick={handleDisconnect}
+          className="hover:!text-nd-error"
         />
       </div>
 
-      {/* Query Log bottom panel */}
+      {/* ── Main content: sidebar + (tab bar + content) ── */}
+      <div className="flex-1 overflow-hidden">
+        {showSidebar ? (
+          <Splitter
+            left={<SchemaSidebar connectionId={connectionId} />}
+            right={mainContent}
+            direction="horizontal"
+            defaultSplit={SIDEBAR_SPLIT_PERCENT}
+            minSize={180}
+            className="h-full"
+          />
+        ) : (
+          mainContent
+        )}
+      </div>
+
+      {/* ── Query Log bottom panel ── */}
       {showQueryLog && (
         <div
           className="shrink-0 border-t border-nd-border bg-nd-bg-secondary overflow-hidden"
@@ -698,25 +829,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
         </div>
       )}
 
-      {/* Status Bar */}
-      <div className="flex items-center shrink-0">
-        <div className="flex-1">
-          <SQLStatusBar {...statusBarProps} onSave={handleStatusBarSave} onDiscard={handleStatusBarDiscard} />
-        </div>
-        <button
-          onClick={() => setShowQueryLog((v) => !v)}
-          className={cn(
-            'flex items-center gap-1 px-2 h-7 text-2xs font-medium border-t border-l transition-colors',
-            showQueryLog
-              ? 'text-nd-accent border-nd-border bg-nd-bg-secondary'
-              : 'text-nd-text-muted border-nd-border bg-nd-bg-secondary hover:text-nd-text-secondary'
-          )}
-          title="Toggle query log"
-        >
-          <ScrollText size={11} />
-          Log
-        </button>
-      </div>
+      {/* ── Status Bar ── */}
+      <SQLStatusBar {...statusBarProps} onSave={handleStatusBarSave} onDiscard={handleStatusBarDiscard} />
 
       {/* Connect dialog (for reconnect / edit) */}
       <SQLConnectDialog
@@ -742,3 +856,39 @@ const SQLView = memo(function SQLView({ connectionId, sessionId }: SQLViewProps)
 
 export default SQLView
 export { SQLView }
+
+// ── Toolbar primitives ──
+
+function ToolbarButton({
+  icon,
+  title,
+  onClick,
+  active,
+  className,
+}: {
+  icon: React.ReactNode
+  title: string
+  onClick: () => void
+  active?: boolean
+  className?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'flex items-center justify-center w-7 h-7 rounded-sm transition-colors',
+        active
+          ? 'text-nd-accent bg-nd-accent/10'
+          : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover',
+        className
+      )}
+    >
+      {icon}
+    </button>
+  )
+}
+
+function ToolbarSep() {
+  return <div className="w-px h-4 bg-nd-border mx-0.5 shrink-0" />
+}

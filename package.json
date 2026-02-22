@@ -1,6 +1,6 @@
 {
   "name": "shellway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Premium cross-platform SSH & SFTP desktop client - Shellway",
   "main": "./out/main/index.js",
   "author": "Shellway",

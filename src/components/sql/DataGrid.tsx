@@ -1,42 +1,74 @@
-import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react'
+import React, { useMemo, useCallback, useRef, useState, useEffect, memo } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GetRowIdParams, CellContextMenuEvent, GridReadyEvent } from 'ag-grid-community'
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community'
 import { cn } from '@/utils/cn'
 import {
   Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
-  XCircle, Filter, EyeOff, RotateCcw, Clipboard
+  XCircle, Filter, EyeOff, Eye, RotateCcw, Clipboard,
+  ExternalLink, Columns3, X
 } from 'lucide-react'
-import type { QueryResult, SchemaColumn } from '@/types/sql'
+import { useUIStore } from '@/stores/uiStore'
+import type { QueryResult, SchemaColumn, SchemaForeignKey } from '@/types/sql'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
-// ── Custom dark theme matching Shellway's design tokens ──
-const shellwayDarkTheme = themeQuartz.withParams({
-  backgroundColor: 'rgb(15, 17, 23)',
-  foregroundColor: 'rgb(228, 228, 231)',
-  headerBackgroundColor: 'rgb(22, 25, 34)',
+// ── Shared theme params (non-color) ──
+const sharedThemeParams = {
   headerFontWeight: 600,
-  headerTextColor: 'rgb(161, 161, 170)',
-  borderColor: 'rgb(46, 51, 72)',
-  rowBorder: 'rgb(37, 40, 54)',
-  rowHoverColor: 'rgb(37, 40, 54)',
-  selectedRowBackgroundColor: 'rgba(59, 130, 246, 0.15)',
-  cellEditingBorder: { color: 'rgb(59, 130, 246)', style: 'solid', width: 1 },
+  cellEditingBorder: { color: 'rgb(59, 130, 246)', style: 'solid' as const, width: 1 },
   borderRadius: 0,
   wrapperBorderRadius: 0,
-  headerColumnResizeHandleColor: 'rgb(61, 67, 99)',
-  chromeBackgroundColor: 'rgb(22, 25, 34)',
-  oddRowBackgroundColor: 'rgb(15, 17, 23)',
   fontFamily: 'inherit',
   fontSize: 13,
   headerFontSize: 12,
   iconSize: 12,
   cellHorizontalPadding: 10,
   spacing: 4,
+  columnBorder: true,
+}
+
+// ── Dark theme matching Shellway's dark design tokens ──
+const shellwayDarkTheme = themeQuartz.withParams({
+  ...sharedThemeParams,
+  backgroundColor: 'rgb(15, 17, 23)',
+  foregroundColor: 'rgb(228, 228, 231)',
+  headerBackgroundColor: 'rgb(22, 25, 34)',
+  headerTextColor: 'rgb(161, 161, 170)',
+  borderColor: 'rgb(46, 51, 72)',
+  rowBorder: 'rgb(46, 51, 72)',
+  rowHoverColor: 'rgb(37, 40, 54)',
+  selectedRowBackgroundColor: 'rgba(59, 130, 246, 0.15)',
+  headerColumnResizeHandleColor: 'rgb(61, 67, 99)',
+  chromeBackgroundColor: 'rgb(22, 25, 34)',
+  oddRowBackgroundColor: 'rgb(18, 20, 28)',
+})
+
+// ── Light theme matching Shellway's light design tokens ──
+const shellwayLightTheme = themeQuartz.withParams({
+  ...sharedThemeParams,
+  backgroundColor: 'rgb(255, 255, 255)',
+  foregroundColor: 'rgb(15, 23, 42)',
+  headerBackgroundColor: 'rgb(248, 250, 252)',
+  headerTextColor: 'rgb(71, 85, 105)',
+  borderColor: 'rgb(226, 232, 240)',
+  rowBorder: 'rgb(226, 232, 240)',
+  rowHoverColor: 'rgb(248, 250, 252)',
+  selectedRowBackgroundColor: 'rgba(59, 130, 246, 0.1)',
+  headerColumnResizeHandleColor: 'rgb(203, 213, 225)',
+  chromeBackgroundColor: 'rgb(248, 250, 252)',
+  oddRowBackgroundColor: 'rgb(248, 250, 252)',
 })
 
 // ── Props ──
+
+/** Map of column name → FK target info for FK navigation */
+export interface ForeignKeyMap {
+  [columnName: string]: {
+    referencedTable: string
+    referencedColumn: string
+  }
+}
 
 interface DataGridProps {
   result: QueryResult | null
@@ -54,6 +86,10 @@ interface DataGridProps {
   editedCells?: Set<string>
   /** Unique key for persisting column widths (e.g. "sql-colw:mysql:host:3306:mydb:users") */
   columnWidthsKey?: string
+  /** FK column map for navigation arrows */
+  foreignKeys?: ForeignKeyMap
+  /** Called when user clicks FK arrow — navigate to referenced table */
+  onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
 }
 
 // ── Context menu state (cell right-click) ──
@@ -93,6 +129,47 @@ function BooleanCellRenderer(params: { value: unknown }) {
       readOnly
       className="pointer-events-none accent-nd-accent"
     />
+  )
+}
+
+// ── FK cell renderer — shows value + navigation arrow ──
+
+function FKCellRenderer(props: {
+  value: unknown
+  colDef: { field?: string }
+  context: {
+    foreignKeys?: ForeignKeyMap
+    onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
+  }
+}) {
+  const { value, colDef, context } = props
+  const field = colDef?.field
+  const fk = field ? context.foreignKeys?.[field] : null
+
+  if (value === null || value === undefined) {
+    return <span className="italic text-nd-text-muted select-none">(NULL)</span>
+  }
+
+  const handleFKClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (fk && context.onNavigateFK && value !== null && value !== undefined) {
+      context.onNavigateFK(fk.referencedTable, fk.referencedColumn, value)
+    }
+  }
+
+  return (
+    <span className="flex items-center gap-1 group/fk">
+      <span className="truncate">{String(value)}</span>
+      {fk && (
+        <button
+          onClick={handleFKClick}
+          className="shrink-0 opacity-0 group-hover/fk:opacity-100 text-nd-accent hover:text-nd-accent/80 transition-opacity"
+          title={`Go to ${fk.referencedTable}.${fk.referencedColumn} = ${value}`}
+        >
+          <ExternalLink size={11} />
+        </button>
+      )}
+    </span>
   )
 }
 
@@ -163,11 +240,17 @@ export const DataGrid = React.memo(function DataGrid({
   editedRows,
   editedCells,
   columnWidthsKey,
+  foreignKeys,
+  onNavigateFK,
 }: DataGridProps) {
   const gridRef = useRef<AgGridReact>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [headerContextMenu, setHeaderContextMenu] = useState<HeaderContextMenuState | null>(null)
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const resolvedTheme = useUIStore((s) => s.resolvedTheme)
+  const gridTheme = resolvedTheme === 'light' ? shellwayLightTheme : shellwayDarkTheme
 
   // Close cell context menu on click outside or scroll
   useEffect(() => {
@@ -192,6 +275,16 @@ export const DataGrid = React.memo(function DataGrid({
       window.removeEventListener('scroll', close, true)
     }
   }, [headerContextMenu])
+
+  // Close column picker on Escape
+  useEffect(() => {
+    if (!showColumnPicker) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowColumnPicker(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [showColumnPicker])
 
   // Header right-click listener (event delegation on grid container)
   // Attach header right-click handler — re-run when result changes
@@ -255,6 +348,9 @@ export const DataGrid = React.memo(function DataGrid({
       if (isBooleanType(field.type)) {
         col.cellRenderer = BooleanCellRenderer
         col.width = 80
+      } else if (foreignKeys && foreignKeys[field.name]) {
+        // FK column — use FK-aware renderer with navigation arrow
+        col.cellRenderer = FKCellRenderer
       } else if (needsNullRenderer(field.type)) {
         col.cellRenderer = NullCellRenderer
       }
@@ -277,7 +373,7 @@ export const DataGrid = React.memo(function DataGrid({
 
       return col
     })
-  }, [result?.fields, onCellEdit, nonEditableColumns, editedCells])
+  }, [result?.fields, onCellEdit, nonEditableColumns, editedCells, foreignKeys])
 
   // Row data
   const rowData = useMemo(() => result?.rows ?? [], [result?.rows])
@@ -493,6 +589,49 @@ export const DataGrid = React.memo(function DataGrid({
     // Column sizing is handled in the useEffect below (after data loads)
   }, [])
 
+  // ── Track hidden columns for the visibility bar ──
+  const syncHiddenColumns = useCallback(() => {
+    const api = gridRef.current?.api
+    if (!api) return
+    const hidden = api.getColumnState()
+      .filter((c) => c.hide)
+      .map((c) => c.colId!)
+      .filter(Boolean)
+    setHiddenColumns(hidden)
+  }, [])
+
+  // Listen for column visibility changes
+  const onColumnVisible = useCallback(() => {
+    syncHiddenColumns()
+  }, [syncHiddenColumns])
+
+  // Reset hidden columns when table changes, then sync after state restore
+  useEffect(() => {
+    setHiddenColumns([])
+    setShowColumnPicker(false)
+    const t = setTimeout(syncHiddenColumns, 100)
+    return () => clearTimeout(t)
+  }, [result?.fields, syncHiddenColumns])
+
+  // ── Column visibility toggle helpers ──
+  const handleShowColumn = useCallback((colId: string) => {
+    gridRef.current?.api?.setColumnsVisible([colId], true)
+    syncHiddenColumns()
+  }, [syncHiddenColumns])
+
+  const handleShowAllColumns = useCallback(() => {
+    const api = gridRef.current?.api
+    if (!api) return
+    const allCols = api.getColumns()?.map((c) => c.getColId()) ?? []
+    api.setColumnsVisible(allCols, true)
+    syncHiddenColumns()
+  }, [syncHiddenColumns])
+
+  const handleToggleColumn = useCallback((colId: string, visible: boolean) => {
+    gridRef.current?.api?.setColumnsVisible([colId], visible)
+    syncHiddenColumns()
+  }, [syncHiddenColumns])
+
   // Restore saved column widths or auto-size when data first loads
   const prevWidthContextRef = useRef<string>('')
   useEffect(() => {
@@ -552,12 +691,13 @@ export const DataGrid = React.memo(function DataGrid({
     >
       <AgGridReact
         ref={gridRef}
-        theme={shellwayDarkTheme}
+        theme={gridTheme}
         rowData={rowDataWithIndex}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
         getRowId={getRowId}
         getRowClass={getRowClass}
+        context={{ foreignKeys, onNavigateFK }}
         animateRows={false}
         suppressRowVirtualisation={false}
         rowSelection="multiple"
@@ -571,6 +711,7 @@ export const DataGrid = React.memo(function DataGrid({
         onCellContextMenu={onCellContextMenu}
         onGridReady={onGridReady}
         onColumnResized={onColumnResized}
+        onColumnVisible={onColumnVisible}
         noRowsOverlayComponent={() => (
           <span className="text-nd-text-muted text-sm">No rows found</span>
         )}
@@ -579,6 +720,80 @@ export const DataGrid = React.memo(function DataGrid({
         )}
         loading={isLoading && !result}
       />
+
+      {/* Hidden columns bar */}
+      {hiddenColumns.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center gap-1.5 px-2 py-1 bg-nd-bg-secondary/95 border-t border-nd-border backdrop-blur-sm">
+          <button
+            onClick={() => setShowColumnPicker((v) => !v)}
+            className={cn(
+              'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium transition-colors',
+              showColumnPicker
+                ? 'text-nd-accent bg-nd-accent/10'
+                : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface'
+            )}
+          >
+            <Columns3 size={11} />
+            Columns
+          </button>
+          <div className="w-px h-3 bg-nd-border" />
+          <span className="text-2xs text-nd-text-muted">{hiddenColumns.length} hidden:</span>
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none">
+            {hiddenColumns.map((col) => (
+              <button
+                key={col}
+                onClick={() => handleShowColumn(col)}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-nd-surface text-2xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors shrink-0"
+                title={`Show "${col}"`}
+              >
+                <Eye size={10} />
+                {col}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleShowAllColumns}
+            className="text-2xs text-nd-accent hover:text-nd-accent/80 transition-colors shrink-0 px-1"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
+      {/* Column picker popover */}
+      {showColumnPicker && (
+        <div className="absolute bottom-8 left-1 z-20 w-56 max-h-64 overflow-y-auto rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-nd-border">
+            <span className="text-xs font-medium text-nd-text-secondary">Columns</span>
+            <button
+              onClick={() => setShowColumnPicker(false)}
+              className="p-0.5 rounded text-nd-text-muted hover:text-nd-text-primary transition-colors"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {result?.fields?.map((field) => {
+            const isHidden = hiddenColumns.includes(field.name)
+            return (
+              <label
+                key={field.name}
+                className="flex items-center gap-2 px-3 py-1 text-xs text-nd-text-secondary hover:bg-nd-surface-hover cursor-pointer transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={!isHidden}
+                  onChange={() => handleToggleColumn(field.name, isHidden)}
+                  className="accent-nd-accent w-3 h-3"
+                />
+                <span className="truncate">{field.name}</span>
+                {foreignKeys?.[field.name] && (
+                  <ExternalLink size={10} className="shrink-0 text-nd-text-muted" />
+                )}
+              </label>
+            )
+          })}
+        </div>
+      )}
 
       {/* Floating cell context menu */}
       {contextMenu && (

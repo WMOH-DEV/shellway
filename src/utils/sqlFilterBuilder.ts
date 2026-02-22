@@ -168,8 +168,23 @@ export function buildWhereClause(
     return { where: '', params: [] }
   }
 
+  // Group clauses by column — same-column filters are OR'd, different columns are AND'd.
+  // This makes "id = 1, id = 2" produce "WHERE (id = 1 OR id = 2)" instead of "WHERE id = 1 AND id = 2".
+  const clausesByColumn: Map<string, string[]> = new Map()
+  for (let i = 0; i < enabledFilters.length; i++) {
+    const col = enabledFilters[i].column
+    if (!clausesByColumn.has(col)) {
+      clausesByColumn.set(col, [])
+    }
+    clausesByColumn.get(col)!.push(clauses[i])
+  }
+
+  const grouped = [...clausesByColumn.values()].map((group) =>
+    group.length === 1 ? group[0] : `(${group.join(' OR ')})`
+  )
+
   return {
-    where: `WHERE ${clauses.join(' AND ')}`,
+    where: `WHERE ${grouped.join(' AND ')}`,
     params,
   }
 }

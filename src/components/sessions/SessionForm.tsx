@@ -506,13 +506,14 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
             onClick={onClose}
           />
 
-          {/* Slide-over panel */}
+          {/* Session form panel — centered overlay */}
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-[500px] bg-nd-bg-secondary border-l border-nd-border flex flex-col shadow-2xl"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+            className="fixed inset-0 z-50 m-auto w-[540px] max-h-[90vh] bg-nd-bg-secondary border border-nd-border rounded-lg flex flex-col shadow-2xl"
+            style={{ height: 'fit-content', maxHeight: '90vh' }}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-nd-border shrink-0">

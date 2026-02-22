@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { DataGrid } from '@/components/sql/DataGrid'
+import { DataGrid, type ForeignKeyMap } from '@/components/sql/DataGrid'
 import { PaginationBar } from '@/components/sql/PaginationBar'
 import { FilterBar } from '@/components/sql/FilterBar'
 import { buildWhereClause } from '@/utils/sqlFilterBuilder'
@@ -158,6 +158,7 @@ export const DataTabView = React.memo(function DataTabView({
   const [executionTimeMs, setExecutionTimeMs] = useState<number | undefined>()
   const [primaryKeyColumns, setPrimaryKeyColumns] = useState<string[]>([])
   const [columnMeta, setColumnMeta] = useState<SchemaColumn[]>([])
+  const [foreignKeyMap, setForeignKeyMap] = useState<ForeignKeyMap>({})
 
   // Refs for cancellation, debouncing, and race condition prevention
   const abortRef = useRef<AbortController | null>(null)
@@ -169,7 +170,7 @@ export const DataTabView = React.memo(function DataTabView({
   const resultRef = useRef<QueryResult | null>(null)
 
   // ── Query logging helper (uses ref to avoid circular deps with executeQuery) ──
-  const logQueryRef = useRef<(query: string, timeMs: number, rowCount?: number, errorMsg?: string) => void>(() => {})
+   const logQueryRef = useRef<(query: string, params: unknown[] | undefined, timeMs: number, rowCount?: number, errorMsg?: string) => void>(() => {})
 
   // ── Query execution ──
 
@@ -229,7 +230,7 @@ export const DataTabView = React.memo(function DataTabView({
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
         // Log the SELECT query
-        logQueryRef.current(query, elapsed, queryResponse.data?.rowCount, queryResponse.success ? undefined : queryResponse.error)
+        logQueryRef.current(query, params, elapsed, queryResponse.data?.rowCount, queryResponse.success ? undefined : queryResponse.error)
 
         // Unwrap IPC envelope { success, data, error }
         if (!queryResponse.success) {
@@ -267,7 +268,7 @@ export const DataTabView = React.memo(function DataTabView({
 
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
-        logQueryRef.current(countQuery, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
+        logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
 
         if (!countResponse.success) {
           throw new Error(countResponse.error ?? 'Count query failed')
@@ -323,6 +324,28 @@ export const DataTabView = React.memo(function DataTabView({
         }
       } catch {
         // Non-critical — inline editing will fall back to full-row WHERE
+      }
+    })()
+
+    // Fetch foreign key metadata for FK navigation arrows
+    ;(async () => {
+      try {
+        const res = await (window as any).novadeck.sql.getForeignKeys(sqlSessionId, table, schema)
+        if (res?.success && Array.isArray(res.data)) {
+          const fkMap: ForeignKeyMap = {}
+          for (const fk of res.data) {
+            // Map each FK column to its referenced table/column
+            for (let i = 0; i < fk.columns.length; i++) {
+              fkMap[fk.columns[i]] = {
+                referencedTable: fk.referencedTable,
+                referencedColumn: fk.referencedColumns[i] || fk.referencedColumns[0],
+              }
+            }
+          }
+          setForeignKeyMap(fkMap)
+        }
+      } catch {
+        // Non-critical — FK arrows just won't appear
       }
     })()
 
@@ -553,11 +576,27 @@ export const DataTabView = React.memo(function DataTabView({
     [stagedChanges, table, schema]
   )
 
+  /** Interpolate parameter placeholders for display in the query log */
+  const formatQueryForLog = useCallback((query: string, params?: unknown[]): string => {
+    if (!params || params.length === 0) return query
+    let idx = 0
+    // Handle both ? (MySQL) and $N (Postgres) placeholders
+    return query.replace(/\?|\$\d+/g, (match) => {
+      const paramIdx = match === '?' ? idx++ : parseInt(match.slice(1), 10) - 1
+      const val = params[paramIdx]
+      if (val === null || val === undefined) return 'NULL'
+      if (typeof val === 'number') return String(val)
+      if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE'
+      // String values — escape single quotes for display
+      return `'${String(val).replace(/'/g, "''")}'`
+    })
+  }, [])
+
   /** Helper: log a query to the history store */
-  const logQuery = useCallback((query: string, timeMs: number, rowCount?: number, errorMsg?: string) => {
+  const logQuery = useCallback((query: string, params: unknown[] | undefined, timeMs: number, rowCount?: number, errorMsg?: string) => {
     addHistoryEntry({
       id: crypto.randomUUID(),
-      query,
+      query: formatQueryForLog(query, params),
       database: '', // filled later from currentDatabase if needed
       executedAt: Date.now(),
       executionTimeMs: timeMs,
@@ -565,7 +604,7 @@ export const DataTabView = React.memo(function DataTabView({
       error: errorMsg,
       isFavorite: false,
     })
-  }, [addHistoryEntry])
+  }, [addHistoryEntry, formatQueryForLog])
 
   // Keep the ref in sync so executeQuery can call it without a dep cycle
   logQueryRef.current = logQuery
@@ -582,7 +621,7 @@ export const DataTabView = React.memo(function DataTabView({
       // ── BEGIN transaction ──
       const beginT0 = performance.now()
       const beginRes = await queryApi.query(sqlSessionId, 'BEGIN', [])
-      logQuery('BEGIN', performance.now() - beginT0, undefined, beginRes.success ? undefined : beginRes.error)
+      logQuery('BEGIN', undefined, performance.now() - beginT0, undefined, beginRes.success ? undefined : beginRes.error)
       if (!beginRes.success) {
         throw new Error(`BEGIN failed: ${beginRes.error}`)
       }
@@ -630,7 +669,7 @@ export const DataTabView = React.memo(function DataTabView({
         const t0 = performance.now()
         const res = await queryApi.query(sqlSessionId, sql, params)
         const elapsed = performance.now() - t0
-        logQuery(sql, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
+        logQuery(sql, params, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
 
         if (!res.success) {
           throw new Error(`${change.column ?? 'update'}: ${res.error}`)
@@ -642,7 +681,7 @@ export const DataTabView = React.memo(function DataTabView({
       // ── COMMIT transaction ──
       const commitT0 = performance.now()
       const commitRes = await queryApi.query(sqlSessionId, 'COMMIT', [])
-      logQuery('COMMIT', performance.now() - commitT0, undefined, commitRes.success ? undefined : commitRes.error)
+      logQuery('COMMIT', undefined, performance.now() - commitT0, undefined, commitRes.success ? undefined : commitRes.error)
 
       if (!commitRes.success) {
         throw new Error(`COMMIT failed: ${commitRes.error}`)
@@ -667,7 +706,7 @@ export const DataTabView = React.memo(function DataTabView({
       try {
         const rbT0 = performance.now()
         const rbRes = await queryApi.query(sqlSessionId, 'ROLLBACK', [])
-        logQuery('ROLLBACK', performance.now() - rbT0, undefined, rbRes.success ? undefined : rbRes.error)
+        logQuery('ROLLBACK', undefined, performance.now() - rbT0, undefined, rbRes.success ? undefined : rbRes.error)
       } catch {
         // Rollback failed — nothing we can do
       }
@@ -709,13 +748,69 @@ export const DataTabView = React.memo(function DataTabView({
         handleDiscardChanges()
       }
     }
+    const handleRefreshData = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId) {
+        // Invalidate cache so re-fetch is forced
+        cacheKeyRef.current = ''
+        executeQuery({
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          sort: sortColumn,
+          sortDir: sortDirection,
+          currentFilters: filters,
+        })
+      }
+    }
     window.addEventListener('sql:apply-changes', handleApplyChanges)
     window.addEventListener('sql:discard-changes', handleDiscardEvent)
+    window.addEventListener('sql:refresh-data', handleRefreshData)
     return () => {
       window.removeEventListener('sql:apply-changes', handleApplyChanges)
       window.removeEventListener('sql:discard-changes', handleDiscardEvent)
+      window.removeEventListener('sql:refresh-data', handleRefreshData)
     }
-  }, [connectionId, handleSaveChanges, handleDiscardChanges])
+  }, [connectionId, handleSaveChanges, handleDiscardChanges, executeQuery, pagination, sortColumn, sortDirection, filters])
+
+  // ── Listen for FK filter navigation — sets a filter from external navigation ──
+  useEffect(() => {
+    const handleSetFilter = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId !== connectionId || detail?.table !== table) return
+
+      const newFilter: TableFilter = {
+        id: crypto.randomUUID(),
+        enabled: true,
+        column: detail.column,
+        operator: 'equals',
+        value: String(detail.value),
+      }
+      // Replace filters (FK navigation = fresh context)
+      const newFilters = [newFilter]
+      filtersRef.current = newFilters
+      setFilters(newFilters)
+      // Trigger query with the new filter
+      setPagination((p) => ({ ...p, page: 1 }))
+      executeQuery({
+        page: 1,
+        pageSize: pagination.pageSize,
+        sort: sortColumn,
+        sortDir: sortDirection,
+        currentFilters: newFilters,
+      })
+    }
+    window.addEventListener('sql:set-filter', handleSetFilter)
+    return () => window.removeEventListener('sql:set-filter', handleSetFilter)
+  }, [connectionId, table, executeQuery, pagination.pageSize, sortColumn, sortDirection])
+
+  // ── FK navigation — dispatch event to open referenced table with filter ──
+  const handleNavigateFK = useCallback((refTable: string, refColumn: string, value: unknown) => {
+    window.dispatchEvent(
+      new CustomEvent('sql:navigate-fk', {
+        detail: { connectionId, table: refTable, filterColumn: refColumn, filterValue: value },
+      })
+    )
+  }, [connectionId])
 
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns])
@@ -771,6 +866,8 @@ export const DataTabView = React.memo(function DataTabView({
           editedRows={editedRows}
           editedCells={editedCells}
           columnWidthsKey={columnWidthsKey}
+          foreignKeys={foreignKeyMap}
+          onNavigateFK={handleNavigateFK}
         />
       </div>
 

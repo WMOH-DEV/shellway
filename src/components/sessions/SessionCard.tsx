@@ -1,6 +1,6 @@
 import {
-  Server, MoreVertical, Copy, Trash2, Pencil, ExternalLink,
-  Terminal, FolderOpen, Pause, Columns
+  MoreVertical, Copy, Trash2, Pencil, ExternalLink,
+  Terminal, FolderOpen, Pause, Columns, X, Unplug
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Dropdown } from '@/components/ui/Dropdown'
@@ -10,6 +10,8 @@ import type { Session, ConnectionStatus } from '@/types/session'
 interface SessionCardProps {
   session: Session
   isSelected: boolean
+  /** Whether this session's connection is the currently viewed tab */
+  isActiveTab?: boolean
   connectionStatus?: ConnectionStatus
   onSelect: () => void
   onConnect: () => void
@@ -19,11 +21,14 @@ interface SessionCardProps {
   onEdit: () => void
   onDuplicate: () => void
   onDelete: () => void
+  /** Called to disconnect / close the connection tab */
+  onDisconnect?: () => void
 }
 
 export function SessionCard({
   session,
   isSelected,
+  isActiveTab,
   connectionStatus,
   onSelect,
   onConnect,
@@ -32,7 +37,8 @@ export function SessionCard({
   onConnectBoth,
   onEdit,
   onDuplicate,
-  onDelete
+  onDelete,
+  onDisconnect,
 }: SessionCardProps) {
   const isConnected = connectionStatus === 'connected'
   const isConnecting = connectionStatus === 'connecting' || connectionStatus === 'authenticating'
@@ -40,9 +46,14 @@ export function SessionCard({
   const isPaused = connectionStatus === 'paused'
   const isError = connectionStatus === 'error'
   const isDisconnected = connectionStatus === 'disconnected' || !connectionStatus
+  const hasConnection = !isDisconnected
 
+  // Build context menu items — add disconnect when connected
   const menuItems = [
-    { id: 'connect', label: isConnected ? 'Open Tab' : 'Connect', icon: <ExternalLink size={13} /> },
+    ...(isDisconnected
+      ? [{ id: 'connect', label: 'Connect', icon: <ExternalLink size={13} /> }]
+      : [{ id: 'disconnect', label: 'Disconnect', icon: <Unplug size={13} />, danger: true }]
+    ),
     { id: 'sep-launch', label: '', separator: true },
     { id: 'open-terminal', label: 'Open Terminal', icon: <Terminal size={13} /> },
     { id: 'open-sftp', label: 'Open SFTP', icon: <FolderOpen size={13} /> },
@@ -57,6 +68,7 @@ export function SessionCard({
   const handleMenuSelect = (id: string) => {
     switch (id) {
       case 'connect': onConnect(); break
+      case 'disconnect': onDisconnect?.(); break
       case 'open-terminal': onConnectTerminal?.(); break
       case 'open-sftp': onConnectSFTP?.(); break
       case 'open-both': onConnectBoth?.(); break
@@ -66,21 +78,44 @@ export function SessionCard({
     }
   }
 
+  // Single click behavior: if connected → switch to it, otherwise → select
+  const handleClick = () => {
+    if (hasConnection) {
+      onConnect() // This switches to the existing tab via AppShell.handleConnect
+    } else {
+      onSelect()
+    }
+  }
+
+  // Double click: connect if not connected
+  const handleDoubleClick = () => {
+    if (isDisconnected) {
+      onConnect()
+    }
+  }
+
   return (
     <div
-      onClick={onSelect}
-      onDoubleClick={onConnect}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       className={cn(
-        'group relative flex items-center gap-2.5 px-2.5 py-2 rounded-md cursor-pointer transition-colors',
-        isSelected
-          ? 'bg-nd-surface border border-nd-border'
-          : 'hover:bg-nd-surface/60 border border-transparent'
+        'group relative flex items-center gap-2.5 rounded-md cursor-pointer transition-colors',
+        // Active tab = accent left border + filled bg
+        isActiveTab
+          ? 'bg-nd-accent/10 border-l-2 border-l-nd-accent border-y border-r border-y-nd-accent/20 border-r-nd-accent/20 px-2 py-2'
+          // Connected but not active = subtle indicator
+          : hasConnection
+            ? 'bg-nd-surface/80 border-l-2 border-l-nd-success/50 border border-nd-border/50 px-2 py-2'
+            // Not connected
+            : isSelected
+              ? 'bg-nd-surface border border-nd-border px-2.5 py-2'
+              : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2'
       )}
     >
       {/* Status / color dot */}
       <div className="relative shrink-0">
         <div
-          className="w-2.5 h-2.5 rounded-full"
+          className={cn('w-2.5 h-2.5 rounded-full', !hasConnection && 'opacity-60')}
           style={{ backgroundColor: session.color || '#71717a' }}
         />
         {/* Connection status overlay */}
@@ -98,7 +133,7 @@ export function SessionCard({
             <Pause size={6} className="text-nd-bg-secondary" />
           </div>
         )}
-        {(isError || isDisconnected) && connectionStatus && connectionStatus !== 'disconnected' && (
+        {isError && (
           <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-nd-error border border-nd-bg-secondary" />
         )}
       </div>
@@ -106,7 +141,12 @@ export function SessionCard({
       {/* Session info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
-          <p className="text-sm text-nd-text-primary truncate font-medium">{session.name}</p>
+          <p className={cn(
+            'text-sm truncate font-medium',
+            isActiveTab ? 'text-nd-accent' : 'text-nd-text-primary'
+          )}>
+            {session.name}
+          </p>
           {session.isModified && (
             <span className="text-2xs text-nd-warning shrink-0">(modified)</span>
           )}
@@ -116,42 +156,74 @@ export function SessionCard({
         </p>
       </div>
 
-      {/* Quick launch buttons (on hover) */}
+      {/* Action buttons — different for connected vs disconnected */}
       <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Tooltip content="Open Terminal" side="top">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onConnectTerminal?.()
-            }}
-            className="p-1 rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-bg-tertiary transition-colors"
-          >
-            <Terminal size={13} />
-          </button>
-        </Tooltip>
-        <Tooltip content="Open SFTP" side="top">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onConnectSFTP?.()
-            }}
-            className="p-1 rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-bg-tertiary transition-colors"
-          >
-            <FolderOpen size={13} />
-          </button>
-        </Tooltip>
+        {hasConnection ? (
+          <>
+            {/* Close connection button */}
+            <Tooltip content="Disconnect" side="top">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDisconnect?.()
+                }}
+                className="p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-bg-tertiary transition-colors"
+              >
+                <X size={13} />
+              </button>
+            </Tooltip>
 
-        {/* Context menu */}
-        <Dropdown
-          trigger={
-            <button className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-bg-tertiary transition-colors">
-              <MoreVertical size={13} />
-            </button>
-          }
-          items={menuItems}
-          onSelect={handleMenuSelect}
-          align="right"
-        />
+            {/* Context menu */}
+            <Dropdown
+              trigger={
+                <button className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-bg-tertiary transition-colors">
+                  <MoreVertical size={13} />
+                </button>
+              }
+              items={menuItems}
+              onSelect={handleMenuSelect}
+              align="right"
+            />
+          </>
+        ) : (
+          <>
+            {/* Quick launch buttons for disconnected sessions */}
+            <Tooltip content="Open Terminal" side="top">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onConnectTerminal?.()
+                }}
+                className="p-1 rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-bg-tertiary transition-colors"
+              >
+                <Terminal size={13} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Open SFTP" side="top">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onConnectSFTP?.()
+                }}
+                className="p-1 rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-bg-tertiary transition-colors"
+              >
+                <FolderOpen size={13} />
+              </button>
+            </Tooltip>
+
+            {/* Context menu */}
+            <Dropdown
+              trigger={
+                <button className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-bg-tertiary transition-colors">
+                  <MoreVertical size={13} />
+                </button>
+              }
+              items={menuItems}
+              onSelect={handleMenuSelect}
+              align="right"
+            />
+          </>
+        )}
       </div>
     </div>
   )

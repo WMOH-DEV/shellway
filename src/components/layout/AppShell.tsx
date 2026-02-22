@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
-import { TabBar } from './TabBar'
 import { StatusBar } from './StatusBar'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { toast } from '@/components/ui/Toast'
@@ -94,13 +93,7 @@ export function AppShell({ children }: AppShellProps) {
         <Sidebar onConnect={handleConnect} />
 
         {/* Content area */}
-        <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Tab bar */}
-          <TabBar />
-
-          {/* Main content */}
-          <main className="flex-1 overflow-hidden">{children}</main>
-        </div>
+        <main className="flex-1 overflow-hidden">{children}</main>
       </div>
 
       {/* Status bar */}

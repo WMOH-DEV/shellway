@@ -157,7 +157,16 @@ const FilterRow = React.memo(function FilterRow({
   )
 
   return (
-    <div className="flex w-full items-center gap-1.5 py-0.5">
+    <div className={cn('flex w-full items-center gap-1.5 py-0.5', !filter.enabled && 'opacity-50')}>
+      {/* Enable/disable checkbox */}
+      <input
+        type="checkbox"
+        checked={filter.enabled}
+        onChange={(e) => onUpdate(filter.id, { enabled: e.target.checked })}
+        className="accent-nd-accent w-3 h-3 shrink-0 cursor-pointer"
+        title={filter.enabled ? 'Disable filter' : 'Enable filter'}
+      />
+
       {/* Column selector */}
       <Select
         options={columnOptions}
