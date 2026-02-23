@@ -2,8 +2,9 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { CreateDatabaseDialog } from '@/components/sql/CreateDatabaseDialog'
 import { cn } from '@/utils/cn'
-import { Database, Search, Loader2 } from 'lucide-react'
+import { Database, Search, Loader2, Plus } from 'lucide-react'
 
 interface DatabasePickerDialogProps {
   open: boolean
@@ -11,6 +12,8 @@ interface DatabasePickerDialogProps {
   sqlSessionId: string
   /** Called when the user selects a database */
   onSelect: (database: string) => void
+  /** Database type — needed for the create database dialog */
+  dbType?: 'mysql' | 'postgres'
 }
 
 export function DatabasePickerDialog({
@@ -18,12 +21,14 @@ export function DatabasePickerDialog({
   onClose,
   sqlSessionId,
   onSelect,
+  dbType,
 }: DatabasePickerDialogProps) {
   const [databases, setDatabases] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
 
   // Fetch databases when dialog opens
   useEffect(() => {
@@ -92,6 +97,20 @@ export function DatabasePickerDialog({
     [selected, filteredDatabases, onSelect]
   )
 
+  const handleCreated = useCallback(
+    (dbName: string) => {
+      setShowCreateDialog(false)
+      // Add the new database to the list and auto-select it
+      setDatabases((prev) => {
+        const updated = [...prev, dbName].sort((a, b) => a.localeCompare(b))
+        return updated
+      })
+      setSelected(dbName)
+      onSelect(dbName)
+    },
+    [onSelect]
+  )
+
   return (
     <Modal open={open} onClose={onClose} title="Open database" maxWidth="max-w-sm">
       <div className="flex flex-col gap-3" onKeyDown={handleKeyDown}>
@@ -146,6 +165,17 @@ export function DatabasePickerDialog({
 
         {/* Actions */}
         <div className="flex gap-2 justify-end pt-1">
+          {dbType && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowCreateDialog(true)}
+              className="mr-auto"
+            >
+              <Plus size={14} />
+              New Database
+            </Button>
+          )}
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -159,6 +189,17 @@ export function DatabasePickerDialog({
           </Button>
         </div>
       </div>
+
+      {/* Create database dialog */}
+      {dbType && (
+        <CreateDatabaseDialog
+          open={showCreateDialog}
+          onClose={() => setShowCreateDialog(false)}
+          sqlSessionId={sqlSessionId}
+          dbType={dbType}
+          onCreated={handleCreated}
+        />
+      )}
     </Modal>
   )
 }

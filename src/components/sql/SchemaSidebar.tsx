@@ -3,6 +3,7 @@ import { cn } from '@/utils/cn'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
+import { ContextMenu, type ContextMenuItem } from '@/components/ui/ContextMenu'
 import {
   RefreshCw,
   Search,
@@ -10,7 +11,17 @@ import {
   ChevronRight,
   Table2,
   Eye,
-  AlertCircle
+  AlertCircle,
+  Download,
+  Upload,
+  Copy,
+  Trash2,
+  FileText,
+  FileJson,
+  Database,
+  HardDrive,
+  RotateCcw,
+  Plus,
 } from 'lucide-react'
 import { useSQLConnection } from '@/stores/sqlStore'
 import type { SchemaTable } from '@/types/sql'
@@ -24,42 +35,139 @@ function formatRowCount(count: number | undefined): string {
   return String(count)
 }
 
+// ── Table context menu items builder ──
+
+function buildTableContextMenuItems(tableName: string, isView: boolean): ContextMenuItem[] {
+  return [
+    { id: `export:csv:${tableName}`, label: 'Export as CSV', icon: <FileText size={14} /> },
+    { id: `export:json:${tableName}`, label: 'Export as JSON', icon: <FileJson size={14} /> },
+    { id: `export:sql:${tableName}`, label: 'Export as SQL', icon: <Database size={14} /> },
+    { id: 'sep-1', label: '', separator: true },
+    ...(isView
+      ? []
+      : [
+          {
+            id: `import:csv:${tableName}`,
+            label: 'Import from CSV',
+            icon: <Upload size={14} />,
+          },
+          { id: 'sep-2', label: '', separator: true },
+        ]),
+    { id: `copy:${tableName}`, label: 'Copy Table Name', icon: <Copy size={14} /> },
+    ...(isView
+      ? []
+      : [
+          { id: 'sep-3', label: '', separator: true },
+          {
+            id: `drop:${tableName}`,
+            label: 'Drop Table',
+            icon: <Trash2 size={14} />,
+            danger: true,
+          },
+        ]),
+  ]
+}
+
+// ── Database context menu items builder ──
+
+function buildDatabaseContextMenuItems(hasSSH: boolean): ContextMenuItem[] {
+  return [
+    { id: 'db:export', label: 'Export Database', icon: <Download size={14} /> },
+    { id: 'db:import-sql', label: 'Import SQL Dump', icon: <Upload size={14} /> },
+    { id: 'sep-1', label: '', separator: true },
+    { id: 'db:backup', label: 'Backup Database', icon: <HardDrive size={14} />, disabled: !hasSSH },
+    { id: 'db:restore', label: 'Restore Database', icon: <RotateCcw size={14} />, disabled: !hasSSH },
+    { id: 'sep-2', label: '', separator: true },
+    { id: 'db:create', label: 'Create New Database', icon: <Plus size={14} /> },
+  ]
+}
+
 // ── Memoized table row ──
 
 interface TableRowProps {
   table: SchemaTable
   isSelected: boolean
   onSelect: (name: string) => void
+  onContextMenuSelect: (id: string) => void
 }
 
-const TableRow = memo(function TableRow({ table, isSelected, onSelect }: TableRowProps) {
+const TableRow = memo(function TableRow({
+  table,
+  isSelected,
+  onSelect,
+  onContextMenuSelect,
+}: TableRowProps) {
   const handleClick = useCallback(() => {
     onSelect(table.name)
   }, [table.name, onSelect])
 
+  const handleExport = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onContextMenuSelect(`export:sql:${table.name}`)
+  }, [table.name, onContextMenuSelect])
+
+  const handleImportCSV = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onContextMenuSelect(`import:csv:${table.name}`)
+  }, [table.name, onContextMenuSelect])
+
   const rowCount = formatRowCount(table.rowCount)
+  const isView = table.type === 'view'
+
+  const contextMenuItems = useMemo(
+    () => buildTableContextMenuItems(table.name, isView),
+    [table.name, isView]
+  )
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className={cn(
-        'flex items-center gap-2 w-full px-3 py-1 text-left text-sm',
-        'hover:bg-nd-surface-hover transition-colors duration-100 rounded-sm',
-        isSelected && 'bg-nd-surface-hover text-nd-text-primary',
-        !isSelected && 'text-nd-text-secondary'
-      )}
-    >
-      {table.type === 'view' ? (
-        <Eye size={13} className="shrink-0 text-nd-text-muted" />
-      ) : (
-        <Table2 size={13} className="shrink-0 text-nd-text-muted" />
-      )}
-      <span className="truncate flex-1">{table.name}</span>
-      {rowCount && (
-        <span className="text-2xs text-nd-text-muted tabular-nums shrink-0">{rowCount}</span>
-      )}
-    </button>
+    <ContextMenu items={contextMenuItems} onSelect={onContextMenuSelect}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleClick() }}
+        className={cn(
+          'group flex items-center gap-2 w-full px-3 py-1 text-left text-sm',
+          'hover:bg-nd-surface-hover transition-colors duration-100 rounded-sm cursor-pointer',
+          isSelected && 'bg-nd-surface-hover text-nd-text-primary',
+          !isSelected && 'text-nd-text-secondary'
+        )}
+      >
+        {table.type === 'view' ? (
+          <Eye size={13} className="shrink-0 text-nd-text-muted" />
+        ) : (
+          <Table2 size={13} className="shrink-0 text-nd-text-muted" />
+        )}
+        <span className="truncate flex-1">{table.name}</span>
+
+        {/* Hover action buttons */}
+        <span className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleExport}
+            title={`Export ${table.name}`}
+            className="p-0.5 rounded text-nd-text-muted hover:text-nd-accent transition-colors"
+          >
+            <Download size={11} />
+          </button>
+          {!isView && (
+            <button
+              type="button"
+              onClick={handleImportCSV}
+              title={`Import CSV into ${table.name}`}
+              className="p-0.5 rounded text-nd-text-muted hover:text-nd-accent transition-colors"
+            >
+              <Upload size={11} />
+            </button>
+          )}
+        </span>
+
+        {/* Row count (hidden on hover to make room for actions) */}
+        {rowCount && (
+          <span className="text-2xs text-nd-text-muted tabular-nums shrink-0 group-hover:hidden">{rowCount}</span>
+        )}
+      </div>
+    </ContextMenu>
   )
 })
 
@@ -95,11 +203,37 @@ function Group({ label, count, defaultOpen = true, children }: GroupProps) {
 
 // ── Main sidebar ──
 
+/** Context menu action type for table actions */
+export type TableContextAction =
+  | { type: 'export'; table: string; format: 'csv' | 'json' | 'sql' }
+  | { type: 'import-csv'; table: string }
+  | { type: 'copy-name'; table: string }
+  | { type: 'drop-table'; table: string }
+
+/** Context menu action type for database actions */
+export type DatabaseContextAction =
+  | { type: 'export-database' }
+  | { type: 'import-sql' }
+  | { type: 'backup' }
+  | { type: 'restore' }
+  | { type: 'create-database' }
+
 interface SchemaSidebarProps {
   connectionId: string
+  /** Whether an SSH connection is available (enables backup/restore) */
+  hasSSHConnection?: boolean
+  /** Callback for table context menu actions */
+  onTableAction?: (action: TableContextAction) => void
+  /** Callback for database context menu actions */
+  onDatabaseAction?: (action: DatabaseContextAction) => void
 }
 
-export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
+export function SchemaSidebar({
+  connectionId,
+  hasSSHConnection = false,
+  onTableAction,
+  onDatabaseAction,
+}: SchemaSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -166,6 +300,62 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
       setSelectedTable(name)
     },
     [setSelectedTable]
+  )
+
+  // ── Context menu handlers ──
+
+  const handleTableContextMenuSelect = useCallback(
+    (id: string) => {
+      if (!onTableAction) return
+
+      // Parse action: "type:value:tableName" or "copy:tableName"
+      if (id.startsWith('export:csv:')) {
+        onTableAction({ type: 'export', table: id.slice('export:csv:'.length), format: 'csv' })
+      } else if (id.startsWith('export:json:')) {
+        onTableAction({ type: 'export', table: id.slice('export:json:'.length), format: 'json' })
+      } else if (id.startsWith('export:sql:')) {
+        onTableAction({ type: 'export', table: id.slice('export:sql:'.length), format: 'sql' })
+      } else if (id.startsWith('import:csv:')) {
+        onTableAction({ type: 'import-csv', table: id.slice('import:csv:'.length) })
+      } else if (id.startsWith('copy:')) {
+        const tableName = id.slice('copy:'.length)
+        navigator.clipboard.writeText(tableName).catch(() => {})
+        onTableAction({ type: 'copy-name', table: tableName })
+      } else if (id.startsWith('drop:')) {
+        onTableAction({ type: 'drop-table', table: id.slice('drop:'.length) })
+      }
+    },
+    [onTableAction]
+  )
+
+  const handleDatabaseContextMenuSelect = useCallback(
+    (id: string) => {
+      if (!onDatabaseAction) return
+
+      switch (id) {
+        case 'db:export':
+          onDatabaseAction({ type: 'export-database' })
+          break
+        case 'db:import-sql':
+          onDatabaseAction({ type: 'import-sql' })
+          break
+        case 'db:backup':
+          onDatabaseAction({ type: 'backup' })
+          break
+        case 'db:restore':
+          onDatabaseAction({ type: 'restore' })
+          break
+        case 'db:create':
+          onDatabaseAction({ type: 'create-database' })
+          break
+      }
+    },
+    [onDatabaseAction]
+  )
+
+  const dbContextMenuItems = useMemo(
+    () => buildDatabaseContextMenuItems(hasSSHConnection),
+    [hasSSHConnection]
   )
 
   const fetchTables = useCallback(async () => {
@@ -240,33 +430,35 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
   return (
     <div className="flex flex-col h-full bg-nd-bg-secondary">
       {/* Database selector + refresh */}
-      <div className="flex items-center gap-1.5 px-2 py-2 border-b border-nd-border">
-        <div className="flex-1 min-w-0">
-          {isPostgres ? (
-            // Postgres doesn't support switching databases on the same connection
-            <div className="flex items-center h-7 px-2 text-xs text-nd-text-secondary bg-nd-surface rounded border border-nd-border truncate">
-              {currentDatabase}
-            </div>
-          ) : (
-            <Select
-              options={databaseOptions}
-              value={currentDatabase}
-              onChange={handleDatabaseChange}
-              className="!h-7 text-xs"
-            />
-          )}
+      <ContextMenu items={dbContextMenuItems} onSelect={handleDatabaseContextMenuSelect}>
+        <div className="flex items-center gap-1.5 px-2 py-2 border-b border-nd-border">
+          <div className="flex-1 min-w-0">
+            {isPostgres ? (
+              // Postgres doesn't support switching databases on the same connection
+              <div className="flex items-center h-7 px-2 text-xs text-nd-text-secondary bg-nd-surface rounded border border-nd-border truncate">
+                {currentDatabase}
+              </div>
+            ) : (
+              <Select
+                options={databaseOptions}
+                value={currentDatabase}
+                onChange={handleDatabaseChange}
+                className="!h-7 text-xs"
+              />
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={schemaLoading}
+            className="shrink-0 !h-7 !w-7"
+            title="Refresh schema"
+          >
+            <RefreshCw size={13} className={cn(schemaLoading && 'animate-spin')} />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleRefresh}
-          disabled={schemaLoading}
-          className="shrink-0 !h-7 !w-7"
-          title="Refresh schema"
-        >
-          <RefreshCw size={13} className={cn(schemaLoading && 'animate-spin')} />
-        </Button>
-      </div>
+      </ContextMenu>
 
       {/* Search */}
       <div className="px-2 py-2 border-b border-nd-border">
@@ -277,6 +469,54 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
           icon={<Search size={13} />}
           className="!h-7 text-xs"
         />
+      </div>
+
+      {/* Database actions toolbar */}
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-nd-border">
+        <button
+          onClick={() => onDatabaseAction?.({ type: 'export-database' })}
+          title="Export Database"
+          className="flex items-center gap-1 px-1.5 py-1 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover transition-colors"
+        >
+          <Download size={12} />
+          <span>Export</span>
+        </button>
+        <button
+          onClick={() => onDatabaseAction?.({ type: 'import-sql' })}
+          title="Import SQL"
+          className="flex items-center gap-1 px-1.5 py-1 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover transition-colors"
+        >
+          <Upload size={12} />
+          <span>Import</span>
+        </button>
+        <button
+          onClick={() => onDatabaseAction?.({ type: 'backup' })}
+          title="Backup via SSH"
+          disabled={!hasSSHConnection}
+          className={cn(
+            'flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors',
+            hasSSHConnection
+              ? 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover'
+              : 'text-nd-text-muted/40 cursor-not-allowed'
+          )}
+        >
+          <HardDrive size={12} />
+          <span>Backup</span>
+        </button>
+        <button
+          onClick={() => onDatabaseAction?.({ type: 'restore' })}
+          title="Restore via SSH"
+          disabled={!hasSSHConnection}
+          className={cn(
+            'flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors',
+            hasSSHConnection
+              ? 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover'
+              : 'text-nd-text-muted/40 cursor-not-allowed'
+          )}
+        >
+          <RotateCcw size={12} />
+          <span>Restore</span>
+        </button>
       </div>
 
       {/* Table list */}
@@ -313,6 +553,7 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
                     table={table}
                     isSelected={selectedTable === table.name}
                     onSelect={handleSelectTable}
+                    onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}
               </Group>
@@ -326,6 +567,7 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
                     table={table}
                     isSelected={selectedTable === table.name}
                     onSelect={handleSelectTable}
+                    onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}
               </Group>

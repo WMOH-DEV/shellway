@@ -188,3 +188,26 @@ export interface SQLTab {
   query?: string
   isDirty?: boolean
 }
+
+// ── Data Transfer ──
+
+export type TransferOperation = 'export' | 'import' | 'backup' | 'restore'
+export type TransferStatus = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface TransferProgress {
+  operationId: string
+  sqlSessionId: string
+  operation: TransferOperation
+  status: TransferStatus
+  /** 0-100, or -1 for indeterminate */
+  percentage: number
+  processedRows?: number
+  totalRows?: number
+  processedBytes?: number
+  totalBytes?: number
+  currentTable?: string
+  message?: string
+  error?: string
+  startedAt: number
+  completedAt?: number
+}

@@ -1,15 +1,25 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { Client as SSHClient } from 'ssh2'
 import { readFileSync } from 'fs'
+import { access, constants as fsConstants } from 'fs/promises'
 import { createServer, type Server } from 'net'
 import { SQLService, DBConfig } from '../services/SQLService'
 import { SQLConfigStore, StoredSQLConfig } from '../services/SQLConfigStore'
+import { SQLDataTransferService, ExportOptions, ImportSQLOptions, ImportCSVOptions, BackupOptions, RestoreOptions } from '../services/SQLDataTransferService'
 import { getSSHService } from './ssh.ipc'
 
 const sqlService = new SQLService()
 const sqlConfigStore = new SQLConfigStore()
+const transferService = new SQLDataTransferService(sqlService)
+
+// Forward progress events from the transfer service to all renderer windows
+transferService.on('progress', (sqlSessionId: string, progress: unknown) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('sql:transfer:progress', sqlSessionId, progress)
+  }
+})
 
 /** Get the SQLConfigStore singleton (for use by other services) */
 export function getSQLConfigStore(): SQLConfigStore {
@@ -233,6 +243,374 @@ export function registerSQLIPC(): void {
       return { success: false, error: err.message }
     }
   })
+
+  // ── Data Transfer: Export ──
+
+  ipcMain.handle('sql:export', async (_event, sqlSessionId: string, filePath: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+    if (!options || typeof options !== 'object') {
+      return { success: false, error: 'Invalid export options' }
+    }
+
+    const opts = options as ExportOptions & { scope?: 'table' | 'database'; table?: string }
+
+    try {
+      if (opts.scope === 'table' && opts.table) {
+        const result = await transferService.exportTable(sqlSessionId, opts.table, filePath, opts)
+        return { success: true, operationId: result.operationId }
+      } else {
+        const result = await transferService.exportDatabase(sqlSessionId, filePath, opts)
+        return { success: true, operationId: result.operationId }
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Data Transfer: Import SQL ──
+
+  ipcMain.handle('sql:import:sql', async (_event, sqlSessionId: string, filePath: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+    if (!options || typeof options !== 'object') {
+      return { success: false, error: 'Invalid import options' }
+    }
+
+    try {
+      await access(filePath, fsConstants.R_OK)
+    } catch {
+      return { success: false, error: 'File not found or not readable' }
+    }
+
+    try {
+      const result = await transferService.importSQL(sqlSessionId, filePath, options as ImportSQLOptions)
+      return { success: true, operationId: result.operationId }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Data Transfer: Pre-scan SQL file ──
+
+  ipcMain.handle('sql:import:sql-prescan', async (_event, filePath: string) => {
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+
+    try {
+      await access(filePath, fsConstants.R_OK)
+    } catch {
+      return { success: false, error: 'File not found or not readable' }
+    }
+
+    try {
+      const data = await transferService.preScanSQL(filePath)
+      return { success: true, data }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Data Transfer: Import CSV ──
+
+  ipcMain.handle('sql:import:csv', async (_event, sqlSessionId: string, filePath: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+    if (!options || typeof options !== 'object') {
+      return { success: false, error: 'Invalid import options' }
+    }
+
+    try {
+      await access(filePath, fsConstants.R_OK)
+    } catch {
+      return { success: false, error: 'File not found or not readable' }
+    }
+
+    try {
+      const result = await transferService.importCSV(sqlSessionId, filePath, options as ImportCSVOptions)
+      return { success: true, operationId: result.operationId }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Data Transfer: Preview CSV ──
+
+  ipcMain.handle('sql:import:csv-preview', async (_event, filePath: string) => {
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+
+    try {
+      await access(filePath, fsConstants.R_OK)
+    } catch {
+      return { success: false, error: 'File not found or not readable' }
+    }
+
+    try {
+      const data = await transferService.previewCSV(filePath)
+      return { success: true, data }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Backup via SSH ──
+
+  ipcMain.handle('sql:backup', async (_event, sqlSessionId: string, database: string, filePath: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!database || typeof database !== 'string') {
+      return { success: false, error: 'Invalid database name' }
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+
+    const sshClient = getSSHClientForSession(sqlSessionId)
+    if (!sshClient) {
+      return { success: false, error: 'Backup requires an SSH connection. Direct database connections do not support server-side backup.' }
+    }
+
+    const connInfo = sqlService.getConnection(sqlSessionId)
+    if (!connInfo) {
+      return { success: false, error: 'Database session not found' }
+    }
+
+    // For SSH tunnels, the DB binary runs on the remote SSH host.
+    // Default to localhost:defaultPort — the caller overrides via options if needed.
+    const dbConfig = {
+      host: '127.0.0.1',
+      port: connInfo.type === 'mysql' ? 3306 : 5432,
+      user: '', // Will need to be provided in options or from stored config
+      password: '',
+    }
+
+    // The caller should provide the DB credentials in options since we can't recover them
+    // from the active connection (passwords aren't stored after connect)
+    const opts = (options || {}) as BackupOptions & { dbHost?: string; dbPort?: number; dbUser?: string; dbPassword?: string }
+    if (opts.dbHost) dbConfig.host = opts.dbHost
+    if (opts.dbPort) dbConfig.port = opts.dbPort
+    if (opts.dbUser) dbConfig.user = opts.dbUser
+    if (opts.dbPassword !== undefined) dbConfig.password = opts.dbPassword
+
+    if (!dbConfig.user) {
+      return { success: false, error: 'Database username is required for backup (provide dbUser in options)' }
+    }
+
+    try {
+      const result = await transferService.backupViaSSH(
+        sshClient, database, connInfo.type, dbConfig, filePath, opts
+      )
+      return { success: true, operationId: result.operationId }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Restore via SSH ──
+
+  ipcMain.handle('sql:restore', async (_event, sqlSessionId: string, database: string, filePath: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!database || typeof database !== 'string') {
+      return { success: false, error: 'Invalid database name' }
+    }
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid file path' }
+    }
+
+    try {
+      await access(filePath, fsConstants.R_OK)
+    } catch {
+      return { success: false, error: 'File not found or not readable' }
+    }
+
+    const sshClient = getSSHClientForSession(sqlSessionId)
+    if (!sshClient) {
+      return { success: false, error: 'Restore requires an SSH connection. Direct database connections do not support server-side restore.' }
+    }
+
+    const connInfo = sqlService.getConnection(sqlSessionId)
+    if (!connInfo) {
+      return { success: false, error: 'Database session not found' }
+    }
+
+    const dbConfig = {
+      host: '127.0.0.1',
+      port: connInfo.type === 'mysql' ? 3306 : 5432,
+      user: '',
+      password: '',
+    }
+
+    const opts = (options || {}) as RestoreOptions & { dbHost?: string; dbPort?: number; dbUser?: string; dbPassword?: string }
+    if (opts.dbHost) dbConfig.host = opts.dbHost
+    if (opts.dbPort) dbConfig.port = opts.dbPort
+    if (opts.dbUser) dbConfig.user = opts.dbUser
+    if (opts.dbPassword !== undefined) dbConfig.password = opts.dbPassword
+
+    if (!dbConfig.user) {
+      return { success: false, error: 'Database username is required for restore (provide dbUser in options)' }
+    }
+
+    try {
+      const result = await transferService.restoreViaSSH(
+        sshClient, filePath, database, connInfo.type, dbConfig, opts
+      )
+      return { success: true, operationId: result.operationId }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Create Database ──
+
+  ipcMain.handle('sql:createDatabase', async (_event, sqlSessionId: string, options: unknown) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!options || typeof options !== 'object') {
+      return { success: false, error: 'Invalid options' }
+    }
+
+    const opts = options as { name?: string; charset?: string; collation?: string; encoding?: string; template?: string }
+    if (!opts.name || typeof opts.name !== 'string') {
+      return { success: false, error: 'Database name is required' }
+    }
+
+    try {
+      return await transferService.createDatabase(sqlSessionId, opts as { name: string; charset?: string; collation?: string; encoding?: string; template?: string })
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Get Charsets ──
+
+  ipcMain.handle('sql:getCharsets', async (_event, sqlSessionId: string) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+
+    const dbType = sqlService.getConnectionType(sqlSessionId)
+    if (!dbType) {
+      return { success: false, error: 'Not connected' }
+    }
+
+    try {
+      if (dbType === 'mysql') {
+        const result = await sqlService.executeQuery(sqlSessionId, 'SHOW CHARACTER SET')
+        const charsets = result.rows.map((row: Record<string, unknown>) => ({
+          name: row['Charset'] as string,
+          defaultCollation: row['Default collation'] as string,
+        }))
+        return { success: true, data: charsets }
+      } else {
+        const result = await sqlService.executeQuery(
+          sqlSessionId,
+          `SELECT pg_encoding_to_char(encid) AS name
+           FROM (SELECT generate_series(0, 41) AS encid) s
+           WHERE pg_encoding_to_char(encid) <> ''
+           ORDER BY name`
+        )
+        const encodings = result.rows.map((row: Record<string, unknown>) => ({
+          name: row['name'] as string,
+        }))
+        return { success: true, data: encodings }
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Get Collations ──
+
+  ipcMain.handle('sql:getCollations', async (_event, sqlSessionId: string, charset: string) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+
+    const dbType = sqlService.getConnectionType(sqlSessionId)
+    if (!dbType) {
+      return { success: false, error: 'Not connected' }
+    }
+
+    try {
+      if (dbType === 'mysql') {
+        if (!charset || typeof charset !== 'string') {
+          return { success: false, error: 'Charset is required' }
+        }
+        const result = await sqlService.executeQuery(
+          sqlSessionId,
+          'SHOW COLLATION WHERE Charset = ?',
+          [charset]
+        )
+        const collations = result.rows.map((row: Record<string, unknown>) =>
+          row['Collation'] as string
+        )
+        return { success: true, data: collations }
+      } else {
+        const result = await sqlService.executeQuery(
+          sqlSessionId,
+          `SELECT collname FROM pg_collation ORDER BY collname`
+        )
+        const collations = result.rows.map((row: Record<string, unknown>) =>
+          row['collname'] as string
+        )
+        return { success: true, data: collations }
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Generate DDL ──
+
+  ipcMain.handle('sql:generateDDL', async (_event, sqlSessionId: string, table: string, schema?: string) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!table || typeof table !== 'string') {
+      return { success: false, error: 'Invalid table name' }
+    }
+
+    try {
+      const ddl = await transferService.generateCreateTable(sqlSessionId, table, schema)
+      return { success: true, data: ddl }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
+  // ── Cancel Transfer ──
+
+  ipcMain.handle('sql:transfer:cancel', async (_event, operationId: string) => {
+    if (!operationId || typeof operationId !== 'string') {
+      return { success: false, error: 'Invalid operation ID' }
+    }
+
+    try {
+      transferService.cancel(operationId)
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
 }
 
 // ── Helper: find a free local port ──
@@ -382,3 +760,29 @@ function cleanupEphemeralSSH(sqlSessionId: string): void {
 }
 
 export function getSQLService(): SQLService { return sqlService }
+
+/** Get the transfer service singleton (for use by other modules) */
+export function getTransferService(): SQLDataTransferService { return transferService }
+
+/**
+ * Resolve the SSH client for a given SQL session.
+ * - Mode 3 (ephemeral SSH): check ephemeralSSH map
+ * - Mode 2 (SSH session tunnel): resolve via tunnelMap → SSHService
+ * - Mode 1 (direct): returns null
+ */
+export function getSSHClientForSession(sqlSessionId: string): SSHClient | null {
+  // Mode 3: Ephemeral SSH connection
+  const ephemeral = ephemeralSSH.get(sqlSessionId)
+  if (ephemeral) return ephemeral.client
+
+  // Mode 2: Tunnel through existing SSH session
+  const tunnel = tunnelMap.get(sqlSessionId)
+  if (tunnel) {
+    const sshService = getSSHService()
+    const conn = sshService.get(tunnel.connectionId)
+    if (conn) return conn._client
+  }
+
+  // Mode 1: Direct connection (no SSH)
+  return null
+}

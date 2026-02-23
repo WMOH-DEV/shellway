@@ -13,17 +13,25 @@ import {
   Plus,
   PanelLeft,
   PanelBottom,
+  Download,
+  Upload,
+  HardDrive,
 } from 'lucide-react'
 import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { SchemaSidebar } from './SchemaSidebar'
+import { SchemaSidebar, type TableContextAction, type DatabaseContextAction } from './SchemaSidebar'
 import { SQLConnectDialog } from './SQLConnectDialog'
 import { DatabasePickerDialog } from './DatabasePickerDialog'
+import { CreateDatabaseDialog } from './CreateDatabaseDialog'
+import { ExportTableDialog } from './ExportTableDialog'
+import { ImportSQLDialog } from './ImportSQLDialog'
+import { ImportCSVDialog } from './ImportCSVDialog'
+import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab } from '@/types/sql'
+import type { SQLTab, SchemaColumn } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -93,6 +101,16 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [quickConnecting, setQuickConnecting] = useState(false)
   const quickConnectRef = useRef(false) // Synchronous guard against double-click
 
+  // ── Data transfer dialog states ──
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exportDialogTable, setExportDialogTable] = useState<string | null>(null)
+  const [showImportSQLDialog, setShowImportSQLDialog] = useState(false)
+  const [showImportCSVDialog, setShowImportCSVDialog] = useState(false)
+  const [importCSVTable, setImportCSVTable] = useState<string | null>(null)
+  const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false)
+  const [showBackupRestoreDialog, setShowBackupRestoreDialog] = useState(false)
+  const [backupRestoreInitialTab, setBackupRestoreInitialTab] = useState<'backup' | 'restore'>('backup')
+
   // ── Store selectors (scoped to this connection) ──
   const {
     connectionStatus,
@@ -101,6 +119,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     sqlSessionId,
     connectionConfig,
     selectedTable,
+    tables,
     tabs,
     activeTabId,
     stagedChanges,
@@ -525,6 +544,82 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [tabs, addTab, setActiveTab]
   )
 
+  // ── SchemaSidebar context menu handlers ──
+
+  const handleTableAction = useCallback(
+    (action: TableContextAction) => {
+      switch (action.type) {
+        case 'export':
+          setExportDialogTable(action.table)
+          setShowExportDialog(true)
+          break
+        case 'import-csv':
+          setImportCSVTable(action.table)
+          setShowImportCSVDialog(true)
+          break
+        case 'copy-name':
+          // Already handled in SchemaSidebar (clipboard copy)
+          break
+        case 'drop-table':
+          // TODO: Implement drop table confirmation dialog
+          break
+      }
+    },
+    []
+  )
+
+  const handleDatabaseAction = useCallback(
+    (action: DatabaseContextAction) => {
+      switch (action.type) {
+        case 'export-database':
+          setExportDialogTable(null) // null = all tables
+          setShowExportDialog(true)
+          break
+        case 'import-sql':
+          setShowImportSQLDialog(true)
+          break
+        case 'backup':
+          setBackupRestoreInitialTab('backup')
+          setShowBackupRestoreDialog(true)
+          break
+        case 'restore':
+          setBackupRestoreInitialTab('restore')
+          setShowBackupRestoreDialog(true)
+          break
+        case 'create-database':
+          setShowCreateDatabaseDialog(true)
+          break
+      }
+    },
+    []
+  )
+
+  /** Fetch columns for a table — used by ImportCSVDialog for column mapping */
+  const fetchColumnsForTable = useCallback(
+    async (table: string): Promise<SchemaColumn[]> => {
+      if (!sqlSessionId) return []
+      try {
+        const result = await (window as any).novadeck.sql.getColumns(
+          sqlSessionId,
+          table,
+          connectionConfig?.type === 'postgres' ? 'public' : undefined
+        )
+        if (result.success && result.data) {
+          return result.data as SchemaColumn[]
+        }
+      } catch {
+        // Silently fail
+      }
+      return []
+    },
+    [sqlSessionId, connectionConfig]
+  )
+
+  /** Whether an SSH connection is available for backup/restore */
+  const hasSSHConnection = useMemo(() => {
+    return connectionConfig?.useSSHTunnel === true
+  }, [connectionConfig])
+
   // ── Tab content renderer ──
   // Track which tabs have been visited — mount on first visit, keep alive after
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(new Set())
@@ -850,6 +945,28 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         />
         <ToolbarSep />
         <ToolbarButton
+          icon={<Download size={13} />}
+          title="Export database"
+          onClick={() => {
+            setExportDialogTable(null)
+            setShowExportDialog(true)
+          }}
+        />
+        <ToolbarButton
+          icon={<Upload size={13} />}
+          title="Import SQL dump"
+          onClick={() => setShowImportSQLDialog(true)}
+        />
+        <ToolbarButton
+          icon={<HardDrive size={13} />}
+          title="Backup / Restore"
+          onClick={() => {
+            setBackupRestoreInitialTab('backup')
+            setShowBackupRestoreDialog(true)
+          }}
+        />
+        <ToolbarSep />
+        <ToolbarButton
           icon={<PanelBottom size={14} />}
           title={showQueryLog ? 'Hide query log' : 'Show query log'}
           active={showQueryLog}
@@ -875,7 +992,12 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           )}
           style={showSidebar ? { width: '20%', minWidth: 180, maxWidth: 400 } : undefined}
         >
-          <SchemaSidebar connectionId={connectionId} />
+          <SchemaSidebar
+            connectionId={connectionId}
+            hasSSHConnection={hasSSHConnection}
+            onTableAction={handleTableAction}
+            onDatabaseAction={handleDatabaseAction}
+          />
         </div>
         <div className="flex-1 overflow-hidden min-w-0">
           {mainContent}
@@ -912,6 +1034,82 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           onClose={() => { setShowDatabasePicker(false); setDbPickerSessionId(null) }}
           sqlSessionId={(dbPickerSessionId || sqlSessionId)!}
           onSelect={handleDatabaseSelected}
+          dbType={connectionConfig?.type}
+        />
+      )}
+
+      {/* Export table dialog */}
+      {sqlSessionId && connectionConfig && (
+        <ExportTableDialog
+          open={showExportDialog}
+          onClose={() => { setShowExportDialog(false); setExportDialogTable(null) }}
+          sqlSessionId={sqlSessionId}
+          connectionId={connectionId}
+          dbType={connectionConfig.type}
+          currentDatabase={currentDatabase}
+          table={exportDialogTable}
+          tables={tables}
+        />
+      )}
+
+      {/* Import SQL dialog */}
+      {sqlSessionId && connectionConfig && (
+        <ImportSQLDialog
+          open={showImportSQLDialog}
+          onClose={() => setShowImportSQLDialog(false)}
+          sqlSessionId={sqlSessionId}
+          connectionId={connectionId}
+          dbType={connectionConfig.type}
+          currentDatabase={currentDatabase}
+          isProduction={connectionConfig.isProduction}
+        />
+      )}
+
+      {/* Import CSV dialog */}
+      {sqlSessionId && connectionConfig && (
+        <ImportCSVDialog
+          open={showImportCSVDialog}
+          onClose={() => { setShowImportCSVDialog(false); setImportCSVTable(null) }}
+          sqlSessionId={sqlSessionId}
+          connectionId={connectionId}
+          dbType={connectionConfig.type}
+          currentDatabase={currentDatabase}
+          tables={tables}
+          preSelectedTable={importCSVTable}
+          isProduction={connectionConfig.isProduction}
+          onFetchColumns={fetchColumnsForTable}
+        />
+      )}
+
+      {/* Create database dialog */}
+      {sqlSessionId && connectionConfig && (
+        <CreateDatabaseDialog
+          open={showCreateDatabaseDialog}
+          onClose={() => setShowCreateDatabaseDialog(false)}
+          sqlSessionId={sqlSessionId}
+          dbType={connectionConfig.type}
+          onCreated={(dbName) => {
+            setShowCreateDatabaseDialog(false)
+            handleDatabaseSelected(dbName)
+          }}
+        />
+      )}
+
+      {/* Backup/Restore dialog */}
+      {sqlSessionId && connectionConfig && (
+        <BackupRestoreDialog
+          open={showBackupRestoreDialog}
+          onClose={() => setShowBackupRestoreDialog(false)}
+          sqlSessionId={sqlSessionId}
+          connectionId={connectionId}
+          dbType={connectionConfig.type}
+          currentDatabase={currentDatabase}
+          isProduction={connectionConfig.isProduction}
+          initialTab={backupRestoreInitialTab}
+          dbHost={connectionConfig.host}
+          dbPort={connectionConfig.port}
+          dbUser={connectionConfig.username}
+          dbPassword={connectionConfig.password}
         />
       )}
     </div>

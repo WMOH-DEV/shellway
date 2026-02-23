@@ -1,6 +1,7 @@
 // electron/services/SQLService.ts
 
 import { EventEmitter } from 'events'
+import { Readable } from 'stream'
 
 // ── Types (duplicated server-side to avoid cross-process imports) ──
 
@@ -512,6 +513,39 @@ export class SQLService extends EventEmitter {
       }
       return Array.from(fkMap.values())
     }
+  }
+
+  // ── Streaming ──
+
+  /**
+   * Execute a query and return results as a Readable stream of row objects.
+   * Used for exporting large tables without loading all rows into memory.
+   * MySQL: uses mysql2's .stream() on the underlying (non-promise) connection
+   * PostgreSQL: uses pg-query-stream
+   */
+  async streamQuery(sqlSessionId: string, query: string): Promise<Readable> {
+    const active = this.connections.get(sqlSessionId)
+    if (!active) throw new Error('Not connected to database')
+
+    if (active.type === 'mysql') {
+      // The promise wrapper stores the raw connection at .connection
+      // The raw connection's .query() returns a Query object with .stream()
+      const rawConn = active.conn.connection
+      return rawConn.query(query).stream()
+    } else {
+      // PostgreSQL: use pg-query-stream
+      const QueryStream = (await import('pg-query-stream')).default
+      const qs = new QueryStream(query, undefined, { batchSize: 500 })
+      const stream: Readable = active.conn.query(qs)
+      return stream
+    }
+  }
+
+  /**
+   * Get the raw connection for a session (used by transfer service for streaming).
+   */
+  getConnection(sqlSessionId: string): { type: DatabaseType; conn: any; database: string } | undefined {
+    return this.connections.get(sqlSessionId)
   }
 
   // ── Utilities ──

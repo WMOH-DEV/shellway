@@ -12,7 +12,8 @@ import type {
   TableFilter,
   StagedChange,
   QueryHistoryEntry,
-  QueryError
+  QueryError,
+  TransferProgress
 } from '@/types/sql'
 
 // ── Sort state for data grid ──
@@ -62,6 +63,10 @@ export interface SQLConnectionSlice {
 
   // ── History ──
   history: QueryHistoryEntry[]
+
+  // ── Data Transfer ──
+  activeTransfer: TransferProgress | null
+  lastTransferResult: TransferProgress | null
 }
 
 // ── Store shape ──
@@ -118,6 +123,10 @@ interface SQLStoreState {
   clearHistory: (connectionId: string) => void
   toggleHistoryFavorite: (connectionId: string, id: string) => void
 
+  // ── Transfer actions ──
+  setActiveTransfer: (connectionId: string, progress: TransferProgress | null) => void
+  clearLastTransferResult: (connectionId: string) => void
+
   // ── Reset a single connection ──
   reset: (connectionId: string) => void
 
@@ -163,7 +172,10 @@ const INITIAL_CONNECTION_STATE: SQLConnectionSlice = {
   currentQuery: '',
   queryError: null,
 
-  history: []
+  history: [],
+
+  activeTransfer: null,
+  lastTransferResult: null
 }
 
 // ── Helpers ──
@@ -357,6 +369,19 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       )
     }))),
 
+  // ── Transfer actions ──
+
+  setActiveTransfer: (connectionId, progress) =>
+    set((s) => updateConn(s.connections, connectionId, () => {
+      if (progress && (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled')) {
+        return { activeTransfer: null, lastTransferResult: progress }
+      }
+      return { activeTransfer: progress }
+    })),
+
+  clearLastTransferResult: (connectionId) =>
+    set((s) => updateConn(s.connections, connectionId, () => ({ lastTransferResult: null }))),
+
   // ── Reset a single connection to initial state ──
 
   reset: (connectionId) =>
@@ -433,6 +458,9 @@ export function useSQLConnection(connectionId: string) {
       addHistoryEntry: (entry: QueryHistoryEntry) => s.addHistoryEntry(connectionId, entry),
       clearHistory: () => s.clearHistory(connectionId),
       toggleHistoryFavorite: (id: string) => s.toggleHistoryFavorite(connectionId, id),
+
+      setActiveTransfer: (progress: TransferProgress | null) => s.setActiveTransfer(connectionId, progress),
+      clearLastTransferResult: () => s.clearLastTransferResult(connectionId),
 
       reset: () => s.reset(connectionId),
       removeConnection: () => s.removeConnection(connectionId),

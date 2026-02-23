@@ -379,6 +379,44 @@ const api = {
       ipcRenderer.invoke('sql:config:delete', sessionId) as Promise<{ success: boolean; error?: string }>,
     configGetStandalone: () =>
       ipcRenderer.invoke('sql:config:getStandalone') as Promise<{ success: boolean; data?: Record<string, any>[]; error?: string }>,
+
+    // Data Transfer
+    exportData: (sqlSessionId: string, filePath: string, options: unknown) =>
+      ipcRenderer.invoke('sql:export', sqlSessionId, filePath, options),
+    importSQL: (sqlSessionId: string, filePath: string, options: unknown) =>
+      ipcRenderer.invoke('sql:import:sql', sqlSessionId, filePath, options),
+    preScanSQL: (filePath: string) =>
+      ipcRenderer.invoke('sql:import:sql-prescan', filePath),
+    importCSV: (sqlSessionId: string, filePath: string, options: unknown) =>
+      ipcRenderer.invoke('sql:import:csv', sqlSessionId, filePath, options),
+    previewCSV: (filePath: string) =>
+      ipcRenderer.invoke('sql:import:csv-preview', filePath),
+
+    // Backup/Restore
+    backup: (sqlSessionId: string, database: string, filePath: string, options: unknown) =>
+      ipcRenderer.invoke('sql:backup', sqlSessionId, database, filePath, options),
+    restore: (sqlSessionId: string, database: string, filePath: string, options: unknown) =>
+      ipcRenderer.invoke('sql:restore', sqlSessionId, database, filePath, options),
+
+    // Database management
+    createDatabase: (sqlSessionId: string, options: unknown) =>
+      ipcRenderer.invoke('sql:createDatabase', sqlSessionId, options),
+    getCharsets: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:getCharsets', sqlSessionId),
+    getCollations: (sqlSessionId: string, charset: string) =>
+      ipcRenderer.invoke('sql:getCollations', sqlSessionId, charset),
+    generateDDL: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:generateDDL', sqlSessionId, table, schema),
+
+    // Transfer control
+    cancelTransfer: (operationId: string) =>
+      ipcRenderer.invoke('sql:transfer:cancel', operationId),
+    onTransferProgress: (callback: (sqlSessionId: string, progress: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, sqlSessionId: string, progress: unknown) =>
+        callback(sqlSessionId, progress)
+      ipcRenderer.on('sql:transfer:progress', handler)
+      return () => ipcRenderer.removeListener('sql:transfer:progress', handler)
+    },
   },
 
   // ── Health ──

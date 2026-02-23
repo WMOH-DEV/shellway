@@ -21,39 +21,57 @@ interface ContextMenuProps {
 
 export function ContextMenu({ children, items, onSelect, className }: ContextMenuProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setPosition({ x: e.clientX, y: e.clientY })
-  }, [])
 
   const close = useCallback(() => setPosition(null), [])
 
-  // Close on mousedown outside menu, any right-click, Escape, or scroll
+  // Use native DOM listener (capture phase) — matches the proven working pattern
+  // from DataGrid header context menu. React's synthetic onContextMenu doesn't
+  // reliably fire in Electron's renderer process.
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+
+    const handleContextMenu = (e: MouseEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      setPosition({ x: e.clientX, y: e.clientY })
+    }
+
+    wrapper.addEventListener('contextmenu', handleContextMenu, true)
+    return () => {
+      wrapper.removeEventListener('contextmenu', handleContextMenu, true)
+    }
+  }, [])
+
+  // Close on mousedown outside menu, any right-click elsewhere, Escape, or scroll
   useEffect(() => {
     if (!position) return
+
     const onMouseDown = (e: MouseEvent) => {
       if (menuRef.current && menuRef.current.contains(e.target as Node)) return
       close()
     }
-    const onDismiss = () => close()
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    const onScroll = () => close()
+
     document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('contextmenu', onDismiss)
-    document.addEventListener('scroll', onDismiss, true)
     document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('scroll', onScroll, true)
+
     return () => {
       document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('contextmenu', onDismiss)
-      document.removeEventListener('scroll', onDismiss, true)
       document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('scroll', onScroll, true)
     }
   }, [position, close])
 
   return (
     <>
-      <div onContextMenu={handleContextMenu} className={className}>
+      <div ref={wrapperRef} className={className}>
         {children}
       </div>
 
