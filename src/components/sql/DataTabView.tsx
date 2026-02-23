@@ -507,6 +507,15 @@ export const DataTabView = React.memo(function DataTabView({
     }, FILTER_DEBOUNCE_MS)
   }, [executeQuery, pagination.pageSize, sortColumn, sortDirection, discardPendingChanges])
 
+  // ── Staged insert rows (computed early — used by handleCellEdit) ──
+
+  const insertChanges = useMemo(
+    () => stagedChanges.filter(
+      (c) => c.type === 'insert' && c.table === table && (c.schema ?? undefined) === (schema ?? undefined) && c.newRow
+    ),
+    [stagedChanges, table, schema]
+  )
+
   // ── Inline editing → staged changes ──
 
   // Track original (pre-edit) values per cell so we can detect reverts
@@ -525,6 +534,20 @@ export const DataTabView = React.memo(function DataTabView({
 
   const handleCellEdit = useCallback(
     (rowIndex: number, field: string, _oldValue: unknown, newValue: unknown) => {
+      const realRowCount = result?.rows?.length ?? 0
+
+      // ── Insert row edit: update the staged insert's newRow directly ──
+      if (rowIndex >= realRowCount) {
+        const insertIdx = rowIndex - realRowCount
+        const insertChange = insertChanges[insertIdx]
+        if (!insertChange?.newRow) return
+
+        const updatedRow = { ...insertChange.newRow, [field]: newValue }
+        upsertStagedChange({ ...insertChange, newRow: updatedRow })
+        return
+      }
+
+      // ── Normal row edit (existing DB row) ──
       const cellKey = `edit-${table}-${rowIndex}-${field}`
 
       // Capture original value on first edit of this cell
@@ -573,8 +596,47 @@ export const DataTabView = React.memo(function DataTabView({
       // Atomic upsert — replaces existing or inserts new
       upsertStagedChange(change)
     },
-    [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges]
+    [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges, insertChanges]
   )
+
+  // ── Insert / Duplicate row handlers ──
+
+  const handleInsertRow = useCallback(() => {
+    if (!result?.fields) return
+    const newRow: Record<string, unknown> = {}
+    for (const field of result.fields) {
+      newRow[field.name] = null
+    }
+    const change: StagedChange = {
+      id: crypto.randomUUID(),
+      type: 'insert',
+      table,
+      schema,
+      newRow,
+    }
+    upsertStagedChange(change)
+  }, [result?.fields, table, schema, upsertStagedChange])
+
+  const handleDuplicateRow = useCallback((rowData: Record<string, unknown>) => {
+    if (!result?.fields) return
+    const newRow: Record<string, unknown> = { ...rowData }
+    // Null out auto-increment columns so the DB assigns new values
+    if (columnMeta) {
+      for (const col of columnMeta) {
+        if (col.isAutoIncrement) {
+          newRow[col.name] = null
+        }
+      }
+    }
+    const change: StagedChange = {
+      id: crypto.randomUUID(),
+      type: 'insert',
+      table,
+      schema,
+      newRow,
+    }
+    upsertStagedChange(change)
+  }, [result?.fields, table, schema, columnMeta, upsertStagedChange])
 
   // Compute edited rows/cells for visual highlighting
   // Change IDs follow pattern: "edit-{table}-{rowIndex}-{field}"
@@ -597,8 +659,14 @@ export const DataTabView = React.memo(function DataTabView({
         }
       }
     }
+    // Mark insert rows as edited — they are appended after real rows
+    // so their __rowIndex = result.rows.length + i
+    const baseIdx = result?.rows?.length ?? 0
+    for (let i = 0; i < insertChanges.length; i++) {
+      rows.add(baseIdx + i)
+    }
     return { editedRows: rows, editedCells: cells }
-  }, [stagedChanges, table])
+  }, [stagedChanges, table, insertChanges, result?.rows?.length])
 
   // ── Save staged changes to database ──
   const [isSaving, setIsSaving] = useState(false)
@@ -712,6 +780,47 @@ export const DataTabView = React.memo(function DataTabView({
         updateSQLs.push(sql)
       }
 
+      // ── Process INSERT changes ──
+      const autoIncrCols = new Set(
+        columnMeta?.filter((c) => c.isAutoIncrement).map((c) => c.name) ?? []
+      )
+
+      for (const change of tableChanges) {
+        if (change.type !== 'insert' || !change.newRow) continue
+
+        // Filter out auto-increment columns with null values — let DB assign them
+        const entries = Object.entries(change.newRow).filter(
+          ([col, val]) => !(autoIncrCols.has(col) && (val === null || val === undefined))
+        )
+        if (entries.length === 0) continue
+
+        const columns = entries.map(([col]) => col)
+        const values = entries.map(([, val]) => val)
+        const fullTable = buildFullTableName(change.table, change.schema, dbType)
+
+        const quotedCols = columns.map((c) => quoteIdentifier(c, dbType)).join(', ')
+        let placeholders: string
+        if (dbType === 'mysql') {
+          placeholders = columns.map(() => '?').join(', ')
+        } else {
+          placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
+        }
+
+        const sql = `INSERT INTO ${fullTable} (${quotedCols}) VALUES (${placeholders})`
+        const params = values
+
+        const t0 = performance.now()
+        const res = await queryApi.query(sqlSessionId, sql, params)
+        const elapsed = performance.now() - t0
+        logQuery(sql, params, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
+
+        if (!res.success) {
+          throw new Error(`insert: ${res.error}`)
+        }
+
+        updateSQLs.push(sql)
+      }
+
       // ── COMMIT transaction ──
       const commitT0 = performance.now()
       const commitRes = await queryApi.query(sqlSessionId, 'COMMIT', [])
@@ -749,7 +858,7 @@ export const DataTabView = React.memo(function DataTabView({
       setIsSaving(false)
       savingRef.current = false
     }
-  }, [tableChanges, dbType, sqlSessionId, removeStagedChange, logQuery, executeQuery, pagination, sortColumn, sortDirection, filters])
+  }, [tableChanges, dbType, sqlSessionId, removeStagedChange, logQuery, executeQuery, pagination, sortColumn, sortDirection, filters, columnMeta])
 
   const handleDiscardChanges = useCallback(() => {
     // Only remove changes for this table, not all connection changes
@@ -767,6 +876,20 @@ export const DataTabView = React.memo(function DataTabView({
       currentFilters: filters,
     })
   }, [tableChanges, removeStagedChange, executeQuery, pagination, sortColumn, sortDirection, filters])
+
+  // ── Listen for insert-row event from shortcuts + pagination bar ──
+  useEffect(() => {
+    const handleInsertRowEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      // Scoped: only respond if no detail (PaginationBar click in our own tab)
+      // or detail matches this tab's connectionId + table
+      if (detail?.connectionId && detail.connectionId !== connectionId) return
+      if (detail?.table && detail.table !== table) return
+      handleInsertRow()
+    }
+    window.addEventListener('sql:insert-row', handleInsertRowEvent)
+    return () => window.removeEventListener('sql:insert-row', handleInsertRowEvent)
+  }, [handleInsertRow, connectionId, table])
 
   // ── Listen for save/discard events from shortcuts + status bar ──
   useEffect(() => {
@@ -936,6 +1059,16 @@ export const DataTabView = React.memo(function DataTabView({
     return parts.join(':')
   }, [connectionConfig, currentDatabase, schema, table])
 
+  // ── Derived result that includes staged insert rows at the bottom ──
+  const resultWithInserts = useMemo<QueryResult | null>(() => {
+    if (!result || insertChanges.length === 0) return result
+    const insertRows = insertChanges.map((c) => c.newRow as Record<string, unknown>)
+    return {
+      ...result,
+      rows: [...result.rows, ...insertRows],
+    }
+  }, [result, insertChanges])
+
   const isDataMode = viewMode === 'data'
 
   return (
@@ -968,7 +1101,7 @@ export const DataTabView = React.memo(function DataTabView({
       <div className={cn('relative flex-1 overflow-hidden', !isDataMode && 'hidden')}>
         <DataGrid
           ref={dataGridRef}
-          result={result}
+          result={resultWithInserts}
           onSort={handleSort}
           isLoading={isLoading}
           onCellEdit={handleCellEdit}
@@ -980,6 +1113,8 @@ export const DataTabView = React.memo(function DataTabView({
           foreignKeys={foreignKeyMap}
           onNavigateFK={handleNavigateFK}
           onHiddenColumnsChange={handleHiddenColumnsChange}
+          onInsertRow={handleInsertRow}
+          onDuplicateRow={handleDuplicateRow}
         />
       </div>
 

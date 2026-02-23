@@ -211,6 +211,18 @@ export const PaginationBar = React.memo(function PaginationBar({
               </button>
             </>
           )}
+          {!isStructure && (
+            <>
+              <div className="mx-1 h-3 w-px bg-nd-border" />
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('sql:insert-row'))}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Plus size={11} />
+                Row
+              </button>
+            </>
+          )}
         </div>
       )}
 

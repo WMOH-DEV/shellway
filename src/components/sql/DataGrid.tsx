@@ -6,7 +6,7 @@ import { cn } from '@/utils/cn'
 import {
   Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
   XCircle, Filter, EyeOff, RotateCcw, Clipboard,
-  ExternalLink,
+  ExternalLink, Plus,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import type { QueryResult, SchemaColumn } from '@/types/sql'
@@ -92,6 +92,10 @@ interface DataGridProps {
   onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
   /** Called when hidden columns list changes (for external column picker in PaginationBar) */
   onHiddenColumnsChange?: (hiddenColumns: string[]) => void
+  /** Called when user requests inserting an empty row */
+  onInsertRow?: () => void
+  /** Called when user requests duplicating a row */
+  onDuplicateRow?: (rowData: Record<string, unknown>) => void
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -251,6 +255,8 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   foreignKeys,
   onNavigateFK,
   onHiddenColumnsChange,
+  onInsertRow,
+  onDuplicateRow,
 }, ref) {
   const gridRef = useRef<AgGridReact>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -446,7 +452,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     const cellValue = event.value
     const rowData = event.data
 
-    const items = [
+    const items: ContextMenuState['items'] = [
       {
         label: 'Copy Cell',
         icon: <Copy size={13} />,
@@ -491,12 +497,34 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       },
     ]
 
+    // Insert / Duplicate row actions
+    if (onInsertRow || onDuplicateRow) {
+      items.push({ label: '', icon: null, action: () => {}, separator: true })
+      if (onInsertRow) {
+        items.push({
+          label: 'Insert Empty Row',
+          icon: <Plus size={13} />,
+          action: () => onInsertRow(),
+        })
+      }
+      if (onDuplicateRow && rowData) {
+        items.push({
+          label: 'Duplicate Row',
+          icon: <Copy size={13} />,
+          action: () => {
+            const { __rowIndex, ...clean } = rowData
+            onDuplicateRow(clean)
+          },
+        })
+      }
+    }
+
     setContextMenu({
       x: nativeEvent?.clientX ?? 0,
       y: nativeEvent?.clientY ?? 0,
       items,
     })
-  }, [])
+  }, [onInsertRow, onDuplicateRow])
 
   // ── Header context menu actions ──
 
@@ -727,17 +755,21 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
           className="fixed z-50 min-w-[180px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
           style={clampMenuPosition(contextMenu.x, contextMenu.y, 200, contextMenu.items.length * 30 + 8)}
         >
-          {contextMenu.items.map((item) => (
-            <CtxMenuItem
-              key={item.label}
-              icon={item.icon}
-              label={item.label}
-              onClick={() => {
-                item.action()
-                setContextMenu(null)
-              }}
-            />
-          ))}
+          {contextMenu.items.map((item, idx) =>
+            item.separator ? (
+              <CtxSeparator key={`sep-${idx}`} />
+            ) : (
+              <CtxMenuItem
+                key={item.label}
+                icon={item.icon}
+                label={item.label}
+                onClick={() => {
+                  item.action()
+                  setContextMenu(null)
+                }}
+              />
+            )
+          )}
         </div>
       )}
 

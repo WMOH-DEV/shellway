@@ -45,7 +45,13 @@ export function useSQLShortcuts(
   const closeActiveTab = useCallback(() => {
     const conn = getSQLConnectionState(connectionIdRef.current)
     const store = useSQLStore.getState()
-    if (conn.activeTabId) store.removeTab(connectionIdRef.current, conn.activeTabId)
+    if (!conn.activeTabId) return
+    // Clear selectedTable if closing its tab — allows re-opening via sidebar click
+    const closingTab = conn.tabs.find((t) => t.id === conn.activeTabId)
+    if (closingTab?.table && closingTab.table === conn.selectedTable) {
+      store.setSelectedTable(connectionIdRef.current, null)
+    }
+    store.removeTab(connectionIdRef.current, conn.activeTabId)
   }, [])
 
   // ── Apply staged changes ──
@@ -141,7 +147,11 @@ export function useSQLShortcuts(
       // ── Insert new row (default CmdOrCtrl+Shift+I) ──
       if (matchesBinding(e, 'sql:insertRow')) {
         e.preventDefault()
-        window.dispatchEvent(new CustomEvent('sql:insert-row'))
+        const conn = getSQLConnectionState(connectionIdRef.current)
+        const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
+        window.dispatchEvent(new CustomEvent('sql:insert-row', {
+          detail: { connectionId: connectionIdRef.current, table: activeTab?.table },
+        }))
         return
       }
 
