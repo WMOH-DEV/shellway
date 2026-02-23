@@ -214,6 +214,8 @@ export interface ConnectionTab {
   type?: 'ssh' | 'database'
   status: ConnectionStatus
   activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'info' | 'log'
+  /** Whether Terminal + SFTP split view is active for this tab */
+  splitView?: boolean
   error?: string
   /** Reconnection state shown in UI overlay */
   reconnectionState?: {

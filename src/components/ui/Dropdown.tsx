@@ -54,7 +54,7 @@ export function Dropdown({
 
   return (
     <div ref={ref} className={cn('relative inline-flex', className)}>
-      <div onClick={() => setOpen(!open)}>{trigger}</div>
+      <div onClick={(e) => { e.stopPropagation(); setOpen(!open) }}>{trigger}</div>
 
       <AnimatePresence>
         {open && (
@@ -76,7 +76,8 @@ export function Dropdown({
                 <button
                   key={item.id}
                   disabled={item.disabled}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation()
                     if (!item.disabled) {
                       onSelect(item.id)
                       setOpen(false)

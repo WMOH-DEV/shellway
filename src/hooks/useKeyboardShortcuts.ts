@@ -60,11 +60,23 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // ── Ctrl+Shift+B: Toggle Terminal + SFTP split view ──
+      // ── Ctrl+Shift+B: Toggle Terminal + SFTP split view on active tab ──
       if (ctrl && e.shiftKey && e.key === 'B') {
         e.preventDefault()
-        const { splitViewEnabled, setSplitView } = useUIStore.getState()
-        setSplitView(!splitViewEnabled)
+        const activeTabId = useConnectionStore.getState().activeTabId
+        if (!activeTabId) return
+
+        const activeTab = useConnectionStore.getState().tabs.find((t) => t.id === activeTabId)
+        if (!activeTab || activeTab.status !== 'connected') return
+
+        // Toggle split view on the active tab
+        const newSplitView = !activeTab.splitView
+        useConnectionStore.getState().updateTab(activeTabId, { splitView: newSplitView })
+
+        // Ensure we're on terminal or sftp for split view to show
+        if (newSplitView && activeTab.activeSubTab !== 'terminal' && activeTab.activeSubTab !== 'sftp') {
+          useConnectionStore.getState().updateTab(activeTabId, { activeSubTab: 'terminal' })
+        }
         return
       }
 

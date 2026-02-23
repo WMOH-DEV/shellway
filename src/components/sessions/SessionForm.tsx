@@ -576,15 +576,20 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
                         value={form.username}
                         onChange={(e) => update('username', e.target.value)}
                       />
-                      <Select
-                        label="Group"
-                        value={form.group}
-                        onChange={(e) => update('group', e.target.value)}
-                        options={[
-                          { value: '', label: 'No group' },
-                          ...groups.map((g) => ({ value: g, label: g }))
-                        ]}
-                      />
+                      <div>
+                        <Input
+                          label="Group"
+                          list="session-group-list"
+                          value={form.group}
+                          onChange={(e) => update('group', e.target.value)}
+                          placeholder="No group (type to create)"
+                        />
+                        <datalist id="session-group-list">
+                          {groups.map((g) => (
+                            <option key={g} value={g} />
+                          ))}
+                        </datalist>
+                      </div>
 
                       {/* Auth method */}
                       <Select

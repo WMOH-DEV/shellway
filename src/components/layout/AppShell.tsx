@@ -20,14 +20,63 @@ export function AppShell({ children }: AppShellProps) {
 
   /** Handle connecting to a session — creates a connection tab */
   const handleConnect = useCallback(
-    (session: Session, defaultSubTab?: 'terminal' | 'sftp') => {
-      // Check if already connected
-      const existing = tabs.find((t) => t.sessionId === session.id && t.status === 'connected')
+    (session: Session, defaultSubTab?: 'terminal' | 'sftp' | 'both') => {
+      // Resolve the sub-tab: explicit param > session viewPreferences > 'terminal'
+      let resolvedSubTab: 'terminal' | 'sftp' = 'terminal'
+      let enableSplitView = false
+
+      if (defaultSubTab === 'both') {
+        // Explicit "Open Terminal + SFTP" action
+        resolvedSubTab = 'terminal'
+        enableSplitView = true
+      } else if (defaultSubTab) {
+        // Explicit terminal or sftp — disable split view
+        resolvedSubTab = defaultSubTab
+        enableSplitView = false
+      } else if (session.viewPreferences?.defaultView) {
+        // Use session's configured default view preference
+        const pref = session.viewPreferences.defaultView
+        if (pref === 'terminal' || pref === 'sftp') {
+          resolvedSubTab = pref
+        } else if (pref === 'both') {
+          resolvedSubTab = 'terminal'
+          enableSplitView = true
+        } else if (pref === 'last-used') {
+          const lastUsed = localStorage.getItem(`shellway:lastView:${session.id}`)
+          if (lastUsed === 'both') {
+            resolvedSubTab = 'terminal'
+            enableSplitView = true
+          } else {
+            resolvedSubTab = lastUsed === 'sftp' ? 'sftp' : 'terminal'
+          }
+        }
+      }
+
+      // Set global split view layout/ratio from session preferences (used by SplitView component)
+      if (enableSplitView) {
+        const layout = session.viewPreferences?.splitLayout ?? 'horizontal'
+        const ratio = session.viewPreferences?.splitRatio ?? 0.5
+        useUIStore.getState().setSplitView(true, layout, ratio)
+      }
+
+      // Check if already connected — use getState() for fresh data (avoids stale closure)
+      const currentTabs = useConnectionStore.getState().tabs
+      const existing = currentTabs.find((t) => t.sessionId === session.id && t.status === 'connected')
       if (existing) {
         useConnectionStore.getState().setActiveTab(existing.id)
-        // If a specific sub-tab was requested, switch to it
-        if (defaultSubTab) {
-          useConnectionStore.getState().updateTab(existing.id, { activeSubTab: defaultSubTab })
+        if (defaultSubTab === 'both') {
+          // Enable split view on this tab, ensure we're on terminal/sftp
+          const updates: Partial<ConnectionTab> = { splitView: true }
+          if (existing.activeSubTab !== 'terminal' && existing.activeSubTab !== 'sftp') {
+            updates.activeSubTab = 'terminal'
+          }
+          useConnectionStore.getState().updateTab(existing.id, updates)
+        } else if (defaultSubTab) {
+          // Explicit terminal or sftp — switch to it and disable split view
+          useConnectionStore.getState().updateTab(existing.id, {
+            activeSubTab: defaultSubTab,
+            splitView: false
+          })
         }
         return
       }
@@ -39,7 +88,8 @@ export function AppShell({ children }: AppShellProps) {
         sessionColor: session.color,
         type: 'ssh',
         status: 'connecting',
-        activeSubTab: defaultSubTab || 'terminal'
+        activeSubTab: resolvedSubTab,
+        splitView: enableSplitView
       }
 
       addTab(tab)
@@ -81,7 +131,7 @@ export function AppShell({ children }: AppShellProps) {
           toast.error('Connection failed', String(err))
         })
     },
-    [addTab, tabs]
+    [addTab]
   )
 
   /** Handle opening a standalone database connection tab */

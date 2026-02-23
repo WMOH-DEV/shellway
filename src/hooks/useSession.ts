@@ -50,6 +50,8 @@ export function useSession() {
     async (id: string) => {
       await window.novadeck.sessions.delete(id)
       removeSession(id)
+      // Clean up "Remember Last" view preference
+      try { localStorage.removeItem(`shellway:lastView:${id}`) } catch { /* ignore */ }
     },
     [removeSession]
   )
@@ -70,7 +72,10 @@ export function useSession() {
   const deleteSessions = useCallback(
     async (ids: string[]) => {
       await window.novadeck.sessions.deleteMany(ids)
-      ids.forEach(removeSession)
+      ids.forEach((id) => {
+        removeSession(id)
+        try { localStorage.removeItem(`shellway:lastView:${id}`) } catch { /* ignore */ }
+      })
     },
     [removeSession]
   )

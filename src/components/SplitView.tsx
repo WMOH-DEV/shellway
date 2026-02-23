@@ -8,6 +8,8 @@ interface SplitViewProps {
   connectionId: string
   /** Session ID for path persistence */
   sessionId: string
+  /** Connection status passed to TerminalTabs */
+  connectionStatus?: string
   /** Split direction: horizontal = top/bottom, vertical = side-by-side */
   layout: 'horizontal' | 'vertical'
   /** Split ratio (0-1), e.g., 0.5 = equal */
@@ -21,7 +23,7 @@ interface SplitViewProps {
  * Renders terminal on top (or left) and SFTP on bottom (or right) with a resizable drag handle.
  * Double-click handle to collapse one pane (50/50 toggle).
  */
-export function SplitView({ connectionId, sessionId, layout, ratio, onRatioChange }: SplitViewProps) {
+export function SplitView({ connectionId, sessionId, connectionStatus, layout, ratio, onRatioChange }: SplitViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isHorizontal = layout === 'horizontal' // top/bottom
   const [collapsed, setCollapsed] = useState<'none' | 'top' | 'bottom'>('none')
@@ -91,7 +93,7 @@ export function SplitView({ connectionId, sessionId, layout, ratio, onRatioChang
         className="overflow-hidden"
         style={{ [isHorizontal ? 'height' : 'width']: topSize }}
       >
-        <TerminalTabs connectionId={connectionId} />
+        <TerminalTabs connectionId={connectionId} connectionStatus={connectionStatus} />
       </div>
 
       {/* Drag handle */}
@@ -123,7 +125,7 @@ export function SplitView({ connectionId, sessionId, layout, ratio, onRatioChang
 
       {/* SFTP pane (bottom/right) */}
       <div className="flex-1 overflow-hidden">
-        <SFTPView connectionId={connectionId} sessionId={sessionId} />
+        <SFTPView connectionId={connectionId} sessionId={sessionId} connectionStatus={connectionStatus} />
       </div>
     </div>
   )

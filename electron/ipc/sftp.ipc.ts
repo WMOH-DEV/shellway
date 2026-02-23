@@ -203,6 +203,33 @@ const sftpServices = new Map<string, SFTPService>()
 const transferQueues = new Map<string, TransferQueue>()
 
 /**
+ * Clean up SFTP resources for a connection.
+ * Called when the SSH connection disconnects to ensure SFTP services are freed.
+ */
+export function cleanupSFTP(connectionId: string): void {
+  const sftp = sftpServices.get(connectionId)
+  if (sftp) {
+    sftp.close()
+    sftpServices.delete(connectionId)
+  }
+  const queue = transferQueues.get(connectionId)
+  if (queue) {
+    queue.cancelAll()
+    transferQueues.delete(connectionId)
+  }
+}
+
+/**
+ * Clean up ALL SFTP resources.
+ * Called on app quit / disconnectAll to prevent resource leaks.
+ */
+export function cleanupAllSFTP(): void {
+  for (const [connectionId] of sftpServices) {
+    cleanupSFTP(connectionId)
+  }
+}
+
+/**
  * Register all SFTP IPC handlers.
  */
 export function registerSFTPIPC(): void {
@@ -211,6 +238,18 @@ export function registerSFTPIPC(): void {
   // ── Open SFTP session ──
   ipcMain.handle('sftp:open', async (event, connectionId: string) => {
     try {
+      // Idempotent: if already open and usable, return success.
+      // Probe liveness to catch stale sessions (e.g., server closed the channel).
+      if (sftpServices.has(connectionId)) {
+        try {
+          await sftpServices.get(connectionId)!.realpath('.')
+          return { success: true }
+        } catch {
+          // Stale SFTP session — clean up and recreate below
+          cleanupSFTP(connectionId)
+        }
+      }
+
       const sshService = getSSHService()
       const conn = sshService.get(connectionId)
       if (!conn || conn.status !== 'connected') {
@@ -579,16 +618,7 @@ export function registerSFTPIPC(): void {
 
   // ── Close SFTP session ──
   ipcMain.handle('sftp:close', (_event, connectionId: string) => {
-    const sftp = sftpServices.get(connectionId)
-    if (sftp) {
-      sftp.close()
-      sftpServices.delete(connectionId)
-    }
-    const queue = transferQueues.get(connectionId)
-    if (queue) {
-      queue.cancelAll()
-      transferQueues.delete(connectionId)
-    }
+    cleanupSFTP(connectionId)
 
     // Log SFTP close — find the connection's sessionId
     const sshService = getSSHService()

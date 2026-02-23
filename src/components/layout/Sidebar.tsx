@@ -22,7 +22,7 @@ import { toast } from '@/components/ui/Toast'
 import type { Session } from '@/types/session'
 
 interface SidebarProps {
-  onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp') => void
+  onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp' | 'both') => void
   onConnectDatabase: () => void
 }
 

@@ -15,7 +15,7 @@ import { ImportDialog } from './ImportDialog'
 import type { Session } from '@/types/session'
 
 interface SessionManagerProps {
-  onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp') => void
+  onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp' | 'both') => void
 }
 
 /**
@@ -51,6 +51,19 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   // Groups
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [groups, setGroups] = useState<string[]>([])
+
+  // Load persisted groups + derive from session data
+  const loadGroups = useCallback(async () => {
+    const persisted = await window.novadeck.sessions.getGroups()
+    // Merge persisted groups with groups derived from session data
+    const sessionGroups = sessions.filter((s) => s.group).map((s) => s.group!)
+    const merged = [...new Set([...persisted, ...sessionGroups])].sort()
+    setGroups(merged)
+  }, [sessions])
+
+  useEffect(() => {
+    loadGroups()
+  }, [loadGroups])
 
   // Search visibility: auto-show when ≥5 sessions, toggleable when <5
   const fewSessions = sessions.length < 5
@@ -252,9 +265,17 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
         await createSession(sessionData)
         toast.success('Session created', `${data.name || data.host} has been added`)
       }
+
+      // Persist new group name if user typed one that doesn't exist yet
+      if (data.group && !groups.includes(data.group)) {
+        const updated = [...groups, data.group].sort()
+        setGroups(updated)
+        window.novadeck.sessions.setGroups(updated).catch(() => {})
+      }
+
       setEditingSession(null)
     },
-    [editingSession, editSession, createSession]
+    [editingSession, editSession, createSession, groups]
   )
 
   const handleDelete = useCallback(async () => {
@@ -433,7 +454,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 onConnect={() => onConnect(session)}
                 onConnectTerminal={() => onConnect(session, 'terminal')}
                 onConnectSFTP={() => onConnect(session, 'sftp')}
-                onConnectBoth={() => onConnect(session)}
+                onConnectBoth={() => onConnect(session, 'both')}
                 onEdit={() => {
                   setEditingSession(session)
                   setFormOpen(true)

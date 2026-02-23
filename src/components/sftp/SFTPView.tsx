@@ -22,13 +22,15 @@ interface SFTPViewProps {
   connectionId: string
   /** Session ID — used for path persistence across reconnects */
   sessionId: string
+  /** Connection status — SFTP init waits until 'connected' */
+  connectionStatus?: string
 }
 
 /**
  * Main SFTP dual-pane layout.
  * Left: local filesystem. Right: remote filesystem.
  */
-export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
+export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPViewProps) {
   const [sftpReady, setSftpReady] = useState(false)
   const [contextMenu, setContextMenu] = useState<{
     entry: FileEntry
@@ -69,27 +71,45 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
     return panelType === 'local' ? localPanelRef.current : remotePanelRef.current
   }, [])
 
-  // Initialize SFTP session
+  // Initialize SFTP session — waits until SSH connection is ready.
+  // Re-runs when connectionStatus changes (e.g., after reconnection).
   useEffect(() => {
+    // Don't attempt SFTP init until SSH is fully connected
+    if (connectionStatus && connectionStatus !== 'connected') return
+
+    let cancelled = false
     const init = async () => {
-      const result = await window.novadeck.sftp.open(connectionId)
-      if (result.success) {
-        setSftpReady(true)
-      } else {
-        toast.error('Failed to open SFTP', result.error || 'Unknown error')
+      try {
+        const result = await window.novadeck.sftp.open(connectionId)
+        if (cancelled) return
+        if (result.success) {
+          setSftpReady(true)
+        } else {
+          setSftpReady(false)
+          toast.error('Failed to open SFTP', result.error || 'Unknown error')
+        }
+      } catch (err) {
+        if (cancelled) return
+        setSftpReady(false)
+        toast.error('Failed to open SFTP', String(err))
       }
     }
     init()
 
     return () => {
-      window.novadeck.sftp.close(connectionId)
-      // Clean up all file watchers on unmount
+      cancelled = true
+      // Don't close SFTP here — session persists for the SSH connection's lifetime.
+      // Closing on unmount caused race conditions when switching between solo/split views,
+      // where the old SFTPView's close would race with the new SFTPView's open.
+      // SFTP is cleaned up when the SSH connection disconnects (sftp:close called explicitly).
+
+      // Clean up file watchers only
       for (const [, wf] of watchedFilesRef.current) {
         window.novadeck.fs.unwatchFile(wf.watchId)
       }
       watchedFilesRef.current.clear()
     }
-  }, [connectionId])
+  }, [connectionId, connectionStatus])
 
   // Listen for file change events from the watcher and auto-upload
   useEffect(() => {
@@ -211,7 +231,7 @@ export function SFTPView({ connectionId, sessionId }: SFTPViewProps) {
 
   if (!sftpReady) {
     return (
-      <div className="flex-1 flex items-center justify-center w-full">
+      <div className="h-full w-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="animate-spin w-6 h-6 rounded-full border-2 border-nd-accent border-t-transparent" />
           <span className="text-sm text-nd-text-muted">Opening SFTP session...</span>

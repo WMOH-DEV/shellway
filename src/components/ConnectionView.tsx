@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Info, ScrollText
+  Terminal, FolderTree, Database, ArrowRightLeft, Info, ScrollText, Columns, X
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -9,6 +9,7 @@ import { cn } from '@/utils/cn'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { TerminalTabs } from '@/components/terminal/TerminalTabs'
 import { SFTPView } from '@/components/sftp/SFTPView'
+import { SplitView } from '@/components/SplitView'
 import { PortForwardingView } from '@/components/port-forwarding/PortForwardingView'
 import { ActivityLog } from '@/components/log/ActivityLog'
 import { ReconnectionOverlay } from '@/components/reconnection/ReconnectionOverlay'
@@ -41,8 +42,12 @@ interface ConnectionViewProps {
 export function ConnectionView({ tab }: ConnectionViewProps) {
   const { updateTab } = useConnectionStore()
   const {
-    bottomPanelTab, setBottomPanelTab, transferQueueOpen, toggleTransferQueue
+    bottomPanelTab, setBottomPanelTab, transferQueueOpen, toggleTransferQueue,
+    splitViewLayout, splitViewRatio, setSplitView
   } = useUIStore()
+
+  // Split view applies when enabled on THIS tab and we're on terminal or sftp sub-tabs
+  const showSplitView = !!tab.splitView && (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp')
 
   // Track which panels have been visited — lazy-mount on first visit, then keep alive
   const [mountedPanels, setMountedPanels] = useState<Set<string>>(() => new Set([tab.activeSubTab]))
@@ -53,6 +58,19 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
       return new Set([...prev, tab.activeSubTab])
     })
   }, [tab.activeSubTab])
+
+  // Persist active view for the "Remember Last" view preference
+  useEffect(() => {
+    if (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') {
+      try {
+        // Save 'both' when split view is active, otherwise save the active sub-tab
+        const viewToSave = tab.splitView ? 'both' : tab.activeSubTab
+        localStorage.setItem(`shellway:lastView:${tab.sessionId}`, viewToSave)
+      } catch {
+        // localStorage may be unavailable — silently ignore
+      }
+    }
+  }, [tab.activeSubTab, tab.sessionId, tab.splitView])
 
   const isReconnecting = tab.status === 'reconnecting'
 
@@ -76,17 +94,39 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   return (
     <div className="flex flex-col h-full relative">
       {/* Sub-tab navigation */}
-      <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border">
-        <Tabs
-          tabs={SUB_TABS}
-          activeTab={tab.activeSubTab}
-          onTabChange={(id) =>
-            updateTab(tab.id, {
-              activeSubTab: id as ConnectionTab['activeSubTab']
-            })
-          }
-          size="sm"
-        />
+      <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border flex items-center">
+        <div className="flex-1">
+          <Tabs
+            tabs={SUB_TABS}
+            activeTab={tab.activeSubTab}
+            onTabChange={(id) =>
+              updateTab(tab.id, {
+                activeSubTab: id as ConnectionTab['activeSubTab']
+              })
+            }
+            size="sm"
+          />
+        </div>
+        {/* Split view toggle */}
+        {(tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') && (
+          <button
+            onClick={() => {
+              const next = !tab.splitView
+              updateTab(tab.id, { splitView: next })
+              setSplitView(next)
+            }}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1',
+              tab.splitView
+                ? 'bg-nd-accent/15 text-nd-accent hover:bg-nd-accent/25'
+                : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+            )}
+            title={tab.splitView ? 'Exit Split View' : 'Split View (Terminal + SFTP)'}
+          >
+            {tab.splitView ? <X size={12} /> : <Columns size={12} />}
+            <span>{tab.splitView ? 'Exit Split' : 'Split'}</span>
+          </button>
+        )}
       </div>
 
       {/* Main content area */}
@@ -94,11 +134,26 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
         <div className="flex-1 overflow-hidden relative">
           {/*
            * Terminal & SFTP: kept mounted via display:none to preserve state.
+           * When split view is active, SplitView replaces the individual panels.
            * Other panels: conditionally rendered (lightweight, no state to preserve).
            */}
 
-          {/* Terminal — always mounted once visited, hidden when not active */}
-          {mountedPanels.has('terminal') && (
+          {/* Split view — Terminal + SFTP side-by-side */}
+          {showSplitView && (
+            <div className="absolute inset-0">
+              <SplitView
+                connectionId={tab.id}
+                sessionId={tab.sessionId}
+                connectionStatus={tab.status}
+                layout={splitViewLayout}
+                ratio={splitViewRatio}
+                onRatioChange={(r) => setSplitView(true, undefined, r)}
+              />
+            </div>
+          )}
+
+          {/* Terminal — always mounted once visited, hidden when not active or when split view is shown */}
+          {!showSplitView && mountedPanels.has('terminal') && (
             <div className={cn(
               'absolute inset-0',
               tab.activeSubTab !== 'terminal' && 'hidden'
@@ -107,13 +162,13 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             </div>
           )}
 
-          {/* SFTP — always mounted once visited, hidden when not active */}
-          {mountedPanels.has('sftp') && (
+          {/* SFTP — always mounted once visited, hidden when not active or when split view is shown */}
+          {!showSplitView && mountedPanels.has('sftp') && (
             <div className={cn(
               'absolute inset-0 flex flex-col',
               tab.activeSubTab !== 'sftp' && 'hidden'
             )}>
-              <SFTPView connectionId={tab.id} sessionId={tab.sessionId} />
+              <SFTPView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
             </div>
           )}
 

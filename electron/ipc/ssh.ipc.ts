@@ -5,6 +5,7 @@ import { getClientKeyStore } from './clientkey.ipc'
 import { getNotificationService } from '../services/NotificationService'
 import { getHealthService } from './health.ipc'
 import { getSettingsStore } from './settings.ipc'
+import { cleanupSFTP, cleanupAllSFTP } from './sftp.ipc'
 
 const sshService = new SSHService()
 
@@ -185,6 +186,9 @@ export function registerSSHIPC(): void {
           win?.webContents.send('ssh:reconnect-waiting', connId, delayMs, nextAttempt, nextRetryAt)
         })
         conn.on('reconnect-success', (connId: string, attempt: number) => {
+          // Reconnection creates a new SSH client, invalidating the old SFTP wrapper.
+          // Clean up stale SFTP so the next sftp:open creates a fresh session.
+          cleanupSFTP(connId)
           win?.webContents.send('ssh:reconnect-success', connId, attempt)
         })
         conn.on('reconnect-failed', (connId: string, attempt: number, error: string) => {
@@ -233,6 +237,7 @@ export function registerSSHIPC(): void {
       LogService.disconnectedByUser(logService, conn.sessionId)
     }
     getHealthService().stopMonitoring(connectionId)
+    cleanupSFTP(connectionId)
     sshService.disconnect(connectionId)
   })
 
@@ -241,6 +246,7 @@ export function registerSSHIPC(): void {
   })
 
   ipcMain.handle('ssh:disconnectAll', () => {
+    cleanupAllSFTP()
     sshService.disconnectAll()
   })
 
