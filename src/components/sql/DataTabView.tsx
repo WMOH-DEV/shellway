@@ -160,6 +160,7 @@ export const DataTabView = React.memo(function DataTabView({
   const [columnMeta, setColumnMeta] = useState<SchemaColumn[]>([])
   const [foreignKeyMap, setForeignKeyMap] = useState<ForeignKeyMap>({})
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
+  const [isCountLoading, setIsCountLoading] = useState(false)
 
   // Ref for DataGrid imperative handle (column visibility controls)
   const dataGridRef = useRef<DataGridHandle>(null)
@@ -252,38 +253,59 @@ export const DataTabView = React.memo(function DataTabView({
           setColumns(queryResult.fields)
         }
 
-        // Fetch row count if we don't have it yet or filters changed
-        const { query: countQuery, params: countParams } = buildCountQuery(
-          table,
-          schema,
-          dbType,
-          currentFilters
-        )
-
+        // Fetch row count — use fast estimated count when no filters are active,
+        // exact COUNT(*) only when filters are applied (filtered sets are typically small).
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
-        const ct0 = performance.now()
-        const countResponse = await (window as any).novadeck.sql.query(
-          sqlSessionId,
-          countQuery,
-          countParams
-        )
-        const cElapsed = performance.now() - ct0
+        const hasFilters = currentFilters.length > 0
 
-        if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+        if (hasFilters) {
+          // Exact count needed for filtered results
+          const { query: countQuery, params: countParams } = buildCountQuery(
+            table,
+            schema,
+            dbType,
+            currentFilters
+          )
 
-        logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
+          const ct0 = performance.now()
+          const countResponse = await (window as any).novadeck.sql.query(
+            sqlSessionId,
+            countQuery,
+            countParams
+          )
+          const cElapsed = performance.now() - ct0
 
-        if (!countResponse.success) {
-          throw new Error(countResponse.error ?? 'Count query failed')
+          if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+
+          logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
+
+          if (!countResponse.success) {
+            throw new Error(countResponse.error ?? 'Count query failed')
+          }
+          const countResult: QueryResult = countResponse.data
+
+          const totalRows = Number((countResult.rows[0] as any)?.count ?? 0)
+          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
+
+          setPagination({ page, pageSize, totalRows, totalPages, isEstimatedCount: false })
+        } else {
+          // Fast estimated count from DB statistics (INFORMATION_SCHEMA / pg_class)
+          const estimateResponse = await (window as any).novadeck.sql.getRowCount(
+            sqlSessionId,
+            table,
+            schema
+          )
+
+          if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+
+          const totalRows = estimateResponse?.success
+            ? Math.max(0, Number(estimateResponse.data ?? 0))
+            : 0
+          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
+
+          setPagination({ page, pageSize, totalRows, totalPages, isEstimatedCount: true })
         }
-        const countResult: QueryResult = countResponse.data
-
-        const totalRows =
-          Number((countResult.rows[0] as any)?.count ?? 0)
-        const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
-
-        setPagination({ page, pageSize, totalRows, totalPages })
       } catch (err: any) {
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
         setError(err?.message ?? 'Query failed')
@@ -832,6 +854,30 @@ export const DataTabView = React.memo(function DataTabView({
     dataGridRef.current?.showAllColumns()
   }, [])
 
+  // On-demand exact COUNT(*) — replaces estimated count with real value
+  const handleExactCount = useCallback(async () => {
+    if (!sqlSessionId || isCountLoading) return
+    setIsCountLoading(true)
+    try {
+      const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, filters)
+      const ct0 = performance.now()
+      const countResponse = await (window as any).novadeck.sql.query(sqlSessionId, countQuery, countParams)
+      const cElapsed = performance.now() - ct0
+
+      logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
+
+      if (countResponse.success) {
+        const totalRows = Number(((countResponse.data as QueryResult).rows[0] as any)?.count ?? 0)
+        const totalPages = Math.max(1, Math.ceil(totalRows / pagination.pageSize))
+        setPagination((prev) => ({ ...prev, totalRows, totalPages, isEstimatedCount: false }))
+      }
+    } catch {
+      // Non-critical — keep the estimated count
+    } finally {
+      setIsCountLoading(false)
+    }
+  }, [sqlSessionId, table, schema, dbType, filters, pagination.pageSize, isCountLoading])
+
   // Stable key for persisting column widths per table across sessions
   // Format: sql-colw:{type}:{host}:{port}:{database}:{schema}.{table}
   const columnWidthsKey = useMemo(() => {
@@ -895,6 +941,8 @@ export const DataTabView = React.memo(function DataTabView({
         pagination={pagination}
         onPageChange={handlePageChange}
         onPageSizeChange={handlePageSizeChange}
+        onExactCount={handleExactCount}
+        isCountLoading={isCountLoading}
         executionTimeMs={executionTimeMs}
         fields={result?.fields}
         hiddenColumns={hiddenColumns}

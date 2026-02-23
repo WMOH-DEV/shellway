@@ -184,7 +184,7 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
     } finally {
       setSchemaLoading(false)
     }
-  }, [sqlSessionId, currentDatabase, setTables, setSchemaLoading])
+  }, [sqlSessionId, setTables, setSchemaLoading])
 
   const fetchDatabases = useCallback(async () => {
     if (!sqlSessionId) return
@@ -203,8 +203,11 @@ export function SchemaSidebar({ connectionId }: SchemaSidebarProps) {
     }
   }, [sqlSessionId, currentDatabase, setDatabases])
 
-  // Fetch tables on mount
+  // Fetch tables + databases on mount (only if not already loaded)
+  const hasFetchedRef = useRef(false)
   useEffect(() => {
+    if (hasFetchedRef.current) return
+    hasFetchedRef.current = true
     fetchTables()
     fetchDatabases()
   }, [fetchTables, fetchDatabases])

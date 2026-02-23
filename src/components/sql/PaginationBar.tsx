@@ -19,6 +19,10 @@ interface PaginationBarProps {
   pagination: PaginationState
   onPageChange: (page: number) => void
   onPageSizeChange: (size: number) => void
+  /** Trigger an exact COUNT(*) query when the current count is estimated */
+  onExactCount?: () => void
+  /** Whether an exact count query is currently running */
+  isCountLoading?: boolean
   executionTimeMs?: number
   /** All available fields for column picker */
   fields?: QueryField[]
@@ -40,6 +44,8 @@ export const PaginationBar = React.memo(function PaginationBar({
   pagination,
   onPageChange,
   onPageSizeChange,
+  onExactCount,
+  isCountLoading,
   executionTimeMs,
   fields,
   hiddenColumns = [],
@@ -50,7 +56,9 @@ export const PaginationBar = React.memo(function PaginationBar({
   const { page, pageSize, totalRows, totalPages } = pagination
   const [pageInput, setPageInput] = useState(String(page))
   const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const [showCountPopover, setShowCountPopover] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const countPopoverRef = useRef<HTMLDivElement>(null)
 
   // Derived range
   const rangeStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1
@@ -97,6 +105,23 @@ export const PaginationBar = React.memo(function PaginationBar({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showColumnPicker])
+
+  // Close count popover on click outside
+  useEffect(() => {
+    if (!showCountPopover) return
+    const handler = (e: MouseEvent) => {
+      if (countPopoverRef.current && !countPopoverRef.current.contains(e.target as Node)) {
+        setShowCountPopover(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showCountPopover])
+
+  // Close count popover when count completes (exact count loaded)
+  useEffect(() => {
+    if (!pagination.isEstimatedCount) setShowCountPopover(false)
+  }, [pagination.isEstimatedCount])
 
   // Close column picker when table changes (fields change)
   useEffect(() => {
@@ -201,11 +226,46 @@ export const PaginationBar = React.memo(function PaginationBar({
       {/* Divider */}
       <div className="mx-1.5 h-3 w-px bg-nd-border" />
 
-      {/* Row range info */}
-      <span className="text-nd-text-muted">
-        Showing {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of ~
-        {totalRows.toLocaleString()} rows
-      </span>
+      {/* Row range info — clickable when estimated to show count popover */}
+      <div ref={countPopoverRef} className="relative">
+        {pagination.isEstimatedCount && onExactCount ? (
+          <button
+            onClick={() => setShowCountPopover((v) => !v)}
+            className={cn(
+              'text-nd-text-muted hover:text-nd-text-secondary transition-colors',
+              'border-b border-dashed border-nd-text-muted/40 hover:border-nd-text-secondary/60',
+              isCountLoading && 'animate-pulse'
+            )}
+          >
+            {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of ~{totalRows.toLocaleString()} rows
+          </button>
+        ) : (
+          <span className="text-nd-text-muted">
+            {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of{' '}
+            {totalRows.toLocaleString()} rows
+          </span>
+        )}
+
+        {/* Count confirmation popover */}
+        {showCountPopover && pagination.isEstimatedCount && (
+          <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 w-64 rounded-md border border-nd-border bg-nd-bg-primary p-3 shadow-lg">
+            <p className="text-xs text-nd-text-secondary mb-2.5 leading-relaxed">
+              This is an estimated value. Retrieving the exact count may affect server performance on large tables.
+            </p>
+            <button
+              onClick={() => { onExactCount?.(); setShowCountPopover(false) }}
+              disabled={isCountLoading}
+              className={cn(
+                'w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors',
+                'bg-nd-accent/10 text-nd-accent hover:bg-nd-accent/20',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+            >
+              {isCountLoading ? 'Counting...' : 'Count'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Execution time */}
       {executionTimeMs !== undefined && (

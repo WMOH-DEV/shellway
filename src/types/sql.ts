@@ -95,6 +95,8 @@ export interface PaginationState {
   pageSize: number
   totalRows: number
   totalPages: number
+  /** When true, totalRows is an estimate from DB statistics (not an exact COUNT(*)) */
+  isEstimatedCount?: boolean
 }
 
 // ── Filters (TablePlus-style) ──

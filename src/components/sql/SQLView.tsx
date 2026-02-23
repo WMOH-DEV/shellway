@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense, memo } from 'react'
 import { cn } from '@/utils/cn'
-import { Splitter } from '@/components/ui/Splitter'
 import { Button } from '@/components/ui/Button'
 import {
   Database,
@@ -79,9 +78,6 @@ interface SQLViewProps {
   /** When true, this is a standalone database view (not nested inside an SSH ConnectionView) */
   isStandalone?: boolean
 }
-
-// ── Sidebar percentage for splitter (240px / typical width ~1200px) ──
-const SIDEBAR_SPLIT_PERCENT = 20
 
 /**
  * Main SQL panel component — manages connection lifecycle, tab routing, and layout.
@@ -869,19 +865,21 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       </div>
 
       {/* ── Main content: sidebar + (tab bar + content) ── */}
-      <div className="flex-1 overflow-hidden">
-        {showSidebar ? (
-          <Splitter
-            left={<SchemaSidebar connectionId={connectionId} />}
-            right={mainContent}
-            direction="horizontal"
-            defaultSplit={SIDEBAR_SPLIT_PERCENT}
-            minSize={180}
-            className="h-full"
-          />
-        ) : (
-          mainContent
-        )}
+      {/* Both sidebar and main content are always rendered to avoid unmount/remount cycles.
+          Toggling uses CSS hidden (display:none) so React tree stays stable. */}
+      <div className="flex flex-row flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'shrink-0 overflow-hidden',
+            showSidebar ? 'border-r border-nd-border' : 'hidden'
+          )}
+          style={showSidebar ? { width: '20%', minWidth: 180, maxWidth: 400 } : undefined}
+        >
+          <SchemaSidebar connectionId={connectionId} />
+        </div>
+        <div className="flex-1 overflow-hidden min-w-0">
+          {mainContent}
+        </div>
       </div>
 
       {/* ── Query Log bottom panel ── */}

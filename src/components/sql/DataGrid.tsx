@@ -665,6 +665,20 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     }
 
     gridRef.current.api.autoSizeAllColumns()
+
+    // Cap columns that auto-sized too wide (e.g. JSON/text blobs)
+    // Users can still manually resize beyond this limit.
+    const MAX_AUTO_WIDTH = 400
+    const state = gridRef.current.api.getColumnState()
+    const needsCapping = state.some((col) => col.width != null && col.width > MAX_AUTO_WIDTH)
+    if (needsCapping) {
+      gridRef.current.api.applyColumnState({
+        state: state.map((col) => ({
+          ...col,
+          width: col.width != null && col.width > MAX_AUTO_WIDTH ? MAX_AUTO_WIDTH : col.width,
+        })),
+      })
+    }
   }, [result?.fields, columnWidthsKey])
 
   // Inject __rowIndex for stable identity
