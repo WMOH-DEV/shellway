@@ -1,5 +1,7 @@
 import Store from 'electron-store'
-import { safeStorage } from 'electron'
+import { app } from 'electron'
+import { createHash } from 'crypto'
+import { hostname } from 'os'
 import { encrypt, decrypt, generateMasterKey } from '../utils/encryption'
 
 /**
@@ -66,32 +68,29 @@ export class SQLConfigStore {
       },
     })
 
-    // Use Electron safeStorage (OS keychain) to protect the master key.
-    // The key is encrypted via DPAPI (Windows), Keychain (macOS), or libsecret (Linux)
-    // before being persisted, so reading the JSON file alone doesn't expose it.
-    const encryptedKey = this.store.get('masterKey')
-    if (encryptedKey && safeStorage.isEncryptionAvailable()) {
+    // Derive a machine-bound key instead of using OS Keychain (safeStorage).
+    // This avoids the macOS "app wants to access confidential Chromium data" prompt
+    // while still encrypting secrets at rest. The key is deterministic per machine —
+    // copying the JSON file to another machine won't expose passwords.
+    const machineKey = this.deriveMachineKey()
+
+    const storedKey = this.store.get('masterKey')
+    if (storedKey) {
       try {
-        this.masterKey = safeStorage.decryptString(Buffer.from(encryptedKey, 'base64'))
+        // The stored master key is encrypted with the machine-derived key.
+        this.masterKey = decrypt(storedKey, machineKey)
       } catch {
-        // Decryption failed (e.g. OS keychain changed) — generate a new key.
-        // Existing encrypted passwords will fall back to empty string on decrypt failure.
+        // Decryption failed (machine changed, or migrating from safeStorage).
+        // Generate a fresh master key — old encrypted passwords will fallback to ''.
         const newKey = generateMasterKey()
         this.masterKey = newKey
-        this.store.set('masterKey', safeStorage.encryptString(newKey).toString('base64'))
+        this.store.set('masterKey', encrypt(newKey, machineKey))
       }
-    } else if (encryptedKey && !safeStorage.isEncryptionAvailable()) {
-      // safeStorage unavailable — treat stored value as plaintext (legacy / fallback)
-      this.masterKey = encryptedKey
     } else {
-      // No key stored yet — generate and protect with safeStorage
+      // First launch — generate and persist an encrypted master key.
       const newKey = generateMasterKey()
       this.masterKey = newKey
-      if (safeStorage.isEncryptionAvailable()) {
-        this.store.set('masterKey', safeStorage.encryptString(newKey).toString('base64'))
-      } else {
-        this.store.set('masterKey', newKey)
-      }
+      this.store.set('masterKey', encrypt(newKey, machineKey))
     }
   }
 
@@ -128,6 +127,22 @@ export class SQLConfigStore {
   /** Get all saved SQL configs (decrypted). */
   getAll(): StoredSQLConfig[] {
     return this.store.get('configs', []).map((c) => this.decryptSecrets(c))
+  }
+
+  // ── Key derivation ──
+
+  /**
+   * Derive a deterministic encryption key from machine-specific data.
+   * Combines hostname + Electron userData path + a hardcoded app salt.
+   * This ties the encryption to this specific machine without touching the OS Keychain.
+   */
+  private deriveMachineKey(): string {
+    const material = [
+      hostname(),
+      app.getPath('userData'),
+      'shellway-v1-machine-bound-salt-9f3a7c',
+    ].join('::')
+    return createHash('sha256').update(material).digest('hex')
   }
 
   // ── Encryption helpers ──
