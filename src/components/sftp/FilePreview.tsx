@@ -1,8 +1,205 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
-import { FileText, ImageIcon, Code, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import {
+  FileText,
+  ImageIcon,
+  Code,
+  AlertTriangle,
+  WrapText,
+  Map,
+  Copy,
+  Check,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Search,
+  X,
+} from 'lucide-react'
+import Editor, { loader, type OnMount } from '@monaco-editor/react'
+import * as monaco from 'monaco-editor'
+import type * as MonacoEditor from 'monaco-editor'
 import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/utils/cn'
+
+// ---------------------------------------------------------------------------
+// Monaco setup — local bundling for Electron (no CDN)
+// ---------------------------------------------------------------------------
+
+loader.config({ monaco })
+
+if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
+  self.MonacoEnvironment = {
+    getWorker(_: unknown, _label: string) {
+      return new Worker(
+        new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
+        { type: 'module' }
+      )
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shellway dark theme for Monaco
+// ---------------------------------------------------------------------------
+
+let themeRegistered = false
+
+function ensureViewerTheme(monacoInstance: typeof MonacoEditor) {
+  if (themeRegistered) return
+  monacoInstance.editor.defineTheme('shellway-viewer', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword', foreground: '38bdf8', fontStyle: 'bold' },
+      { token: 'string', foreground: '86efac' },
+      { token: 'string.key.json', foreground: '7dd3fc' },
+      { token: 'string.value.json', foreground: '86efac' },
+      { token: 'number', foreground: 'fbbf24' },
+      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
+      { token: 'operator', foreground: 'e2e8f0' },
+      { token: 'predefined', foreground: 'c084fc' },
+      { token: 'type', foreground: '22d3ee' },
+      { token: 'variable', foreground: 'e2e8f0' },
+      { token: 'tag', foreground: 'f472b6' },
+      { token: 'attribute.name', foreground: 'fbbf24' },
+      { token: 'attribute.value', foreground: '86efac' },
+      { token: 'delimiter', foreground: '94a3b8' },
+      { token: 'constant', foreground: 'c084fc' },
+    ],
+    colors: {
+      'editor.background': '#0c0e14',
+      'editor.foreground': '#e2e8f0',
+      'editor.lineHighlightBackground': '#1e293b30',
+      // Selection (double-click / drag): opaque violet — unmistakable
+      'editor.selectionBackground': '#6d28d970',
+      'editor.inactiveSelectionBackground': '#6d28d940',
+      // Other occurrences of selected text: very faint violet, no fill confusion
+      'editor.selectionHighlightBackground': '#6d28d918',
+      'editor.selectionHighlightBorder': '#a78bfa50',
+      // Word highlight (single click): NO fill — border only, clearly different from selection
+      'editor.wordHighlightBackground': '#00000000',
+      'editor.wordHighlightBorder': '#64748b80',
+      'editor.wordHighlightStrongBackground': '#00000000',
+      'editor.wordHighlightStrongBorder': '#94a3b8a0',
+      // Find match highlighting: amber/gold
+      'editor.findMatchBackground': '#fbbf2440',
+      'editor.findMatchBorder': '#fbbf24',
+      'editor.findMatchHighlightBackground': '#fbbf2420',
+      'editor.findMatchHighlightBorder': '#fbbf2460',
+      'editorCursor.foreground': '#38bdf8',
+      'editorGutter.background': '#0c0e14',
+      'editorLineNumber.foreground': '#334155',
+      'editorLineNumber.activeForeground': '#64748b',
+      'editorWidget.background': '#0f1117',
+      'editorWidget.border': '#1e293b',
+      'editorWidget.foreground': '#e2e8f0',
+      'editorWidget.resizeBorder': '#38bdf8',
+      'input.background': '#1e293b',
+      'input.foreground': '#e2e8f0',
+      'input.border': '#334155',
+      'inputOption.activeBorder': '#38bdf8',
+      'inputOption.activeBackground': '#38bdf830',
+      'inputOption.activeForeground': '#e2e8f0',
+      'focusBorder': '#38bdf8',
+      'list.activeSelectionBackground': '#38bdf830',
+      'list.hoverBackground': '#1e293b60',
+      'scrollbarSlider.background': '#334155',
+      'scrollbarSlider.hoverBackground': '#475569',
+      'scrollbarSlider.activeBackground': '#64748b',
+      'minimap.background': '#0c0e14',
+      'minimap.selectionHighlight': '#6d28d960',
+      'minimap.findMatchHighlight': '#fbbf2480',
+    },
+  })
+  themeRegistered = true
+}
+
+// ---------------------------------------------------------------------------
+// File extension → Monaco language mapping
+// ---------------------------------------------------------------------------
+
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  // JavaScript / TypeScript
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
+  // Web
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
+  // Data / Config
+  json: 'json', jsonc: 'json', json5: 'json',
+  xml: 'xml', svg: 'xml', xsl: 'xml',
+  yaml: 'yaml', yml: 'yaml',
+  toml: 'ini', ini: 'ini', conf: 'ini', cfg: 'ini', properties: 'ini',
+  env: 'ini',
+  // Scripting
+  py: 'python', pyw: 'python',
+  rb: 'ruby', rake: 'ruby',
+  php: 'php',
+  lua: 'lua',
+  pl: 'perl', pm: 'perl',
+  r: 'r',
+  // Systems
+  go: 'go',
+  rs: 'rust',
+  c: 'c', h: 'c',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp', hxx: 'cpp',
+  cs: 'csharp',
+  java: 'java',
+  kt: 'kotlin', kts: 'kotlin',
+  swift: 'swift',
+  m: 'objective-c',
+  scala: 'scala',
+  dart: 'dart',
+  // Shell
+  sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
+  ps1: 'powershell', psm1: 'powershell',
+  bat: 'bat', cmd: 'bat',
+  // Markup / Docs
+  md: 'markdown', mdx: 'markdown',
+  tex: 'latex', latex: 'latex',
+  // Query
+  sql: 'sql',
+  graphql: 'graphql', gql: 'graphql',
+  // DevOps
+  dockerfile: 'dockerfile',
+  // Other
+  txt: 'plaintext', log: 'plaintext', text: 'plaintext',
+  csv: 'plaintext', tsv: 'plaintext',
+  makefile: 'plaintext',
+  gitignore: 'plaintext',
+  editorconfig: 'ini',
+  // Functional
+  hs: 'haskell',
+  ex: 'elixir', exs: 'elixir',
+  erl: 'erlang',
+  clj: 'clojure', cljs: 'clojure',
+}
+
+/** Files with no extension that are commonly text files */
+const KNOWN_TEXTFILES = new Set([
+  'makefile', 'dockerfile', 'vagrantfile', 'gemfile', 'rakefile',
+  'procfile', 'brewfile', 'justfile',
+  '.gitignore', '.gitattributes', '.gitmodules',
+  '.dockerignore', '.editorconfig', '.eslintrc', '.prettierrc',
+  '.babelrc', '.npmrc', '.nvmrc', '.env',
+  'license', 'licence', 'readme', 'changelog', 'authors', 'todo',
+  'contributing', 'codeowners',
+])
+
+// ---------------------------------------------------------------------------
+// Image extensions
+// ---------------------------------------------------------------------------
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'])
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB (matches SFTPService limit)
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 interface FilePreviewProps {
   open: boolean
@@ -13,168 +210,165 @@ interface FilePreviewProps {
   fileSize: number
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'])
-const JSON_EXTS = new Set(['json'])
-const MARKDOWN_EXTS = new Set(['md'])
-const TEXT_EXTS = new Set([
-  'txt', 'log', 'sh', 'bash', 'py', 'js', 'ts', 'tsx', 'jsx', 'css', 'html', 'xml',
-  'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'env', 'sql', 'rs', 'go', 'rb', 'php',
-  'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'swift', 'kt', 'lua', 'pl', 'r', 'm',
-])
-
-const MAX_FILE_SIZE = 1_048_576 // 1 MB
-
-type FileCategory = 'image' | 'json' | 'markdown' | 'text' | 'unknown'
-
 function getExtension(name: string): string {
   const dot = name.lastIndexOf('.')
   if (dot === -1 || dot === name.length - 1) return ''
   return name.slice(dot + 1).toLowerCase()
 }
 
-function categorize(ext: string): FileCategory {
-  if (IMAGE_EXTS.has(ext)) return 'image'
-  if (JSON_EXTS.has(ext)) return 'json'
-  if (MARKDOWN_EXTS.has(ext)) return 'markdown'
-  if (TEXT_EXTS.has(ext)) return 'text'
-  return 'unknown'
+function getLanguageFromFileName(name: string): string {
+  const ext = getExtension(name)
+  if (ext && EXT_TO_LANGUAGE[ext]) return EXT_TO_LANGUAGE[ext]
+
+  // Check known text files by full name
+  const lower = name.toLowerCase()
+  if (KNOWN_TEXTFILES.has(lower)) return 'plaintext'
+
+  // Dotfiles with no further extension
+  if (lower.startsWith('.') && !ext) return 'plaintext'
+
+  return 'plaintext'
+}
+
+function isImageFile(name: string): boolean {
+  return IMAGE_EXTS.has(getExtension(name))
+}
+
+/** Detect likely binary content by checking for null bytes */
+function isBinaryContent(content: string): boolean {
+  const sample = content.slice(0, 8192)
+  let nullCount = 0
+  for (let i = 0; i < sample.length; i++) {
+    if (sample.charCodeAt(i) === 0) nullCount++
+  }
+  return nullCount > sample.length * 0.01
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1_048_576).toFixed(2)} MB`
 }
 
 // ---------------------------------------------------------------------------
-// Simple JSON syntax highlighter
+// Image viewer with zoom / pan
 // ---------------------------------------------------------------------------
 
-function highlightJson(raw: string): ReactNode {
-  let pretty: string
-  try {
-    pretty = JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    // If it's not valid JSON, just show raw
-    pretty = raw
-  }
+function ImageViewer({ src, alt }: { src: string; alt: string }) {
+  const [scale, setScale] = useState(1)
+  const positionRef = useRef({ x: 0, y: 0 })
+  const [renderPos, setRenderPos] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStart = useRef({ x: 0, y: 0 })
+  const posStart = useRef({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
+  const scaleRef = useRef(1)
 
-  // Tokenize the pretty-printed JSON into colored spans.
-  // We walk through the string and classify each token.
-  const elements: ReactNode[] = []
-  let i = 0
-  let key = 0
+  const handleZoomIn = useCallback(() => setScale((s) => { const v = Math.min(s * 1.3, 8); scaleRef.current = v; return v }), [])
+  const handleZoomOut = useCallback(() => setScale((s) => { const v = Math.max(s / 1.3, 0.1); scaleRef.current = v; return v }), [])
+  const handleReset = useCallback(() => {
+    setScale(1)
+    scaleRef.current = 1
+    positionRef.current = { x: 0, y: 0 }
+    setRenderPos({ x: 0, y: 0 })
+  }, [])
 
-  while (i < pretty.length) {
-    const ch = pretty[i]
+  // Use native event listener for wheel to allow preventDefault (passive: false)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
 
-    // Whitespace / structural characters
-    if (ch === '\n' || ch === '\r' || ch === ' ' || ch === '{' || ch === '}' || ch === '[' || ch === ']' || ch === ',' || ch === ':') {
-      // Collect consecutive structural / whitespace chars
-      let j = i
-      while (
-        j < pretty.length &&
-        (pretty[j] === '\n' || pretty[j] === '\r' || pretty[j] === ' ' ||
-         pretty[j] === '{' || pretty[j] === '}' || pretty[j] === '[' ||
-         pretty[j] === ']' || pretty[j] === ',' || pretty[j] === ':')
-      ) {
-        j++
-      }
-      elements.push(<span key={key++} className="text-nd-text-secondary">{pretty.slice(i, j)}</span>)
-      i = j
-      continue
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      setScale((s) => {
+        const v = Math.min(Math.max(s * delta, 0.1), 8)
+        scaleRef.current = v
+        return v
+      })
     }
 
-    // String (starts with ")
-    if (ch === '"') {
-      let j = i + 1
-      while (j < pretty.length) {
-        if (pretty[j] === '\\') {
-          j += 2 // skip escaped character
-          continue
-        }
-        if (pretty[j] === '"') {
-          j++
-          break
-        }
-        j++
-      }
-      const str = pretty.slice(i, j)
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [])
 
-      // Determine if this string is a key: look ahead past whitespace for a colon
-      let k = j
-      while (k < pretty.length && pretty[k] === ' ') k++
-      const isKey = k < pretty.length && pretty[k] === ':'
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (scaleRef.current <= 1) return
+      setIsDragging(true)
+      dragStart.current = { x: e.clientX, y: e.clientY }
+      posStart.current = { ...positionRef.current }
+    },
+    []
+  )
 
-      elements.push(
-        <span key={key++} className={isKey ? 'text-blue-400' : 'text-green-400'}>
-          {str}
-        </span>
-      )
-      i = j
-      continue
-    }
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDragging) return
+      const dx = e.clientX - dragStart.current.x
+      const dy = e.clientY - dragStart.current.y
+      const newPos = { x: posStart.current.x + dx, y: posStart.current.y + dy }
+      positionRef.current = newPos
+      setRenderPos(newPos)
+    },
+    [isDragging]
+  )
 
-    // Numbers
-    if (ch === '-' || (ch >= '0' && ch <= '9')) {
-      let j = i + 1
-      while (j < pretty.length && /[0-9.eE+\-]/.test(pretty[j])) j++
-      elements.push(<span key={key++} className="text-orange-400">{pretty.slice(i, j)}</span>)
-      i = j
-      continue
-    }
-
-    // Booleans (true / false)
-    if (pretty.slice(i, i + 4) === 'true') {
-      elements.push(<span key={key++} className="text-purple-400">true</span>)
-      i += 4
-      continue
-    }
-    if (pretty.slice(i, i + 5) === 'false') {
-      elements.push(<span key={key++} className="text-purple-400">false</span>)
-      i += 5
-      continue
-    }
-
-    // Null
-    if (pretty.slice(i, i + 4) === 'null') {
-      elements.push(<span key={key++} className="text-red-400">null</span>)
-      i += 4
-      continue
-    }
-
-    // Fallback: consume one char
-    elements.push(<span key={key++} className="text-nd-text-primary">{ch}</span>)
-    i++
-  }
-
-  return <>{elements}</>
-}
-
-// ---------------------------------------------------------------------------
-// Line-numbered text renderer
-// ---------------------------------------------------------------------------
-
-function LineNumberedText({ content, className }: { content: string; className?: string }) {
-  const lines = content.split('\n')
-  // Avoid trailing phantom empty line from a final newline
-  const displayLines = lines.length > 1 && lines[lines.length - 1] === '' ? lines.slice(0, -1) : lines
-  const gutterWidth = String(displayLines.length).length
+  const handleMouseUp = useCallback(() => setIsDragging(false), [])
 
   return (
-    <div className={cn('flex text-xs leading-5', className)}>
-      {/* Line number gutter */}
-      <div
-        className="shrink-0 select-none text-right pr-3 mr-3 border-r border-nd-border text-nd-text-muted"
-        aria-hidden="true"
-      >
-        {displayLines.map((_, idx) => (
-          <div key={idx} style={{ minWidth: `${gutterWidth}ch` }}>
-            {idx + 1}
-          </div>
-        ))}
+    <div className="flex flex-col h-full">
+      {/* Image toolbar */}
+      <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-nd-border bg-nd-bg-tertiary/50">
+        <button
+          onClick={handleZoomIn}
+          className="p-1.5 rounded hover:bg-nd-surface text-nd-text-muted hover:text-nd-text-primary transition-colors"
+          title="Zoom in"
+        >
+          <ZoomIn size={14} />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="p-1.5 rounded hover:bg-nd-surface text-nd-text-muted hover:text-nd-text-primary transition-colors"
+          title="Zoom out"
+        >
+          <ZoomOut size={14} />
+        </button>
+        <button
+          onClick={handleReset}
+          className="p-1.5 rounded hover:bg-nd-surface text-nd-text-muted hover:text-nd-text-primary transition-colors"
+          title="Reset zoom"
+        >
+          <RotateCcw size={14} />
+        </button>
+        <span className="ml-2 text-xs text-nd-text-muted tabular-nums">{Math.round(scale * 100)}%</span>
       </div>
 
-      {/* Content */}
-      <pre className="flex-1 overflow-x-auto whitespace-pre text-nd-text-primary font-mono">
-        {displayLines.map((line, idx) => (
-          <div key={idx}>{line || ' '}</div>
-        ))}
-      </pre>
+      {/* Image canvas */}
+      <div
+        ref={containerRef}
+        className={cn(
+          'flex-1 min-h-0 overflow-hidden flex items-center justify-center',
+          'bg-[#0a0c10]',
+          scale > 1 ? 'cursor-grab' : 'cursor-default',
+          isDragging && 'cursor-grabbing'
+        )}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        <img
+          src={src}
+          alt={alt}
+          className="max-w-full max-h-full object-contain select-none"
+          style={{
+            transform: `translate(${renderPos.x}px, ${renderPos.y}px) scale(${scale})`,
+            transition: isDragging ? 'none' : 'transform 0.15s ease',
+          }}
+          draggable={false}
+        />
+      </div>
     </div>
   )
 }
@@ -194,22 +388,42 @@ export function FilePreview({
   const [loading, setLoading] = useState(false)
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [wordWrap, setWordWrap] = useState(true)
+  const [showMinimap, setShowMinimap] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // MutationObserver ref — strips native tooltips from find widget buttons
+  const tooltipObserverRef = useRef<MutationObserver | null>(null)
 
   const ext = useMemo(() => getExtension(name), [name])
-  const category = useMemo(() => categorize(ext), [ext])
+  const isImage = useMemo(() => isImageFile(name), [name])
+  const language = useMemo(() => getLanguageFromFileName(name), [name])
   const tooLarge = fileSize > MAX_FILE_SIZE
+
+  // Binary content detection (after content is loaded)
+  const isBinary = useMemo(() => {
+    if (!content || isImage) return false
+    return isBinaryContent(content)
+  }, [content, isImage])
+
+  // Line count for the status bar
+  const lineCount = useMemo(() => {
+    if (!content || isImage || isBinary) return 0
+    return content.split('\n').length
+  }, [content, isImage, isBinary])
 
   // Fetch file content when the modal opens
   useEffect(() => {
     if (!open) {
-      // Reset state when modal closes
       setContent(null)
       setError(null)
       setLoading(false)
+      tooltipObserverRef.current?.disconnect()
+      tooltipObserverRef.current = null
       return
     }
 
-    if (tooLarge || category === 'unknown') return
+    if (tooLarge) return
 
     let cancelled = false
     setLoading(true)
@@ -236,37 +450,193 @@ export function FilePreview({
     return () => {
       cancelled = true
     }
-  }, [open, connectionId, filePath, tooLarge, category])
+  }, [open, connectionId, filePath, tooLarge])
 
   // Build the data URL for images
   const imageDataUrl = useMemo(() => {
-    if (category !== 'image' || !content) return null
+    if (!isImage || !content) return null
     const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`
     return `data:${mime};base64,${content}`
-  }, [category, content, ext])
+  }, [isImage, content, ext])
 
-  // Render the appropriate preview body
-  const renderContent = useCallback((): ReactNode => {
+  // Copy all content to clipboard
+  const handleCopy = useCallback(async () => {
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API may be unavailable — try legacy fallback
+      try {
+        const textarea = document.createElement('textarea')
+        textarea.value = content
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch {
+        console.warn('FilePreview: clipboard copy failed')
+      }
+    }
+  }, [content])
+
+  // Custom escape handling: don't close modal when Monaco's find widget is open
+  useEffect(() => {
+    if (!open) return
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+
+      // Check if Monaco's find widget is visible
+      const findWidget = document.querySelector('.monaco-editor .find-widget.visible')
+      if (findWidget) {
+        // Let Monaco handle closing its own find widget — don't close the modal
+        return
+      }
+
+      e.stopPropagation()
+      onClose()
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  // Monaco editor mount
+  const handleEditorMount: OnMount = useCallback(
+    (editor, monacoInstance) => {
+      ensureViewerTheme(monacoInstance)
+      monacoInstance.editor.setTheme('shellway-viewer')
+
+      // Strip native `title` tooltips from find widget buttons.
+      // They cause flicker inside the modal because the browser tooltip
+      // fights with the button hover state in the constrained space.
+      const editorDom = editor.getDomNode()
+      if (editorDom) {
+        const stripFindWidgetTooltips = () => {
+          // Temporarily disconnect to avoid self-triggering on attribute removal
+          observer.disconnect()
+          editorDom.querySelectorAll('.find-widget [title]').forEach((el) => {
+            el.removeAttribute('title')
+          })
+          observer.observe(editorDom, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['title'],
+          })
+        }
+
+        tooltipObserverRef.current?.disconnect()
+        const observer = new MutationObserver(stripFindWidgetTooltips)
+        observer.observe(editorDom, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['title'],
+        })
+        tooltipObserverRef.current = observer
+      }
+    },
+    []
+  )
+
+  // Monaco editor options
+  const editorOptions = useMemo(
+    (): MonacoEditor.editor.IStandaloneEditorConstructionOptions => ({
+      readOnly: true,
+      domReadOnly: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontLigatures: true,
+      lineNumbers: 'on',
+      tabSize: 2,
+      wordWrap: wordWrap ? 'on' : 'off',
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      minimap: { enabled: showMinimap },
+      padding: { top: 12, bottom: 12 },
+      renderLineHighlight: 'line',
+      matchBrackets: 'always',
+      folding: true,
+      foldingHighlight: true,
+      glyphMargin: false,
+      lineDecorationsWidth: 8,
+      fixedOverflowWidgets: true,
+      scrollbar: {
+        vertical: 'auto',
+        horizontal: 'auto',
+        verticalScrollbarSize: 10,
+        horizontalScrollbarSize: 10,
+      },
+      overviewRulerBorder: false,
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      renderWhitespace: 'none',
+      guides: {
+        indentation: true,
+        bracketPairs: true,
+      },
+      bracketPairColorization: {
+        enabled: true,
+      },
+      smoothScrolling: true,
+      cursorBlinking: 'smooth',
+      cursorSmoothCaretAnimation: 'on',
+      find: {
+        addExtraSpaceOnTop: false,
+        autoFindInSelection: 'never',
+        seedSearchStringFromSelection: 'always',
+      },
+      contextmenu: true,
+      copyWithSyntaxHighlighting: true,
+      links: true,
+      colorDecorators: true,
+    }),
+    [wordWrap, showMinimap]
+  )
+
+  // Determine what to display in the language badge
+  const languageLabel = useMemo(() => {
+    const map: Record<string, string> = {
+      javascript: 'JavaScript', typescript: 'TypeScript',
+      python: 'Python', ruby: 'Ruby', php: 'PHP',
+      go: 'Go', rust: 'Rust', c: 'C', cpp: 'C++',
+      csharp: 'C#', java: 'Java', kotlin: 'Kotlin',
+      swift: 'Swift', dart: 'Dart', scala: 'Scala',
+      shell: 'Shell', powershell: 'PowerShell', bat: 'Batch',
+      html: 'HTML', css: 'CSS', scss: 'SCSS', less: 'LESS',
+      json: 'JSON', xml: 'XML', yaml: 'YAML',
+      sql: 'SQL', graphql: 'GraphQL',
+      markdown: 'Markdown', latex: 'LaTeX',
+      ini: 'Config', plaintext: 'Plain Text',
+      dockerfile: 'Dockerfile',
+      haskell: 'Haskell', elixir: 'Elixir', erlang: 'Erlang',
+      clojure: 'Clojure', perl: 'Perl', lua: 'Lua', r: 'R',
+      'objective-c': 'Objective-C',
+    }
+    return map[language] ?? language
+  }, [language])
+
+  // Render body content
+  const renderContent = useCallback(() => {
     // Too large guard
     if (tooLarge) {
       return (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-nd-text-muted">
-          <AlertTriangle size={32} className="text-nd-error/70" />
-          <p className="text-sm">File too large to preview</p>
+        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-text-muted">
+          <AlertTriangle size={36} className="text-nd-error/70" />
+          <p className="text-sm font-medium">File too large to preview</p>
           <p className="text-xs text-nd-text-muted">
-            {(fileSize / 1_048_576).toFixed(2)} MB exceeds the 1 MB limit
+            {formatFileSize(fileSize)} exceeds the {formatFileSize(MAX_FILE_SIZE)} limit
           </p>
-        </div>
-      )
-    }
-
-    // Unknown category guard
-    if (category === 'unknown') {
-      return (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-nd-text-muted">
-          <FileText size={32} className="opacity-40" />
-          <p className="text-sm">Preview not available for this file type</p>
-          <p className="text-xs">.{ext || '(no extension)'}</p>
+          <p className="text-xs text-nd-text-muted mt-1">
+            Use <span className="font-mono text-nd-text-secondary">View / Edit</span> to open in an external editor
+          </p>
         </div>
       )
     }
@@ -274,9 +644,9 @@ export function FilePreview({
     // Loading
     if (loading) {
       return (
-        <div className="flex flex-col items-center justify-center gap-3 py-16">
+        <div className="flex flex-col items-center justify-center gap-3 h-full">
           <Spinner size="lg" />
-          <p className="text-xs text-nd-text-muted">Loading preview...</p>
+          <p className="text-xs text-nd-text-muted">Loading file...</p>
         </div>
       )
     }
@@ -284,10 +654,10 @@ export function FilePreview({
     // Error
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-nd-error">
-          <AlertTriangle size={28} />
-          <p className="text-sm">Failed to load preview</p>
-          <p className="text-xs text-nd-text-muted max-w-xs text-center">{error}</p>
+        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-error">
+          <AlertTriangle size={32} />
+          <p className="text-sm font-medium">Failed to load file</p>
+          <p className="text-xs text-nd-text-muted max-w-md text-center">{error}</p>
         </div>
       )
     }
@@ -295,87 +665,156 @@ export function FilePreview({
     // No content yet
     if (content === null) return null
 
-    // ----- Image -----
-    if (category === 'image' && imageDataUrl) {
+    // Binary content detected
+    if (isBinary) {
       return (
-        <div className="flex items-center justify-center p-4">
-          <img
-            src={imageDataUrl}
-            alt={name}
-            className="max-w-full max-h-[60vh] object-contain rounded"
-          />
+        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-text-muted">
+          <FileText size={36} className="opacity-40" />
+          <p className="text-sm font-medium">Binary file</p>
+          <p className="text-xs">This file contains binary data and cannot be displayed as text</p>
+          <p className="text-xs text-nd-text-muted mt-1">
+            Use <span className="font-mono text-nd-text-secondary">View / Edit</span> to open in an external editor
+          </p>
         </div>
       )
     }
 
-    // ----- JSON -----
-    if (category === 'json') {
-      return (
-        <pre className="p-4 text-xs leading-5 font-mono overflow-x-auto whitespace-pre">
-          {highlightJson(content)}
-        </pre>
-      )
+    // Image
+    if (isImage && imageDataUrl) {
+      return <ImageViewer src={imageDataUrl} alt={name} />
     }
 
-    // ----- Markdown -----
-    if (category === 'markdown') {
-      return (
-        <LineNumberedText content={content} className="p-4 font-mono" />
-      )
-    }
-
-    // ----- Text / Code -----
-    if (category === 'text') {
-      return (
-        <LineNumberedText content={content} className="p-4" />
-      )
-    }
-
-    return null
-  }, [tooLarge, category, loading, error, content, imageDataUrl, name, ext, fileSize])
-
-  // Category icon for the title area
-  const categoryIcon = useMemo(() => {
-    switch (category) {
-      case 'image':
-        return <ImageIcon size={14} className="text-nd-accent shrink-0" />
-      case 'json':
-      case 'text':
-      case 'markdown':
-        return <Code size={14} className="text-nd-accent shrink-0" />
-      default:
-        return <FileText size={14} className="text-nd-text-muted shrink-0" />
-    }
-  }, [category])
+    // Text / Code — Monaco Editor
+    return (
+      <Editor
+        language={language}
+        theme="shellway-viewer"
+        value={content}
+        options={editorOptions}
+        onMount={handleEditorMount}
+        loading={
+          <div className="flex items-center justify-center h-full text-nd-text-muted text-sm">
+            <Spinner size="md" />
+          </div>
+        }
+      />
+    )
+  }, [
+    tooLarge, loading, error, content, isBinary, isImage, imageDataUrl,
+    name, language, editorOptions, handleEditorMount, fileSize,
+  ])
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={name}
-      maxWidth="max-w-2xl"
+      title=""
+      maxWidth="max-w-[92vw]"
+      className="!max-h-[92vh]"
+      closeOnEscape={false}
     >
-      {/* Category badge */}
-      <div className="flex items-center gap-2 mb-3">
-        {categoryIcon}
-        <span className="text-xs text-nd-text-muted uppercase tracking-wider">
-          {category === 'unknown' ? ext || 'unknown' : category} preview
+      {/* ─── Header bar ─── */}
+      <div className="flex items-center gap-3 -mt-2 mb-3">
+        {/* File icon + name */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {isImage ? (
+            <ImageIcon size={15} className="text-nd-accent shrink-0" />
+          ) : (
+            <Code size={15} className="text-nd-accent shrink-0" />
+          )}
+          <span className="text-sm font-medium text-nd-text-primary truncate" title={name}>
+            {name}
+          </span>
+        </div>
+
+        {/* File size */}
+        <span className="text-xs text-nd-text-muted shrink-0 tabular-nums">
+          {formatFileSize(fileSize)}
         </span>
-        <span className="ml-auto text-xs text-nd-text-muted">
-          {fileSize < 1024
-            ? `${fileSize} B`
-            : fileSize < 1_048_576
-              ? `${(fileSize / 1024).toFixed(1)} KB`
-              : `${(fileSize / 1_048_576).toFixed(2)} MB`}
-        </span>
+
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="shrink-0 rounded-md p-1 text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+          title="Close"
+        >
+          <X size={16} />
+        </button>
       </div>
 
-      {/* Preview area */}
+      {/* ─── Toolbar (only for text content) ─── */}
+      {!isImage && !tooLarge && content && !isBinary && (
+        <div className="flex items-center gap-1 mb-2 -mx-1">
+          {/* Language badge */}
+          <span className="px-2 py-0.5 text-2xs font-medium rounded bg-nd-accent/15 text-nd-accent border border-nd-accent/20 mr-1">
+            {languageLabel}
+          </span>
+
+          {/* Line count */}
+          <span className="text-2xs text-nd-text-muted tabular-nums mr-auto">
+            {lineCount.toLocaleString()} {lineCount === 1 ? 'line' : 'lines'}
+          </span>
+
+          {/* Word wrap toggle */}
+          <button
+            onClick={() => setWordWrap((v) => !v)}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
+              wordWrap
+                ? 'bg-nd-accent/15 text-nd-accent'
+                : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+            )}
+            title={wordWrap ? 'Word wrap on' : 'Word wrap off'}
+          >
+            <WrapText size={13} />
+            <span className="hidden sm:inline">Wrap</span>
+          </button>
+
+          {/* Minimap toggle */}
+          <button
+            onClick={() => setShowMinimap((v) => !v)}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
+              showMinimap
+                ? 'bg-nd-accent/15 text-nd-accent'
+                : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+            )}
+            title={showMinimap ? 'Minimap on' : 'Minimap off'}
+          >
+            <Map size={13} />
+            <span className="hidden sm:inline">Minimap</span>
+          </button>
+
+          {/* Search hint */}
+          <div className="hidden sm:flex items-center gap-1 px-2 py-1 text-2xs text-nd-text-muted" title="Search in file">
+            <Search size={11} />
+            <span className="font-mono">{navigator.platform?.includes('Mac') ? '⌘F' : 'Ctrl+F'}</span>
+          </div>
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
+              copied
+                ? 'bg-nd-success/15 text-nd-success'
+                : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+            )}
+            title="Copy file content"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* ─── Main content area ─── */}
       <div
         className={cn(
-          'rounded-md border border-nd-border bg-nd-bg-primary overflow-auto',
-          'max-h-[70vh]',
+          'rounded-md border border-nd-border overflow-hidden',
+          'bg-[#0c0e14]',
         )}
+        style={{ height: 'min(72vh, 800px)' }}
       >
         {renderContent()}
       </div>

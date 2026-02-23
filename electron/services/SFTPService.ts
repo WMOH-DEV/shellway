@@ -377,7 +377,7 @@ export class SFTPService extends EventEmitter {
   }
 
   /** Read a text file */
-  async readFile(remotePath: string, maxSize: number = 1024 * 1024): Promise<string> {
+  async readFile(remotePath: string, maxSize: number = 5 * 1024 * 1024): Promise<string> {
     const stats = await this.stat(remotePath)
     if (stats.size > maxSize) {
       throw new Error(`File too large: ${stats.size} bytes (max: ${maxSize})`)
