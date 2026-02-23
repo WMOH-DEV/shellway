@@ -164,7 +164,7 @@ export const PaginationBar = React.memo(function PaginationBar({
         'bg-nd-bg-secondary px-2 text-xs text-nd-text-secondary select-none'
       )}
     >
-      {/* ── Left: Data | Structure toggle ── */}
+      {/* ── Left: Data | Structure toggle + structure actions ── */}
       {onViewModeChange && (
         <div className="flex items-center gap-0.5 shrink-0">
           <button
@@ -191,31 +191,30 @@ export const PaginationBar = React.memo(function PaginationBar({
             <ListTree size={11} />
             Structure
           </button>
+
+          {isStructure && (
+            <>
+              <div className="mx-1 h-3 w-px bg-nd-border" />
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-add-column'))}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Plus size={11} />
+                Column
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-scroll-indexes'))}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Plus size={11} />
+                Index
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {/* ── Center: Pagination stats OR structure quick-actions ── */}
       <div className="flex-1" />
-
-      {isStructure && (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-add-column'))}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-          >
-            <Plus size={11} />
-            Column
-          </button>
-          <div className="h-3 w-px bg-nd-border" />
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-scroll-indexes'))}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-          >
-            <Plus size={11} />
-            Index
-          </button>
-        </div>
-      )}
 
       {!isStructure && (
         <div className="flex items-center gap-1 shrink-0">

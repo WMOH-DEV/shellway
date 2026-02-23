@@ -510,8 +510,16 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   )
 
   const handleTabClose = useCallback(
-    (id: string) => removeTab(id),
-    [removeTab]
+    (id: string) => {
+      // If closing the tab for the currently selected table, clear selectedTable
+      // so clicking the same table name in the sidebar re-triggers tab creation.
+      const closingTab = getSQLConnectionState(connectionId).tabs.find((t) => t.id === id)
+      if (closingTab?.table && closingTab.table === getSQLConnectionState(connectionId).selectedTable) {
+        setSelectedTable(null)
+      }
+      removeTab(id)
+    },
+    [connectionId, removeTab, setSelectedTable]
   )
 
   const handleNewQuery = useCallback(() => {

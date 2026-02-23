@@ -399,6 +399,8 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   )
 
   // Default column settings — sortable with no-op comparator (server-side sorting only)
+  // Fixed default width (150px) instead of auto-sizing to content — prevents JSON/text
+  // blobs from blowing up columns. Users can manually resize wider if needed.
   const defaultColDef = useMemo<ColDef>(
     () => ({
       sortable: true,
@@ -407,6 +409,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       suppressHeaderMenuButton: true,
       comparator: () => 0, // Prevent client-side sorting; server-side only
       unSortIcon: true,
+      width: 150,
     }),
     []
   )
@@ -544,8 +547,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       api.setColumnsVisible(allCols, true)
     }
     api.resetColumnState()
-    api.autoSizeAllColumns()
-    // Clear saved column widths so next open auto-sizes too
+    // Clear saved column widths — columns reset to defaultColDef.width (150px)
     if (columnWidthsKeyRef.current) {
       try { localStorage.removeItem(columnWidthsKeyRef.current) } catch {}
     }
@@ -632,7 +634,9 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     showAllColumns: handleShowAllColumns,
   }), [handleToggleColumn, handleShowAllColumns])
 
-  // Restore saved column widths or auto-size when data first loads
+  // Restore saved column widths when data first loads.
+  // No auto-sizing to content — defaultColDef.width (150px) is the baseline.
+  // Users can manually resize and their widths are persisted per-table.
   const prevWidthContextRef = useRef<string>('')
   useEffect(() => {
     if (!gridRef.current?.api || !result?.fields?.length) return
@@ -648,7 +652,6 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         const saved = localStorage.getItem(columnWidthsKey)
         if (saved) {
           const widths: Record<string, number> = JSON.parse(saved)
-          // Check that at least some saved columns match current fields
           const hasMatch = result.fields.some((f) => widths[f.name] !== undefined)
           if (hasMatch) {
             const state = gridRef.current.api.getColumnState().map((col) => ({
@@ -656,28 +659,11 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
               width: widths[col.colId!] ?? col.width,
             }))
             gridRef.current.api.applyColumnState({ state })
-            return // Skip auto-size — we have saved widths
           }
         }
       } catch {
-        // Corrupted data — fall through to auto-size
+        // Corrupted data — use default width from defaultColDef
       }
-    }
-
-    gridRef.current.api.autoSizeAllColumns()
-
-    // Cap columns that auto-sized too wide (e.g. JSON/text blobs)
-    // Users can still manually resize beyond this limit.
-    const MAX_AUTO_WIDTH = 400
-    const state = gridRef.current.api.getColumnState()
-    const needsCapping = state.some((col) => col.width != null && col.width > MAX_AUTO_WIDTH)
-    if (needsCapping) {
-      gridRef.current.api.applyColumnState({
-        state: state.map((col) => ({
-          ...col,
-          width: col.width != null && col.width > MAX_AUTO_WIDTH ? MAX_AUTO_WIDTH : col.width,
-        })),
-      })
     }
   }, [result?.fields, columnWidthsKey])
 
