@@ -579,6 +579,46 @@ export function registerSQLIPC(): void {
     }
   })
 
+  // ── Execute Structure Changes (ALTER TABLE) ──
+  // Accepts an array of SQL statements to execute sequentially (e.g. ALTER TABLE, COMMENT ON, etc.)
+  ipcMain.handle('sql:executeStatements', async (_event, sqlSessionId: string, statements: string[]) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    if (!Array.isArray(statements) || statements.length === 0) {
+      return { success: false, error: 'No statements provided' }
+    }
+
+    // Validate each statement is a string
+    for (const stmt of statements) {
+      if (typeof stmt !== 'string' || !stmt.trim()) {
+        return { success: false, error: 'Invalid SQL statement in batch' }
+      }
+    }
+
+    try {
+      const results: { statement: string; success: boolean; error?: string }[] = []
+      for (const stmt of statements) {
+        try {
+          await sqlService.executeQuery(sqlSessionId, stmt)
+          results.push({ statement: stmt, success: true })
+        } catch (err: any) {
+          results.push({ statement: stmt, success: false, error: err.message || String(err) })
+          // Stop on first error — don't execute remaining statements
+          return {
+            success: false,
+            error: `Failed at statement: ${err.message || String(err)}`,
+            results,
+            failedStatement: stmt,
+          }
+        }
+      }
+      return { success: true, results }
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) }
+    }
+  })
+
   // ── Generate DDL ──
 
   ipcMain.handle('sql:generateDDL', async (_event, sqlSessionId: string, table: string, schema?: string) => {

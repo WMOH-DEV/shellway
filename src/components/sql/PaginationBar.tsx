@@ -7,11 +7,18 @@ import {
   Columns3,
   X,
   ExternalLink,
+  Table2,
+  ListTree,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
 import type { PaginationState, QueryField } from '@/types/sql'
 import type { ForeignKeyMap } from '@/components/sql/DataGrid'
+
+// ── View mode type ──
+
+export type TableViewMode = 'data' | 'structure'
 
 // ── Props ──
 
@@ -34,6 +41,10 @@ interface PaginationBarProps {
   onToggleColumn?: (colId: string, show: boolean) => void
   /** Show all columns */
   onShowAllColumns?: () => void
+  /** Current view mode */
+  viewMode?: TableViewMode
+  /** Callback when view mode changes */
+  onViewModeChange?: (mode: TableViewMode) => void
 }
 
 const PAGE_SIZES = [50, 100, 200, 500, 1000]
@@ -52,6 +63,8 @@ export const PaginationBar = React.memo(function PaginationBar({
   foreignKeys,
   onToggleColumn,
   onShowAllColumns,
+  viewMode = 'data',
+  onViewModeChange,
 }: PaginationBarProps) {
   const { page, pageSize, totalRows, totalPages } = pagination
   const [pageInput, setPageInput] = useState(String(page))
@@ -59,6 +72,8 @@ export const PaginationBar = React.memo(function PaginationBar({
   const [showCountPopover, setShowCountPopover] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const countPopoverRef = useRef<HTMLDivElement>(null)
+
+  const isStructure = viewMode === 'structure'
 
   // Derived range
   const rangeStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1
@@ -135,152 +150,215 @@ export const PaginationBar = React.memo(function PaginationBar({
     [onPageSizeChange]
   )
 
+  const handleViewModeChange = useCallback(
+    (mode: TableViewMode) => {
+      onViewModeChange?.(mode)
+    },
+    [onViewModeChange]
+  )
+
   return (
     <div
       className={cn(
-        'flex h-7 shrink-0 items-center gap-1 border-t border-nd-border',
+        'flex h-7 shrink-0 items-center border-t border-nd-border',
         'bg-nd-bg-secondary px-2 text-xs text-nd-text-secondary select-none'
       )}
     >
-      {/* Navigation buttons */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-5 w-5 p-0"
-        disabled={isFirstPage}
-        onClick={() => onPageChange(1)}
-        title="First page"
-      >
-        <ChevronsLeft size={14} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-5 w-5 p-0"
-        disabled={isFirstPage}
-        onClick={() => onPageChange(page - 1)}
-        title="Previous page"
-      >
-        <ChevronLeft size={14} />
-      </Button>
-
-      {/* Page input */}
-      <span className="ml-1">Page</span>
-      <input
-        type="text"
-        value={pageInput}
-        onChange={handlePageInputChange}
-        onKeyDown={handlePageInputSubmit}
-        onBlur={() => setPageInput(String(page))}
-        className={cn(
-          'mx-0.5 h-5 w-10 rounded border border-nd-border bg-nd-surface',
-          'px-1 text-center text-xs text-nd-text-primary',
-          'focus:border-nd-accent focus:outline-none focus:ring-1 focus:ring-nd-accent'
-        )}
-      />
-      <span>of {totalPages.toLocaleString()}</span>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-5 w-5 p-0"
-        disabled={isLastPage}
-        onClick={() => onPageChange(page + 1)}
-        title="Next page"
-      >
-        <ChevronRight size={14} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-5 w-5 p-0"
-        disabled={isLastPage}
-        onClick={() => onPageChange(totalPages)}
-        title="Last page"
-      >
-        <ChevronsRight size={14} />
-      </Button>
-
-      {/* Divider */}
-      <div className="mx-1.5 h-3 w-px bg-nd-border" />
-
-      {/* Page size selector */}
-      <select
-        value={pageSize}
-        onChange={handlePageSizeChange}
-        className={cn(
-          'h-5 rounded border border-nd-border bg-nd-surface',
-          'px-1 text-xs text-nd-text-primary',
-          'cursor-pointer appearance-none',
-          'focus:border-nd-accent focus:outline-none'
-        )}
-      >
-        {PAGE_SIZES.map((size) => (
-          <option key={size} value={size}>
-            {size}
-          </option>
-        ))}
-      </select>
-      <span>rows/page</span>
-
-      {/* Divider */}
-      <div className="mx-1.5 h-3 w-px bg-nd-border" />
-
-      {/* Row range info — clickable when estimated to show count popover */}
-      <div ref={countPopoverRef} className="relative">
-        {pagination.isEstimatedCount && onExactCount ? (
+      {/* ── Left: Data | Structure toggle ── */}
+      {onViewModeChange && (
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
-            onClick={() => setShowCountPopover((v) => !v)}
+            onClick={() => handleViewModeChange('data')}
             className={cn(
-              'text-nd-text-muted hover:text-nd-text-secondary transition-colors',
-              'border-b border-dashed border-nd-text-muted/40 hover:border-nd-text-secondary/60',
-              isCountLoading && 'animate-pulse'
+              'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium transition-colors',
+              viewMode === 'data'
+                ? 'text-nd-accent bg-nd-accent/10'
+                : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface'
             )}
           >
-            {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of ~{totalRows.toLocaleString()} rows
+            <Table2 size={11} />
+            Data
           </button>
-        ) : (
-          <span className="text-nd-text-muted">
-            {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of{' '}
-            {totalRows.toLocaleString()} rows
-          </span>
-        )}
-
-        {/* Count confirmation popover */}
-        {showCountPopover && pagination.isEstimatedCount && (
-          <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 w-64 rounded-md border border-nd-border bg-nd-bg-primary p-3 shadow-lg">
-            <p className="text-xs text-nd-text-secondary mb-2.5 leading-relaxed">
-              This is an estimated value. Retrieving the exact count may affect server performance on large tables.
-            </p>
-            <button
-              onClick={() => { onExactCount?.(); setShowCountPopover(false) }}
-              disabled={isCountLoading}
-              className={cn(
-                'w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors',
-                'bg-nd-accent/10 text-nd-accent hover:bg-nd-accent/20',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {isCountLoading ? 'Counting...' : 'Count'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Execution time */}
-      {executionTimeMs !== undefined && (
-        <>
-          <div className="mx-1.5 h-3 w-px bg-nd-border" />
-          <span className="text-nd-text-muted">{executionTimeMs}ms</span>
-        </>
+          <button
+            onClick={() => handleViewModeChange('structure')}
+            className={cn(
+              'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium transition-colors',
+              viewMode === 'structure'
+                ? 'text-nd-accent bg-nd-accent/10'
+                : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface'
+            )}
+          >
+            <ListTree size={11} />
+            Structure
+          </button>
+        </div>
       )}
 
-      {/* Spacer */}
+      {/* ── Center: Pagination stats OR structure quick-actions ── */}
       <div className="flex-1" />
 
-      {/* Columns button + hidden count */}
-      {fields && fields.length > 0 && (
-        <div ref={pickerRef} className="relative flex items-center gap-1">
+      {isStructure && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-add-column'))}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+          >
+            <Plus size={11} />
+            Column
+          </button>
+          <div className="h-3 w-px bg-nd-border" />
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('sql:structure-scroll-indexes'))}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+          >
+            <Plus size={11} />
+            Index
+          </button>
+        </div>
+      )}
+
+      {!isStructure && (
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Navigation buttons */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0"
+            disabled={isFirstPage}
+            onClick={() => onPageChange(1)}
+            title="First page"
+          >
+            <ChevronsLeft size={14} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0"
+            disabled={isFirstPage}
+            onClick={() => onPageChange(page - 1)}
+            title="Previous page"
+          >
+            <ChevronLeft size={14} />
+          </Button>
+
+          {/* Page input */}
+          <span className="ml-1">Page</span>
+          <input
+            type="text"
+            value={pageInput}
+            onChange={handlePageInputChange}
+            onKeyDown={handlePageInputSubmit}
+            onBlur={() => setPageInput(String(page))}
+            className={cn(
+              'mx-0.5 h-5 w-10 rounded border border-nd-border bg-nd-surface',
+              'px-1 text-center text-xs text-nd-text-primary',
+              'focus:border-nd-accent focus:outline-none focus:ring-1 focus:ring-nd-accent'
+            )}
+          />
+          <span>of {totalPages.toLocaleString()}</span>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0"
+            disabled={isLastPage}
+            onClick={() => onPageChange(page + 1)}
+            title="Next page"
+          >
+            <ChevronRight size={14} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 p-0"
+            disabled={isLastPage}
+            onClick={() => onPageChange(totalPages)}
+            title="Last page"
+          >
+            <ChevronsRight size={14} />
+          </Button>
+
+          {/* Divider */}
+          <div className="mx-1.5 h-3 w-px bg-nd-border" />
+
+          {/* Page size selector */}
+          <select
+            value={pageSize}
+            onChange={handlePageSizeChange}
+            className={cn(
+              'h-5 rounded border border-nd-border bg-nd-surface',
+              'px-1 text-xs text-nd-text-primary',
+              'cursor-pointer appearance-none',
+              'focus:border-nd-accent focus:outline-none'
+            )}
+          >
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+          <span>rows/page</span>
+
+          {/* Divider */}
+          <div className="mx-1.5 h-3 w-px bg-nd-border" />
+
+          {/* Row range info — clickable when estimated to show count popover */}
+          <div ref={countPopoverRef} className="relative">
+            {pagination.isEstimatedCount && onExactCount ? (
+              <button
+                onClick={() => setShowCountPopover((v) => !v)}
+                className={cn(
+                  'text-nd-text-muted hover:text-nd-text-secondary transition-colors',
+                  'border-b border-dashed border-nd-text-muted/40 hover:border-nd-text-secondary/60',
+                  isCountLoading && 'animate-pulse'
+                )}
+              >
+                {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of ~{totalRows.toLocaleString()} rows
+              </button>
+            ) : (
+              <span className="text-nd-text-muted">
+                {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of{' '}
+                {totalRows.toLocaleString()} rows
+              </span>
+            )}
+
+            {/* Count confirmation popover */}
+            {showCountPopover && pagination.isEstimatedCount && (
+              <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 w-64 rounded-md border border-nd-border bg-nd-bg-primary p-3 shadow-lg">
+                <p className="text-xs text-nd-text-secondary mb-2.5 leading-relaxed">
+                  This is an estimated value. Retrieving the exact count may affect server performance on large tables.
+                </p>
+                <button
+                  onClick={() => { onExactCount?.(); setShowCountPopover(false) }}
+                  disabled={isCountLoading}
+                  className={cn(
+                    'w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors',
+                    'bg-nd-accent/10 text-nd-accent hover:bg-nd-accent/20',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
+                  )}
+                >
+                  {isCountLoading ? 'Counting...' : 'Count'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Execution time */}
+          {executionTimeMs !== undefined && (
+            <>
+              <div className="mx-1.5 h-3 w-px bg-nd-border" />
+              <span className="text-nd-text-muted">{executionTimeMs}ms</span>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="flex-1" />
+
+      {/* ── Right: Column picker (only in data mode) ── */}
+      {!isStructure && fields && fields.length > 0 && (
+        <div ref={pickerRef} className="relative flex items-center gap-1 shrink-0">
           {hiddenColumns.length > 0 && (
             <>
               <span className="text-2xs text-nd-warning">{hiddenColumns.length} hidden</span>

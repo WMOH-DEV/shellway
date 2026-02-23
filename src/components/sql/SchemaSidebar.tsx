@@ -22,6 +22,7 @@ import {
   HardDrive,
   RotateCcw,
   Plus,
+  Columns3,
 } from 'lucide-react'
 import { useSQLConnection } from '@/stores/sqlStore'
 import type { SchemaTable } from '@/types/sql'
@@ -39,6 +40,16 @@ function formatRowCount(count: number | undefined): string {
 
 function buildTableContextMenuItems(tableName: string, isView: boolean): ContextMenuItem[] {
   return [
+    ...(isView
+      ? []
+      : [
+          {
+            id: `structure:${tableName}`,
+            label: 'View Structure',
+            icon: <Columns3 size={14} />,
+          },
+          { id: 'sep-0', label: '', separator: true },
+        ]),
     { id: `export:csv:${tableName}`, label: 'Export as CSV', icon: <FileText size={14} /> },
     { id: `export:json:${tableName}`, label: 'Export as JSON', icon: <FileJson size={14} /> },
     { id: `export:sql:${tableName}`, label: 'Export as SQL', icon: <Database size={14} /> },
@@ -209,6 +220,7 @@ export type TableContextAction =
   | { type: 'import-csv'; table: string }
   | { type: 'copy-name'; table: string }
   | { type: 'drop-table'; table: string }
+  | { type: 'view-structure'; table: string }
 
 /** Context menu action type for database actions */
 export type DatabaseContextAction =
@@ -309,7 +321,9 @@ export function SchemaSidebar({
       if (!onTableAction) return
 
       // Parse action: "type:value:tableName" or "copy:tableName"
-      if (id.startsWith('export:csv:')) {
+      if (id.startsWith('structure:')) {
+        onTableAction({ type: 'view-structure', table: id.slice('structure:'.length) })
+      } else if (id.startsWith('export:csv:')) {
         onTableAction({ type: 'export', table: id.slice('export:csv:'.length), format: 'csv' })
       } else if (id.startsWith('export:json:')) {
         onTableAction({ type: 'export', table: id.slice('export:json:'.length), format: 'json' })

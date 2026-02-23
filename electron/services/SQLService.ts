@@ -351,6 +351,9 @@ export class SQLService extends EventEmitter {
   ): Promise<{
     name: string; type: string; nullable: boolean; defaultValue: string | null
     isPrimaryKey: boolean; isAutoIncrement: boolean; extra?: string; comment?: string
+    ordinalPosition?: number; charset?: string | null; collation?: string | null
+    columnKey?: string; identityGeneration?: string | null
+    isGenerated?: boolean; generationExpression?: string | null
   }[]> {
     const active = this.connections.get(sqlSessionId)
     if (!active) throw new Error('Not connected')
@@ -358,9 +361,12 @@ export class SQLService extends EventEmitter {
     if (active.type === 'mysql') {
       const result = await this.executeQuery(
         sqlSessionId,
-        `SELECT c.COLUMN_NAME as col_name, c.COLUMN_TYPE as col_type,
+        `SELECT c.ORDINAL_POSITION as ordinal_pos,
+                c.COLUMN_NAME as col_name, c.COLUMN_TYPE as col_type,
                 c.IS_NULLABLE as nullable, c.COLUMN_DEFAULT as default_val,
-                c.COLUMN_KEY as col_key, c.EXTRA as extra, c.COLUMN_COMMENT as comment
+                c.COLUMN_KEY as col_key, c.EXTRA as extra, c.COLUMN_COMMENT as comment,
+                c.CHARACTER_SET_NAME as charset, c.COLLATION_NAME as collation,
+                c.GENERATION_EXPRESSION as gen_expr
          FROM INFORMATION_SCHEMA.COLUMNS c
          WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ?
          ORDER BY c.ORDINAL_POSITION`,
@@ -371,32 +377,84 @@ export class SQLService extends EventEmitter {
         nullable: r.nullable === 'YES', defaultValue: r.default_val,
         isPrimaryKey: r.col_key === 'PRI',
         isAutoIncrement: (r.extra || '').includes('auto_increment'),
-        extra: r.extra || undefined, comment: r.comment || undefined
+        extra: r.extra || undefined, comment: r.comment || undefined,
+        ordinalPosition: Number(r.ordinal_pos),
+        charset: r.charset || null,
+        collation: r.collation || null,
+        columnKey: r.col_key || '',
+        identityGeneration: null,
+        isGenerated: (r.extra || '').includes('GENERATED') || Boolean(r.gen_expr),
+        generationExpression: r.gen_expr || null,
       }))
     } else {
       const schemaName = schema || 'public'
       const result = await this.executeQuery(
         sqlSessionId,
-        `SELECT c.column_name as col_name,
-                c.data_type || COALESCE('(' || c.character_maximum_length || ')', '') as col_type,
-                c.is_nullable as nullable, c.column_default as default_val,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk
+        `SELECT c.ordinal_position as ordinal_pos,
+                c.column_name as col_name,
+                CASE
+                  WHEN c.data_type = 'character varying' THEN 'varchar(' || c.character_maximum_length || ')'
+                  WHEN c.data_type = 'character' THEN 'char(' || c.character_maximum_length || ')'
+                  WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL
+                    THEN 'numeric(' || c.numeric_precision || ',' || COALESCE(c.numeric_scale, 0) || ')'
+                  WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
+                  WHEN c.data_type = 'ARRAY' THEN c.udt_name
+                  ELSE c.data_type
+                END as col_type,
+                c.is_nullable as nullable,
+                c.column_default as default_val,
+                c.is_identity as is_identity,
+                c.identity_generation as identity_gen,
+                c.is_generated as is_generated,
+                c.generation_expression as gen_expr,
+                c.collation_name as collation,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk,
+                CASE WHEN uq.column_name IS NOT NULL THEN 'UNI' ELSE '' END as col_key_extra,
+                col_description(cl.oid, c.ordinal_position) as comment
          FROM information_schema.columns c
+         JOIN pg_catalog.pg_class cl ON cl.relname = c.table_name
+         JOIN pg_catalog.pg_namespace ns ON ns.oid = cl.relnamespace AND ns.nspname = c.table_schema
          LEFT JOIN (
            SELECT ku.column_name FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+             AND tc.table_schema = ku.table_schema
            WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 AND tc.table_schema = $2
          ) pk ON pk.column_name = c.column_name
+         LEFT JOIN (
+           SELECT ku.column_name FROM information_schema.table_constraints tc
+           JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+             AND tc.table_schema = ku.table_schema
+           WHERE tc.constraint_type = 'UNIQUE' AND tc.table_name = $1 AND tc.table_schema = $2
+         ) uq ON uq.column_name = c.column_name
          WHERE c.table_name = $1 AND c.table_schema = $2
          ORDER BY c.ordinal_position`,
         [table, schemaName]
       )
-      return result.rows.map((r: any) => ({
-        name: r.col_name, type: r.col_type,
-        nullable: r.nullable === 'YES', defaultValue: r.default_val,
-        isPrimaryKey: Boolean(r.is_pk),
-        isAutoIncrement: (r.default_val || '').includes('nextval')
-      }))
+      return result.rows.map((r: any) => {
+        const isPk = Boolean(r.is_pk)
+        const isSerial = (r.default_val || '').includes('nextval')
+        let columnKey = ''
+        if (isPk) columnKey = 'PRI'
+        else if (r.col_key_extra === 'UNI') columnKey = 'UNI'
+
+        return {
+          name: r.col_name,
+          type: r.col_type,
+          nullable: r.nullable === 'YES',
+          defaultValue: r.default_val,
+          isPrimaryKey: isPk,
+          isAutoIncrement: isSerial || r.is_identity === 'YES',
+          extra: isSerial ? 'serial' : (r.identity_gen ? `identity(${r.identity_gen})` : undefined),
+          comment: r.comment || undefined,
+          ordinalPosition: Number(r.ordinal_pos),
+          charset: null,
+          collation: r.collation || null,
+          columnKey,
+          identityGeneration: r.identity_gen || null,
+          isGenerated: r.is_generated === 'ALWAYS',
+          generationExpression: r.gen_expr || null,
+        }
+      })
     }
   }
 

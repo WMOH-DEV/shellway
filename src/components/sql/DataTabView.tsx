@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { DataGrid, type ForeignKeyMap, type DataGridHandle } from '@/components/sql/DataGrid'
-import { PaginationBar } from '@/components/sql/PaginationBar'
+import { PaginationBar, type TableViewMode } from '@/components/sql/PaginationBar'
 import { FilterBar } from '@/components/sql/FilterBar'
 import { buildWhereClause } from '@/utils/sqlFilterBuilder'
 import { useSQLConnection } from '@/stores/sqlStore'
@@ -15,6 +15,9 @@ import type {
   StagedChange,
   SchemaColumn,
 } from '@/types/sql'
+
+// Lazy-load StructureTabView — only needed when user toggles to structure mode
+const LazyStructureTabView = lazy(() => import('./StructureTabView'))
 
 // ── Props ──
 
@@ -161,6 +164,11 @@ export const DataTabView = React.memo(function DataTabView({
   const [foreignKeyMap, setForeignKeyMap] = useState<ForeignKeyMap>({})
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
   const [isCountLoading, setIsCountLoading] = useState(false)
+
+  // View mode: 'data' (grid) or 'structure' (table structure editor)
+  const [viewMode, setViewMode] = useState<TableViewMode>('data')
+  // Track if structure view has been visited — mount on first visit, keep alive after
+  const [structureMounted, setStructureMounted] = useState(false)
 
   // Ref for DataGrid imperative handle (column visibility controls)
   const dataGridRef = useRef<DataGridHandle>(null)
@@ -838,6 +846,41 @@ export const DataTabView = React.memo(function DataTabView({
     )
   }, [connectionId])
 
+  // ── Listen for external view-mode switch (e.g. context menu "View Structure") ──
+  useEffect(() => {
+    const handleSwitchToStructure = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId && detail?.table === table) {
+        setViewMode('structure')
+        setStructureMounted(true)
+      }
+    }
+    window.addEventListener('sql:switch-to-structure', handleSwitchToStructure)
+    return () => window.removeEventListener('sql:switch-to-structure', handleSwitchToStructure)
+  }, [connectionId, table])
+
+  // ── Listen for view-mode toggle from keyboard shortcut ──
+  useEffect(() => {
+    const handleToggleViewMode = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId && detail?.table === table) {
+        setViewMode((prev) => {
+          const next = prev === 'data' ? 'structure' : 'data'
+          if (next === 'structure') setStructureMounted(true)
+          return next
+        })
+      }
+    }
+    window.addEventListener('sql:toggle-view-mode', handleToggleViewMode)
+    return () => window.removeEventListener('sql:toggle-view-mode', handleToggleViewMode)
+  }, [connectionId, table])
+
+  // ── View mode change handler for PaginationBar toggle ──
+  const handleViewModeChange = useCallback((mode: TableViewMode) => {
+    setViewMode(mode)
+    if (mode === 'structure') setStructureMounted(true)
+  }, [])
+
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns])
 
@@ -893,32 +936,36 @@ export const DataTabView = React.memo(function DataTabView({
     return parts.join(':')
   }, [connectionConfig, currentDatabase, schema, table])
 
+  const isDataMode = viewMode === 'data'
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Filter Bar */}
-      <FilterBar
-        filters={filters}
-        columns={filterColumns}
-        onFiltersChange={handleFiltersChange}
-        onApply={handleFiltersApply}
-      />
+      {/* Filter Bar — only visible in data mode */}
+      {isDataMode && (
+        <FilterBar
+          filters={filters}
+          columns={filterColumns}
+          onFiltersChange={handleFiltersChange}
+          onApply={handleFiltersApply}
+        />
+      )}
 
-      {/* Error banner */}
-      {error && (
+      {/* Error banner — only show data errors in data mode */}
+      {isDataMode && error && (
         <div className="shrink-0 border-b border-nd-error/30 bg-nd-error/10 px-3 py-1.5 text-xs text-nd-error">
           {error}
         </div>
       )}
 
-      {/* Loading indicator */}
-      {isLoading && (
+      {/* Loading indicator — only in data mode */}
+      {isDataMode && isLoading && (
         <div className="absolute right-3 top-3 z-10">
           <Loader2 size={16} className="animate-spin text-nd-accent" />
         </div>
       )}
 
-      {/* Data Grid */}
-      <div className="relative flex-1 overflow-hidden">
+      {/* Data Grid — hidden (not unmounted) when in structure mode to preserve scroll/state */}
+      <div className={cn('relative flex-1 overflow-hidden', !isDataMode && 'hidden')}>
         <DataGrid
           ref={dataGridRef}
           result={result}
@@ -936,7 +983,28 @@ export const DataTabView = React.memo(function DataTabView({
         />
       </div>
 
-      {/* Pagination */}
+      {/* Structure View — lazy loaded, mounted on first visit, hidden when not active */}
+      {structureMounted && (
+        <div className={cn('relative flex-1 overflow-hidden', isDataMode && 'hidden')}>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin w-4 h-4 rounded-full border-2 border-nd-accent border-t-transparent" />
+              </div>
+            }
+          >
+            <LazyStructureTabView
+              sqlSessionId={sqlSessionId}
+              table={table}
+              schema={schema}
+              dbType={dbType}
+              connectionId={connectionId}
+            />
+          </Suspense>
+        </div>
+      )}
+
+      {/* Pagination / Bottom Bar with Data|Structure toggle */}
       <PaginationBar
         pagination={pagination}
         onPageChange={handlePageChange}
@@ -949,6 +1017,8 @@ export const DataTabView = React.memo(function DataTabView({
         foreignKeys={foreignKeyMap}
         onToggleColumn={handleToggleColumn}
         onShowAllColumns={handleShowAllColumns}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
       />
     </div>
   )

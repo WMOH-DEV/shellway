@@ -44,7 +44,55 @@ export interface SchemaColumn {
   isAutoIncrement: boolean
   extra?: string
   comment?: string
+  /** Ordinal position (1-based) */
+  ordinalPosition?: number
+  /** Character set (MySQL only) */
+  charset?: string | null
+  /** Collation name */
+  collation?: string | null
+  /** Column key indicator: 'PRI', 'UNI', 'MUL', '' */
+  columnKey?: string
+  /** Identity generation (PostgreSQL): 'ALWAYS' | 'BY DEFAULT' | null */
+  identityGeneration?: string | null
+  /** Whether the column is generated (stored/virtual) */
+  isGenerated?: boolean
+  /** Generation expression for computed columns */
+  generationExpression?: string | null
 }
+
+/** Full column metadata used by the Structure view for editing */
+export interface StructureColumn {
+  /** Unique ID for tracking in the UI */
+  _uid: string
+  /** 'existing' | 'added' — tracks if this is a new column */
+  _status: 'existing' | 'added'
+  /** Whether this column has been modified from its original state */
+  _modified: boolean
+  /** Whether this column is marked for deletion */
+  _deleted: boolean
+  /** Original column name (for rename detection) */
+  _originalName: string | null
+  /** Original column data before edits (for diff generation) */
+  _original: Omit<StructureColumn, '_uid' | '_status' | '_modified' | '_deleted' | '_originalName' | '_original'> | null
+
+  name: string
+  type: string
+  nullable: boolean
+  defaultValue: string | null
+  isPrimaryKey: boolean
+  isAutoIncrement: boolean
+  extra: string
+  comment: string
+  ordinalPosition: number
+  charset: string | null
+  collation: string | null
+  columnKey: string
+  identityGeneration: string | null
+  isGenerated: boolean
+  generationExpression: string | null
+}
+
+
 
 export interface SchemaIndex {
   name: string

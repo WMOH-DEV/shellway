@@ -526,22 +526,34 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   const handleOpenStructure = useCallback(
     (tableName: string) => {
-      const existingTab = tabs.find(
-        (t) => t.type === 'structure' && t.table === tableName
+      // Find existing data tab for this table, or create one
+      const existingDataTab = tabs.find(
+        (t) => t.type === 'data' && t.table === tableName
       )
-      if (existingTab) {
-        setActiveTab(existingTab.id)
+      if (existingDataTab) {
+        setActiveTab(existingDataTab.id)
       } else {
         const newTab: SQLTab = {
           id: crypto.randomUUID(),
-          type: 'structure',
-          label: `${tableName} (structure)`,
+          type: 'data',
+          label: tableName,
           table: tableName,
         }
         addTab(newTab)
+        setSelectedTable(tableName)
       }
+
+      // Dispatch event to switch the data tab's view mode to structure
+      // Use a short delay so the DataTabView has time to mount if it was just created
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('sql:switch-to-structure', {
+            detail: { connectionId, table: tableName },
+          })
+        )
+      }, 50)
     },
-    [tabs, addTab, setActiveTab]
+    [tabs, addTab, setActiveTab, setSelectedTable, connectionId]
   )
 
   // ── SchemaSidebar context menu handlers ──
@@ -560,12 +572,15 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         case 'copy-name':
           // Already handled in SchemaSidebar (clipboard copy)
           break
+        case 'view-structure':
+          handleOpenStructure(action.table)
+          break
         case 'drop-table':
           // TODO: Implement drop table confirmation dialog
           break
       }
     },
-    []
+    [handleOpenStructure]
   )
 
   const handleDatabaseAction = useCallback(
@@ -885,6 +900,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       sqlSessionId={sqlSessionId}
                       table={tab.table}
                       schema={tab.schema}
+                      dbType={dbType}
+                      connectionId={connectionId}
                     />
                   ) : (
                     <EmptyPanel />

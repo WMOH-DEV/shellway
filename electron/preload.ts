@@ -407,6 +407,11 @@ const api = {
       ipcRenderer.invoke('sql:getCollations', sqlSessionId, charset),
     generateDDL: (sqlSessionId: string, table: string, schema?: string) =>
       ipcRenderer.invoke('sql:generateDDL', sqlSessionId, table, schema),
+    executeStatements: (sqlSessionId: string, statements: string[]) =>
+      ipcRenderer.invoke('sql:executeStatements', sqlSessionId, statements) as Promise<{
+        success: boolean; error?: string; results?: { statement: string; success: boolean; error?: string }[];
+        failedStatement?: string
+      }>,
 
     // Transfer control
     cancelTransfer: (operationId: string) =>

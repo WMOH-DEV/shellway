@@ -58,40 +58,19 @@ export function useSQLShortcuts(
     )
   }, [])
 
-  // ── Cycle tab type (data → structure → query) ──
-  const cycleTabType = useCallback(() => {
+  // ── Toggle view mode (data ↔ structure) within data tabs ──
+  const toggleViewMode = useCallback(() => {
     const conn = getSQLConnectionState(connectionIdRef.current)
-    const store = useSQLStore.getState()
     const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
-    if (!activeTab || !activeTab.table) return
+    if (!activeTab) return
 
-    const cycle: Record<string, string> = {
-      data: 'structure',
-      structure: 'query',
-      query: 'data',
-    }
-    const nextType = cycle[activeTab.type] as SQLTab['type']
-
-    const existing = conn.tabs.find(
-      (t) => t.type === nextType && (nextType === 'query' || t.table === activeTab.table)
-    )
-
-    if (existing) {
-      store.setActiveTab(connectionIdRef.current, existing.id)
-    } else {
-      const label =
-        nextType === 'query'
-          ? `Query ${conn.tabs.filter((t) => t.type === 'query').length + 1}`
-          : nextType === 'structure'
-            ? `${activeTab.table} (structure)`
-            : activeTab.table
-      const newTab: SQLTab = {
-        id: crypto.randomUUID(),
-        type: nextType,
-        label,
-        table: nextType !== 'query' ? activeTab.table : undefined,
-      }
-      store.addTab(connectionIdRef.current, newTab)
+    // Only toggle view mode on data tabs that have a table
+    if (activeTab.type === 'data' && activeTab.table) {
+      window.dispatchEvent(
+        new CustomEvent('sql:toggle-view-mode', {
+          detail: { connectionId: connectionIdRef.current, table: activeTab.table },
+        })
+      )
     }
   }, [])
 
@@ -166,15 +145,15 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Cycle tab type (default CmdOrCtrl+.) ──
+      // ── Toggle data/structure view mode (default CmdOrCtrl+.) ──
       if (matchesBinding(e, 'sql:cycleTabType')) {
         e.preventDefault()
-        cycleTabType()
+        toggleViewMode()
         return
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [addQueryTab, closeActiveTab, applyChanges, cycleTabType])
+  }, [addQueryTab, closeActiveTab, applyChanges, toggleViewMode])
 }
