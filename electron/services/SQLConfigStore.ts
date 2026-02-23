@@ -129,6 +129,14 @@ export class SQLConfigStore {
     return this.store.get('configs', []).map((c) => this.decryptSecrets(c))
   }
 
+  /** Get all standalone database configs (sessionId starts with "db-"). */
+  getStandalone(): StoredSQLConfig[] {
+    return this.store
+      .get('configs', [])
+      .filter((c) => c.sessionId.startsWith('db-'))
+      .map((c) => this.decryptSecrets(c))
+  }
+
   // ── Key derivation ──
 
   /**

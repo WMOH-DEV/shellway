@@ -151,6 +151,32 @@ export function AppShell({ children }: AppShellProps) {
     addTab(tab)
   }, [addTab])
 
+  /** Reopen a saved standalone database connection by its sessionId */
+  const handleOpenSavedDatabase = useCallback(
+    (savedSessionId: string, name?: string) => {
+      // Check if already open
+      const currentTabs = useConnectionStore.getState().tabs
+      const existing = currentTabs.find((t) => t.sessionId === savedSessionId)
+      if (existing) {
+        useConnectionStore.getState().setActiveTab(existing.id)
+        return
+      }
+
+      const tabId = uuid()
+      const tab: ConnectionTab = {
+        id: tabId,
+        sessionId: savedSessionId,
+        sessionName: name || 'Database',
+        type: 'database',
+        status: 'disconnected',
+        activeSubTab: 'sql'
+      }
+
+      addTab(tab)
+    },
+    [addTab]
+  )
+
   // Listen for database connect requests from WelcomeScreen
   const { databaseConnectRequested, clearDatabaseConnectRequest } = useUIStore()
   useEffect(() => {
@@ -168,7 +194,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Main area: sidebar + content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <Sidebar onConnect={handleConnect} onConnectDatabase={handleConnectDatabase} />
+        <Sidebar onConnect={handleConnect} onConnectDatabase={handleConnectDatabase} onOpenSavedDatabase={handleOpenSavedDatabase} />
 
         {/* Content area */}
         <main className="flex-1 overflow-hidden">{children}</main>

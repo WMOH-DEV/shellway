@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,7 +11,8 @@ import {
   LayoutGrid,
   Home,
   Star,
-  ChevronDown
+  ChevronDown,
+  Clock
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { PathBreadcrumb } from './PathBreadcrumb'
@@ -93,6 +94,17 @@ export function FilePanel({
   const [showBookmarks, setShowBookmarks] = useState(false)
   const bookmarkDropdownRef = useRef<HTMLDivElement>(null)
 
+  // Recent paths — select raw data for stable reference, derive in useMemo
+  const pathHistoryForPanel = useSFTPPathStore(
+    (s) => s.pathHistory[`${sessionId}:${type}`]
+  )
+  const recentPaths = useMemo(() => {
+    if (!pathHistoryForPanel) return []
+    return pathHistoryForPanel.slice(-20).reverse()
+  }, [pathHistoryForPanel])
+  const [showRecent, setShowRecent] = useState(false)
+  const recentDropdownRef = useRef<HTMLDivElement>(null)
+
   const isCurrentPathBookmarked = bookmarks.some(
     (b) => b.path === currentPath && b.panelType === type
   )
@@ -131,6 +143,18 @@ export function FilePanel({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showBookmarks])
+
+  // Close recent paths dropdown on outside click
+  useEffect(() => {
+    if (!showRecent) return
+    const handler = (e: MouseEvent) => {
+      if (recentDropdownRef.current && !recentDropdownRef.current.contains(e.target as Node)) {
+        setShowRecent(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showRecent])
 
   /** Load directory contents */
   const loadDirectory = useCallback(
@@ -605,6 +629,59 @@ export function FilePanel({
                   <span className="text-2xs text-nd-text-muted uppercase">{bm.panelType}</span>
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent paths dropdown */}
+        <div className="relative" ref={recentDropdownRef}>
+          <Tooltip content="Recent Paths">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setShowRecent(!showRecent)}
+              disabled={recentPaths.length <= 1}
+            >
+              <Clock size={11} />
+            </Button>
+          </Tooltip>
+
+          {showRecent && recentPaths.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 z-50 min-w-[260px] max-w-[400px] max-h-[280px] overflow-y-auto rounded-md bg-nd-bg-secondary border border-nd-border shadow-xl py-1">
+              <div className="px-3 py-1 border-b border-nd-border mb-1">
+                <span className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider">
+                  Recent Paths
+                </span>
+              </div>
+              {recentPaths
+                .filter((p) => p !== currentPath)
+                .slice(0, 20)
+                .map((p) => {
+                  // Show the last segment as the label, full path as a subtitle
+                  const sep = p.includes('\\') ? '\\' : '/'
+                  const segments = p.split(sep).filter(Boolean)
+                  const label = segments[segments.length - 1] || p
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        navigateTo(p)
+                        setShowRecent(false)
+                      }}
+                      className={cn(
+                        'w-full flex flex-col gap-0 px-3 py-1.5 text-left',
+                        'hover:bg-nd-surface transition-colors'
+                      )}
+                    >
+                      <span className="text-xs text-nd-text-primary truncate">{label}</span>
+                      <span className="text-2xs text-nd-text-muted font-mono truncate">{p}</span>
+                    </button>
+                  )
+                })}
+              {recentPaths.filter((p) => p !== currentPath).length === 0 && (
+                <div className="px-3 py-2 text-2xs text-nd-text-muted">No other recent paths</div>
+              )}
             </div>
           )}
         </div>

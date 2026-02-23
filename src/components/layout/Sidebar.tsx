@@ -21,9 +21,20 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { toast } from '@/components/ui/Toast'
 import type { Session } from '@/types/session'
 
+/** Minimal shape for a saved standalone DB config (from SQLConfigStore via IPC) */
+interface SavedDBConfig {
+  sessionId: string
+  connectionName?: string
+  type: 'mysql' | 'postgres'
+  host: string
+  port: number
+  database: string
+}
+
 interface SidebarProps {
   onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp' | 'both') => void
   onConnectDatabase: () => void
+  onOpenSavedDatabase: (savedSessionId: string, name?: string) => void
 }
 
 /**
@@ -31,10 +42,38 @@ interface SidebarProps {
  * Session cards double as connection tabs: single-click switches, close disconnects.
  * Collapsible to icon-only (48px) with compact session avatars.
  */
-export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
+export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: SidebarProps) {
   const { sidebarOpen, toggleSidebar, toggleSettings, toggleHostKeyManager, toggleClientKeyManager } = useUIStore()
   const { sessions } = useSessionStore()
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
+
+  // ── Saved standalone DB configs (persisted across restarts) ──
+  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>([])
+
+  // Track database tab count to refresh saved configs only when DB tabs are added/removed
+  const dbTabCount = useMemo(() => tabs.filter((t) => t.type === 'database').length, [tabs])
+
+  // Load saved standalone DB configs on mount and when DB tab count changes
+  // (to refresh after a new DB is saved/connected or a DB tab is closed)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const result = await window.novadeck.sql.configGetStandalone()
+        if (!cancelled && result?.success && Array.isArray(result.data)) {
+          setSavedDBs(result.data as SavedDBConfig[])
+        }
+      } catch { /* ignore */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [dbTabCount])
+
+  // Saved DBs that are NOT currently open as tabs
+  const savedDBsNotOpen = useMemo(() => {
+    const openSessionIds = new Set(tabs.filter((t) => t.type === 'database').map((t) => t.sessionId))
+    return savedDBs.filter((db) => !openSessionIds.has(db.sessionId))
+  }, [savedDBs, tabs])
 
   const width = sidebarOpen ? 260 : 48
 
@@ -135,13 +174,14 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
           {/* SessionManager handles everything — sessions are both saved items AND connection tabs */}
           <SessionManager onConnect={onConnect} />
 
-          {/* Standalone database tabs — shown below the session list */}
-          {tabs.filter((t) => t.type === 'database').length > 0 && (
+          {/* Standalone database tabs + saved configs — shown below the session list */}
+          {(tabs.filter((t) => t.type === 'database').length > 0 || savedDBsNotOpen.length > 0) && (
             <div className="shrink-0 border-t border-nd-border px-2 py-1.5">
               <span className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider px-1 mb-1 block">
                 Databases
               </span>
               <div className="flex flex-col gap-0.5">
+                {/* Currently open database tabs */}
                 {tabs.filter((t) => t.type === 'database').map((dbTab) => {
                   const isActive = dbTab.id === activeTabId
                   return (
@@ -171,6 +211,35 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
                         }}
                         className="ml-auto p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
                         title="Close"
+                      >
+                        <X size={12} />
+                      </span>
+                    </button>
+                  )
+                })}
+
+                {/* Saved but not currently open databases */}
+                {savedDBsNotOpen.map((db) => {
+                  const label = db.connectionName || `${db.type.toUpperCase()} · ${db.database || db.host}`
+                  return (
+                    <button
+                      key={db.sessionId}
+                      onClick={() => onOpenSavedDatabase(db.sessionId, label)}
+                      className="group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface transition-colors"
+                    >
+                      <Database size={13} className="text-nd-text-muted opacity-50" />
+                      <span className="truncate">{label}</span>
+                      <span
+                        role="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          // Delete the saved config permanently
+                          window.novadeck.sql.configDelete(db.sessionId)
+                            .then(() => setSavedDBs((prev) => prev.filter((d) => d.sessionId !== db.sessionId)))
+                            .catch(() => {})
+                        }}
+                        className="ml-auto p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
+                        title="Delete saved connection"
                       >
                         <X size={12} />
                       </span>
@@ -298,7 +367,7 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
                 )
               })}
 
-            {/* Standalone database tab avatars */}
+            {/* Standalone database tab avatars (open) */}
             {tabs.filter((t) => t.type === 'database').map((dbTab) => {
               const isActive = dbTab.id === activeTabId
               const isDbConnected = dbTab.status === 'connected'
@@ -327,6 +396,23 @@ export function Sidebar({ onConnect, onConnectDatabase }: SidebarProps) {
                     {isDbConnecting && (
                       <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
                     )}
+                  </button>
+                </Tooltip>
+              )
+            })}
+
+            {/* Saved but not open database avatars */}
+            {savedDBsNotOpen.map((db) => {
+              const label = db.connectionName || `${db.type.toUpperCase()} · ${db.database || db.host}`
+              return (
+                <Tooltip key={db.sessionId} content={label} side="right">
+                  <button
+                    onClick={() => onOpenSavedDatabase(db.sessionId, label)}
+                    className="relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0 opacity-50 hover:opacity-100 hover:bg-nd-surface"
+                  >
+                    <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600/50">
+                      <Database size={12} className="text-white/70" />
+                    </div>
                   </button>
                 </Tooltip>
               )

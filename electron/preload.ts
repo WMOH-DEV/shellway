@@ -376,6 +376,8 @@ const api = {
       ipcRenderer.invoke('sql:config:save', config) as Promise<{ success: boolean; error?: string }>,
     configDelete: (sessionId: string) =>
       ipcRenderer.invoke('sql:config:delete', sessionId) as Promise<{ success: boolean; error?: string }>,
+    configGetStandalone: () =>
+      ipcRenderer.invoke('sql:config:getStandalone') as Promise<{ success: boolean; data?: Record<string, any>[]; error?: string }>,
   },
 
   // ── Health ──

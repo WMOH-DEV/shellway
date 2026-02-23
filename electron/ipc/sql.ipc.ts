@@ -224,6 +224,15 @@ export function registerSQLIPC(): void {
       return { success: false, error: err.message }
     }
   })
+
+  ipcMain.handle('sql:config:getStandalone', () => {
+    try {
+      const configs = sqlConfigStore.getStandalone()
+      return { success: true, data: configs }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
 }
 
 // ── Helper: find a free local port ──

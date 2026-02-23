@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import { useSessionStore } from '@/stores/sessionStore'
+import { useSFTPPathStore } from '@/stores/sftpPathStore'
 import type { Session } from '@/types/session'
 import { v4 as uuid } from 'uuid'
 
@@ -50,7 +51,8 @@ export function useSession() {
     async (id: string) => {
       await window.novadeck.sessions.delete(id)
       removeSession(id)
-      // Clean up "Remember Last" view preference
+      // Clean up persisted SFTP paths and view preference for the deleted session
+      useSFTPPathStore.getState().clearSession(id)
       try { localStorage.removeItem(`shellway:lastView:${id}`) } catch { /* ignore */ }
     },
     [removeSession]
@@ -74,6 +76,7 @@ export function useSession() {
       await window.novadeck.sessions.deleteMany(ids)
       ids.forEach((id) => {
         removeSession(id)
+        useSFTPPathStore.getState().clearSession(id)
         try { localStorage.removeItem(`shellway:lastView:${id}`) } catch { /* ignore */ }
       })
     },

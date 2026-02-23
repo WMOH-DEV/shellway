@@ -111,9 +111,13 @@ export class ExportService {
 
     if (options.includeSQLConfigs) {
       const allConfigs = this.sqlConfigStore.getAll()
-      // Filter out orphaned configs whose session no longer exists
+      // Filter out orphaned configs whose session no longer exists.
+      // Standalone DB configs (sessionId starts with "db-") are always included
+      // since they don't belong to any SSH session.
       const allSessionIds = new Set(this.sessionStore.getAll().map((s) => s.id))
-      sqlConfigs = allConfigs.filter((c) => allSessionIds.has(c.sessionId))
+      sqlConfigs = allConfigs.filter(
+        (c) => c.sessionId.startsWith('db-') || allSessionIds.has(c.sessionId)
+      )
     }
 
     if (options.includeSettings) {
@@ -322,6 +326,42 @@ export class ExportService {
         // 2. Import SQL configs (matched by sessionId, respecting idMap)
         if (options.importSQLConfigs) {
           for (const config of payload.sqlConfigs) {
+            // Standalone DB configs (sessionId starts with "db-") are imported
+            // directly — they don't belong to any SSH session.
+            const isStandalone = config.sessionId.startsWith('db-')
+
+            if (isStandalone) {
+              const existingConfig = this.sqlConfigStore.get(config.sessionId)
+
+              if (existingConfig) {
+                switch (options.conflictResolution) {
+                  case 'skip':
+                    result.sqlConfigs.skipped++
+                    break
+
+                  case 'overwrite':
+                    this.sqlConfigStore.save(config)
+                    result.sqlConfigs.overwritten++
+                    break
+
+                  case 'duplicate': {
+                    const newSessionId = `db-${randomUUID()}`
+                    this.sqlConfigStore.save({
+                      ...config,
+                      sessionId: newSessionId,
+                      connectionName: `${config.connectionName || 'Database'} (imported)`,
+                    })
+                    result.sqlConfigs.added++
+                    break
+                  }
+                }
+              } else {
+                this.sqlConfigStore.save(config)
+                result.sqlConfigs.added++
+              }
+              continue
+            }
+
             const mappedId = idMap.get(config.sessionId)
 
             // Only import configs whose session was imported (or exists)
@@ -366,10 +406,27 @@ export class ExportService {
                 break
 
               case 'overwrite':
-              case 'duplicate':
                 this.sqlConfigStore.save(config)
                 result.sqlConfigs.overwritten++
                 break
+
+              case 'duplicate': {
+                // For standalone configs, generate a new sessionId.
+                // For SSH-session configs, use the same sessionId (only one config per session).
+                if (config.sessionId.startsWith('db-')) {
+                  const newSessionId = `db-${randomUUID()}`
+                  this.sqlConfigStore.save({
+                    ...config,
+                    sessionId: newSessionId,
+                    connectionName: `${config.connectionName || 'Database'} (imported)`,
+                  })
+                  result.sqlConfigs.added++
+                } else {
+                  this.sqlConfigStore.save(config)
+                  result.sqlConfigs.overwritten++
+                }
+                break
+              }
             }
           } else {
             this.sqlConfigStore.save(config)
