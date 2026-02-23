@@ -6,6 +6,7 @@ import { getSQLConfigStore } from './sql.ipc'
 import { getSettingsStore } from './settings.ipc'
 import { getSnippetStore } from './snippet.ipc'
 import { getHostKeyStore } from './hostkey.ipc'
+import { getClientKeyStore } from './clientkey.ipc'
 
 let exportService: ExportService | null = null
 
@@ -17,6 +18,7 @@ function getExportService(): ExportService {
       getSettingsStore(),
       getSnippetStore(),
       getHostKeyStore(),
+      getClientKeyStore(),
     )
   }
   return exportService
@@ -37,6 +39,7 @@ function validateExportOptions(raw: unknown): ExportOptions | string {
     includeSettings: !!o.includeSettings,
     includeSnippets: !!o.includeSnippets,
     includeHostKeys: !!o.includeHostKeys,
+    includeClientKeys: !!o.includeClientKeys,
     password: typeof o.password === 'string' ? o.password : undefined,
   }
 }
@@ -56,6 +59,7 @@ function validateImportOptions(raw: unknown): ImportOptions | string {
     importSettings: !!o.importSettings,
     importSnippets: !!o.importSnippets,
     importHostKeys: !!o.importHostKeys,
+    importClientKeys: !!o.importClientKeys,
     conflictResolution: resolution as 'skip' | 'overwrite' | 'duplicate',
     selectedSessionIds: Array.isArray(o.selectedSessionIds) ? o.selectedSessionIds : null,
   }
@@ -70,6 +74,8 @@ function validatePayloadShape(raw: unknown): string | null {
   if (!Array.isArray(p.hostKeys)) return 'Invalid payload: "hostKeys" must be an array'
   if (!Array.isArray(p.groups)) return 'Invalid payload: "groups" must be an array'
   if (!Array.isArray(p.snippetCategories)) return 'Invalid payload: "snippetCategories" must be an array'
+  // clientKeys is optional for backward compatibility with older exports
+  if (p.clientKeys !== undefined && !Array.isArray(p.clientKeys)) return 'Invalid payload: "clientKeys" must be an array'
   return null
 }
 

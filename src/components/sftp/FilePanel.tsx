@@ -649,10 +649,20 @@ export function FilePanel({
 
           {showRecent && recentPaths.length > 0 && (
             <div className="absolute top-full left-0 mt-1 z-50 min-w-[260px] max-w-[400px] max-h-[280px] overflow-y-auto rounded-md bg-nd-bg-secondary border border-nd-border shadow-xl py-1">
-              <div className="px-3 py-1 border-b border-nd-border mb-1">
+              <div className="px-3 py-1 border-b border-nd-border mb-1 flex items-center justify-between">
                 <span className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider">
                   Recent Paths
                 </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    useSFTPPathStore.getState().clearPanelHistory(sessionId, type)
+                    setShowRecent(false)
+                  }}
+                  className="text-2xs text-nd-text-muted hover:text-nd-error transition-colors"
+                >
+                  Clear
+                </button>
               </div>
               {recentPaths
                 .filter((p) => p !== currentPath)

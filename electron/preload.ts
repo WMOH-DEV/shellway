@@ -54,8 +54,8 @@ const api = {
           includesCredentials: boolean;
           payload: {
             sessions: unknown[]; sqlConfigs: unknown[]; settings: unknown;
-            snippets: unknown[]; hostKeys: unknown[]; groups: string[];
-            snippetCategories: string[];
+            snippets: unknown[]; hostKeys: unknown[]; clientKeys: unknown[];
+            groups: string[]; snippetCategories: string[];
           };
         };
       }>,
@@ -68,6 +68,7 @@ const api = {
           settings: boolean;
           snippets: { added: number; skipped: number };
           hostKeys: { added: number; skipped: number };
+          clientKeys: { added: number; skipped: number; overwritten: number };
         };
       }>
   },

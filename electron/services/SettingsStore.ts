@@ -1,4 +1,5 @@
 import Store from 'electron-store'
+import { DEFAULT_KEYBINDINGS } from '../../src/types/keybindings'
 
 /** Application settings shape (matches renderer AppSettings type) */
 export interface AppSettings {
@@ -61,6 +62,9 @@ export interface AppSettings {
 
   // Session behavior
   sessionAutoSave: boolean
+
+  // Keyboard shortcuts (actionId → combo string)
+  keybindings: Record<string, string>
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -114,7 +118,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifyOnDisconnect: true,
   notifyOnTransferComplete: true,
 
-  sessionAutoSave: true
+  sessionAutoSave: true,
+
+  keybindings: { ...DEFAULT_KEYBINDINGS }
 }
 
 /**
@@ -138,9 +144,14 @@ export class SettingsStore {
     }
   }
 
-  /** Get all settings */
+  /** Get all settings (deep-merges keybindings so new actions get defaults) */
   getAll(): AppSettings {
-    return { ...DEFAULT_SETTINGS, ...this.store.get('settings') }
+    const saved = this.store.get('settings') as Partial<AppSettings> | undefined
+    return {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      keybindings: { ...DEFAULT_SETTINGS.keybindings, ...saved?.keybindings }
+    }
   }
 
   /** Get a single setting value */

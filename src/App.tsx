@@ -14,6 +14,7 @@ import { HostKeyVerifyDialog } from '@/components/keys/HostKeyVerifyDialog'
 import { KBDIDialog } from '@/components/sessions/KBDIDialog'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useKeybindingStore } from '@/stores/keybindingStore'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
 import { useLogStore } from '@/stores/logStore'
 import { toast } from '@/components/ui/Toast'
@@ -61,6 +62,11 @@ export default function App() {
       }
     }).catch((err) => {
       console.warn('Failed to load persisted settings on startup:', err)
+    })
+
+    // Load customized keybindings from settings
+    useKeybindingStore.getState().loadBindings().catch((err) => {
+      console.warn('Failed to load keybindings on startup:', err)
     })
   }, [setTheme])
 

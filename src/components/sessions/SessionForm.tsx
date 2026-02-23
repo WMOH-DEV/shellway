@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X, Save, Key, Server, Shield, Terminal, Palette, Monitor,
   FolderTree, Wifi, Globe, StickyNote, Cog, Plus, Trash2,
@@ -415,7 +415,41 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
   }
 
   // ── Test Connection ──
+  const TEST_TIMEOUT_MS = 30_000
+
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const testIdRef = useRef<string | null>(null)
+  const testAbortRef = useRef<AbortController | null>(null)
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleCancelTest = useCallback(() => {
+    // Already finished — nothing to cancel
+    if (!testAbortRef.current || testAbortRef.current.signal.aborted) return
+
+    if (testIdRef.current) {
+      window.novadeck.ssh.disconnect(testIdRef.current).catch(() => {})
+      testIdRef.current = null
+    }
+    testAbortRef.current.abort()
+    testAbortRef.current = null
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current)
+      resetTimerRef.current = null
+    }
+    setTestState('idle')
+    toast.info('Test cancelled', 'Connection test was cancelled')
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (testIdRef.current) {
+        window.novadeck.ssh.disconnect(testIdRef.current).catch(() => {})
+      }
+      testAbortRef.current?.abort()
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
+    }
+  }, [])
 
   const handleTestConnection = useCallback(async () => {
     if (!form.host || !form.username) {
@@ -425,9 +459,12 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
 
     setTestState('testing')
     const testId = `test-${Date.now()}`
+    testIdRef.current = testId
+    const abort = new AbortController()
+    testAbortRef.current = abort
 
     try {
-      const result = await window.novadeck.ssh.connect(testId, {
+      const connectPromise = window.novadeck.ssh.connect(testId, {
         host: form.host,
         port: form.port,
         username: form.username,
@@ -439,6 +476,14 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
         shellCommand: form.shellCommand || '',
         environmentVariables: form.environmentVariables || {}
       })
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('Connection timed out')), TEST_TIMEOUT_MS)
+        abort.signal.addEventListener('abort', () => clearTimeout(timer))
+      })
+
+      const result = await Promise.race([connectPromise, timeoutPromise])
+
+      if (abort.signal.aborted) return
 
       if (result.success) {
         setTestState('success')
@@ -450,12 +495,27 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
         toast.error('Connection failed', result.error || 'Unknown error')
       }
     } catch (err) {
+      if (abort.signal.aborted) return
       setTestState('error')
-      toast.error('Connection failed', String(err))
+      const msg = String(err)
+      if (msg.includes('timed out')) {
+        toast.error('Connection timed out', `Could not connect to ${form.host} within ${TEST_TIMEOUT_MS / 1000} seconds`)
+      } else {
+        toast.error('Connection failed', msg)
+      }
+      // Cleanup the hanging connection
+      window.novadeck.ssh.disconnect(testId).catch(() => {})
+    } finally {
+      if (!abort.signal.aborted) {
+        testIdRef.current = null
+        testAbortRef.current = null
+        // Reset indicator after 3 seconds
+        resetTimerRef.current = setTimeout(() => {
+          setTestState('idle')
+          resetTimerRef.current = null
+        }, 3000)
+      }
     }
-
-    // Reset indicator after 3 seconds
-    setTimeout(() => setTestState('idle'), 3000)
   }, [form])
 
   // ── Startup command helpers ──
@@ -1331,17 +1391,23 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
 
             {/* Footer */}
             <div className="flex items-center justify-between px-5 py-3 border-t border-nd-border shrink-0">
-              <Button
-                variant="outline"
-                onClick={handleTestConnection}
-                disabled={!form.host || !form.username || testState === 'testing'}
-              >
-                {testState === 'testing' && <Loader2 size={14} className="animate-spin" />}
-                {testState === 'success' && <CheckCircle size={14} className="text-nd-success" />}
-                {testState === 'error' && <XCircle size={14} className="text-nd-error" />}
-                {testState === 'idle' && <Plug size={14} />}
-                {testState === 'testing' ? 'Testing...' : testState === 'success' ? 'Connected!' : testState === 'error' ? 'Failed' : 'Test Connection'}
-              </Button>
+              {testState === 'testing' ? (
+                <Button variant="outline" onClick={handleCancelTest}>
+                  <Loader2 size={14} className="animate-spin" />
+                  Cancel Test
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={handleTestConnection}
+                  disabled={!form.host || !form.username}
+                >
+                  {testState === 'success' && <CheckCircle size={14} className="text-nd-success" />}
+                  {testState === 'error' && <XCircle size={14} className="text-nd-error" />}
+                  {testState === 'idle' && <Plug size={14} />}
+                  {testState === 'success' ? 'Connected!' : testState === 'error' ? 'Failed' : 'Test Connection'}
+                </Button>
+              )}
               <div className="flex items-center gap-2">
                 <Button variant="ghost" onClick={onClose}>
                   Cancel

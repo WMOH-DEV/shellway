@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { TerminalView } from './TerminalView'
+import { SnippetPalette } from './SnippetPalette'
 import { SnippetManager } from '@/components/snippets/SnippetManager'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Button } from '@/components/ui/Button'
@@ -13,6 +14,8 @@ import type { SearchAddon } from '@xterm/addon-search'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { resolveTerminalSettings, type ResolvedTerminalSettings } from '@/utils/resolveSettings'
+import { formatCombo } from '@/utils/keybindings'
+import { getBinding } from '@/stores/keybindingStore'
 import type { AppSettings } from '@/types/settings'
 
 interface TerminalTabsProps {
@@ -53,9 +56,12 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id)
   const [searchAddons, setSearchAddons] = useState<Map<string, SearchAddon>>(new Map())
   const [clearHandlers, setClearHandlers] = useState<Map<string, () => void>>(new Map())
+  const [focusHandlers, setFocusHandlers] = useState<Map<string, () => void>>(new Map())
+  const [pasteHandlers, setPasteHandlers] = useState<Map<string, (text: string) => void>>(new Map())
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
+  const [snippetPaletteOpen, setSnippetPaletteOpen] = useState(false)
 
   const addTab = useCallback(() => {
     const newTab: TerminalTab = {
@@ -72,6 +78,12 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       if (tabs.length <= 1) return
 
       window.novadeck.terminal.close(id)
+
+      // Clean up handler maps to avoid holding references to disposed Terminal instances
+      setSearchAddons((prev) => { const m = new Map(prev); m.delete(id); return m })
+      setClearHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
+      setFocusHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
+      setPasteHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
 
       setTabs((prev) => prev.filter((t) => t.id !== id))
       if (activeTabId === id) {
@@ -104,10 +116,37 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
     setClearHandlers((prev) => new Map(prev).set(shellId, clearFn))
   }, [])
 
+  const registerFocusHandler = useCallback((shellId: string, focusFn: () => void) => {
+    setFocusHandlers((prev) => new Map(prev).set(shellId, focusFn))
+  }, [])
+
+  const registerPasteHandler = useCallback((shellId: string, pasteFn: (text: string) => void) => {
+    setPasteHandlers((prev) => new Map(prev).set(shellId, pasteFn))
+  }, [])
+
   const handleClear = useCallback(() => {
     const clearFn = clearHandlers.get(activeTabId)
     if (clearFn) clearFn()
   }, [clearHandlers, activeTabId])
+
+  /** Re-focus the active terminal (e.g. after palette/modal closes) */
+  const refocusTerminal = useCallback(() => {
+    requestAnimationFrame(() => {
+      const focusFn = focusHandlers.get(activeTabId)
+      if (focusFn) focusFn()
+    })
+  }, [focusHandlers, activeTabId])
+
+  /** Insert text into the active terminal via xterm paste (flows through onData for buffer tracking) */
+  const pasteIntoTerminal = useCallback((text: string) => {
+    const pasteFn = pasteHandlers.get(activeTabId)
+    if (pasteFn) {
+      pasteFn(text)
+    } else {
+      // Fallback to direct IPC write if paste handler not yet registered
+      window.novadeck.terminal.write(activeTabId, text)
+    }
+  }, [pasteHandlers, activeTabId])
 
   return (
     <div className="flex flex-col h-full">
@@ -203,7 +242,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
             </Button>
           </Tooltip>
 
-          <Tooltip content="Command Snippets">
+          <Tooltip content={`Command Snippets (${formatCombo(getBinding('terminal:snippetPalette'))} for quick palette)`}>
             <Button
               variant="ghost"
               size="icon"
@@ -244,18 +283,39 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
                 setIsSearchOpen(true)
               }}
               onClearHandler={(clearFn) => registerClearHandler(tab.id, clearFn)}
+              onFocusHandler={(focusFn) => registerFocusHandler(tab.id, focusFn)}
+              onPasteHandler={(pasteFn) => registerPasteHandler(tab.id, pasteFn)}
+              onSnippetPaletteRequest={() => setSnippetPaletteOpen(true)}
             />
           </div>
         ))}
+
+        {/* Snippet quick palette */}
+        <SnippetPalette
+          open={snippetPaletteOpen}
+          onClose={() => {
+            setSnippetPaletteOpen(false)
+            refocusTerminal()
+          }}
+          onInsert={(command) => {
+            pasteIntoTerminal(command)
+            setSnippetPaletteOpen(false)
+            refocusTerminal()
+          }}
+        />
       </div>
 
       {/* Snippet Manager modal */}
       <SnippetManager
         open={snippetManagerOpen}
-        onClose={() => setSnippetManagerOpen(false)}
-        onInsert={(command) => {
-          window.novadeck.terminal.write(activeTabId, command)
+        onClose={() => {
           setSnippetManagerOpen(false)
+          refocusTerminal()
+        }}
+        onInsert={(command) => {
+          pasteIntoTerminal(command)
+          setSnippetManagerOpen(false)
+          refocusTerminal()
         }}
       />
     </div>

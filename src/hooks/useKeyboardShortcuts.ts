@@ -1,24 +1,16 @@
 import { useEffect } from 'react'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { useUIStore } from '@/stores/uiStore'
+import { matchesBinding } from '@/stores/keybindingStore'
 
 /**
  * Global keyboard shortcuts for quick-launch actions.
- *
- * Shortcuts:
- *   Ctrl+Shift+T  — New terminal tab on current connection
- *   Ctrl+Shift+F  — Open/switch to SFTP on current connection
- *   Ctrl+Shift+B  — Toggle Terminal + SFTP split view
- *   Ctrl+1        — Focus terminal pane
- *   Ctrl+2        — Focus SFTP pane
+ * Keybindings are read from the keybinding store (customizable via Settings → Shortcuts).
  */
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const ctrl = e.ctrlKey || e.metaKey
-
-      // ── Ctrl+Shift+T: New terminal tab ──
-      if (ctrl && e.shiftKey && e.key === 'T') {
+      // ── New terminal tab ──
+      if (matchesBinding(e, 'global:newTerminalTab')) {
         e.preventDefault()
         const activeTabId = useConnectionStore.getState().activeTabId
         if (!activeTabId) return
@@ -26,7 +18,6 @@ export function useKeyboardShortcuts() {
         const activeTab = useConnectionStore.getState().tabs.find((t) => t.id === activeTabId)
         if (!activeTab || activeTab.status !== 'connected') return
 
-        // Switch to terminal sub-tab and emit event for new terminal shell
         useConnectionStore.getState().updateTab(activeTabId, { activeSubTab: 'terminal' })
         window.dispatchEvent(
           new CustomEvent('novadeck:new-terminal', { detail: { connectionId: activeTabId } })
@@ -34,8 +25,8 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // ── Ctrl+Shift+F: Open/switch to SFTP ──
-      if (ctrl && e.shiftKey && e.key === 'F') {
+      // ── Switch to SFTP ──
+      if (matchesBinding(e, 'global:switchToSFTP')) {
         e.preventDefault()
         const activeTabId = useConnectionStore.getState().activeTabId
         if (!activeTabId) return
@@ -47,8 +38,8 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // ── Ctrl+Shift+D: Open/switch to SQL ──
-      if (ctrl && e.shiftKey && e.key === 'D') {
+      // ── Switch to SQL ──
+      if (matchesBinding(e, 'global:switchToSQL')) {
         e.preventDefault()
         const activeTabId = useConnectionStore.getState().activeTabId
         if (!activeTabId) return
@@ -60,8 +51,8 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // ── Ctrl+Shift+B: Toggle Terminal + SFTP split view on active tab ──
-      if (ctrl && e.shiftKey && e.key === 'B') {
+      // ── Toggle Terminal + SFTP split view ──
+      if (matchesBinding(e, 'global:toggleSplitView')) {
         e.preventDefault()
         const activeTabId = useConnectionStore.getState().activeTabId
         if (!activeTabId) return
@@ -69,26 +60,24 @@ export function useKeyboardShortcuts() {
         const activeTab = useConnectionStore.getState().tabs.find((t) => t.id === activeTabId)
         if (!activeTab || activeTab.status !== 'connected') return
 
-        // Toggle split view on the active tab
         const newSplitView = !activeTab.splitView
         useConnectionStore.getState().updateTab(activeTabId, { splitView: newSplitView })
 
-        // Ensure we're on terminal or sftp for split view to show
         if (newSplitView && activeTab.activeSubTab !== 'terminal' && activeTab.activeSubTab !== 'sftp') {
           useConnectionStore.getState().updateTab(activeTabId, { activeSubTab: 'terminal' })
         }
         return
       }
 
-      // ── Ctrl+1: Focus terminal pane ──
-      if (ctrl && !e.shiftKey && e.key === '1') {
+      // ── Focus terminal pane ──
+      if (matchesBinding(e, 'global:focusTerminal')) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('novadeck:focus-pane', { detail: { pane: 'terminal' } }))
         return
       }
 
-      // ── Ctrl+2: Focus SFTP pane ──
-      if (ctrl && !e.shiftKey && e.key === '2') {
+      // ── Focus SFTP pane ──
+      if (matchesBinding(e, 'global:focusSFTP')) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('novadeck:focus-pane', { detail: { pane: 'sftp' } }))
         return

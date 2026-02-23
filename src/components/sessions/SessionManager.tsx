@@ -35,7 +35,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
 
   const { searchQuery, setSearchQuery } = useSessionStore()
   const { tabs, activeTabId, removeTab } = useConnectionStore()
-  const { sessionFormRequested, clearSessionFormRequest } = useUIStore()
+  const { sessionFormRequested, clearSessionFormRequest, expandedGroups, toggleGroup } = useUIStore()
 
   // Form state
   const [formOpen, setFormOpen] = useState(false)
@@ -49,7 +49,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   // Groups
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [groups, setGroups] = useState<string[]>([])
 
   // Load persisted groups + derive from session data
@@ -104,6 +103,23 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
       clearSessionFormRequest()
     }
   }, [sessionFormRequested, clearSessionFormRequest])
+
+  // Auto-expand the group containing the active session.
+  // Runs on mount (sidebar uncollapse), when active tab changes, and when sessions change
+  // (e.g. a session's group is edited while it's the active tab).
+  // INTENTIONALLY excludes expandedGroups and toggleGroup from deps to avoid re-triggering
+  // when we ourselves cause a group to expand. The `!expandedGroups.has()` guard reads the
+  // current store value at call time, which is safe since Zustand state is always fresh.
+  useEffect(() => {
+    if (!activeTabId) return
+    const activeTab = tabs.find((t) => t.id === activeTabId)
+    if (!activeTab) return
+    const activeSession = sessions.find((s) => s.id === activeTab.sessionId)
+    if (activeSession?.group && !expandedGroups.has(activeSession.group)) {
+      toggleGroup(activeSession.group)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, sessions])
 
   // Compute filtered sessions
   const filteredSessions = useMemo(() => {
@@ -301,14 +317,7 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     setImportDialogOpen(true)
   }, [])
 
-  const toggleGroup = useCallback((group: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(group)) next.delete(group)
-      else next.add(group)
-      return next
-    })
-  }, [])
+
 
   const getConnectionStatus = (sessionId: string) => {
     const tab = tabs.find((t) => t.sessionId === sessionId)

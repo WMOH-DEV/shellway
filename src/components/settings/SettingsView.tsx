@@ -25,7 +25,9 @@ import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
 import { FontPicker } from '@/components/settings/FontPicker'
+import { KeybindingsSection } from '@/components/settings/KeybindingsSection'
 import { useUIStore } from '@/stores/uiStore'
+import { useKeybindingStore } from '@/stores/keybindingStore'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
@@ -49,6 +51,7 @@ const SECTIONS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
   { id: 'connection', label: 'Connection', icon: <Wifi size={13} /> },
+  { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={13} /> },
   { id: 'about', label: 'About', icon: <Info size={13} /> }
 ]
 
@@ -101,6 +104,8 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
     setTheme(DEFAULT_SETTINGS.theme)
     applyAccentColor(DEFAULT_SETTINGS.accentColor)
     applyDensity(DEFAULT_SETTINGS.density)
+    // Sync keybinding store with reset settings
+    useKeybindingStore.getState().resetAll()
     toast.info('Settings reset to defaults')
   }, [setTheme])
 
@@ -458,6 +463,10 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
             </SettingsSection>
           )}
 
+          {activeSection === 'shortcuts' && (
+            <KeybindingsSection />
+          )}
+
           {activeSection === 'about' && (
             <div>
               <div className="flex flex-col items-center text-center mb-6">
@@ -522,7 +531,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
           )}
 
           {/* Reset button — show on all sections except About */}
-          {activeSection !== 'about' && (
+          {activeSection !== 'about' && activeSection !== 'shortcuts' && (
             <div className="mt-6 pt-4 border-t border-nd-border">
               <Button variant="outline" size="sm" onClick={handleReset}>
                 Reset All to Defaults

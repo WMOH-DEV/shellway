@@ -6,7 +6,23 @@ import type { StoredSQLConfig, SQLConfigStore } from './SQLConfigStore'
 import type { AppSettings, SettingsStore } from './SettingsStore'
 import type { StoredSnippet, SnippetStore } from './SnippetStore'
 import type { HostKeyStore } from './HostKeyStore'
+import type { ClientKeyStore } from './ClientKeyStore'
 import type { TrustedHostKey } from '../../src/types/hostkey'
+
+export interface ExportedClientKey {
+  id: string
+  name: string
+  keyType: string
+  keySize: number
+  fingerprint: string
+  publicKey: string
+  privateKeyData: string | null
+  hasPassphrase: boolean
+  passphrase: string | null
+  comment?: string
+  createdAt: number
+  lastUsed?: number
+}
 
 // ── Export file types ──
 
@@ -33,6 +49,7 @@ export interface ShellwayExportPayload {
   settings: AppSettings | null
   snippets: StoredSnippet[]
   hostKeys: TrustedHostKey[]
+  clientKeys: ExportedClientKey[]
   groups: string[]
   snippetCategories: string[]
 }
@@ -46,6 +63,7 @@ export interface ExportOptions {
   includeSettings: boolean
   includeSnippets: boolean
   includeHostKeys: boolean
+  includeClientKeys: boolean
   password?: string
 }
 
@@ -55,6 +73,7 @@ export interface ImportOptions {
   importSettings: boolean
   importSnippets: boolean
   importHostKeys: boolean
+  importClientKeys: boolean
   conflictResolution: 'skip' | 'overwrite' | 'duplicate'
   /** Session IDs to import (null = all) */
   selectedSessionIds: string[] | null
@@ -66,6 +85,7 @@ export interface ImportResult {
   settings: boolean
   snippets: { added: number; skipped: number }
   hostKeys: { added: number; skipped: number }
+  clientKeys: { added: number; skipped: number; overwritten: number }
 }
 
 export interface ParsedImport {
@@ -90,6 +110,7 @@ export class ExportService {
     private settingsStore: SettingsStore,
     private snippetStore: SnippetStore,
     private hostKeyStore: HostKeyStore,
+    private clientKeyStore: ClientKeyStore,
   ) {}
 
   // ── Export ──
@@ -101,6 +122,7 @@ export class ExportService {
     let settings: AppSettings | null = null
     let snippets: StoredSnippet[] = []
     let hostKeys: TrustedHostKey[] = []
+    let clientKeys: ExportedClientKey[] = []
     let groups: string[] = []
     let snippetCategories: string[] = []
 
@@ -133,10 +155,15 @@ export class ExportService {
       hostKeys = this.hostKeyStore.getAll()
     }
 
+    if (options.includeClientKeys) {
+      clientKeys = this.clientKeyStore.getAllDecryptedForExport()
+    }
+
     // 2. Strip credentials if requested
     if (!options.includeCredentials) {
       sessions = sessions.map((s) => this.stripSessionCredentials(s))
       sqlConfigs = sqlConfigs.map((c) => this.stripSQLConfigCredentials(c))
+      clientKeys = clientKeys.map(k => ({ ...k, privateKeyData: null, passphrase: null }))
     }
 
     // 3. Build payload
@@ -146,6 +173,7 @@ export class ExportService {
       settings,
       snippets,
       hostKeys,
+      clientKeys,
       groups,
       snippetCategories,
     }
@@ -236,6 +264,11 @@ export class ExportService {
       return { success: false, error: validationError }
     }
 
+    // Normalize for backward compatibility (old exports may not have clientKeys)
+    if (!Array.isArray(payload.clientKeys)) {
+      payload.clientKeys = []
+    }
+
     return {
       success: true,
       data: {
@@ -258,6 +291,7 @@ export class ExportService {
       settings: false,
       snippets: { added: 0, skipped: 0 },
       hostKeys: { added: 0, skipped: 0 },
+      clientKeys: { added: 0, skipped: 0, overwritten: 0 },
     }
 
     // Each section is wrapped in try/catch so a failure in one area
@@ -523,6 +557,19 @@ export class ExportService {
       // Host key import failed — result reflects what succeeded
     }
 
+    // 6. Import client keys
+    try {
+      if (options.importClientKeys && payload.clientKeys?.length > 0) {
+        const clientKeyResult = this.clientKeyStore.importFromExport(
+          payload.clientKeys,
+          options.conflictResolution
+        )
+        result.clientKeys = clientKeyResult
+      }
+    } catch {
+      // Client key import failed — result reflects what succeeded
+    }
+
     return result
   }
 
@@ -590,6 +637,11 @@ export class ExportService {
 
     if (!Array.isArray(p.hostKeys)) {
       return 'Invalid payload: "hostKeys" must be an array.'
+    }
+
+    // clientKeys is optional for backward compatibility (old exports won't have it)
+    if (p.clientKeys !== undefined && !Array.isArray(p.clientKeys)) {
+      return 'Invalid payload: "clientKeys" must be an array.'
     }
 
     if (!Array.isArray(p.groups)) {

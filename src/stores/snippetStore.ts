@@ -56,3 +56,8 @@ export const useSnippetStore = create<SnippetState>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSelectedCategory: (category) => set({ selectedCategory: category })
 }))
+
+/** Find a snippet by its shortcut abbreviation (case-sensitive exact match) */
+export function findSnippetByShortcut(shortcut: string): Snippet | undefined {
+  return useSnippetStore.getState().snippets.find((s) => s.shortcut === shortcut)
+}

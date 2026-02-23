@@ -13,6 +13,11 @@ interface UIState {
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
 
+  // ── Sidebar groups ──
+  expandedGroups: Set<string>
+  toggleGroup: (group: string) => void
+  setExpandedGroups: (groups: Set<string>) => void
+
   // ── Transfer queue ──
   transferQueueOpen: boolean
   toggleTransferQueue: () => void
@@ -87,6 +92,17 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarWidth: 260,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
+
+  // ── Sidebar groups ──
+  expandedGroups: new Set<string>(),
+  toggleGroup: (group) =>
+    set((s) => {
+      const next = new Set(s.expandedGroups)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return { expandedGroups: next }
+    }),
+  setExpandedGroups: (groups) => set({ expandedGroups: groups }),
 
   // ── Transfer queue ──
   transferQueueOpen: false,

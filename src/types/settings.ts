@@ -1,3 +1,5 @@
+import { DEFAULT_KEYBINDINGS } from './keybindings'
+
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system'
 
@@ -83,6 +85,9 @@ export interface AppSettings {
 
   // Session behavior
   sessionAutoSave: boolean             // Auto-save session changes
+
+  // Keyboard shortcuts (actionId → combo string, e.g. 'CmdOrCtrl+Shift+S')
+  keybindings: Record<string, string>
 }
 
 /** Default settings */
@@ -137,5 +142,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyOnDisconnect: true,
   notifyOnTransferComplete: true,
 
-  sessionAutoSave: true
+  sessionAutoSave: true,
+
+  keybindings: { ...DEFAULT_KEYBINDINGS }
 }

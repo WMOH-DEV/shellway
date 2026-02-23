@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Upload, FileUp, Lock, AlertTriangle, Monitor, Database,
-  Settings, Code2, KeyRound, CheckCircle, Loader2,
+  Settings, Code2, KeyRound, Key, CheckCircle, Loader2,
   ChevronRight, SkipForward, Copy, Replace
 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
@@ -27,6 +27,7 @@ interface ParsedPayload {
   settings: any | null
   snippets: any[]
   hostKeys: any[]
+  clientKeys: any[]
   groups: any[]
   snippetCategories: string[]
 }
@@ -46,6 +47,7 @@ interface ImportResults {
   settingsUpdated: boolean
   snippets: { added: number; skipped: number }
   hostKeys: { added: number; skipped: number }
+  clientKeys: { added: number; skipped: number; overwritten: number }
 }
 
 type Step = 'file' | 'preview' | 'results'
@@ -72,6 +74,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
   const [importSettings, setImportSettings] = useState(true)
   const [importSnippets, setImportSnippets] = useState(true)
   const [importHostKeys, setImportHostKeys] = useState(true)
+  const [importClientKeys, setImportClientKeys] = useState(true)
   const [conflictMode, setConflictMode] = useState<ConflictMode>('skip')
   const [importing, setImporting] = useState(false)
 
@@ -95,6 +98,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
     setImportSettings(true)
     setImportSnippets(true)
     setImportHostKeys(true)
+    setImportClientKeys(true)
     setConflictMode('skip')
     setImporting(false)
     setResults(null)
@@ -145,6 +149,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
               settings: null,
               snippets: [],
               hostKeys: [],
+              clientKeys: [],
               groups: [],
               snippetCategories: []
             }
@@ -190,6 +195,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
           settings: result.data.payload.settings,
           snippets: result.data.payload.snippets as any[],
           hostKeys: result.data.payload.hostKeys as any[],
+          clientKeys: ((result.data.payload as any).clientKeys ?? []) as any[],
           groups: result.data.payload.groups as any[],
           snippetCategories: result.data.payload.snippetCategories
         }
@@ -284,7 +290,8 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
         sqlConfigs: importSqlConfigs ? parsed.payload.sqlConfigs : [],
         settings: importSettings ? parsed.payload.settings : null,
         snippets: importSnippets ? parsed.payload.snippets : [],
-        hostKeys: importHostKeys ? parsed.payload.hostKeys : []
+        hostKeys: importHostKeys ? parsed.payload.hostKeys : [],
+        clientKeys: importClientKeys ? parsed.payload.clientKeys : [],
       }
 
       const importOptions: Record<string, unknown> = {
@@ -293,6 +300,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
         importSettings: importSettings,
         importSnippets: importSnippets,
         importHostKeys: importHostKeys,
+        importClientKeys: importClientKeys,
         conflictResolution: conflictMode,
         selectedSessionIds: null, // Already filtered in payload
       }
@@ -310,7 +318,8 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
         sqlConfigs: result.data.sqlConfigs,
         settingsUpdated: result.data.settings,
         snippets: result.data.snippets,
-        hostKeys: result.data.hostKeys
+        hostKeys: result.data.hostKeys,
+        clientKeys: result.data.clientKeys ?? { added: 0, skipped: 0, overwritten: 0 },
       })
       setStep('results')
       onComplete()
@@ -319,11 +328,11 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
     } finally {
       setImporting(false)
     }
-  }, [parsed, importSessions, selectedSessions, importSqlConfigs, importSettings, importSnippets, importHostKeys, conflictMode, onComplete])
+  }, [parsed, importSessions, selectedSessions, importSqlConfigs, importSettings, importSnippets, importHostKeys, importClientKeys, conflictMode, onComplete])
 
   const canImport =
     !importing &&
-    (importSessions || importSqlConfigs || importSettings || importSnippets || importHostKeys) &&
+    (importSessions || importSqlConfigs || importSettings || importSnippets || importHostKeys || importClientKeys) &&
     (!importSessions || selectedSessions.size > 0)
 
   // ── Render ──
@@ -425,12 +434,13 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
         {step === 'preview' && parsed && (
           <div className="flex flex-col gap-4">
             {/* Summary cards */}
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <SummaryCard icon={Monitor} label="Sessions" count={parsed.payload.sessions.length} />
               <SummaryCard icon={Database} label="SQL Configs" count={parsed.payload.sqlConfigs.length} />
               <SummaryCard icon={Settings} label="Settings" count={parsed.payload.settings ? 1 : 0} isBoolean />
               <SummaryCard icon={Code2} label="Snippets" count={parsed.payload.snippets.length} />
               <SummaryCard icon={KeyRound} label="Host Keys" count={parsed.payload.hostKeys.length} />
+              <SummaryCard icon={Key} label="Client Keys" count={parsed.payload.clientKeys?.length ?? 0} />
             </div>
 
             {parsed.includesCredentials && (
@@ -551,6 +561,15 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
                     onChange={setImportHostKeys}
                   />
                 )}
+                {(parsed.payload.clientKeys?.length ?? 0) > 0 && (
+                  <ImportCheckbox
+                    icon={Key}
+                    label="Client keys"
+                    count={parsed.payload.clientKeys.length}
+                    checked={importClientKeys}
+                    onChange={setImportClientKeys}
+                  />
+                )}
               </div>
             </div>
 
@@ -663,6 +682,13 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
                 label="Host Keys"
                 added={results.hostKeys.added}
                 skipped={results.hostKeys.skipped}
+              />
+              <ResultRow
+                icon={Key}
+                label="Client Keys"
+                added={results.clientKeys.added}
+                skipped={results.clientKeys.skipped}
+                overwritten={results.clientKeys.overwritten}
               />
             </div>
 

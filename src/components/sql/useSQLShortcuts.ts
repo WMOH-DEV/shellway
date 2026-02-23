@@ -1,23 +1,18 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
+import { matchesBinding } from '@/stores/keybindingStore'
 import type { SQLTab } from '@/types/sql'
 
 /**
  * SQL-specific keyboard shortcuts — only active when the SQL sub-tab is
  * the active panel AND the SQL connection is established.
  *
- * Non-conflicting shortcuts (safe in Electron/macOS):
- *   Cmd+Enter          — Run query (dispatches event to QueryEditor)
- *   Cmd+S              — Apply staged changes (overrides save — fine in Electron)
- *   Cmd+Shift+N        — New query tab (was Cmd+T — conflicts with OS)
- *   Cmd+Shift+W        — Close current SQL tab (was Cmd+W — conflicts with OS)
- *   Cmd+Shift+I        — Insert new row
- *   Cmd+.              — Cycle tab type: data → structure → query
- *   Escape             — Cancel cell edit / close overlays
+ * Keybindings are read from the keybinding store (customizable via Settings → Shortcuts).
  *
- * NOTE: Removed Cmd+R (conflicts with reload), Cmd+H (hides app on macOS),
- *   Cmd+F (find-in-page), Cmd+E (Spotlight), Cmd+T (new tab), Cmd+W (close window),
- *   Cmd+Z (text undo). These are too disruptive to override.
+ * Hardcoded (non-customizable):
+ *   Escape  — Cancel cell edit / close overlays
+ *
+ * NOTE: Copy/paste, Cmd+Z (undo), browser shortcuts are NOT overridden.
  */
 export function useSQLShortcuts(
   connectionId: string,
@@ -105,16 +100,14 @@ export function useSQLShortcuts(
       // Only process when SQL panel is actively visible + connected
       if (!isActiveRef.current || !sqlSessionRef.current) return
 
-      const ctrl = e.ctrlKey || e.metaKey
-
-      // ── Escape: Cancel cell edit / close overlays ──
+      // ── Escape: Cancel cell edit / close overlays (hardcoded — universal) ──
       if (e.key === 'Escape') {
         window.dispatchEvent(new CustomEvent('sql:escape'))
         return
       }
 
-      // ── F5: Refresh data (no modifier needed) ──
-      if (e.key === 'F5') {
+      // ── Refresh data (default F5) ──
+      if (matchesBinding(e, 'sql:refresh')) {
         e.preventDefault()
         window.dispatchEvent(
           new CustomEvent('sql:refresh-data', {
@@ -124,18 +117,15 @@ export function useSQLShortcuts(
         return
       }
 
-      if (!ctrl) return
-
-      // ── Ctrl+B: Toggle sidebar ──
-      if (!e.shiftKey && e.key === 'b') {
+      // ── Toggle sidebar (default CmdOrCtrl+B) ──
+      if (matchesBinding(e, 'sql:toggleSidebar')) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('sql:toggle-sidebar'))
         return
       }
 
-      // ── Cmd+Enter: Run query ──
-      // (Monaco also handles this internally, but we dispatch for non-Monaco contexts)
-      if (e.key === 'Enter') {
+      // ── Run query (default CmdOrCtrl+Enter) ──
+      if (matchesBinding(e, 'sql:runQuery')) {
         e.preventDefault()
         window.dispatchEvent(
           new CustomEvent('sql:run-query', {
@@ -145,10 +135,9 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Cmd+S: Apply staged changes ──
-      // Safe to override in Electron (no native "Save" meaning for a DB client)
-      // Skip only if inside Monaco editor (let it handle its own Cmd+S)
-      if (!e.shiftKey && e.key === 's') {
+      // ── Apply staged changes (default CmdOrCtrl+S) ──
+      // Skip if inside Monaco editor (let it handle its own save)
+      if (matchesBinding(e, 'sql:applyChanges')) {
         const target = e.target as HTMLElement
         if (target?.closest('.monaco-editor')) return
         e.preventDefault()
@@ -156,29 +145,29 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Cmd+Shift+N: New query tab ──
-      if (e.shiftKey && e.key === 'N') {
+      // ── New query tab (default CmdOrCtrl+Shift+N) ──
+      if (matchesBinding(e, 'sql:newTab')) {
         e.preventDefault()
         addQueryTab()
         return
       }
 
-      // ── Cmd+Shift+W: Close current SQL tab ──
-      if (e.shiftKey && e.key === 'W') {
+      // ── Close current SQL tab (default CmdOrCtrl+Shift+W) ──
+      if (matchesBinding(e, 'sql:closeTab')) {
         e.preventDefault()
         closeActiveTab()
         return
       }
 
-      // ── Cmd+Shift+I: Insert new row ──
-      if (e.shiftKey && e.key === 'I') {
+      // ── Insert new row (default CmdOrCtrl+Shift+I) ──
+      if (matchesBinding(e, 'sql:insertRow')) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('sql:insert-row'))
         return
       }
 
-      // ── Cmd+.: Cycle tab type ──
-      if (e.key === '.') {
+      // ── Cycle tab type (default CmdOrCtrl+.) ──
+      if (matchesBinding(e, 'sql:cycleTabType')) {
         e.preventDefault()
         cycleTabType()
         return

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Search, Plus, Edit2, Trash2, Tag, Terminal, X } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { cn } from '@/utils/cn'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { v4 as uuid } from 'uuid'
 import type { Snippet } from '@/types/snippet'
@@ -25,10 +26,12 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
   // Form state
   const [formName, setFormName] = useState('')
   const [formCommand, setFormCommand] = useState('')
+  const [formShortcut, setFormShortcut] = useState('')
   const [formCategory, setFormCategory] = useState('')
   const [formNewCategory, setFormNewCategory] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [useNewCategory, setUseNewCategory] = useState(false)
+  const [shortcutError, setShortcutError] = useState('')
 
   useEffect(() => {
     if (open) {
@@ -48,6 +51,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
           s.name.toLowerCase().includes(q) ||
           s.command.toLowerCase().includes(q) ||
           s.category.toLowerCase().includes(q) ||
+          (s.shortcut && s.shortcut.toLowerCase().includes(q)) ||
           (s.description && s.description.toLowerCase().includes(q))
       )
     }
@@ -58,10 +62,12 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
     setEditingSnippet(null)
     setFormName('')
     setFormCommand('')
+    setFormShortcut('')
     setFormCategory(categories[0] || '')
     setFormNewCategory('')
     setFormDescription('')
     setUseNewCategory(categories.length === 0)
+    setShortcutError('')
     setIsFormOpen(true)
   }, [categories])
 
@@ -69,10 +75,12 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
     setEditingSnippet(snippet)
     setFormName(snippet.name)
     setFormCommand(snippet.command)
+    setFormShortcut(snippet.shortcut || '')
     setFormCategory(snippet.category)
     setFormNewCategory('')
     setFormDescription(snippet.description || '')
     setUseNewCategory(false)
+    setShortcutError('')
     setIsFormOpen(true)
   }, [])
 
@@ -80,10 +88,28 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
     const category = useNewCategory ? formNewCategory.trim() : formCategory
     if (!formName.trim() || !formCommand.trim() || !category) return
 
+    // Validate shortcut: minimum 2 chars and no duplicates
+    const trimmedShortcut = formShortcut.trim()
+    if (trimmedShortcut) {
+      if (trimmedShortcut.length < 2) {
+        setShortcutError('Shortcut must be at least 2 characters')
+        return
+      }
+      const existing = snippets.find(
+        (s) => s.shortcut === trimmedShortcut && s.id !== editingSnippet?.id
+      )
+      if (existing) {
+        setShortcutError(`Shortcut "${trimmedShortcut}" is already used by "${existing.name}"`)
+        return
+      }
+    }
+    setShortcutError('')
+
     if (editingSnippet) {
       await updateSnippet(editingSnippet.id, {
         name: formName.trim(),
         command: formCommand.trim(),
+        shortcut: formShortcut.trim() || undefined,
         category,
         description: formDescription.trim() || undefined
       })
@@ -93,6 +119,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
         id: uuid(),
         name: formName.trim(),
         command: formCommand.trim(),
+        shortcut: formShortcut.trim() || undefined,
         category,
         description: formDescription.trim() || undefined,
         createdAt: now,
@@ -100,7 +127,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
       })
     }
     setIsFormOpen(false)
-  }, [editingSnippet, formName, formCommand, formCategory, formNewCategory, formDescription, useNewCategory, updateSnippet, addSnippet])
+  }, [editingSnippet, formName, formCommand, formShortcut, formCategory, formNewCategory, formDescription, useNewCategory, updateSnippet, addSnippet, snippets])
 
   const handleDelete = useCallback(async (id: string) => {
     await removeSnippet(id)
@@ -108,8 +135,8 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
 
   const handleInsert = useCallback((command: string) => {
     onInsert(command)
-    onClose()
-  }, [onInsert, onClose])
+    // Parent's onInsert callback handles closing the manager and refocusing the terminal
+  }, [onInsert])
 
   return (
     <Modal
@@ -189,6 +216,26 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
                     placeholder="e.g. Restart Nginx"
                     className="w-full h-7 px-2.5 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-nd-text-muted mb-1">Shortcut (optional, 2+ chars)</label>
+                  <input
+                    type="text"
+                    value={formShortcut}
+                    onChange={(e) => {
+                      setFormShortcut(e.target.value.replace(/\s/g, ''))
+                      setShortcutError('')
+                    }}
+                    placeholder="e.g. rn — type in terminal + Tab to expand"
+                    className={cn(
+                      'w-full h-7 px-2.5 rounded bg-nd-surface border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none transition-colors font-mono',
+                      shortcutError ? 'border-nd-error focus:border-nd-error' : 'border-nd-border focus:border-nd-accent'
+                    )}
+                  />
+                  {shortcutError && (
+                    <p className="text-[10px] text-nd-error mt-0.5">{shortcutError}</p>
+                  )}
                 </div>
 
                 <div>
@@ -290,6 +337,11 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
                         <span className="text-xs font-medium text-nd-text-primary truncate">
                           {snippet.name}
                         </span>
+                        {snippet.shortcut && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-nd-accent/10 text-nd-accent border border-nd-accent/20 font-mono shrink-0">
+                            {snippet.shortcut}
+                          </span>
+                        )}
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-nd-surface text-nd-text-muted border border-nd-border shrink-0">
                           {snippet.category}
                         </span>

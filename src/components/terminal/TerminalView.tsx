@@ -6,6 +6,8 @@ import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { cn } from '@/utils/cn'
 import { TERMINAL_THEMES } from '@/data/terminalThemes'
+import { findSnippetByShortcut } from '@/stores/snippetStore'
+import { matchesBinding } from '@/stores/keybindingStore'
 import type { ResolvedTerminalSettings } from '@/utils/resolveSettings'
 
 interface TerminalViewProps {
@@ -25,6 +27,12 @@ interface TerminalViewProps {
   onSearchRequest?: () => void
   /** Register a clear function for this terminal */
   onClearHandler?: (clearFn: () => void) => void
+  /** Callback when user presses Ctrl+Shift+S to open snippet palette */
+  onSnippetPaletteRequest?: () => void
+  /** Register a focus function so parent can re-focus this terminal */
+  onFocusHandler?: (focusFn: () => void) => void
+  /** Register a paste function so parent can insert text through xterm's onData flow */
+  onPasteHandler?: (pasteFn: (text: string) => void) => void
   className?: string
 }
 
@@ -54,18 +62,26 @@ export function TerminalView({
   onSearchAddon,
   onSearchRequest,
   onClearHandler,
+  onSnippetPaletteRequest,
+  onFocusHandler,
+  onPasteHandler,
   className
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const onSearchRequestRef = useRef(onSearchRequest)
+  const onSnippetPaletteRequestRef = useRef(onSnippetPaletteRequest)
   const [isReady, setIsReady] = useState(false)
 
-  // Keep ref in sync
+  // Keep refs in sync
   useEffect(() => {
     onSearchRequestRef.current = onSearchRequest
   }, [onSearchRequest])
+
+  useEffect(() => {
+    onSnippetPaletteRequestRef.current = onSnippetPaletteRequest
+  }, [onSnippetPaletteRequest])
 
   // Initialize terminal
   useEffect(() => {
@@ -117,8 +133,76 @@ export function TerminalView({
       })
     }
 
-    // Forward terminal input to main process via IPC
+    if (onFocusHandler) {
+      onFocusHandler(() => {
+        terminal.focus()
+      })
+    }
+
+    if (onPasteHandler) {
+      onPasteHandler((text: string) => {
+        terminal.paste(text)
+      })
+    }
+
+    // Buffer to track the current word for snippet expansion
+    const inputBuffer = { current: '' }
+
+    // Forward terminal input to main process via IPC (with snippet expansion)
     terminal.onData((data) => {
+      // Tab — check for snippet expansion
+      if (data === '\t') {
+        const word = inputBuffer.current
+        if (word.length > 0) {
+          const snippet = findSnippetByShortcut(word)
+          if (snippet) {
+            // Erase the shortcut from the remote shell by sending backspaces.
+            // NOTE: \x7f (DEL) works as backspace on most modern shells with xterm-256color TERM,
+            // but may not work on some legacy shells or unusual TERM configurations.
+            const eraseSeq = '\x7f'.repeat(word.length)
+            window.novadeck.terminal.write(shellId, eraseSeq)
+            // Send the expanded command
+            window.novadeck.terminal.write(shellId, snippet.command)
+            inputBuffer.current = ''
+            return // Don't send the Tab
+          }
+        }
+        // No match — pass Tab through for shell completion
+        window.novadeck.terminal.write(shellId, data)
+        inputBuffer.current = ''
+        return
+      }
+
+      // Enter, Ctrl+C, Ctrl+U — reset buffer
+      if (data === '\r' || data === '\x03' || data === '\x15') {
+        inputBuffer.current = ''
+        window.novadeck.terminal.write(shellId, data)
+        return
+      }
+
+      // Backspace — remove last char from buffer
+      if (data === '\x7f' || data === '\b') {
+        inputBuffer.current = inputBuffer.current.slice(0, -1)
+        window.novadeck.terminal.write(shellId, data)
+        return
+      }
+
+      // Space — reset the word buffer (we only track the current word)
+      if (data === ' ') {
+        inputBuffer.current = ''
+        window.novadeck.terminal.write(shellId, data)
+        return
+      }
+
+      // Printable single characters — append to buffer
+      if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        inputBuffer.current += data
+        window.novadeck.terminal.write(shellId, data)
+        return
+      }
+
+      // Multi-char data (paste, escape sequences, etc.) — reset buffer and pass through
+      inputBuffer.current = ''
       window.novadeck.terminal.write(shellId, data)
     })
 
@@ -150,32 +234,39 @@ export function TerminalView({
     })
     resizeObserver.observe(containerRef.current)
 
-    // ── Keyboard shortcuts: Ctrl+F search, Ctrl+C/V clipboard ──
+    // ── Keyboard shortcuts (customizable bindings + hardcoded copy/paste) ──
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      // Search: Ctrl+F opens search bar
-      if (e.type === 'keydown' && e.ctrlKey && !e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+      if (e.type !== 'keydown') return true
+
+      // Search: customizable (default Ctrl+F)
+      if (matchesBinding(e, 'terminal:search')) {
         onSearchRequestRef.current?.()
-        return false // Prevent default browser find
+        return false
       }
 
-      // Copy: Ctrl+Shift+C, or Ctrl+C when text is selected
-      if (e.type === 'keydown' && e.ctrlKey && (e.key === 'C' || e.key === 'c')) {
+      // Copy: Ctrl+Shift+C, or Ctrl+C when text is selected (hardcoded — universal)
+      if (e.ctrlKey && (e.key === 'C' || e.key === 'c')) {
         const hasSelection = terminal.hasSelection()
         if (e.shiftKey || hasSelection) {
           if (hasSelection) {
             navigator.clipboard.writeText(terminal.getSelection())
           }
-          return false // Prevent xterm from sending Ctrl+C to shell
+          return false
         }
-        // No selection + no shift → let xterm send SIGINT as usual
         return true
       }
 
-      // Paste: Ctrl+Shift+V or Ctrl+V
-      if (e.type === 'keydown' && e.ctrlKey && (e.key === 'V' || e.key === 'v')) {
+      // Paste: Ctrl+Shift+V or Ctrl+V (hardcoded — universal)
+      if (e.ctrlKey && (e.key === 'V' || e.key === 'v')) {
         navigator.clipboard.readText().then((text) => {
           if (text) terminal.paste(text)
         })
+        return false
+      }
+
+      // Snippet palette: customizable (default CmdOrCtrl+Shift+S)
+      if (matchesBinding(e, 'terminal:snippetPalette')) {
+        onSnippetPaletteRequestRef.current?.()
         return false
       }
 

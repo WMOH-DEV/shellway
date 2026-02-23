@@ -27,6 +27,8 @@ interface SFTPPathState {
   getRecentPaths: (sessionId: string, panelType: 'local' | 'remote', count?: number) => string[]
   /** Clear paths for a session */
   clearSession: (sessionId: string) => void
+  /** Clear path history for a specific session + panel, keeping the current path */
+  clearPanelHistory: (sessionId: string, panelType: 'local' | 'remote') => void
 }
 
 const MAX_HISTORY_PER_PANEL = 500
@@ -72,6 +74,18 @@ export const useSFTPPathStore = create<SFTPPathState>()(
           delete pathHistory[`${sessionId}:local`]
           delete pathHistory[`${sessionId}:remote`]
           return { paths, pathHistory }
+        }),
+
+      clearPanelHistory: (sessionId, panelType) =>
+        set((state) => {
+          const key = `${sessionId}:${panelType}`
+          const currentPath = state.paths[key]
+          return {
+            pathHistory: {
+              ...state.pathHistory,
+              [key]: currentPath ? [currentPath] : []
+            }
+          }
         })
     }),
     {

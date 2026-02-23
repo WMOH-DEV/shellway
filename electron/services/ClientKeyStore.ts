@@ -154,6 +154,121 @@ export class ClientKeyStore {
     }
   }
 
+  /** Get all keys with private key data decrypted (for export). Returns null values for keys that can't be decrypted. */
+  getAllDecryptedForExport(): Array<{
+    id: string
+    name: string
+    keyType: 'rsa' | 'ed25519' | 'ecdsa'
+    keySize: number
+    fingerprint: string
+    publicKey: string
+    privateKeyData: string | null
+    hasPassphrase: boolean
+    passphrase: string | null
+    comment?: string
+    createdAt: number
+    lastUsed?: number
+  }> {
+    const keys = this.store.get('clientKeys', [])
+    return keys.map(k => {
+      let privateKeyData: string | null = null
+      let passphrase: string | null = null
+      try {
+        privateKeyData = decrypt(k.privateKeyEncrypted, this.masterKey)
+        if (k.passphraseEncrypted) {
+          passphrase = decrypt(k.passphraseEncrypted, this.masterKey)
+        }
+      } catch {
+        // Can't decrypt — will be null
+      }
+      return {
+        id: k.id,
+        name: k.name,
+        keyType: k.keyType,
+        keySize: k.keySize,
+        fingerprint: k.fingerprint,
+        publicKey: k.publicKey,
+        privateKeyData,
+        hasPassphrase: k.hasPassphrase,
+        passphrase,
+        comment: k.comment,
+        createdAt: k.createdAt,
+        lastUsed: k.lastUsed,
+      }
+    })
+  }
+
+  /** Import client keys from decrypted export data, encrypting with this instance's master key */
+  importFromExport(
+    keys: Array<{
+      id: string; name: string; keyType: string; keySize: number;
+      fingerprint: string; publicKey: string;
+      privateKeyData: string | null; hasPassphrase: boolean; passphrase: string | null;
+      comment?: string; createdAt: number; lastUsed?: number;
+    }>,
+    conflictResolution: 'skip' | 'overwrite' | 'duplicate'
+  ): { added: number; skipped: number; overwritten: number } {
+    const existing = this.store.get('clientKeys', [])
+    const result = { added: 0, skipped: 0, overwritten: 0 }
+
+    for (const key of keys) {
+      if (!key.privateKeyData) {
+        result.skipped++ // Can't import without private key
+        continue
+      }
+
+      const entry: ClientKey = {
+        id: key.id,
+        name: key.name,
+        keyType: key.keyType as 'rsa' | 'ed25519' | 'ecdsa',
+        keySize: key.keySize,
+        fingerprint: key.fingerprint,
+        publicKey: key.publicKey,
+        privateKeyEncrypted: encrypt(key.privateKeyData, this.masterKey),
+        hasPassphrase: key.hasPassphrase,
+        passphraseEncrypted: key.passphrase ? encrypt(key.passphrase, this.masterKey) : undefined,
+        comment: key.comment,
+        createdAt: key.createdAt,
+        lastUsed: key.lastUsed,
+      }
+
+      const existingIdx = existing.findIndex(k => k.id === key.id)
+      const fingerprintIdx = existing.findIndex(k => k.fingerprint === key.fingerprint)
+
+      if (existingIdx >= 0 || fingerprintIdx >= 0) {
+        switch (conflictResolution) {
+          case 'skip':
+            result.skipped++
+            break
+          case 'overwrite': {
+            const idx = existingIdx >= 0 ? existingIdx : fingerprintIdx
+            // When overwriting by fingerprint match (not ID match), preserve the existing key's ID
+            // so that local sessions referencing the old key ID don't get broken
+            if (existingIdx < 0 && fingerprintIdx >= 0) {
+              entry.id = existing[fingerprintIdx].id
+            }
+            existing[idx] = entry
+            result.overwritten++
+            break
+          }
+          case 'duplicate': {
+            entry.id = randomUUID()
+            entry.name = `${key.name} (imported)`
+            existing.push(entry)
+            result.added++
+            break
+          }
+        }
+      } else {
+        existing.push(entry)
+        result.added++
+      }
+    }
+
+    this.store.set('clientKeys', existing)
+    return result
+  }
+
   /** Analyze a private key to extract type, size, fingerprint, and public key */
   private analyzeKey(
     privateKeyData: string,

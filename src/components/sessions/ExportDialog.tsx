@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
-  Download, Monitor, Database, Settings, Code2, KeyRound,
+  Download, Monitor, Database, Settings, Code2, KeyRound, Key,
   ShieldAlert, Lock, AlertTriangle, Loader2
 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
@@ -21,6 +21,7 @@ interface ExportCounts {
   sqlConfigs: number
   snippets: number
   hostKeys: number
+  clientKeys: number
 }
 
 // ── Helpers ──
@@ -42,6 +43,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
   const [settings, setSettings] = useState(true)
   const [snippets, setSnippets] = useState(true)
   const [hostKeys, setHostKeys] = useState(true)
+  const [clientKeys, setClientKeys] = useState(true)
 
   // Security
   const [includeCredentials, setIncludeCredentials] = useState(false)
@@ -68,6 +70,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
           includeSettings: true,
           includeSnippets: true,
           includeHostKeys: true,
+          includeClientKeys: true,
           includeCredentials: false,
         })
         if (cancelled) return
@@ -78,7 +81,8 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
               sessions: parsed.payload.sessions?.length ?? 0,
               sqlConfigs: parsed.payload.sqlConfigs?.length ?? 0,
               snippets: parsed.payload.snippets?.length ?? 0,
-              hostKeys: parsed.payload.hostKeys?.length ?? 0
+              hostKeys: parsed.payload.hostKeys?.length ?? 0,
+              clientKeys: parsed.payload.clientKeys?.length ?? 0,
             })
           }
         }
@@ -109,7 +113,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     : undefined
 
   const canExport =
-    (sessions || sqlConfigs || settings || snippets || hostKeys) &&
+    (sessions || sqlConfigs || settings || snippets || hostKeys || clientKeys) &&
     !exporting &&
     (!passwordProtect || (password.length >= 4 && password === confirmPassword))
 
@@ -125,6 +129,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
         includeSettings: settings,
         includeSnippets: snippets,
         includeHostKeys: hostKeys,
+        includeClientKeys: clientKeys,
         includeCredentials,
         password: passwordProtect ? password : undefined,
       }
@@ -163,7 +168,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     } finally {
       setExporting(false)
     }
-  }, [canExport, sessions, sqlConfigs, settings, snippets, hostKeys, includeCredentials, passwordProtect, password, onClose])
+  }, [canExport, sessions, sqlConfigs, settings, snippets, hostKeys, clientKeys, includeCredentials, passwordProtect, password, onClose])
 
   // Section items config
   const exportItems = [
@@ -171,7 +176,8 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     { key: 'sqlConfigs' as const, label: 'Database connections', icon: Database, checked: sqlConfigs, onChange: setSqlConfigs, count: counts?.sqlConfigs },
     { key: 'settings' as const, label: 'App settings', icon: Settings, checked: settings, onChange: setSettings, count: undefined },
     { key: 'snippets' as const, label: 'Command snippets', icon: Code2, checked: snippets, onChange: setSnippets, count: counts?.snippets },
-    { key: 'hostKeys' as const, label: 'Trusted host keys', icon: KeyRound, checked: hostKeys, onChange: setHostKeys, count: counts?.hostKeys }
+    { key: 'hostKeys' as const, label: 'Trusted host keys', icon: KeyRound, checked: hostKeys, onChange: setHostKeys, count: counts?.hostKeys },
+    { key: 'clientKeys' as const, label: 'Client keys', icon: Key, checked: clientKeys, onChange: setClientKeys, count: counts?.clientKeys }
   ]
 
   return (
