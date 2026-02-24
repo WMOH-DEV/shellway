@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react'
+import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import { Plus, Minus, Filter, AlertTriangle } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
@@ -119,6 +119,8 @@ interface FilterRowProps {
   onRemove: (id: string) => void
   onAdd: () => void
   onApply: () => void
+  /** When true, auto-focus the value input on mount */
+  autoFocusValue?: boolean
 }
 
 const FilterRow = React.memo(function FilterRow({
@@ -128,6 +130,7 @@ const FilterRow = React.memo(function FilterRow({
   onRemove,
   onAdd,
   onApply,
+  autoFocusValue,
 }: FilterRowProps) {
   const isRawSql = filter.column === '__raw_sql__'
   const category = isRawSql
@@ -212,6 +215,7 @@ const FilterRow = React.memo(function FilterRow({
             onKeyDown={(e) => { if (e.key === 'Enter') onApply() }}
             placeholder={isRawSql ? 'e.g. id > 100 AND status = 1' : 'Value...'}
             className="h-6 w-full text-xs"
+            autoFocus={autoFocusValue}
           />
         </div>
       )}
@@ -299,8 +303,21 @@ export const FilterBar = React.memo(function FilterBar({
 }: FilterBarProps) {
   const activeCount = filters.filter((f) => f.enabled).length
 
+  // Track last-added filter to auto-focus its value input
+  const [autoFocusFilterId, setAutoFocusFilterId] = useState<string | null>(null)
+
+  // Clear auto-focus flag after it's been consumed
+  useEffect(() => {
+    if (autoFocusFilterId) {
+      const timer = setTimeout(() => setAutoFocusFilterId(null), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [autoFocusFilterId])
+
   const handleAdd = useCallback(() => {
-    onFiltersChange([...filters, createEmptyFilter(columns)])
+    const newFilter = createEmptyFilter(columns)
+    setAutoFocusFilterId(newFilter.id)
+    onFiltersChange([...filters, newFilter])
   }, [filters, columns, onFiltersChange])
 
   const handleUpdate = useCallback(
@@ -342,6 +359,7 @@ export const FilterBar = React.memo(function FilterBar({
               onRemove={handleRemove}
               onAdd={handleAdd}
               onApply={onApply}
+              autoFocusValue={filter.id === autoFocusFilterId}
             />
           ))}
         </div>

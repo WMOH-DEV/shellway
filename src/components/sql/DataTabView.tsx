@@ -57,8 +57,10 @@ function buildDataQuery(opts: {
   sortColumn?: string
   sortDirection?: 'asc' | 'desc'
   filters: TableFilter[]
+  /** Primary key columns — used as default ORDER BY when no explicit sort is set */
+  primaryKeyColumns?: string[]
 }): { query: string; params: unknown[] } {
-  const { table, schema, dbType, page, pageSize, sortColumn, sortDirection, filters } =
+  const { table, schema, dbType, page, pageSize, sortColumn, sortDirection, filters, primaryKeyColumns } =
     opts
 
   const fullTable = buildFullTableName(table, schema, dbType)
@@ -73,6 +75,10 @@ function buildDataQuery(opts: {
   if (sortColumn) {
     const quotedCol = quoteIdentifier(sortColumn, dbType)
     query += ` ORDER BY ${quotedCol} ${sortDirection ?? 'asc'}`
+  } else if (primaryKeyColumns && primaryKeyColumns.length > 0) {
+    // Default: order by primary key ASC for consistent results (oldest → newest)
+    const pkOrder = primaryKeyColumns.map(col => `${quoteIdentifier(col, dbType)} ASC`).join(', ')
+    query += ` ORDER BY ${pkOrder}`
   }
 
   const offset = (page - 1) * pageSize
@@ -182,6 +188,10 @@ export const DataTabView = React.memo(function DataTabView({
   const filterDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const queryIdRef = useRef(0)
 
+  // Ref for primary key columns — used by buildDataQuery for default ORDER BY
+  // Using a ref so executeQuery doesn't need to be recreated when PKs load
+  const primaryKeyColumnsRef = useRef<string[]>([])
+
   // Cache key to avoid re-fetching when switching back to a loaded tab
   const cacheKeyRef = useRef<string>('')
   const resultRef = useRef<QueryResult | null>(null)
@@ -229,6 +239,7 @@ export const DataTabView = React.memo(function DataTabView({
           sortColumn: sort,
           sortDirection: sortDir,
           filters: currentFilters,
+          primaryKeyColumns: primaryKeyColumnsRef.current,
         })
 
         // Check if this query is still current
@@ -303,12 +314,45 @@ export const DataTabView = React.memo(function DataTabView({
 
           if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
-          const totalRows = estimateResponse?.success
+          const estimatedRows = estimateResponse?.success
             ? Math.max(0, Number(estimateResponse.data ?? 0))
             : 0
-          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
 
-          setPagination({ page, pageSize, totalRows, totalPages, isEstimatedCount: true })
+          // For small/medium tables, auto-fetch the exact count (like TablePlus).
+          // SELECT COUNT(*) is fast for tables under ~500k rows but expensive for
+          // multi-million-row tables, so we only do it when the estimate is low.
+          const EXACT_COUNT_THRESHOLD = 500_000
+
+          if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
+            const { query: countQuery, params: countParams } = buildCountQuery(
+              table,
+              schema,
+              dbType,
+              []
+            )
+            const countResponse = await (window as any).novadeck.sql.query(
+              sqlSessionId,
+              countQuery,
+              countParams
+            )
+
+            if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+
+            if (countResponse.success) {
+              const exactRows = Number(
+                ((countResponse.data as QueryResult).rows[0] as any)?.count ?? 0
+              )
+              const totalPages = Math.max(1, Math.ceil(exactRows / pageSize))
+              setPagination({ page, pageSize, totalRows: exactRows, totalPages, isEstimatedCount: false })
+            } else {
+              // Fallback to estimate if exact count fails
+              const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize))
+              setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true })
+            }
+          } else {
+            const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize))
+            setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true })
+          }
         }
       } catch (err: any) {
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
@@ -333,6 +377,7 @@ export const DataTabView = React.memo(function DataTabView({
     resultRef.current = null
     setError(null)
     setPrimaryKeyColumns([])
+    primaryKeyColumnsRef.current = []
     setIndexes([])
     setForeignKeysRaw([])
     cacheKeyRef.current = ''
@@ -355,7 +400,9 @@ export const DataTabView = React.memo(function DataTabView({
 
           // Column metadata — used for inline editing (PK detection, auto-increment)
           setColumnMeta(cols)
-          setPrimaryKeyColumns(cols.filter((c) => c.isPrimaryKey).map((c) => c.name))
+          const pkCols = cols.filter((c) => c.isPrimaryKey).map((c) => c.name)
+          setPrimaryKeyColumns(pkCols)
+          primaryKeyColumnsRef.current = pkCols
 
           // Index metadata — used by StructureTabView
           setIndexes(idxs)
@@ -633,16 +680,63 @@ export const DataTabView = React.memo(function DataTabView({
     upsertStagedChange(change)
   }, [result?.fields, table, schema, columnMeta, upsertStagedChange])
 
+  // ── Delete row handler ──
+  const handleDeleteRows = useCallback((rowIndices: number[]) => {
+    if (!result?.rows) return
+    const realRowCount = result.rows.length
+
+    for (const rowIndex of rowIndices) {
+      // If the row is an inserted (staged) row, just remove the staged insert
+      if (rowIndex >= realRowCount) {
+        const insertIdx = rowIndex - realRowCount
+        const insertChange = insertChanges[insertIdx]
+        if (insertChange) {
+          removeStagedChange(insertChange.id)
+        }
+        continue
+      }
+
+      const row = result.rows[rowIndex] as Record<string, unknown>
+      if (!row) continue
+
+      const changeId = `delete-${table}-${rowIndex}`
+
+      // If this row already has a delete staged, skip
+      if (stagedChanges.find((c) => c.id === changeId)) continue
+
+      // Also remove any pending edit changes for this row
+      const editPrefix = `edit-${table}-${rowIndex}-`
+      for (const c of stagedChanges) {
+        if (c.id.startsWith(editPrefix)) {
+          removeStagedChange(c.id)
+          originalValuesRef.current.delete(c.id)
+        }
+      }
+
+      const change: StagedChange = {
+        id: changeId,
+        type: 'delete',
+        table,
+        schema,
+        primaryKey: buildPrimaryKey(row, primaryKeyColumns),
+        rowData: row,
+      }
+      upsertStagedChange(change)
+    }
+  }, [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges, insertChanges])
+
   // Compute edited rows/cells for visual highlighting
-  // Change IDs follow pattern: "edit-{table}-{rowIndex}-{field}"
-  const { editedRows, editedCells } = useMemo(() => {
+  // Change IDs follow pattern: "edit-{table}-{rowIndex}-{field}" or "delete-{table}-{rowIndex}"
+  const { editedRows, editedCells, deletedRows } = useMemo(() => {
     const rows = new Set<number>()
     const cells = new Set<string>()
-    const prefix = `edit-${table}-`
+    const deleted = new Set<number>()
+    const editPrefix = `edit-${table}-`
+    const deletePrefix = `delete-${table}-`
     for (const change of stagedChanges) {
-      if (change.id.startsWith(prefix) && change.type === 'update') {
+      if (change.id.startsWith(editPrefix) && change.type === 'update') {
         // Parse rowIndex and field from the stable ID
-        const rest = change.id.slice(prefix.length)
+        const rest = change.id.slice(editPrefix.length)
         const dashIdx = rest.indexOf('-')
         if (dashIdx !== -1) {
           const rowIdx = parseInt(rest.slice(0, dashIdx), 10)
@@ -653,6 +747,13 @@ export const DataTabView = React.memo(function DataTabView({
           }
         }
       }
+      if (change.id.startsWith(deletePrefix) && change.type === 'delete') {
+        const rowIdx = parseInt(change.id.slice(deletePrefix.length), 10)
+        if (!isNaN(rowIdx)) {
+          rows.add(rowIdx)
+          deleted.add(rowIdx)
+        }
+      }
     }
     // Mark insert rows as edited — they are appended after real rows
     // so their __rowIndex = result.rows.length + i
@@ -660,7 +761,7 @@ export const DataTabView = React.memo(function DataTabView({
     for (let i = 0; i < insertChanges.length; i++) {
       rows.add(baseIdx + i)
     }
-    return { editedRows: rows, editedCells: cells }
+    return { editedRows: rows, editedCells: cells, deletedRows: deleted }
   }, [stagedChanges, table, insertChanges, result?.rows?.length])
 
   // ── Save staged changes to database ──
@@ -772,6 +873,39 @@ export const DataTabView = React.memo(function DataTabView({
           throw new Error(`insert: ${res.error}`)
         }
 
+        updateSQLs.push(sql)
+      }
+
+      // ── Process DELETE changes ──
+      for (const change of tableChanges) {
+        if (change.type !== 'delete' || !change.primaryKey) continue
+
+        const whereParts: string[] = []
+        const delParams: unknown[] = []
+        let delParamIdx = 1
+
+        for (const [col, val] of Object.entries(change.primaryKey)) {
+          const quotedCol = quoteIdentifier(col, dbType)
+          if (val === null || val === undefined) {
+            whereParts.push(`${quotedCol} IS NULL`)
+          } else if (dbType === 'mysql') {
+            whereParts.push(`${quotedCol} = ?`)
+            delParams.push(val)
+          } else {
+            whereParts.push(`${quotedCol} = $${delParamIdx}`)
+            delParamIdx++
+            delParams.push(val)
+          }
+        }
+
+        const fullTable = buildFullTableName(change.table, change.schema, dbType)
+        const limitClause = dbType === 'mysql' ? ' LIMIT 1' : ''
+        const sql = `DELETE FROM ${fullTable} WHERE ${whereParts.join(' AND ')}${limitClause}`
+
+        const res = await queryApi.query(sqlSessionId, sql, delParams)
+        if (!res.success) {
+          throw new Error(`delete: ${res.error}`)
+        }
         updateSQLs.push(sql)
       }
 
@@ -972,10 +1106,14 @@ export const DataTabView = React.memo(function DataTabView({
   // On-demand exact COUNT(*) — replaces estimated count with real value
   const handleExactCount = useCallback(async () => {
     if (!sqlSessionId || isCountLoading) return
+    const snapshotQueryId = queryIdRef.current
     setIsCountLoading(true)
     try {
       const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, filters)
       const countResponse = await (window as any).novadeck.sql.query(sqlSessionId, countQuery, countParams)
+
+      // Guard: if a new table/query started while COUNT(*) was in-flight, discard stale result
+      if (snapshotQueryId !== queryIdRef.current) return
 
       if (countResponse.success) {
         const totalRows = Number(((countResponse.data as QueryResult).rows[0] as any)?.count ?? 0)
@@ -1060,6 +1198,7 @@ export const DataTabView = React.memo(function DataTabView({
           onHiddenColumnsChange={handleHiddenColumnsChange}
           onInsertRow={handleInsertRow}
           onDuplicateRow={handleDuplicateRow}
+          onDeleteRows={handleDeleteRows}
         />
       </div>
 

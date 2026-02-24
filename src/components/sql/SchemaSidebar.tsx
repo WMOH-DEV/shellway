@@ -416,6 +416,16 @@ export function SchemaSidebar({
     fetchDatabases()
   }, [fetchTables, fetchDatabases])
 
+  // Re-fetch tables when currentDatabase changes (e.g., after switching databases via picker)
+  const prevDatabaseRef = useRef(currentDatabase)
+  useEffect(() => {
+    if (prevDatabaseRef.current !== currentDatabase && currentDatabase) {
+      prevDatabaseRef.current = currentDatabase
+      fetchTables()
+      fetchDatabases()
+    }
+  }, [currentDatabase, fetchTables, fetchDatabases])
+
   const handleRefresh = useCallback(() => {
     fetchTables()
   }, [fetchTables])
@@ -425,20 +435,17 @@ export function SchemaSidebar({
       const newDb = e.target.value
       if (!sqlSessionId || newDb === currentDatabase) return
 
-      setSchemaLoading(true)
       try {
         const result = await window.novadeck.sql.switchDatabase(sqlSessionId, newDb)
         if (result.success) {
           setCurrentDatabase(newDb)
-          await fetchTables()
+          // Tables are auto-refreshed by the currentDatabase change effect below
         }
       } catch {
         // Silently fail
-      } finally {
-        setSchemaLoading(false)
       }
     },
-    [sqlSessionId, currentDatabase, setCurrentDatabase, setSchemaLoading, fetchTables]
+    [sqlSessionId, currentDatabase, setCurrentDatabase]
   )
 
   return (

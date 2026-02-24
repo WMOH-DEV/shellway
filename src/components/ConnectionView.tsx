@@ -20,6 +20,7 @@ import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useMonitorStore } from '@/stores/monitorStore'
 import type { ConnectionTab } from '@/types/session'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
@@ -104,6 +105,11 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   const handleShutdownSubTab = useCallback((subTabId: string) => {
     const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
     currentRunning.delete(subTabId)
+
+    // Clear monitor store data when shutting down the monitor tab so it starts fresh next time
+    if (subTabId === 'monitor') {
+      useMonitorStore.getState().clearConnection(tab.id)
+    }
 
     // Remove from mounted panels so it fully unmounts
     setMountedPanels(prev => {

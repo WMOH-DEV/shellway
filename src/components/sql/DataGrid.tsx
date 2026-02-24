@@ -6,7 +6,7 @@ import { cn } from '@/utils/cn'
 import {
   Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
   XCircle, Filter, EyeOff, RotateCcw, Clipboard,
-  ExternalLink, Plus,
+  ExternalLink, Plus, Trash2,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import type { QueryResult, SchemaColumn } from '@/types/sql'
@@ -96,6 +96,8 @@ interface DataGridProps {
   onInsertRow?: () => void
   /** Called when user requests duplicating a row */
   onDuplicateRow?: (rowData: Record<string, unknown>) => void
+  /** Called when user requests deleting rows by their indices */
+  onDeleteRows?: (rowIndices: number[]) => void
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -257,6 +259,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   onHiddenColumnsChange,
   onInsertRow,
   onDuplicateRow,
+  onDeleteRows,
 }, ref) {
   const gridRef = useRef<AgGridReact>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -288,6 +291,31 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       window.removeEventListener('scroll', close, true)
     }
   }, [headerContextMenu])
+
+  // Keyboard Delete/Backspace handler for selected rows
+  useEffect(() => {
+    if (!onDeleteRows) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only trigger when Delete or Backspace is pressed
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      // Don't trigger when editing a cell or inside an input/textarea
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      // Don't trigger when inside Monaco editor
+      if (target.closest('.monaco-editor')) return
+      // Check if we're within this grid container
+      if (!containerRef.current?.contains(target)) return
+
+      const selectedRows = gridRef.current?.api?.getSelectedRows() ?? []
+      if (selectedRows.length === 0) return
+
+      e.preventDefault()
+      const indices = selectedRows.map((r: Record<string, unknown>) => r.__rowIndex as number)
+      onDeleteRows(indices)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onDeleteRows])
 
   // Header right-click listener (event delegation on grid container)
   // Attach header right-click handler — re-run when result changes
@@ -508,13 +536,35 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         })
       }
       if (onDuplicateRow && rowData) {
+          items.push({
+            label: 'Duplicate Row',
+            icon: <Copy size={13} />,
+            action: () => {
+              const { __rowIndex, ...clean } = rowData
+              onDuplicateRow(clean)
+            },
+          })
+        }
+        if (onDeleteRows && rowData) {
+          const rowIndex = rowData.__rowIndex as number
+          items.push({
+            label: 'Delete Row',
+            icon: <Trash2 size={13} />,
+            action: () => onDeleteRows([rowIndex]),
+          })
+        }
+    }
+
+    // Delete selected rows (multi-select)
+    if (onDeleteRows) {
+      const selectedRows = gridRef.current?.api?.getSelectedRows() ?? []
+      if (selectedRows.length > 1) {
+        const indices = selectedRows.map((r: Record<string, unknown>) => r.__rowIndex as number)
+        items.push({ label: '', icon: null, action: () => {}, separator: true })
         items.push({
-          label: 'Duplicate Row',
-          icon: <Copy size={13} />,
-          action: () => {
-            const { __rowIndex, ...clean } = rowData
-            onDuplicateRow(clean)
-          },
+          label: `Delete ${selectedRows.length} Selected Rows`,
+          icon: <Trash2 size={13} />,
+          action: () => onDeleteRows(indices),
         })
       }
     }
@@ -524,7 +574,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       y: nativeEvent?.clientY ?? 0,
       items,
     })
-  }, [onInsertRow, onDuplicateRow])
+  }, [onInsertRow, onDuplicateRow, onDeleteRows])
 
   // ── Header context menu actions ──
 
@@ -730,7 +780,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         suppressRowVirtualisation={false}
         rowSelection="multiple"
         enableCellTextSelection
-        suppressRowClickSelection
+        suppressRowClickSelection={false}
         headerHeight={32}
         rowHeight={28}
         tooltipShowDelay={300}
