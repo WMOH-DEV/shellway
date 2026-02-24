@@ -94,6 +94,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [showConnectDialog, setShowConnectDialog] = useState(false)
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
+  const [queryLogHeight, setQueryLogHeight] = useState(200)
   const [showSidebar, setShowSidebar] = useState(true)
   const [dbPickerSessionId, setDbPickerSessionId] = useState<string | null>(null)
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null)
@@ -110,6 +111,44 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false)
   const [showBackupRestoreDialog, setShowBackupRestoreDialog] = useState(false)
   const [backupRestoreInitialTab, setBackupRestoreInitialTab] = useState<'backup' | 'restore'>('backup')
+
+  // ── Query log resize ──
+  const qlDragging = useRef(false)
+  const qlStartY = useRef(0)
+  const qlStartHeight = useRef(200)
+
+  const handleQueryLogResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    qlDragging.current = true
+    qlStartY.current = e.clientY
+    qlStartHeight.current = queryLogHeight
+    document.body.style.cursor = 'ns-resize'
+    document.body.style.userSelect = 'none'
+  }, [queryLogHeight])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!qlDragging.current) return
+      const delta = qlStartY.current - e.clientY
+      const newHeight = Math.min(600, Math.max(80, qlStartHeight.current + delta))
+      setQueryLogHeight(newHeight)
+    }
+
+    const handleMouseUp = () => {
+      if (!qlDragging.current) return
+      qlDragging.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
 
   // ── Store selectors (scoped to this connection) ──
   const {
@@ -1066,13 +1105,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         </div>
       </div>
 
-      {/* ── Query Log bottom panel ── */}
+      {/* ── Query Log bottom panel (resizable) ── */}
       {showQueryLog && (
         <div
-          className="shrink-0 border-t border-nd-border bg-nd-bg-secondary overflow-hidden"
-          style={{ height: 160 }}
+          className="shrink-0 border-t border-nd-border bg-nd-bg-secondary overflow-hidden flex flex-col"
+          style={{ height: queryLogHeight }}
         >
-          <SQLQueryLog connectionId={connectionId} />
+          {/* Resize handle */}
+          <div
+            onMouseDown={handleQueryLogResizeStart}
+            className="h-1 cursor-ns-resize shrink-0 group flex items-center justify-center hover:bg-nd-accent/30 transition-colors"
+            title="Drag to resize"
+          >
+            <div className="w-10 h-0.5 rounded-full bg-nd-border group-hover:bg-nd-accent/60 transition-colors" />
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <SQLQueryLog connectionId={connectionId} />
+          </div>
         </div>
       )}
 
