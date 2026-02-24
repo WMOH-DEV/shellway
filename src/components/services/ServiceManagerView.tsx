@@ -26,6 +26,11 @@ const DEFAULT_FILTER: ServiceFilter = {
   sortDir: 'asc'
 }
 
+const STORAGE_KEY_PANEL_WIDTH = 'shellway:services:panelWidth'
+const DEFAULT_PANEL_WIDTH = 420
+const MIN_PANEL_WIDTH = 280
+const MAX_PANEL_WIDTH = 800
+
 /**
  * Main Service Manager view — manages systemd services on the remote server.
  *
@@ -68,6 +73,63 @@ export function ServiceManagerView({ connectionId, connectionStatus }: ServiceMa
   const isMountedRef = useRef(true)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const connectionStatusRef = useRef(connectionStatus)
+
+  // ── Resizable right panel ──
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_PANEL_WIDTH)
+      if (stored) {
+        const parsed = Number(stored)
+        if (parsed >= MIN_PANEL_WIDTH && parsed <= MAX_PANEL_WIDTH) return parsed
+      }
+    } catch { /* localStorage unavailable */ }
+    return DEFAULT_PANEL_WIDTH
+  })
+  const isDraggingRef = useRef(false)
+  const dragStartXRef = useRef(0)
+  const dragStartWidthRef = useRef(DEFAULT_PANEL_WIDTH)
+  const panelWidthRef = useRef(panelWidth)
+
+  // Keep ref in sync for mouseup handler
+  useEffect(() => { panelWidthRef.current = panelWidth }, [panelWidth])
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    isDraggingRef.current = true
+    dragStartXRef.current = e.clientX
+    dragStartWidthRef.current = panelWidthRef.current
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current) return
+      // Panel is on the right, so dragging left increases width
+      const delta = dragStartXRef.current - e.clientX
+      const newWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, dragStartWidthRef.current + delta))
+      setPanelWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      if (!isDraggingRef.current) return
+      isDraggingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      // Persist to localStorage on drag end (use ref for latest value)
+      try {
+        localStorage.setItem(STORAGE_KEY_PANEL_WIDTH, String(panelWidthRef.current))
+      } catch { /* localStorage unavailable */ }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
 
   // Keep connectionStatus ref current to avoid stale closures in timers
   useEffect(() => {
@@ -428,10 +490,7 @@ export function ServiceManagerView({ connectionId, connectionStatus }: ServiceMa
       {/* ── Main content: list + detail panel ── */}
       <div className="flex-1 overflow-hidden flex">
         {/* Service list */}
-        <div className={cn(
-          'flex-1 overflow-y-auto min-w-0',
-          selectedUnit && 'border-r border-nd-border'
-        )}>
+        <div className="flex-1 overflow-y-auto min-w-0">
           <ServiceList
             connectionId={connectionId}
             services={filteredServices}
@@ -442,35 +501,53 @@ export function ServiceManagerView({ connectionId, connectionStatus }: ServiceMa
           />
         </div>
 
-        {/* Detail panel (slides in from right when service selected) */}
-        {selectedUnit && !showLogs && (
-          <div className="w-[420px] shrink-0 overflow-y-auto bg-nd-bg-secondary">
-            <ServiceDetailPanel
-              connectionId={connectionId}
-              unit={selectedUnit}
-              details={details}
-              isLoading={loadingDetails}
-              actionInProgress={actionInProgress}
-              onAction={handleAction}
-              onClose={handleCloseDetail}
-              onViewLogs={handleViewLogs}
-              onOpenConfig={handleOpenConfig}
-            />
-          </div>
-        )}
+        {/* Drag handle + Detail panel / Log viewer (when service selected) */}
+        {selectedUnit && (
+          <>
+            {/* Drag handle */}
+            <div
+              onMouseDown={handleDragStart}
+              className="shrink-0 w-px bg-nd-border hover:bg-nd-accent cursor-col-resize transition-colors duration-150 hover:w-0.5 relative group z-10"
+              title="Drag to resize"
+            >
+              {/* Wider invisible hit target for easier grabbing */}
+              <div className="absolute inset-y-0 -left-1 -right-1" />
+            </div>
 
-        {/* Log viewer (replaces detail panel when viewing logs) */}
-        {selectedUnit && showLogs && (
-          <div className="w-[520px] shrink-0 overflow-hidden bg-nd-bg-primary">
-            <ServiceLogViewer
-              connectionId={connectionId}
-              unit={selectedUnit}
-              logs={logs}
-              isLoading={loadingLogs}
-              onLoadLogs={loadLogs}
-              onClose={handleCloseLogs}
-            />
-          </div>
+            {/* Panel: detail or logs */}
+            {!showLogs ? (
+              <div
+                className="shrink-0 overflow-y-auto bg-nd-bg-secondary"
+                style={{ width: panelWidth }}
+              >
+                <ServiceDetailPanel
+                  connectionId={connectionId}
+                  unit={selectedUnit}
+                  details={details}
+                  isLoading={loadingDetails}
+                  actionInProgress={actionInProgress}
+                  onAction={handleAction}
+                  onClose={handleCloseDetail}
+                  onViewLogs={handleViewLogs}
+                  onOpenConfig={handleOpenConfig}
+                />
+              </div>
+            ) : (
+              <div
+                className="shrink-0 overflow-hidden bg-nd-bg-primary"
+                style={{ width: panelWidth }}
+              >
+                <ServiceLogViewer
+                  connectionId={connectionId}
+                  unit={selectedUnit}
+                  logs={logs}
+                  isLoading={loadingLogs}
+                  onLoadLogs={loadLogs}
+                  onClose={handleCloseLogs}
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 
