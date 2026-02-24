@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X
 } from 'lucide-react'
@@ -6,6 +6,7 @@ import { lazy, Suspense } from 'react'
 
 const SQLView = lazy(() => import('@/components/sql/SQLView').then(m => ({ default: m.SQLView })))
 import { cn } from '@/utils/cn'
+import { toast } from '@/components/ui/Toast'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { TerminalTabs } from '@/components/terminal/TerminalTabs'
 import { SFTPView } from '@/components/sftp/SFTPView'
@@ -49,8 +50,95 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     splitViewLayout, splitViewRatio, setSplitView
   } = useUIStore()
 
-  // Split view applies when enabled on THIS tab and we're on terminal or sftp sub-tabs
-  const showSplitView = !!tab.splitView && (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp')
+  // Split view applies when enabled AND both terminal + sftp are running
+  const showSplitView = !!tab.splitView
+    && (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp')
+    && (!tab.runningSubTabs || (tab.runningSubTabs.includes('terminal') && tab.runningSubTabs.includes('sftp')))
+
+  // Running sub-tabs — undefined means all running (backward compat)
+  const runningSubTabs = useMemo(() => {
+    return new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
+  }, [tab.runningSubTabs])
+
+  // Sub-tab history for "switch to last" on shutdown
+  const subTabHistoryRef = useRef<string[]>([tab.activeSubTab])
+
+  // Track active tab history
+  useEffect(() => {
+    const history = subTabHistoryRef.current
+    const idx = history.indexOf(tab.activeSubTab)
+    if (idx !== -1) history.splice(idx, 1)
+    history.push(tab.activeSubTab)
+    if (history.length > 10) history.shift()
+  }, [tab.activeSubTab])
+
+  // Build tabs with dimming for shut-down tabs
+  const subTabsWithState = useMemo(() => {
+    return SUB_TABS.map(t => ({
+      ...t,
+      dimmed: !runningSubTabs.has(t.id)
+    }))
+  }, [runningSubTabs])
+
+  // Tab change handler — re-activates shut-down tabs on click
+  const handleSubTabChange = useCallback((id: string) => {
+    const subTab = id as ConnectionTab['activeSubTab']
+    const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
+
+    if (!currentRunning.has(id)) {
+      // Re-activate shut-down tab + add to mountedPanels immediately to avoid empty flash
+      currentRunning.add(id)
+      setMountedPanels(prev => new Set([...prev, id]))
+      updateTab(tab.id, {
+        activeSubTab: subTab,
+        runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][]
+      })
+    } else {
+      updateTab(tab.id, { activeSubTab: subTab })
+    }
+  }, [tab.id, tab.runningSubTabs, updateTab])
+
+  // Shut down a sub-tab: go to last visited tab, or disconnect if none was visited
+  const handleShutdownSubTab = useCallback((subTabId: string) => {
+    const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
+    currentRunning.delete(subTabId)
+
+    // Remove from mounted panels so it fully unmounts
+    setMountedPanels(prev => {
+      const next = new Set(prev)
+      next.delete(subTabId)
+      return next
+    })
+
+    // Disable split view if shutting down terminal or sftp
+    if (tab.splitView && (subTabId === 'terminal' || subTabId === 'sftp')) {
+      setSplitView(false)
+    }
+
+    // Find last visited tab that's still running (from history only — never navigate to unvisited tabs)
+    const history = subTabHistoryRef.current
+    let nextTab: string | null = null
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i] !== subTabId && currentRunning.has(history[i])) {
+        nextTab = history[i]
+        break
+      }
+    }
+
+    if (!nextTab) {
+      // No previously visited tab is still running → disconnect
+      updateTab(tab.id, { runningSubTabs: [], status: 'disconnected', splitView: false })
+      window.novadeck.ssh.disconnect?.(tab.id).catch(() => {})
+      toast.info('Disconnected', 'Session shut down')
+      return
+    }
+
+    updateTab(tab.id, {
+      activeSubTab: nextTab as ConnectionTab['activeSubTab'],
+      runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][],
+      ...(tab.splitView && (subTabId === 'terminal' || subTabId === 'sftp') ? { splitView: false } : {})
+    })
+  }, [tab.id, tab.runningSubTabs, tab.splitView, updateTab, setSplitView])
 
   // Track which panels have been visited — lazy-mount on first visit, then keep alive
   const [mountedPanels, setMountedPanels] = useState<Set<string>>(() => new Set([tab.activeSubTab]))
@@ -100,18 +188,15 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
       <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border flex items-center">
         <div className="flex-1">
           <Tabs
-            tabs={SUB_TABS}
+            tabs={subTabsWithState}
             activeTab={tab.activeSubTab}
-            onTabChange={(id) =>
-              updateTab(tab.id, {
-                activeSubTab: id as ConnectionTab['activeSubTab']
-              })
-            }
+            onTabChange={handleSubTabChange}
+            onTabClose={!isReconnecting ? handleShutdownSubTab : undefined}
             size="sm"
           />
         </div>
-        {/* Split view toggle */}
-        {(tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') && (
+        {/* Split view toggle — only when both terminal and sftp are running */}
+        {(tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') && runningSubTabs.has('terminal') && runningSubTabs.has('sftp') && (
           <button
             onClick={() => {
               const next = !tab.splitView
@@ -155,8 +240,8 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             </div>
           )}
 
-          {/* Terminal — always mounted once visited, hidden when not active or when split view is shown */}
-          {!showSplitView && mountedPanels.has('terminal') && (
+          {/* Terminal — mounted when visited AND running, hidden when not active */}
+          {!showSplitView && mountedPanels.has('terminal') && runningSubTabs.has('terminal') && (
             <div className={cn(
               'absolute inset-0',
               tab.activeSubTab !== 'terminal' && 'hidden'
@@ -165,8 +250,8 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             </div>
           )}
 
-          {/* SFTP — always mounted once visited, hidden when not active or when split view is shown */}
-          {!showSplitView && mountedPanels.has('sftp') && (
+          {/* SFTP — mounted when visited AND running, hidden when not active */}
+          {!showSplitView && mountedPanels.has('sftp') && runningSubTabs.has('sftp') && (
             <div className={cn(
               'absolute inset-0 flex flex-col',
               tab.activeSubTab !== 'sftp' && 'hidden'
@@ -175,8 +260,8 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             </div>
           )}
 
-          {/* SQL — always mounted once visited, hidden when not active */}
-          {mountedPanels.has('sql') && (
+          {/* SQL — mounted when visited AND running, hidden when not active */}
+          {mountedPanels.has('sql') && runningSubTabs.has('sql') && (
             <div className={cn(
               'absolute inset-0 flex flex-col',
               tab.activeSubTab !== 'sql' && 'hidden'
@@ -187,13 +272,13 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             </div>
           )}
 
-          {/* Port Forwarding — conditionally rendered */}
-          {tab.activeSubTab === 'port-forwarding' && (
+          {/* Port Forwarding — conditionally rendered when running */}
+          {tab.activeSubTab === 'port-forwarding' && runningSubTabs.has('port-forwarding') && (
             <PortForwardingView connectionId={tab.id} />
           )}
 
-          {/* Monitor — conditional render (unmounts to stop SSH polling when not visible) */}
-          {tab.activeSubTab === 'monitor' && (
+          {/* Monitor — conditional render when running (unmounts to stop SSH polling) */}
+          {tab.activeSubTab === 'monitor' && runningSubTabs.has('monitor') && (
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
                 <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
@@ -202,7 +287,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Info — Connection Health Dashboard */}
-          {tab.activeSubTab === 'info' && (
+          {tab.activeSubTab === 'info' && runningSubTabs.has('info') && (
             <ConnectionHealthDashboard
               connectionId={tab.id}
               sessionName={tab.sessionName}
@@ -211,7 +296,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Log */}
-          {tab.activeSubTab === 'log' && (
+          {tab.activeSubTab === 'log' && runningSubTabs.has('log') && (
             <ActivityLog sessionId={tab.id} />
           )}
 

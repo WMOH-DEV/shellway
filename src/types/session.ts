@@ -214,6 +214,8 @@ export interface ConnectionTab {
   type?: 'ssh' | 'database'
   status: ConnectionStatus
   activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'monitor' | 'info' | 'log'
+  /** Which sub-tabs are currently running (content is active/mounted). Empty = disconnect. Undefined = all running. */
+  runningSubTabs?: ConnectionTab['activeSubTab'][]
   /** Whether Terminal + SFTP split view is active for this tab */
   splitView?: boolean
   error?: string
