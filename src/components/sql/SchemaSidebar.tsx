@@ -38,8 +38,33 @@ function formatRowCount(count: number | undefined): string {
 
 // ── Table context menu items builder ──
 
-function buildTableContextMenuItems(tableName: string, isView: boolean): ContextMenuItem[] {
+function buildTableContextMenuItems(
+  tableName: string,
+  isView: boolean,
+  multiSelectedCount: number
+): ContextMenuItem[] {
   return [
+    // Multi-selection export options (shown when table is part of a multi-select)
+    ...(multiSelectedCount > 1
+      ? [
+          {
+            id: 'export-selected:sql',
+            label: `Export ${multiSelectedCount} Selected as SQL`,
+            icon: <Database size={14} />,
+          },
+          {
+            id: 'export-selected:csv',
+            label: `Export ${multiSelectedCount} Selected as CSV`,
+            icon: <FileText size={14} />,
+          },
+          {
+            id: 'export-selected:json',
+            label: `Export ${multiSelectedCount} Selected as JSON`,
+            icon: <FileJson size={14} />,
+          },
+          { id: 'sep-multi', label: '', separator: true },
+        ]
+      : []),
     ...(isView
       ? []
       : [
@@ -70,6 +95,12 @@ function buildTableContextMenuItems(tableName: string, isView: boolean): Context
       : [
           { id: 'sep-3', label: '', separator: true },
           {
+            id: `truncate:${tableName}`,
+            label: 'Truncate Table',
+            icon: <Trash2 size={14} />,
+            danger: true,
+          },
+          {
             id: `drop:${tableName}`,
             label: 'Drop Table',
             icon: <Trash2 size={14} />,
@@ -98,18 +129,22 @@ function buildDatabaseContextMenuItems(hasSSH: boolean): ContextMenuItem[] {
 interface TableRowProps {
   table: SchemaTable
   isSelected: boolean
-  onSelect: (name: string) => void
+  isMultiSelected: boolean
+  multiSelectedCount: number
+  onSelect: (name: string, e?: React.MouseEvent | React.KeyboardEvent) => void
   onContextMenuSelect: (id: string) => void
 }
 
 const TableRow = memo(function TableRow({
   table,
   isSelected,
+  isMultiSelected,
+  multiSelectedCount,
   onSelect,
   onContextMenuSelect,
 }: TableRowProps) {
-  const handleClick = useCallback(() => {
-    onSelect(table.name)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    onSelect(table.name, e)
   }, [table.name, onSelect])
 
   const handleExport = useCallback((e: React.MouseEvent) => {
@@ -125,9 +160,12 @@ const TableRow = memo(function TableRow({
   const rowCount = formatRowCount(table.rowCount)
   const isView = table.type === 'view'
 
+  // Show multi-select count only if this table is part of the selection
+  const effectiveMultiCount = isMultiSelected ? multiSelectedCount : 0
+
   const contextMenuItems = useMemo(
-    () => buildTableContextMenuItems(table.name, isView),
-    [table.name, isView]
+    () => buildTableContextMenuItems(table.name, isView, effectiveMultiCount),
+    [table.name, isView, effectiveMultiCount]
   )
 
   return (
@@ -136,12 +174,13 @@ const TableRow = memo(function TableRow({
         role="button"
         tabIndex={0}
         onClick={handleClick}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleClick() }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(table.name, e) }}
         className={cn(
           'group flex items-center gap-2 w-full px-3 py-1 text-left text-sm',
           'hover:bg-nd-surface-hover transition-colors duration-100 rounded-sm cursor-pointer',
-          isSelected && 'bg-nd-surface-hover text-nd-text-primary',
-          !isSelected && 'text-nd-text-secondary'
+          isMultiSelected && 'bg-nd-accent/15 text-nd-accent',
+          isSelected && !isMultiSelected && 'bg-nd-surface-hover text-nd-text-primary',
+          !isSelected && !isMultiSelected && 'text-nd-text-secondary'
         )}
       >
         {table.type === 'view' ? (
@@ -217,9 +256,11 @@ function Group({ label, count, defaultOpen = true, children }: GroupProps) {
 /** Context menu action type for table actions */
 export type TableContextAction =
   | { type: 'export'; table: string; format: 'csv' | 'json' | 'sql' }
+  | { type: 'export-selected'; tables: string[]; format: 'csv' | 'json' | 'sql' }
   | { type: 'import-csv'; table: string }
   | { type: 'copy-name'; table: string }
   | { type: 'drop-table'; table: string }
+  | { type: 'truncate-table'; table: string }
   | { type: 'view-structure'; table: string }
 
 /** Context menu action type for database actions */
@@ -238,6 +279,10 @@ interface SchemaSidebarProps {
   onTableAction?: (action: TableContextAction) => void
   /** Callback for database context menu actions */
   onDatabaseAction?: (action: DatabaseContextAction) => void
+  /** Currently multi-selected tables (controlled from parent) */
+  multiSelectedTables?: Set<string>
+  /** Called when multi-selection changes */
+  onMultiSelectChange?: (tables: Set<string>) => void
 }
 
 export function SchemaSidebar({
@@ -245,11 +290,46 @@ export function SchemaSidebar({
   hasSSHConnection = false,
   onTableAction,
   onDatabaseAction,
+  multiSelectedTables,
+  onMultiSelectChange,
 }: SchemaSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [fetchError, setFetchError] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Internal multi-selection state (used when not controlled by parent)
+  const [internalMultiSelected, setInternalMultiSelected] = useState<Set<string>>(new Set())
+  const multiSelected = multiSelectedTables ?? internalMultiSelected
+
+  // Ref for current controlled value — avoids stale closures in the setter
+  const multiSelectedTablesRef = useRef(multiSelectedTables)
+  multiSelectedTablesRef.current = multiSelectedTables
+
+  const setMultiSelected = useCallback(
+    (updater: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+      if (onMultiSelectChange) {
+        const next = typeof updater === 'function'
+          ? updater(multiSelectedTablesRef.current ?? new Set())
+          : updater
+        onMultiSelectChange(next)
+      } else {
+        if (typeof updater === 'function') {
+          setInternalMultiSelected((prev) => updater(prev))
+        } else {
+          setInternalMultiSelected(updater)
+        }
+      }
+    },
+    [onMultiSelectChange]
+  )
+
+  // Track last clicked table for shift-click range selection
+  const lastClickedRef = useRef<string | null>(null)
+
+  // Ref for multi-selected state — avoids recreating handleSelectTable on every selection change
+  const multiSelectedRef = useRef(multiSelected)
+  multiSelectedRef.current = multiSelected
 
   const {
     databases,
@@ -307,11 +387,56 @@ export function SchemaSidebar({
     [databases]
   )
 
+  // Flat ordered list of all visible table names (tables first, then views)
+  const orderedTableNames = useMemo(
+    () => [...filteredTables, ...filteredViews].map((t) => t.name),
+    [filteredTables, filteredViews]
+  )
+
   const handleSelectTable = useCallback(
-    (name: string) => {
+    (name: string, e?: React.MouseEvent | React.KeyboardEvent) => {
+      const isCtrlOrCmd = e && (e.metaKey || e.ctrlKey)
+      const isShift = e && e.shiftKey
+
+      if (isCtrlOrCmd) {
+        // Toggle individual table in multi-selection
+        setMultiSelected((prev) => {
+          const next = new Set(prev)
+          if (next.has(name)) {
+            next.delete(name)
+          } else {
+            next.add(name)
+          }
+          return next
+        })
+        lastClickedRef.current = name
+        return
+      }
+
+      if (isShift && lastClickedRef.current) {
+        // Range selection
+        const startIdx = orderedTableNames.indexOf(lastClickedRef.current)
+        const endIdx = orderedTableNames.indexOf(name)
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [low, high] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+          const rangeNames = orderedTableNames.slice(low, high + 1)
+          setMultiSelected((prev) => {
+            const next = new Set(prev)
+            for (const n of rangeNames) next.add(n)
+            return next
+          })
+        }
+        return
+      }
+
+      // Normal click — single select, clear multi-selection
+      if (multiSelectedRef.current.size > 0) {
+        setMultiSelected(new Set())
+      }
       setSelectedTable(name)
+      lastClickedRef.current = name
     },
-    [setSelectedTable]
+    [setSelectedTable, setMultiSelected, orderedTableNames]
   )
 
   // ── Context menu handlers ──
@@ -319,6 +444,14 @@ export function SchemaSidebar({
   const handleTableContextMenuSelect = useCallback(
     (id: string) => {
       if (!onTableAction) return
+
+      // Multi-selection export actions
+      if (id.startsWith('export-selected:')) {
+        const format = id.slice('export-selected:'.length) as 'csv' | 'json' | 'sql'
+        const selectedNames = Array.from(multiSelected)
+        onTableAction({ type: 'export-selected', tables: selectedNames, format })
+        return
+      }
 
       // Parse action: "type:value:tableName" or "copy:tableName"
       if (id.startsWith('structure:')) {
@@ -337,9 +470,11 @@ export function SchemaSidebar({
         onTableAction({ type: 'copy-name', table: tableName })
       } else if (id.startsWith('drop:')) {
         onTableAction({ type: 'drop-table', table: id.slice('drop:'.length) })
+      } else if (id.startsWith('truncate:')) {
+        onTableAction({ type: 'truncate-table', table: id.slice('truncate:'.length) })
       }
     },
-    [onTableAction]
+    [onTableAction, multiSelected]
   )
 
   const handleDatabaseContextMenuSelect = useCallback(
@@ -496,11 +631,16 @@ export function SchemaSidebar({
       <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-nd-border">
         <button
           onClick={() => onDatabaseAction?.({ type: 'export-database' })}
-          title="Export Database"
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover transition-colors"
+          title={multiSelected.size > 0 ? `Export ${multiSelected.size} selected tables` : 'Export Database'}
+          className={cn(
+            'flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors',
+            multiSelected.size > 0
+              ? 'text-nd-accent hover:text-nd-accent hover:bg-nd-accent/10'
+              : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover'
+          )}
         >
           <Download size={12} />
-          <span>Export</span>
+          <span>Export{multiSelected.size > 0 ? ` (${multiSelected.size})` : ''}</span>
         </button>
         <button
           onClick={() => onDatabaseAction?.({ type: 'import-sql' })}
@@ -573,6 +713,8 @@ export function SchemaSidebar({
                     key={table.name}
                     table={table}
                     isSelected={selectedTable === table.name}
+                    isMultiSelected={multiSelected.has(table.name)}
+                    multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />
@@ -587,6 +729,8 @@ export function SchemaSidebar({
                     key={table.name}
                     table={table}
                     isSelected={selectedTable === table.name}
+                    isMultiSelected={multiSelected.has(table.name)}
+                    multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />

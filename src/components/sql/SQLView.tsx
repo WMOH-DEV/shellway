@@ -96,6 +96,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [showQueryLog, setShowQueryLog] = useState(false)
   const [queryLogHeight, setQueryLogHeight] = useState(200)
   const [showSidebar, setShowSidebar] = useState(true)
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [multiSelectedTables, setMultiSelectedTables] = useState<Set<string>>(new Set())
   const [dbPickerSessionId, setDbPickerSessionId] = useState<string | null>(null)
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null)
   const [savedConfigLoading, setSavedConfigLoading] = useState(true)
@@ -105,12 +107,31 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   // ── Data transfer dialog states ──
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportDialogTable, setExportDialogTable] = useState<string | null>(null)
+  const [exportDialogSelectedTables, setExportDialogSelectedTables] = useState<string[] | null>(null)
+  const [exportDialogFormat, setExportDialogFormat] = useState<'csv' | 'json' | 'sql' | null>(null)
   const [showImportSQLDialog, setShowImportSQLDialog] = useState(false)
   const [showImportCSVDialog, setShowImportCSVDialog] = useState(false)
   const [importCSVTable, setImportCSVTable] = useState<string | null>(null)
   const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false)
   const [showBackupRestoreDialog, setShowBackupRestoreDialog] = useState(false)
   const [backupRestoreInitialTab, setBackupRestoreInitialTab] = useState<'backup' | 'restore'>('backup')
+
+  // ── Sidebar resize ──
+  const sbDragging = useRef(false)
+  const sbStartX = useRef(0)
+  const sbStartWidth = useRef(240)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  sidebarWidthRef.current = sidebarWidth
+
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    sbDragging.current = true
+    sbStartX.current = e.clientX
+    sbStartWidth.current = sidebarWidthRef.current
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
 
   // ── Query log resize ──
   const qlDragging = useRef(false)
@@ -129,17 +150,29 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!qlDragging.current) return
-      const delta = qlStartY.current - e.clientY
-      const newHeight = Math.min(600, Math.max(80, qlStartHeight.current + delta))
-      setQueryLogHeight(newHeight)
+      if (sbDragging.current) {
+        const delta = e.clientX - sbStartX.current
+        const newWidth = Math.min(600, Math.max(160, sbStartWidth.current + delta))
+        setSidebarWidth(newWidth)
+      }
+      if (qlDragging.current) {
+        const delta = qlStartY.current - e.clientY
+        const newHeight = Math.min(600, Math.max(80, qlStartHeight.current + delta))
+        setQueryLogHeight(newHeight)
+      }
     }
 
     const handleMouseUp = () => {
-      if (!qlDragging.current) return
-      qlDragging.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
+      if (sbDragging.current) {
+        sbDragging.current = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+      if (qlDragging.current) {
+        qlDragging.current = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -285,6 +318,17 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     window.addEventListener('sql:toggle-sidebar', handler)
     return () => window.removeEventListener('sql:toggle-sidebar', handler)
   }, [])
+
+  // ── Escape clears multi-selection ──
+  useEffect(() => {
+    const handler = () => {
+      if (multiSelectedTables.size > 0) {
+        setMultiSelectedTables(new Set())
+      }
+    }
+    window.addEventListener('sql:escape', handler)
+    return () => window.removeEventListener('sql:escape', handler)
+  }, [multiSelectedTables])
 
   // ── FK navigation — open referenced table with a filter ──
   useEffect(() => {
@@ -642,11 +686,58 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── SchemaSidebar context menu handlers ──
 
+  // ── Open export dialog — auto-detects multi-selection ──
+  const openExportDialog = useCallback((table?: string | null, format?: 'csv' | 'json' | 'sql' | null) => {
+    const selected = multiSelectedTables.size > 0 ? Array.from(multiSelectedTables) : null
+    setExportDialogTable(table ?? null)
+    setExportDialogSelectedTables(selected)
+    setExportDialogFormat(format ?? null)
+    setShowExportDialog(true)
+  }, [multiSelectedTables])
+
+  // ── Truncate table handler ──
+  const handleTruncateTable = useCallback(async (tableName: string) => {
+    if (!sqlSessionId) return
+    // eslint-disable-next-line no-restricted-globals
+    const confirmed = confirm(`Are you sure you want to truncate "${tableName}"?\n\nThis will delete ALL rows in the table. This action cannot be undone.`)
+    if (!confirmed) return
+
+    try {
+      const dbType = connectionConfig?.type
+      const quotedTable = dbType === 'mysql'
+        ? `\`${tableName.replace(/`/g, '``')}\``
+        : `"${tableName.replace(/"/g, '""')}"`
+      const result = await (window as any).novadeck.sql.query(sqlSessionId, `TRUNCATE TABLE ${quotedTable}`, [])
+      if (!result.success) {
+        console.warn('Truncate failed:', result.error)
+      } else {
+        // Refresh data after truncate
+        window.dispatchEvent(
+          new CustomEvent('sql:refresh-data', {
+            detail: { sqlSessionId, connectionId },
+          })
+        )
+      }
+    } catch (err: any) {
+      console.warn('Truncate failed:', err.message || String(err))
+    }
+  }, [sqlSessionId, connectionConfig, connectionId])
+
   const handleTableAction = useCallback(
     (action: TableContextAction) => {
       switch (action.type) {
         case 'export':
+          // Single table export — pass the specific table, ignore multi-selection
           setExportDialogTable(action.table)
+          setExportDialogSelectedTables(null)
+          setExportDialogFormat(action.format)
+          setShowExportDialog(true)
+          break
+        case 'export-selected':
+          // Multi-table export from context menu — use the explicit list
+          setExportDialogTable(null)
+          setExportDialogSelectedTables(action.tables)
+          setExportDialogFormat(action.format)
           setShowExportDialog(true)
           break
         case 'import-csv':
@@ -659,20 +750,22 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         case 'view-structure':
           handleOpenStructure(action.table)
           break
+        case 'truncate-table':
+          handleTruncateTable(action.table)
+          break
         case 'drop-table':
           // TODO: Implement drop table confirmation dialog
           break
       }
     },
-    [handleOpenStructure]
+    [handleOpenStructure, handleTruncateTable]
   )
 
   const handleDatabaseAction = useCallback(
     (action: DatabaseContextAction) => {
       switch (action.type) {
         case 'export-database':
-          setExportDialogTable(null) // null = all tables
-          setShowExportDialog(true)
+          openExportDialog(null, null)
           break
         case 'import-sql':
           setShowImportSQLDialog(true)
@@ -690,7 +783,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           break
       }
     },
-    []
+    [openExportDialog]
   )
 
   /** Fetch columns for a table — used by ImportCSVDialog for column mapping */
@@ -1047,11 +1140,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         <ToolbarSep />
         <ToolbarButton
           icon={<Download size={13} />}
-          title="Export database"
-          onClick={() => {
-            setExportDialogTable(null)
-            setShowExportDialog(true)
-          }}
+          title={multiSelectedTables.size > 0 ? `Export ${multiSelectedTables.size} selected tables` : 'Export database'}
+          onClick={() => openExportDialog(null, null)}
         />
         <ToolbarButton
           icon={<Upload size={13} />}
@@ -1088,17 +1178,27 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       <div className="flex flex-row flex-1 overflow-hidden">
         <div
           className={cn(
-            'shrink-0 overflow-hidden',
-            showSidebar ? 'border-r border-nd-border' : 'hidden'
+            'shrink-0 overflow-hidden relative',
+            showSidebar ? '' : 'hidden'
           )}
-          style={showSidebar ? { width: '20%', minWidth: 180, maxWidth: 400 } : undefined}
+          style={showSidebar ? { width: sidebarWidth } : undefined}
         >
           <SchemaSidebar
             connectionId={connectionId}
             hasSSHConnection={hasSSHConnection}
             onTableAction={handleTableAction}
             onDatabaseAction={handleDatabaseAction}
+            multiSelectedTables={multiSelectedTables}
+            onMultiSelectChange={setMultiSelectedTables}
           />
+          {/* Sidebar resize handle */}
+          <div
+            onMouseDown={handleSidebarResizeStart}
+            className="absolute top-0 right-0 w-1 h-full cursor-ew-resize group flex items-center justify-center hover:bg-nd-accent/30 transition-colors z-10"
+            title="Drag to resize"
+          >
+            <div className="w-px h-full bg-nd-border group-hover:bg-nd-accent/60 transition-colors" />
+          </div>
         </div>
         <div className="flex-1 overflow-hidden min-w-0">
           {mainContent}
@@ -1153,12 +1253,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       {sqlSessionId && connectionConfig && (
         <ExportTableDialog
           open={showExportDialog}
-          onClose={() => { setShowExportDialog(false); setExportDialogTable(null) }}
+          onClose={() => { setShowExportDialog(false); setExportDialogTable(null); setExportDialogSelectedTables(null); setExportDialogFormat(null) }}
           sqlSessionId={sqlSessionId}
           connectionId={connectionId}
           dbType={connectionConfig.type}
           currentDatabase={currentDatabase}
           table={exportDialogTable}
+          selectedTables={exportDialogSelectedTables}
+          initialFormat={exportDialogFormat}
           tables={tables}
         />
       )}

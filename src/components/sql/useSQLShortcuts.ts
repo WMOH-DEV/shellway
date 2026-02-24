@@ -12,7 +12,7 @@ import type { SQLTab } from '@/types/sql'
  * Hardcoded (non-customizable):
  *   Escape  — Cancel cell edit / close overlays
  *
- * NOTE: Copy/paste, Cmd+Z (undo), browser shortcuts are NOT overridden.
+ * Cmd/Ctrl+Z — Undo last staged change (only when not editing a cell)
  */
 export function useSQLShortcuts(
   connectionId: string,
@@ -60,6 +60,24 @@ export function useSQLShortcuts(
     window.dispatchEvent(
       new CustomEvent('sql:apply-changes', {
         detail: { sqlSessionId: sqlSessionRef.current, connectionId: connectionIdRef.current },
+      })
+    )
+  }, [])
+
+  // ── Undo last staged change ──
+  const undoLastChange = useCallback(() => {
+    const conn = getSQLConnectionState(connectionIdRef.current)
+    if (conn.stagedChanges.length === 0) return
+    // Pop the last staged change (LIFO)
+    const lastChange = conn.stagedChanges[conn.stagedChanges.length - 1]
+    // Dispatch event to DataTabView — it will remove the change AND refresh the grid
+    // to restore the original cell value (ag-grid mutates data in-place during edits)
+    window.dispatchEvent(
+      new CustomEvent('sql:undo-change', {
+        detail: {
+          connectionId: connectionIdRef.current,
+          changeId: lastChange.id,
+        },
       })
     )
   }, [])
@@ -155,6 +173,22 @@ export function useSQLShortcuts(
         return
       }
 
+      // ── Undo last staged change (default CmdOrCtrl+Z) ──
+      // Only intercept when NOT inside a cell editor, input, textarea, or Monaco editor
+      if (matchesBinding(e, 'sql:undoChange')) {
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('.monaco-editor') ||
+          target.closest('.ag-cell-edit-wrapper')
+        ) return // Let native undo handle it inside editors
+        e.preventDefault()
+        undoLastChange()
+        return
+      }
+
       // ── Toggle data/structure view mode (default CmdOrCtrl+.) ──
       if (matchesBinding(e, 'sql:cycleTabType')) {
         e.preventDefault()
@@ -165,5 +199,5 @@ export function useSQLShortcuts(
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [addQueryTab, closeActiveTab, applyChanges, toggleViewMode])
+  }, [addQueryTab, closeActiveTab, applyChanges, undoLastChange, toggleViewMode])
 }

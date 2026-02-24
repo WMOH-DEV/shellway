@@ -16,12 +16,16 @@ interface ExportTableDialogProps {
   currentDatabase: string
   /** Pre-selected table (from context menu). If null, defaults to "All Tables" */
   table?: string | null
+  /** Pre-selected tables from multi-select in sidebar */
+  selectedTables?: string[] | null
+  /** Initial format from context menu action (e.g. "Export as CSV") */
+  initialFormat?: ExportFormat | null
   /** Available tables for multi-select */
   tables: { name: string; type: 'table' | 'view' }[]
 }
 
 type ExportFormat = 'csv' | 'json' | 'sql'
-type ExportScope = 'table' | 'all'
+type ExportScope = 'table' | 'selected' | 'all'
 type CSVDelimiter = ',' | '\t' | ';' | '|'
 
 interface FormatMeta {
@@ -55,10 +59,14 @@ export function ExportTableDialog({
   dbType,
   currentDatabase,
   table,
+  selectedTables,
+  initialFormat,
   tables,
 }: ExportTableDialogProps) {
-  // Scope
-  const [scope, setScope] = useState<ExportScope>(table ? 'table' : 'all')
+  // Scope — default to 'selected' if multi-select, 'table' if single, 'all' otherwise
+  const [scope, setScope] = useState<ExportScope>(
+    selectedTables && selectedTables.length > 0 ? 'selected' : table ? 'table' : 'all'
+  )
 
   // Format
   const [format, setFormat] = useState<ExportFormat>('sql')
@@ -88,8 +96,12 @@ export function ExportTableDialog({
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      setScope(table ? 'table' : 'all')
-      setFormat('sql')
+      const newScope = selectedTables && selectedTables.length > 0 ? 'selected' : table ? 'table' : 'all'
+      setScope(newScope)
+      // Use initial format from context menu, or default to SQL
+      // For 'all' scope, force SQL (CSV/JSON not supported for full DB export)
+      const resolvedFormat = newScope === 'all' ? 'sql' : (initialFormat ?? 'sql')
+      setFormat(resolvedFormat)
       setIncludeStructure(true)
       setIncludeData(true)
       setAddDropTable(false)
@@ -110,9 +122,10 @@ export function ExportTableDialog({
         autoCloseTimerRef.current = null
       }
     }
-  }, [open, table])
+  }, [open, table, selectedTables, initialFormat])
 
   // Force SQL format when scope is "all" (CSV/JSON not supported for full database export)
+  // "selected" scope supports all formats since individual tables are exported
   useEffect(() => {
     if (scope === 'all' && format !== 'sql') {
       setFormat('sql')
@@ -156,7 +169,11 @@ export function ExportTableDialog({
 
     // Determine filename
     const baseName =
-      scope === 'table' && table ? table : `${currentDatabase}_export`
+      scope === 'table' && table
+        ? table
+        : scope === 'selected' && selectedTables && selectedTables.length > 0
+          ? `${currentDatabase}_${selectedTables.length}_tables`
+          : `${currentDatabase}_export`
     const ext = FORMAT_META[format].extensions[0]
     const defaultFilename = `${baseName}.${ext}`
 
@@ -181,6 +198,9 @@ export function ExportTableDialog({
     if (scope === 'table' && table) {
       options.scope = 'table'
       options.table = table
+    } else if (scope === 'selected' && selectedTables && selectedTables.length > 0) {
+      options.scope = 'database'
+      options.tables = selectedTables
     } else {
       options.scope = 'database'
       options.tables = tables.map((t) => t.name)
@@ -225,6 +245,7 @@ export function ExportTableDialog({
   }, [
     scope,
     table,
+    selectedTables,
     currentDatabase,
     format,
     includeStructure,
@@ -291,6 +312,30 @@ export function ExportTableDialog({
                     {table}
                   </span>
                 )}
+                {selectedTables && selectedTables.length > 0 && (
+                  <>
+                    <label className="flex items-center gap-2 text-xs text-nd-text-primary cursor-pointer">
+                      <input
+                        type="radio"
+                        name="export-scope"
+                        checked={scope === 'selected'}
+                        onChange={() => setScope('selected')}
+                        className="accent-nd-accent"
+                      />
+                      Selected Tables
+                      <span className="text-nd-text-muted">
+                        ({selectedTables.length})
+                      </span>
+                    </label>
+                    {scope === 'selected' && (
+                      <div className="ml-6 flex flex-col gap-0.5 max-h-24 overflow-y-auto">
+                        {selectedTables.map((t) => (
+                          <span key={t} className="text-xs text-nd-text-muted font-mono">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
                 <label className="flex items-center gap-2 text-xs text-nd-text-primary cursor-pointer">
                   <input
                     type="radio"
@@ -314,7 +359,7 @@ export function ExportTableDialog({
               </label>
               <div className="flex gap-1.5">
                 {(Object.keys(FORMAT_META) as ExportFormat[]).map((f) => {
-                  const disabled = scope === 'all' && f !== 'sql'
+                  const disabled = scope === 'all' && f !== 'sql' // CSV/JSON only disabled for full-database export
                   return (
                     <button
                       key={f}

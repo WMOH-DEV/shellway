@@ -1020,15 +1020,47 @@ export const DataTabView = React.memo(function DataTabView({
         })
       }
     }
+    const handleUndoChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId !== connectionId) return
+      const changeId = detail.changeId as string
+      if (!changeId) return
+
+      // Find the change to determine if we need to refresh (updates/deletes mutate grid data)
+      const change = stagedChangesRef.current.find((c) => c.id === changeId)
+      if (!change) return
+
+      // Remove the staged change
+      removeStagedChange(changeId)
+      originalValuesRef.current.delete(changeId)
+
+      // For update/delete changes, the grid data was mutated in-place by ag-grid.
+      // We must refresh the data to restore the original values.
+      if (change.type === 'update' || change.type === 'delete') {
+        cacheKeyRef.current = ''
+        executeQuery({
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          sort: sortColumn,
+          sortDir: sortDirection,
+          currentFilters: filters,
+        })
+      }
+      // For insert changes, removing from staged is sufficient
+      // (the insert row is derived from stagedChanges, not the grid data)
+    }
+
     window.addEventListener('sql:apply-changes', handleApplyChanges)
     window.addEventListener('sql:discard-changes', handleDiscardEvent)
     window.addEventListener('sql:refresh-data', handleRefreshData)
+    window.addEventListener('sql:undo-change', handleUndoChange)
     return () => {
       window.removeEventListener('sql:apply-changes', handleApplyChanges)
       window.removeEventListener('sql:discard-changes', handleDiscardEvent)
       window.removeEventListener('sql:refresh-data', handleRefreshData)
+      window.removeEventListener('sql:undo-change', handleUndoChange)
     }
-  }, [connectionId, handleSaveChanges, handleDiscardChanges, executeQuery, pagination, sortColumn, sortDirection, filters])
+  }, [connectionId, handleSaveChanges, handleDiscardChanges, removeStagedChange, executeQuery, pagination, sortColumn, sortDirection, filters])
 
   // ── Listen for FK filter navigation — sets a filter from external navigation ──
   useEffect(() => {

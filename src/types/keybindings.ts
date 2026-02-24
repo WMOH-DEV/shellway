@@ -46,6 +46,7 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'sql:newTab',         label: 'New Query Tab',           scope: 'sql', defaultCombo: 'CmdOrCtrl+Shift+N' },
   { id: 'sql:closeTab',       label: 'Close SQL Tab',           scope: 'sql', defaultCombo: 'CmdOrCtrl+Shift+W' },
   { id: 'sql:insertRow',      label: 'Insert New Row',          scope: 'sql', defaultCombo: 'CmdOrCtrl+Shift+I' },
+  { id: 'sql:undoChange',     label: 'Undo Last Change',         scope: 'sql', defaultCombo: 'CmdOrCtrl+Z' },
   { id: 'sql:cycleTabType',   label: 'Cycle Tab Type',          scope: 'sql', defaultCombo: 'CmdOrCtrl+.' },
   { id: 'sql:refresh',        label: 'Refresh Data',            scope: 'sql', defaultCombo: 'F5' },
 ]
