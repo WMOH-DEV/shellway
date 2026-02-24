@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useEffect } from 'react'
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import { Plus, Minus, Filter, AlertTriangle } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
@@ -136,6 +136,15 @@ const FilterRow = React.memo(function FilterRow({
   onApply,
   autoFocusValue,
 }: FilterRowProps) {
+  // Ref-based focus — works on both mount and when autoFocusValue changes to true
+  const valueInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (autoFocusValue) {
+      // Small delay to ensure the DOM is fully rendered (e.g. filter bar just became visible)
+      requestAnimationFrame(() => valueInputRef.current?.focus())
+    }
+  }, [autoFocusValue])
+
   const isRawSql = filter.column === '__raw_sql__'
   const category = isRawSql
     ? 'raw_sql' as ColumnCategory
@@ -214,12 +223,12 @@ const FilterRow = React.memo(function FilterRow({
       {needsValue && !isBetween && (
         <div className="flex-1 min-w-[60px]">
           <Input
+            ref={valueInputRef}
             value={filter.value}
             onChange={(e) => onUpdate(filter.id, { value: e.target.value })}
             onKeyDown={(e) => { if (e.key === 'Enter') onApply() }}
             placeholder={isRawSql ? 'e.g. id > 100 AND status = 1' : 'Value...'}
             className="h-6 w-full text-xs"
-            autoFocus={autoFocusValue}
           />
         </div>
       )}
@@ -308,10 +317,12 @@ export const FilterBar = React.memo(function FilterBar({
 }: FilterBarProps) {
   const activeCount = filters.filter((f) => f.enabled).length
 
-  // Track last-added filter to auto-focus its value input
+  // Track which filter's value input should be auto-focused.
+  // Set by internal "Add Filter" button or by external `externalFocusFilterId` prop
+  // (e.g. filter added via column header right-click).
   const [autoFocusFilterId, setAutoFocusFilterId] = useState<string | null>(null)
 
-  // Pick up externally-requested focus (e.g. filter added via column header right-click)
+  // Pick up externally-requested focus
   useEffect(() => {
     if (externalFocusFilterId) {
       setAutoFocusFilterId(externalFocusFilterId)
@@ -321,7 +332,7 @@ export const FilterBar = React.memo(function FilterBar({
   // Clear auto-focus flag after it's been consumed
   useEffect(() => {
     if (autoFocusFilterId) {
-      const timer = setTimeout(() => setAutoFocusFilterId(null), 200)
+      const timer = setTimeout(() => setAutoFocusFilterId(null), 300)
       return () => clearTimeout(timer)
     }
   }, [autoFocusFilterId])
