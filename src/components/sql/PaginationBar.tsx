@@ -45,6 +45,8 @@ interface PaginationBarProps {
   viewMode?: TableViewMode
   /** Callback when view mode changes */
   onViewModeChange?: (mode: TableViewMode) => void
+  /** Insert a new row — scoped to this tab */
+  onInsertRow?: () => void
 }
 
 const PAGE_SIZES = [50, 100, 200, 500, 1000]
@@ -65,6 +67,7 @@ export const PaginationBar = React.memo(function PaginationBar({
   onShowAllColumns,
   viewMode = 'data',
   onViewModeChange,
+  onInsertRow,
 }: PaginationBarProps) {
   const { page, pageSize, totalRows, totalPages } = pagination
   const [pageInput, setPageInput] = useState(String(page))
@@ -215,7 +218,7 @@ export const PaginationBar = React.memo(function PaginationBar({
             <>
               <div className="mx-1 h-3 w-px bg-nd-border" />
               <button
-                onClick={() => window.dispatchEvent(new CustomEvent('sql:insert-row'))}
+                onClick={onInsertRow}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
               >
                 <Plus size={11} />

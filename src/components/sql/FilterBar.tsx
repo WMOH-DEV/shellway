@@ -340,9 +340,10 @@ export const FilterBar = React.memo(function FilterBar({
   )
 
   const handleClear = useCallback(() => {
-    onFiltersChange([])
+    // Disable all filters and re-apply (fetches unfiltered data) but keep filter rows visible
+    onFiltersChange(filters.map((f) => ({ ...f, enabled: false })))
     onApply()
-  }, [onFiltersChange, onApply])
+  }, [filters, onFiltersChange, onApply])
 
   // Show nothing if no filters — just the Add Filter button in a minimal bar
   return (

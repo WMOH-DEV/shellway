@@ -274,7 +274,7 @@ export const DataTabView = React.memo(function DataTabView({
         // exact COUNT(*) only when filters are applied (filtered sets are typically small).
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
-        const hasFilters = currentFilters.length > 0
+        const hasFilters = currentFilters.some((f) => f.enabled)
 
         if (hasFilters) {
           // Exact count needed for filtered results
@@ -436,7 +436,8 @@ export const DataTabView = React.memo(function DataTabView({
   // Clear pending changes when data context changes (page, sort, filter)
   // Row indices are positional — navigating makes them point to different rows
   const discardPendingChanges = useCallback(() => {
-    const currentTableChanges = stagedChanges.filter(
+    // Read latest from ref to avoid stale closure
+    const currentTableChanges = stagedChangesRef.current.filter(
       (c) => c.table === table && (c.schema ?? undefined) === (schema ?? undefined)
     )
     if (currentTableChanges.length > 0) {
@@ -445,7 +446,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
       originalValuesRef.current.clear()
     }
-  }, [stagedChanges, table, schema, removeStagedChange])
+  }, [table, schema, removeStagedChange])
 
   const handlePageChange = useCallback(
     (page: number) => {
@@ -525,8 +526,11 @@ export const DataTabView = React.memo(function DataTabView({
     []
   )
 
-  // Ref always holds latest filters so debounced callbacks never use stale state
+  // Refs always hold latest values so callbacks never use stale closures
   const filtersRef = useRef<TableFilter[]>(filters)
+  filtersRef.current = filters
+  const stagedChangesRef = useRef(stagedChanges)
+  stagedChangesRef.current = stagedChanges
 
   const handleFiltersChange = useCallback((newFilters: TableFilter[]) => {
     filtersRef.current = newFilters
@@ -577,11 +581,16 @@ export const DataTabView = React.memo(function DataTabView({
   const handleCellEdit = useCallback(
     (rowIndex: number, field: string, _oldValue: unknown, newValue: unknown) => {
       const realRowCount = result?.rows?.length ?? 0
+      // Read latest from ref to avoid stale closure (same pattern as handleDeleteRows)
+      const currentStaged = stagedChangesRef.current
+      const currentInserts = currentStaged.filter(
+        (c) => c.type === 'insert' && c.table === table && (c.schema ?? undefined) === (schema ?? undefined) && c.newRow
+      )
 
       // ── Insert row edit: update the staged insert's newRow directly ──
       if (rowIndex >= realRowCount) {
         const insertIdx = rowIndex - realRowCount
-        const insertChange = insertChanges[insertIdx]
+        const insertChange = currentInserts[insertIdx]
         if (!insertChange?.newRow) return
 
         const updatedRow = { ...insertChange.newRow, [field]: newValue }
@@ -607,7 +616,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // Find existing staged change for this cell
-      const existingChange = stagedChanges.find((c) => c.id === cellKey)
+      const existingChange = currentStaged.find((c) => c.id === cellKey)
 
       if (isReverted) {
         // Value was reverted to original — remove the staged change
@@ -638,7 +647,7 @@ export const DataTabView = React.memo(function DataTabView({
       // Atomic upsert — replaces existing or inserts new
       upsertStagedChange(change)
     },
-    [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges, insertChanges]
+    [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange]
   )
 
   // ── Insert / Duplicate row handlers ──
@@ -681,15 +690,22 @@ export const DataTabView = React.memo(function DataTabView({
   }, [result?.fields, table, schema, columnMeta, upsertStagedChange])
 
   // ── Delete row handler ──
+  // Uses stagedChangesRef to always read the latest staged changes and avoid stale closures
+  // (React batching can delay callback recreation after Zustand updates)
   const handleDeleteRows = useCallback((rowIndices: number[]) => {
     if (!result?.rows) return
     const realRowCount = result.rows.length
+    // Read latest from ref to avoid stale closure when user quickly adds then deletes a row
+    const currentStaged = stagedChangesRef.current
+    const currentInserts = currentStaged.filter(
+      (c) => c.type === 'insert' && c.table === table && (c.schema ?? undefined) === (schema ?? undefined) && c.newRow
+    )
 
     for (const rowIndex of rowIndices) {
       // If the row is an inserted (staged) row, just remove the staged insert
       if (rowIndex >= realRowCount) {
         const insertIdx = rowIndex - realRowCount
-        const insertChange = insertChanges[insertIdx]
+        const insertChange = currentInserts[insertIdx]
         if (insertChange) {
           removeStagedChange(insertChange.id)
         }
@@ -702,11 +718,11 @@ export const DataTabView = React.memo(function DataTabView({
       const changeId = `delete-${table}-${rowIndex}`
 
       // If this row already has a delete staged, skip
-      if (stagedChanges.find((c) => c.id === changeId)) continue
+      if (currentStaged.find((c) => c.id === changeId)) continue
 
       // Also remove any pending edit changes for this row
       const editPrefix = `edit-${table}-${rowIndex}-`
-      for (const c of stagedChanges) {
+      for (const c of currentStaged) {
         if (c.id.startsWith(editPrefix)) {
           removeStagedChange(c.id)
           originalValuesRef.current.delete(c.id)
@@ -723,7 +739,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
       upsertStagedChange(change)
     }
-  }, [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange, stagedChanges, insertChanges])
+  }, [result, table, schema, primaryKeyColumns, upsertStagedChange, removeStagedChange])
 
   // Compute edited rows/cells for visual highlighting
   // Change IDs follow pattern: "edit-{table}-{rowIndex}-{field}" or "delete-{table}-{rowIndex}"
@@ -945,6 +961,8 @@ export const DataTabView = React.memo(function DataTabView({
 
   const handleDiscardChanges = useCallback(() => {
     // Only remove changes for this table, not all connection changes
+    if (tableChanges.length === 0) return // Nothing to discard for this table — skip re-query
+
     for (const change of tableChanges) {
       removeStagedChange(change.id)
       originalValuesRef.current.delete(change.id)
@@ -1241,6 +1259,7 @@ export const DataTabView = React.memo(function DataTabView({
         onShowAllColumns={handleShowAllColumns}
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
+        onInsertRow={handleInsertRow}
       />
     </div>
   )
