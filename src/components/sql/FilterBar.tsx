@@ -109,6 +109,9 @@ interface FilterBarProps {
   onApply: () => void
   /** ID of a filter whose value input should be auto-focused (e.g. added externally via column right-click) */
   externalFocusFilterId?: string | null
+  /** Whether the currently displayed data was fetched with active filters.
+   *  Used to decide whether removing all filters should auto-refresh. */
+  isDataFiltered?: boolean
 }
 
 const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
@@ -314,6 +317,7 @@ export const FilterBar = React.memo(function FilterBar({
   onFiltersChange,
   onApply,
   externalFocusFilterId,
+  isDataFiltered,
 }: FilterBarProps) {
   const activeCount = filters.filter((f) => f.enabled).length
 
@@ -356,17 +360,23 @@ export const FilterBar = React.memo(function FilterBar({
     (id: string) => {
       const updated = filters.filter((f) => f.id !== id)
       onFiltersChange(updated)
-      // Re-apply only when all filters are cleared to restore unfiltered view
-      if (updated.length === 0) onApply()
+      // Only re-apply when all filters are removed AND the current data is actually
+      // filtered. This avoids unnecessary queries when removing filters that were
+      // never applied (e.g. user added filters but never clicked "Apply").
+      if (updated.length === 0 && isDataFiltered) {
+        onApply()
+      }
     },
-    [filters, onFiltersChange, onApply]
+    [filters, onFiltersChange, onApply, isDataFiltered]
   )
 
   const handleClear = useCallback(() => {
-    // Disable all filters and re-apply (fetches unfiltered data) but keep filter rows visible
+    // Disable all filters and keep filter rows visible
     onFiltersChange(filters.map((f) => ({ ...f, enabled: false })))
-    onApply()
-  }, [filters, onFiltersChange, onApply])
+    // Only re-fetch if the data is actually filtered — avoids unnecessary queries
+    // when filters were added but never applied
+    if (isDataFiltered) onApply()
+  }, [filters, onFiltersChange, onApply, isDataFiltered])
 
   // Show nothing if no filters — just the Add Filter button in a minimal bar
   return (

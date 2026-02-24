@@ -195,6 +195,8 @@ export const DataTabView = React.memo(function DataTabView({
   // Cache key to avoid re-fetching when switching back to a loaded tab
   const cacheKeyRef = useRef<string>('')
   const resultRef = useRef<QueryResult | null>(null)
+  // Tracks whether the currently displayed data was fetched with active filters
+  const [isDataFiltered, setIsDataFiltered] = useState(false)
 
   // Query logging is now handled by the main-process query-executed event (subscribed in SQLView)
 
@@ -275,6 +277,7 @@ export const DataTabView = React.memo(function DataTabView({
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
         const hasFilters = currentFilters.some((f) => f.enabled)
+        setIsDataFiltered(hasFilters)
 
         if (hasFilters) {
           // Exact count needed for filtered results
@@ -1219,6 +1222,7 @@ export const DataTabView = React.memo(function DataTabView({
           onFiltersChange={handleFiltersChange}
           onApply={handleFiltersApply}
           externalFocusFilterId={focusFilterId}
+          isDataFiltered={isDataFiltered}
         />
       )}
 
