@@ -49,6 +49,8 @@ const OPERATORS_BY_CATEGORY: Record<ColumnCategory, FilterOperator[]> = {
     'less_or_equal',
     'between',
     'in',
+    'contains',
+    'not_contains',
     'is_null',
     'is_not_null',
   ],
@@ -105,6 +107,8 @@ interface FilterBarProps {
   columns: QueryField[]
   onFiltersChange: (filters: TableFilter[]) => void
   onApply: () => void
+  /** ID of a filter whose value input should be auto-focused (e.g. added externally via column right-click) */
+  externalFocusFilterId?: string | null
 }
 
 const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
@@ -300,11 +304,19 @@ export const FilterBar = React.memo(function FilterBar({
   columns,
   onFiltersChange,
   onApply,
+  externalFocusFilterId,
 }: FilterBarProps) {
   const activeCount = filters.filter((f) => f.enabled).length
 
   // Track last-added filter to auto-focus its value input
   const [autoFocusFilterId, setAutoFocusFilterId] = useState<string | null>(null)
+
+  // Pick up externally-requested focus (e.g. filter added via column header right-click)
+  useEffect(() => {
+    if (externalFocusFilterId) {
+      setAutoFocusFilterId(externalFocusFilterId)
+    }
+  }, [externalFocusFilterId])
 
   // Clear auto-focus flag after it's been consumed
   useEffect(() => {

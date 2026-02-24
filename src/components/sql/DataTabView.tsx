@@ -511,16 +511,21 @@ export const DataTabView = React.memo(function DataTabView({
     [executeQuery, pagination.pageSize, filters, discardPendingChanges]
   )
 
+  // Track filter ID that needs auto-focus (set when adding filter from column header right-click)
+  const [focusFilterId, setFocusFilterId] = useState<string | null>(null)
+
   // Header context menu → add a filter for a specific column
   const handleFilterColumn = useCallback(
     (column: string) => {
+      const id = crypto.randomUUID()
       const newFilter: TableFilter = {
-        id: crypto.randomUUID(),
+        id,
         enabled: true,
         column,
         operator: 'equals',
         value: '',
       }
+      setFocusFilterId(id)
       setFilters((prev) => [...prev, newFilter])
     },
     []
@@ -1213,6 +1218,7 @@ export const DataTabView = React.memo(function DataTabView({
           columns={filterColumns}
           onFiltersChange={handleFiltersChange}
           onApply={handleFiltersApply}
+          externalFocusFilterId={focusFilterId}
         />
       )}
 

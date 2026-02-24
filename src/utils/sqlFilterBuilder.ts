@@ -47,28 +47,33 @@ export function buildWhereClause(
       }
       case 'contains': {
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
-        clauses.push(`${col} ${op} ${placeholder(dbType, paramIndex)}`)
+        // Cast to text for PostgreSQL so LIKE works on non-string columns (e.g. int, date)
+        const containsCol = dbType === 'postgres' ? `${col}::text` : col
+        clauses.push(`${containsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}%`)
         paramIndex++
         break
       }
       case 'not_contains': {
         const op = dbType === 'postgres' ? 'NOT ILIKE' : 'NOT LIKE'
-        clauses.push(`${col} ${op} ${placeholder(dbType, paramIndex)}`)
+        const notContainsCol = dbType === 'postgres' ? `${col}::text` : col
+        clauses.push(`${notContainsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}%`)
         paramIndex++
         break
       }
       case 'starts_with': {
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
-        clauses.push(`${col} ${op} ${placeholder(dbType, paramIndex)}`)
+        const startsCol = dbType === 'postgres' ? `${col}::text` : col
+        clauses.push(`${startsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`${filter.value}%`)
         paramIndex++
         break
       }
       case 'ends_with': {
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
-        clauses.push(`${col} ${op} ${placeholder(dbType, paramIndex)}`)
+        const endsCol = dbType === 'postgres' ? `${col}::text` : col
+        clauses.push(`${endsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}`)
         paramIndex++
         break

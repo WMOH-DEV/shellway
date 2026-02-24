@@ -227,12 +227,12 @@ function FKCellRenderer(props: {
   }
 
   return (
-    <span className="flex items-center gap-1 group/fk">
-      <span className="truncate">{String(value)}</span>
+    <span className="flex items-center gap-1 w-full group/fk">
+      <span className="truncate flex-1">{String(value)}</span>
       {fk && (
         <button
           onClick={handleFKClick}
-          className="shrink-0 opacity-0 group-hover/fk:opacity-100 text-nd-accent hover:text-nd-accent/80 transition-opacity"
+          className="shrink-0 opacity-0 group-hover/fk:opacity-100 text-nd-accent hover:text-nd-accent/80 transition-opacity ml-auto"
           title={`Go to ${fk.referencedTable}.${fk.referencedColumn} = ${value}`}
         >
           <ExternalLink size={11} />
@@ -576,6 +576,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       suppressHeaderMenuButton: true,
       comparator: () => 0, // Prevent client-side sorting; server-side only
       unSortIcon: true,
+      sortingOrder: ['desc', 'asc', null], // Start with desc — data is already asc by default
       width: 150,
     }),
     []
