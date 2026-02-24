@@ -60,6 +60,61 @@ const shellwayLightTheme = themeQuartz.withParams({
   oddRowBackgroundColor: 'rgb(248, 250, 252)',
 })
 
+// ── Auto-width constants ──
+// Maximum width (in px) that auto-sizing can assign to a column.
+// Prevents JSON blobs or large text from blowing up column widths.
+const MAX_AUTO_WIDTH = 250
+// Minimum width for auto-sized columns (keeps narrow columns readable)
+const MIN_AUTO_WIDTH = 80
+// Average character width in pixels at 13px font size (Inter/system font).
+// Used to estimate column widths from data without DOM measurement.
+const CHAR_WIDTH_PX = 7.5
+// Horizontal padding per cell (cellHorizontalPadding × 2 sides + sort icon space)
+const CELL_PADDING_PX = 28
+// Maximum number of rows to sample when estimating column widths
+const WIDTH_SAMPLE_ROWS = 100
+
+/**
+ * Estimate the optimal column width based on the header name and a sample of row data.
+ * Returns a width in px, clamped between MIN_AUTO_WIDTH and MAX_AUTO_WIDTH.
+ */
+function estimateColumnWidth(
+  headerName: string,
+  rows: Record<string, unknown>[],
+  fieldName: string
+): number {
+  // Start with header text width (header is 12px, slightly narrower chars but bold)
+  let maxCharLen = headerName.length
+
+  // Sample rows to find the longest cell content
+  const sampleSize = Math.min(rows.length, WIDTH_SAMPLE_ROWS)
+  for (let i = 0; i < sampleSize; i++) {
+    const value = rows[i]?.[fieldName]
+    if (value === null || value === undefined) {
+      // "(NULL)" display
+      maxCharLen = Math.max(maxCharLen, 6)
+      continue
+    }
+    let displayLen: number
+    if (typeof value === 'object') {
+      // JSON objects — show a preview, don't measure the full blob
+      const str = JSON.stringify(value)
+      displayLen = Math.min(str.length, 40)
+    } else if (typeof value === 'boolean') {
+      displayLen = 5 // "true" / "false"
+    } else {
+      const str = String(value)
+      // Only measure up to the first line break for multiline text
+      const firstLine = str.indexOf('\n')
+      displayLen = firstLine >= 0 ? firstLine : str.length
+    }
+    maxCharLen = Math.max(maxCharLen, displayLen)
+  }
+
+  const estimatedWidth = Math.round(maxCharLen * CHAR_WIDTH_PX + CELL_PADDING_PX)
+  return Math.max(MIN_AUTO_WIDTH, Math.min(MAX_AUTO_WIDTH, estimatedWidth))
+}
+
 // ── Props ──
 
 /** Map of column name → FK target info for FK navigation */
@@ -272,35 +327,60 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   // Holds the current column widths for this table. Read by columnDefs useMemo so that
   // every time columnDefs re-runs (foreignKeys load, editedCells change, etc.), the
   // correct widths are baked into the ColDef objects — preventing ag-grid from
-  // resetting widths to defaultColDef.width (150px) on column definition updates.
+  // resetting widths to defaultColDef.width on column definition updates.
   //
   // Initialized from localStorage on mount (synchronous — available for first render).
   // Updated eagerly in onColumnResized (before the debounced localStorage save).
   const columnWidthsRef = useRef<Record<string, number> | null>(null)
   const columnWidthsKeyRef = useRef(columnWidthsKey)
 
+  // Read saved column widths from localStorage (returns null if unavailable)
+  const readSavedWidths = (key: string): Record<string, number> | null => {
+    try {
+      const raw = localStorage.getItem(key)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  }
+
   // Load saved widths when the table key changes (component mount or table switch)
   if (columnWidthsKeyRef.current !== columnWidthsKey) {
     columnWidthsKeyRef.current = columnWidthsKey
-    if (columnWidthsKey) {
-      try {
-        const raw = localStorage.getItem(columnWidthsKey)
-        columnWidthsRef.current = raw ? JSON.parse(raw) : null
-      } catch {
-        columnWidthsRef.current = null
-      }
-    } else {
-      columnWidthsRef.current = null
-    }
+    columnWidthsRef.current = columnWidthsKey ? readSavedWidths(columnWidthsKey) : null
   }
   // Also initialize on very first render
   if (columnWidthsRef.current === null && columnWidthsKey) {
-    try {
-      const raw = localStorage.getItem(columnWidthsKey)
-      columnWidthsRef.current = raw ? JSON.parse(raw) : null
-    } catch {
-      columnWidthsRef.current = null
+    columnWidthsRef.current = readSavedWidths(columnWidthsKey)
+  }
+
+  // Cache auto-estimated widths per field set — recalculated when fields change,
+  // NOT when rows change (to avoid re-estimating on pagination or cell edits).
+  const estimatedWidthsRef = useRef<Record<string, number> | null>(null)
+  const prevFieldsRef = useRef<string>('')
+  const fieldsFingerprint = result?.fields ? JSON.stringify(result.fields.map((f) => f.name)) : ''
+
+  // Compute estimated widths from field definitions + row data.
+  // Boolean columns get MIN_AUTO_WIDTH; all others get content-based estimates.
+  const computeEstimatedWidths = () => {
+    if (!result?.fields?.length || !result.rows?.length) return null
+    const widths: Record<string, number> = {}
+    for (const field of result.fields) {
+      widths[field.name] = isBooleanType(field.type)
+        ? MIN_AUTO_WIDTH
+        : estimateColumnWidth(field.name, result.rows, field.name)
     }
+    return widths
+  }
+
+  // Recompute when fields change (new query or table switch)
+  if (fieldsFingerprint !== prevFieldsRef.current) {
+    prevFieldsRef.current = fieldsFingerprint
+    estimatedWidthsRef.current = computeEstimatedWidths()
+  }
+  // Also compute on very first render if not yet computed and data is available
+  if (!estimatedWidthsRef.current && result?.fields?.length && result.rows?.length) {
+    estimatedWidthsRef.current = computeEstimatedWidths()
   }
 
   // Close cell context menu on click outside or scroll
@@ -417,13 +497,17 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         },
       }
 
-      // Apply saved width if available — takes priority over type-specific defaults
+      // Width priority: P1 saved user width → P2 auto-size from content → P3 capped at MAX_AUTO_WIDTH
       if (savedWidths && savedWidths[field.name] !== undefined) {
+        // P1: User has manually resized this column — always respect their preference
         col.width = savedWidths[field.name]
       } else if (isBooleanType(field.type)) {
-        col.width = 80
+        col.width = MIN_AUTO_WIDTH
+      } else if (estimatedWidthsRef.current?.[field.name] !== undefined) {
+        // P2 + P3: Content-based estimated width, clamped to [MIN_AUTO_WIDTH, MAX_AUTO_WIDTH]
+        col.width = estimatedWidthsRef.current[field.name]
       }
-      // No explicit width = use defaultColDef.width (150px)
+      // No estimated width yet = use defaultColDef.width (150px) as fallback
 
       if (isBooleanType(field.type)) {
         col.cellRenderer = BooleanCellRenderer
@@ -481,8 +565,9 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   )
 
   // Default column settings — sortable with no-op comparator (server-side sorting only)
-  // Fixed default width (150px) instead of auto-sizing to content — prevents JSON/text
-  // blobs from blowing up columns. Users can manually resize wider if needed.
+  // Default width (150px) is the initial width before auto-sizing kicks in on first
+  // data render. Auto-sizing respects: P1 saved user widths → P2 content auto-size
+  // → P3 clamped at MAX_AUTO_WIDTH to prevent JSON/text blobs from blowing up columns.
   const defaultColDef = useMemo<ColDef>(
     () => ({
       sortable: true,
@@ -673,10 +758,19 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       api.setColumnsVisible(allCols, true)
     }
     api.resetColumnState()
-    // Clear saved column widths — columns reset to defaultColDef.width (150px)
+    // Clear saved column widths — estimated widths from data are applied immediately
+    // via the API, and will also be picked up on the next columnDefs recomputation.
     columnWidthsRef.current = null
     if (columnWidthsKeyRef.current) {
       try { localStorage.removeItem(columnWidthsKeyRef.current) } catch {}
+    }
+    // Apply estimated widths immediately if available
+    if (estimatedWidthsRef.current) {
+      const widthEntries = Object.entries(estimatedWidthsRef.current)
+        .map(([key, newWidth]) => ({ key, newWidth }))
+      if (widthEntries.length > 0) {
+        api.setColumnWidths(widthEntries)
+      }
     }
     setHeaderContextMenu(null)
   }, [])
