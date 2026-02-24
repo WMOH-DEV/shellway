@@ -34,8 +34,8 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   } = useSession()
 
   const { searchQuery, setSearchQuery } = useSessionStore()
-  const { tabs, activeTabId, removeTab } = useConnectionStore()
-  const { sessionFormRequested, clearSessionFormRequest, expandedGroups, toggleGroup } = useUIStore()
+  const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
+  const { sessionFormRequested, clearSessionFormRequest, expandedGroups, toggleGroup, selectedSessionId, setSelectedSessionId } = useUIStore()
 
   // Form state
   const [formOpen, setFormOpen] = useState(false)
@@ -296,10 +296,12 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
+    // Clear selected preview if deleting the previewed session
+    if (selectedSessionId === deleteTarget.id) setSelectedSessionId(null)
     await deleteSession(deleteTarget.id)
     toast.info('Session deleted', `${deleteTarget.name} has been removed`)
     setDeleteTarget(null)
-  }, [deleteTarget, deleteSession])
+  }, [deleteTarget, deleteSession, selectedSessionId, setSelectedSessionId])
 
   const handleDuplicate = useCallback(
     async (id: string) => {
@@ -338,6 +340,30 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
       }
     },
     [tabs, removeTab]
+  )
+
+  /** Handle single-click on a disconnected session — switch to its tab or show preview */
+  const handleSessionSelect = useCallback(
+    (session: Session) => {
+      const tab = tabs.find((t) => t.sessionId === session.id)
+      if (tab) {
+        // Tab exists (even if disconnected) — switch to it
+        setActiveTab(tab.id)
+        setSelectedSessionId(null)
+      } else {
+        // No tab — show disconnected session preview
+        setSelectedSessionId(session.id)
+      }
+    },
+    [tabs, setActiveTab, setSelectedSessionId]
+  )
+
+  /** Whether a session is the currently selected preview (no tab, disconnected) */
+  const isSessionSelected = useCallback(
+    (sessionId: string) => {
+      return selectedSessionId === sessionId && !tabs.find((t) => t.sessionId === sessionId)
+    },
+    [selectedSessionId, tabs]
   )
 
   return (
@@ -456,11 +482,13 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
                 key={session.id}
                 session={session}
                 isActiveTab={isSessionActiveTab(session.id)}
+                isSelected={isSessionSelected(session.id)}
                 isFocused={focusedIndex >= 0 && visibleSessions[focusedIndex]?.id === session.id}
                 isDragOver={dragOverId === session.id}
                 isDragging={draggedId === session.id}
                 connectionStatus={getConnectionStatus(session.id)}
                 onConnect={() => onConnect(session)}
+                onSelect={() => handleSessionSelect(session)}
                 onConnectTerminal={() => onConnect(session, 'terminal')}
                 onConnectSFTP={() => onConnect(session, 'sftp')}
                 onConnectBoth={() => onConnect(session, 'both')}

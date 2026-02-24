@@ -16,7 +16,9 @@ import { ActivityLog } from '@/components/log/ActivityLog'
 import { ReconnectionOverlay } from '@/components/reconnection/ReconnectionOverlay'
 import { ConnectionHealthDashboard } from '@/components/connection/ConnectionHealthDashboard'
 import { TransferQueue } from '@/components/sftp/TransferQueue'
+import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { ConnectionTab } from '@/types/session'
 
@@ -26,8 +28,8 @@ const SUB_TABS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
-  { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
   { id: 'monitor', label: 'Monitor', icon: <Activity size={13} /> },
+  { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
   { id: 'info', label: 'Info', icon: <Info size={13} /> },
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
 ]
@@ -164,6 +166,91 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   }, [tab.activeSubTab, tab.sessionId, tab.splitView])
 
   const isReconnecting = tab.status === 'reconnecting'
+  const isOffline = tab.status === 'disconnected' || tab.status === 'error'
+
+  /** Reconnect an offline tab — reuses the same tab ID */
+  const handleReconnectTab = useCallback(() => {
+    const session = useSessionStore.getState().sessions.find((s) => s.id === tab.sessionId)
+    if (!session) return
+
+    // Resolve default sub-tab from session preferences
+    let resolvedSubTab: 'terminal' | 'sftp' = 'terminal'
+    let enableSplitView = false
+
+    if (session.viewPreferences?.defaultView) {
+      const pref = session.viewPreferences.defaultView
+      if (pref === 'terminal' || pref === 'sftp') {
+        resolvedSubTab = pref
+      } else if (pref === 'both') {
+        resolvedSubTab = 'terminal'
+        enableSplitView = true
+      } else if (pref === 'last-used') {
+        const lastUsed = localStorage.getItem(`shellway:lastView:${session.id}`)
+        if (lastUsed === 'both') {
+          resolvedSubTab = 'terminal'
+          enableSplitView = true
+        } else {
+          resolvedSubTab = lastUsed === 'sftp' ? 'sftp' : 'terminal'
+        }
+      }
+    }
+
+    if (enableSplitView) {
+      const layout = session.viewPreferences?.splitLayout ?? 'horizontal'
+      const ratio = session.viewPreferences?.splitRatio ?? 0.5
+      setSplitView(true, layout, ratio)
+    }
+
+    // Reset tab to connecting state with fresh sub-tabs
+    updateTab(tab.id, {
+      status: 'connecting',
+      activeSubTab: resolvedSubTab,
+      splitView: enableSplitView,
+      runningSubTabs: undefined,
+      error: undefined
+    })
+
+    // Reset mounted panels for fresh start
+    setMountedPanels(new Set([resolvedSubTab]))
+    subTabHistoryRef.current = [resolvedSubTab]
+
+    toast.info('Connecting...', `Establishing connection to ${session.host}`)
+
+    // Initiate SSH connection
+    window.novadeck.ssh
+      .connect(tab.id, {
+        host: session.host,
+        port: session.port,
+        username: session.username,
+        auth: session.auth,
+        proxy: session.proxy,
+        overrides: session.overrides,
+        encoding: session.encoding,
+        terminalType: session.terminalType,
+        shellCommand: session.shellCommand,
+        environmentVariables: session.environmentVariables
+      })
+      .then((result) => {
+        if (result.success) {
+          useConnectionStore.getState().updateTab(tab.id, { status: 'connected' })
+          toast.success('Connected', `Connected to ${session.name}`)
+          window.novadeck.sessions.touch(session.id)
+        } else {
+          useConnectionStore.getState().updateTab(tab.id, {
+            status: 'error',
+            error: result.error
+          })
+          toast.error('Connection failed', result.error || 'Unknown error')
+        }
+      })
+      .catch((err) => {
+        useConnectionStore.getState().updateTab(tab.id, {
+          status: 'error',
+          error: String(err)
+        })
+        toast.error('Connection failed', String(err))
+      })
+  }, [tab.id, tab.sessionId, updateTab, setSplitView])
 
   const handleRetryNow = useCallback(() => {
     window.novadeck.ssh.reconnectRetryNow?.(tab.id)
@@ -181,6 +268,22 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     useConnectionStore.getState().updateTab(tab.id, { status: 'disconnected' })
     window.novadeck.ssh.disconnect?.(tab.id)
   }, [tab.id])
+
+  // ── Disconnected / Error → show offline view ──
+  if (isOffline) {
+    const session = useSessionStore.getState().sessions.find((s) => s.id === tab.sessionId)
+    return (
+      <DisconnectedSessionView
+        sessionName={tab.sessionName}
+        sessionHost={session?.host}
+        sessionPort={session?.port}
+        sessionUsername={session?.username}
+        sessionColor={tab.sessionColor}
+        error={tab.error}
+        onConnect={handleReconnectTab}
+      />
+    )
+  }
 
   return (
     <div className="flex flex-col h-full relative">

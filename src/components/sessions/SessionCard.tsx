@@ -12,6 +12,8 @@ interface SessionCardProps {
   session: Session
   /** Whether this session's connection is the currently viewed tab */
   isActiveTab?: boolean
+  /** Whether this session is selected for preview (disconnected, no active tab) */
+  isSelected?: boolean
   /** Whether this card has keyboard focus (arrow-key navigation) */
   isFocused?: boolean
   /** Whether a drag is hovering over this card (show drop indicator) */
@@ -20,6 +22,8 @@ interface SessionCardProps {
   isDragging?: boolean
   connectionStatus?: ConnectionStatus
   onConnect: () => void
+  /** Called when a disconnected session is single-clicked (show preview) */
+  onSelect?: () => void
   onConnectTerminal?: () => void
   onConnectSFTP?: () => void
   onConnectBoth?: () => void
@@ -39,11 +43,13 @@ interface SessionCardProps {
 export function SessionCard({
   session,
   isActiveTab,
+  isSelected,
   isFocused,
   isDragOver,
   isDragging,
   connectionStatus,
   onConnect,
+  onSelect,
   onConnectTerminal,
   onConnectSFTP,
   onConnectBoth,
@@ -95,10 +101,12 @@ export function SessionCard({
     }
   }
 
-  // Single click behavior: if connected → switch to its tab
+  // Single click: connected → switch to tab, disconnected → select for preview
   const handleClick = () => {
     if (hasConnection) {
       onConnect() // This switches to the existing tab via AppShell.handleConnect
+    } else {
+      onSelect?.() // Show disconnected session preview
     }
   }
 
@@ -121,7 +129,7 @@ export function SessionCard({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={cn(
+        className={cn(
         'group relative flex items-center gap-2.5 rounded-md cursor-pointer transition-colors',
         // Active tab = accent left border + filled bg
         isActiveTab
@@ -129,8 +137,11 @@ export function SessionCard({
           // Connected but not active = subtle indicator
           : hasConnection
             ? 'bg-nd-surface/80 border-l-2 border-l-nd-success/50 border border-nd-border/50 px-2 py-2'
-            // Not connected — hover only, no persistent selection
-            : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2',
+            // Selected for preview (disconnected) = soft highlight
+            : isSelected
+              ? 'bg-nd-surface/60 border border-nd-border/60 px-2.5 py-2'
+              // Not connected — hover only, no persistent selection
+              : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2',
         // Keyboard focus ring
         isFocused && 'ring-1 ring-nd-accent/60 bg-nd-surface/40',
         // Drag states

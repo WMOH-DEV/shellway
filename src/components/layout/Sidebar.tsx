@@ -43,7 +43,7 @@ interface SidebarProps {
  * Collapsible to icon-only (48px) with compact session avatars.
  */
 export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: SidebarProps) {
-  const { sidebarOpen, toggleSidebar, toggleSettings, toggleHostKeyManager, toggleClientKeyManager } = useUIStore()
+  const { sidebarOpen, toggleSidebar, toggleSettings, toggleHostKeyManager, toggleClientKeyManager, selectedSessionId, setSelectedSessionId } = useUIStore()
   const { sessions } = useSessionStore()
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
 
@@ -187,7 +187,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                   return (
                     <button
                       key={dbTab.id}
-                      onClick={() => setActiveTab(dbTab.id)}
+                      onClick={() => { setActiveTab(dbTab.id); setSelectedSessionId(null) }}
                       className={cn(
                         'group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors',
                         isActive
@@ -320,29 +320,36 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                 const isConnecting = tab?.status === 'connecting' || tab?.status === 'authenticating'
                 const isError = tab?.status === 'error'
                 const isActive = tab?.id === activeTabId
+                const isSelected = selectedSessionId === session.id && !tab
                 const hasConnection = !!tab
 
                 return (
                   <Tooltip
                     key={session.id}
-                    content={`${session.name}${hasConnection ? ' (connected)' : ''}`}
+                    content={`${session.name}${isConnected ? ' (connected)' : isConnecting ? ' (connecting)' : isError ? ' (error)' : ''}`}
                     side="right"
                   >
                     <button
                       onClick={() => {
                         if (tab) {
                           setActiveTab(tab.id)
+                          setSelectedSessionId(null)
                         } else {
-                          onConnect(session)
+                          setSelectedSessionId(session.id)
                         }
+                      }}
+                      onDoubleClick={() => {
+                        if (!tab) onConnect(session)
                       }}
                       className={cn(
                         'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
                         isActive
                           ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
-                          : hasConnection
-                            ? 'bg-nd-surface/80'
-                            : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                          : isSelected
+                            ? 'bg-nd-surface/80 ring-1 ring-nd-border'
+                            : hasConnection
+                              ? 'bg-nd-surface/80'
+                              : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
                       )}
                     >
                       <div
@@ -379,7 +386,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                   side="right"
                 >
                   <button
-                    onClick={() => setActiveTab(dbTab.id)}
+                    onClick={() => { setActiveTab(dbTab.id); setSelectedSessionId(null) }}
                     className={cn(
                       'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
                       isActive

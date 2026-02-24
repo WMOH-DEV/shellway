@@ -55,6 +55,15 @@ interface UIState {
   databaseConnectRequested: boolean
   requestDatabaseConnect: () => void
   clearDatabaseConnectRequest: () => void
+
+  // ── Selected Session (disconnected preview in main area) ──
+  selectedSessionId: string | null
+  setSelectedSessionId: (id: string | null) => void
+
+  // ── Connect Session request (triggered from DisconnectedSessionView) ──
+  connectSessionId: string | null
+  requestConnectSession: (sessionId: string) => void
+  clearConnectSessionRequest: () => void
 }
 
 /** Resolve theme value to actual 'dark' | 'light' */
@@ -146,4 +155,13 @@ export const useUIStore = create<UIState>((set) => ({
   databaseConnectRequested: false,
   requestDatabaseConnect: () => set({ databaseConnectRequested: true }),
   clearDatabaseConnectRequest: () => set({ databaseConnectRequested: false }),
+
+  // ── Selected Session (disconnected preview) ──
+  selectedSessionId: null,
+  setSelectedSessionId: (id) => set({ selectedSessionId: id }),
+
+  // ── Connect Session request ──
+  connectSessionId: null,
+  requestConnectSession: (sessionId) => set({ connectSessionId: sessionId, selectedSessionId: null }),
+  clearConnectSessionRequest: () => set({ connectSessionId: null }),
 }))

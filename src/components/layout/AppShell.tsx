@@ -3,6 +3,7 @@ import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { toast } from '@/components/ui/Toast'
 import type { Session, ConnectionTab } from '@/types/session'
@@ -59,26 +60,40 @@ export function AppShell({ children }: AppShellProps) {
         useUIStore.getState().setSplitView(true, layout, ratio)
       }
 
-      // Check if already connected — use getState() for fresh data (avoids stale closure)
+      // Check if a tab already exists for this session — use getState() for fresh data
       const currentTabs = useConnectionStore.getState().tabs
-      const existing = currentTabs.find((t) => t.sessionId === session.id && t.status === 'connected')
+      const existing = currentTabs.find((t) => t.sessionId === session.id)
       if (existing) {
-        useConnectionStore.getState().setActiveTab(existing.id)
-        if (defaultSubTab === 'both') {
-          // Enable split view on this tab, ensure we're on terminal/sftp
-          const updates: Partial<ConnectionTab> = { splitView: true }
-          if (existing.activeSubTab !== 'terminal' && existing.activeSubTab !== 'sftp') {
-            updates.activeSubTab = 'terminal'
+        useUIStore.getState().setSelectedSessionId(null)
+
+        if (existing.status === 'connected') {
+          // Already connected — just switch view if requested
+          useConnectionStore.getState().setActiveTab(existing.id)
+          if (defaultSubTab === 'both') {
+            const updates: Partial<ConnectionTab> = { splitView: true }
+            if (existing.activeSubTab !== 'terminal' && existing.activeSubTab !== 'sftp') {
+              updates.activeSubTab = 'terminal'
+            }
+            useConnectionStore.getState().updateTab(existing.id, updates)
+          } else if (defaultSubTab) {
+            useConnectionStore.getState().updateTab(existing.id, {
+              activeSubTab: defaultSubTab,
+              splitView: false
+            })
           }
-          useConnectionStore.getState().updateTab(existing.id, updates)
-        } else if (defaultSubTab) {
-          // Explicit terminal or sftp — switch to it and disable split view
-          useConnectionStore.getState().updateTab(existing.id, {
-            activeSubTab: defaultSubTab,
-            splitView: false
-          })
+          return
         }
-        return
+
+        if (existing.status === 'disconnected' || existing.status === 'error') {
+          // Dead tab — remove it and fall through to create a fresh connection
+          window.novadeck.ssh.disconnect?.(existing.id).catch(() => {})
+          useConnectionStore.getState().removeTab(existing.id)
+          // Fall through ↓ to create new tab and connect
+        } else {
+          // connecting / authenticating / reconnecting / paused — just switch to it
+          useConnectionStore.getState().setActiveTab(existing.id)
+          return
+        }
       }
 
       const tab: ConnectionTab = {
@@ -93,6 +108,7 @@ export function AppShell({ children }: AppShellProps) {
       }
 
       addTab(tab)
+      useUIStore.getState().setSelectedSessionId(null)
       toast.info('Connecting...', `Establishing connection to ${session.host}`)
 
       // Establish SSH connection via IPC
@@ -178,13 +194,26 @@ export function AppShell({ children }: AppShellProps) {
   )
 
   // Listen for database connect requests from WelcomeScreen
-  const { databaseConnectRequested, clearDatabaseConnectRequest } = useUIStore()
+  const { databaseConnectRequested, clearDatabaseConnectRequest, connectSessionId, clearConnectSessionRequest } = useUIStore()
   useEffect(() => {
     if (databaseConnectRequested) {
       handleConnectDatabase()
       clearDatabaseConnectRequest()
     }
   }, [databaseConnectRequested, clearDatabaseConnectRequest, handleConnectDatabase])
+
+  // Listen for session connect requests from DisconnectedSessionView
+  useEffect(() => {
+    if (connectSessionId) {
+      const session = useSessionStore.getState().sessions.find((s) => s.id === connectSessionId)
+      if (session) {
+        handleConnect(session)
+      } else {
+        toast.error('Session not found', 'The session may have been deleted.')
+      }
+      clearConnectSessionRequest()
+    }
+  }, [connectSessionId, clearConnectSessionRequest, handleConnect])
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">

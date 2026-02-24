@@ -12,7 +12,9 @@ import { HostKeyManager } from '@/components/keys/HostKeyManager'
 import { ClientKeyManager } from '@/components/keys/ClientKeyManager'
 import { HostKeyVerifyDialog } from '@/components/keys/HostKeyVerifyDialog'
 import { KBDIDialog } from '@/components/sessions/KBDIDialog'
+import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
@@ -45,7 +47,8 @@ export default function App() {
 
   const { tabs, activeTabId, updateTab, setReconnectionState, addReconnectionEvent } =
     useConnectionStore()
-  const { settingsOpen, toggleSettings, hostKeyManagerOpen, toggleHostKeyManager, clientKeyManagerOpen, toggleClientKeyManager, setTheme } = useUIStore()
+  const { sessions } = useSessionStore()
+  const { settingsOpen, toggleSettings, hostKeyManagerOpen, toggleHostKeyManager, clientKeyManagerOpen, toggleClientKeyManager, setTheme, selectedSessionId, setSelectedSessionId, requestConnectSession } = useUIStore()
   const { addEntry } = useLogStore()
 
   // ── Load persisted settings on startup ──
@@ -229,10 +232,31 @@ export default function App() {
     setKBDIPrompt(null)
   }, [kbdiPrompt])
 
+  // ── Selected session preview (disconnected, no tab) ──
+  const selectedSession = selectedSessionId
+    ? sessions.find((s) => s.id === selectedSessionId)
+    : null
+  const showDisconnectedPreview = !!selectedSession
+    && !tabs.find((t) => t.sessionId === selectedSessionId)
+
   return (
     <AppShell>
-      {/* Welcome screen when no tabs are open */}
-      {tabs.length === 0 && <WelcomeScreen />}
+      {/* Welcome screen when no tabs and no selected session */}
+      {tabs.length === 0 && !showDisconnectedPreview && <WelcomeScreen />}
+
+      {/* Disconnected session preview (selected from sidebar, no tab yet) */}
+      {showDisconnectedPreview && (
+        <div className={cn('h-full', activeTabId && 'hidden')}>
+          <DisconnectedSessionView
+            sessionName={selectedSession!.name}
+            sessionHost={selectedSession!.host}
+            sessionPort={selectedSession!.port}
+            sessionUsername={selectedSession!.username}
+            sessionColor={selectedSession!.color}
+            onConnect={() => requestConnectSession(selectedSession!.id)}
+          />
+        </div>
+      )}
 
       {/* Render ALL connection tabs — hide inactive via CSS to preserve state */}
       {tabs.map((tab) => (

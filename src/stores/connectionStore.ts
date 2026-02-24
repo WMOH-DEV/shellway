@@ -22,8 +22,8 @@ interface ConnectionState {
   addTab: (tab: ConnectionTab) => void
   /** Remove a connection tab by ID */
   removeTab: (id: string) => void
-  /** Set the active tab */
-  setActiveTab: (id: string) => void
+  /** Set the active tab (null to deselect all) */
+  setActiveTab: (id: string | null) => void
   /** Update a tab's properties */
   updateTab: (id: string, updates: Partial<ConnectionTab>) => void
   /** Close all tabs */
