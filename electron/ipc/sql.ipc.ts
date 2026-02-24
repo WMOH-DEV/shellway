@@ -21,6 +21,16 @@ transferService.on('progress', (sqlSessionId: string, progress: unknown) => {
   }
 })
 
+// Forward query-executed events from SQLService to all renderer windows
+// This captures ALL queries: direct sql:query, getColumns, getIndexes, getForeignKeys, etc.
+sqlService.on('query-executed', (sqlSessionId: string, info: {
+  query: string; params?: unknown[]; executionTimeMs: number; rowCount?: number; error?: string
+}) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('sql:query-executed', sqlSessionId, info)
+  }
+})
+
 /** Get the SQLConfigStore singleton (for use by other services) */
 export function getSQLConfigStore(): SQLConfigStore {
   return sqlConfigStore
@@ -189,6 +199,12 @@ export function registerSQLIPC(): void {
 
   ipcMain.handle('sql:getForeignKeys', async (_event, sqlSessionId: string, table: string, schema?: string) => {
     try { return { success: true, data: await sqlService.getForeignKeys(sqlSessionId, table, schema) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
+  // Combined structure query — single roundtrip over SSH tunnel
+  ipcMain.handle('sql:getTableStructure', async (_event, sqlSessionId: string, table: string, schema?: string) => {
+    try { return { success: true, data: await sqlService.getTableStructure(sqlSessionId, table, schema) } }
     catch (err: any) { return { success: false, error: err.message } }
   })
 

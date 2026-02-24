@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/Button'
 import { Splitter } from '@/components/ui/Splitter'
 import { DataGrid } from '@/components/sql/DataGrid'
 import { registerSQLCompletionProvider } from '@/components/sql/sqlAutocomplete'
-import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
+import { useSQLConnection } from '@/stores/sqlStore'
 import type { QueryResult, QueryError, DatabaseType } from '@/types/sql'
 
 // ── Props ──
@@ -214,7 +214,6 @@ export const QueryEditor = React.memo(function QueryEditor({
     databases,
     setCurrentQuery,
     setQueryError,
-    addHistoryEntry,
   } = useSQLConnection(connectionId)
 
   // Debounced store sync — avoid updating store on every keystroke
@@ -260,16 +259,6 @@ export const QueryEditor = React.memo(function QueryEditor({
           }
           setError(qError)
           setQueryError(qError)
-
-          addHistoryEntry({
-            id: crypto.randomUUID(),
-            query: trimmed,
-            database: getSQLConnectionState(connectionId).currentDatabase,
-            executedAt: Date.now(),
-            executionTimeMs: execTime,
-            error: qError.message,
-            isFavorite: false,
-          })
         } else {
           const data = res.data
           const queryResult: QueryResult = {
@@ -281,37 +270,17 @@ export const QueryEditor = React.memo(function QueryEditor({
             truncated: data.truncated ?? false,
           }
           setResult(queryResult)
-
-          addHistoryEntry({
-            id: crypto.randomUUID(),
-            query: trimmed,
-            database: getSQLConnectionState(connectionId).currentDatabase,
-            executedAt: Date.now(),
-            executionTimeMs: execTime,
-            rowCount: queryResult.rowCount,
-            isFavorite: false,
-          })
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         const qError: QueryError = { message }
         setError(qError)
         setQueryError(qError)
-
-        addHistoryEntry({
-          id: crypto.randomUUID(),
-          query: trimmed,
-          database: getSQLConnectionState(connectionId).currentDatabase,
-          executedAt: Date.now(),
-          executionTimeMs: Math.round(performance.now() - startTime),
-          error: message,
-          isFavorite: false,
-        })
       } finally {
         setIsLoading(false)
       }
     },
-    [connectionId, sqlSessionId, setQueryError, addHistoryEntry]
+    [connectionId, sqlSessionId, setQueryError]
   )
 
   // ── Run full query ──

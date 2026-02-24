@@ -205,11 +205,23 @@ export class SQLService extends EventEmitter {
 
     try {
       if (active.type === 'mysql') {
-        return await this.executeMySQLQuery(active, query, params, start)
+        const result = await this.executeMySQLQuery(active, query, params, start)
+        this.emit('query-executed', sqlSessionId, {
+          query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
+        })
+        return result
       } else {
-        return await this.executePostgresQuery(active, query, params, start)
+        const result = await this.executePostgresQuery(active, query, params, start)
+        this.emit('query-executed', sqlSessionId, {
+          query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
+        })
+        return result
       }
     } catch (err: any) {
+      const elapsed = Math.round(performance.now() - start)
+      this.emit('query-executed', sqlSessionId, {
+        query, params, executionTimeMs: elapsed, error: err.message || String(err),
+      })
       throw new Error(err.message || String(err))
     }
   }
@@ -570,6 +582,244 @@ export class SQLService extends EventEmitter {
         fkMap.get(name)!.referencedColumns.push(row.ref_col)
       }
       return Array.from(fkMap.values())
+    }
+  }
+
+  // ── Combined Structure Query ──
+
+  /**
+   * Get full table structure (columns + indexes + foreign keys) in a **single query**.
+   * Uses JSON aggregation subqueries so only one network roundtrip is needed
+   * over the SSH tunnel — much faster than 3 separate queries.
+   */
+  async getTableStructure(
+    sqlSessionId: string,
+    table: string,
+    schema?: string
+  ): Promise<{ columns: any[]; indexes: any[]; foreignKeys: any[] }> {
+    const active = this.connections.get(sqlSessionId)
+    if (!active) throw new Error('Not connected')
+
+    if (active.type === 'mysql') {
+      const result = await this.executeQuery(
+        sqlSessionId,
+        `SELECT
+           (SELECT JSON_ARRAYAGG(JSON_OBJECT(
+             'ordinal_pos', c.ORDINAL_POSITION,
+             'col_name', c.COLUMN_NAME, 'col_type', c.COLUMN_TYPE,
+             'nullable', c.IS_NULLABLE, 'default_val', c.COLUMN_DEFAULT,
+             'col_key', c.COLUMN_KEY, 'extra', c.EXTRA, 'comment', c.COLUMN_COMMENT,
+             'charset', c.CHARACTER_SET_NAME, 'collation', c.COLLATION_NAME,
+             'gen_expr', c.GENERATION_EXPRESSION
+           ))
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ?
+            ORDER BY c.ORDINAL_POSITION
+           ) as columns_json,
+
+           (SELECT JSON_ARRAYAGG(JSON_OBJECT(
+             'index_name', s.INDEX_NAME, 'col_name', s.COLUMN_NAME,
+             'non_unique', s.NON_UNIQUE, 'index_type', s.INDEX_TYPE,
+             'seq', s.SEQ_IN_INDEX
+           ))
+            FROM INFORMATION_SCHEMA.STATISTICS s
+            WHERE s.TABLE_SCHEMA = DATABASE() AND s.TABLE_NAME = ?
+           ) as indexes_json,
+
+           (SELECT JSON_ARRAYAGG(JSON_OBJECT(
+             'fk_name', kcu.CONSTRAINT_NAME, 'col_name', kcu.COLUMN_NAME,
+             'ref_table', kcu.REFERENCED_TABLE_NAME, 'ref_col', kcu.REFERENCED_COLUMN_NAME,
+             'on_update', rc.UPDATE_RULE, 'on_delete', rc.DELETE_RULE
+           ))
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+            JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+              ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND rc.TABLE_NAME = kcu.TABLE_NAME
+               AND rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+            WHERE kcu.TABLE_SCHEMA = DATABASE() AND kcu.TABLE_NAME = ?
+              AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+           ) as fks_json`,
+        [table, table, table]
+      )
+
+      const row = result.rows[0] as any
+      const rawCols = row?.columns_json ? (typeof row.columns_json === 'string' ? JSON.parse(row.columns_json) : row.columns_json) : []
+      const rawIdxs = row?.indexes_json ? (typeof row.indexes_json === 'string' ? JSON.parse(row.indexes_json) : row.indexes_json) : []
+      const rawFks = row?.fks_json ? (typeof row.fks_json === 'string' ? JSON.parse(row.fks_json) : row.fks_json) : []
+
+      // Transform columns
+      const columns = (rawCols as any[])
+        .sort((a: any, b: any) => a.ordinal_pos - b.ordinal_pos)
+        .map((r: any) => ({
+          name: r.col_name, type: r.col_type,
+          nullable: r.nullable === 'YES', defaultValue: r.default_val,
+          isPrimaryKey: r.col_key === 'PRI',
+          isAutoIncrement: (r.extra || '').includes('auto_increment'),
+          extra: r.extra || undefined, comment: r.comment || undefined,
+          ordinalPosition: Number(r.ordinal_pos),
+          charset: r.charset || null, collation: r.collation || null,
+          columnKey: r.col_key || '', identityGeneration: null,
+          isGenerated: (r.extra || '').includes('GENERATED') || Boolean(r.gen_expr),
+          generationExpression: r.gen_expr || null,
+        }))
+
+      // Transform indexes — aggregate columns per index name
+      const indexMap = new Map<string, any>()
+      for (const r of (rawIdxs as any[]).sort((a: any, b: any) => a.seq - b.seq)) {
+        const name = r.index_name
+        if (!indexMap.has(name)) {
+          indexMap.set(name, {
+            name, columns: [],
+            isUnique: Number(r.non_unique) === 0,
+            isPrimary: name === 'PRIMARY',
+            type: r.index_type || 'BTREE'
+          })
+        }
+        indexMap.get(name)!.columns.push(r.col_name)
+      }
+      const indexes = Array.from(indexMap.values())
+
+      // Transform foreign keys — aggregate columns per FK name
+      const fkMap = new Map<string, any>()
+      for (const r of rawFks as any[]) {
+        const name = r.fk_name
+        if (!fkMap.has(name)) {
+          fkMap.set(name, {
+            name, columns: [], referencedTable: r.ref_table,
+            referencedColumns: [], onUpdate: r.on_update, onDelete: r.on_delete
+          })
+        }
+        fkMap.get(name)!.columns.push(r.col_name)
+        fkMap.get(name)!.referencedColumns.push(r.ref_col)
+      }
+      const foreignKeys = Array.from(fkMap.values())
+
+      return { columns, indexes, foreignKeys }
+
+    } else {
+      // PostgreSQL — use json_agg + json_build_object in subqueries
+      const schemaName = schema || 'public'
+      const result = await this.executeQuery(
+        sqlSessionId,
+        `SELECT
+           (SELECT COALESCE(json_agg(row_to_json(col_q) ORDER BY col_q.ordinal_pos), '[]'::json) FROM (
+             SELECT c.ordinal_position as ordinal_pos,
+                    c.column_name as col_name,
+                    CASE
+                      WHEN c.data_type = 'character varying' THEN 'varchar(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'character' THEN 'char(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL
+                        THEN 'numeric(' || c.numeric_precision || ',' || COALESCE(c.numeric_scale, 0) || ')'
+                      WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
+                      WHEN c.data_type = 'ARRAY' THEN c.udt_name
+                      ELSE c.data_type
+                    END as col_type,
+                    c.is_nullable as nullable,
+                    c.column_default as default_val,
+                    c.is_identity, c.identity_generation as identity_gen,
+                    c.is_generated, c.generation_expression as gen_expr,
+                    c.collation_name as collation,
+                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk,
+                    CASE WHEN uq.column_name IS NOT NULL THEN 'UNI' ELSE '' END as col_key_extra,
+                    col_description(cl.oid, c.ordinal_position) as comment
+             FROM information_schema.columns c
+             JOIN pg_catalog.pg_class cl ON cl.relname = c.table_name
+             JOIN pg_catalog.pg_namespace ns ON ns.oid = cl.relnamespace AND ns.nspname = c.table_schema
+             LEFT JOIN (
+               SELECT ku.column_name FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+                 AND tc.table_schema = ku.table_schema
+               WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 AND tc.table_schema = $2
+             ) pk ON pk.column_name = c.column_name
+             LEFT JOIN (
+               SELECT ku.column_name FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+                 AND tc.table_schema = ku.table_schema
+               WHERE tc.constraint_type = 'UNIQUE' AND tc.table_name = $1 AND tc.table_schema = $2
+             ) uq ON uq.column_name = c.column_name
+             WHERE c.table_name = $1 AND c.table_schema = $2
+             ORDER BY c.ordinal_position
+           ) col_q) as columns_json,
+
+           (SELECT COALESCE(json_agg(row_to_json(idx_q)), '[]'::json) FROM (
+             SELECT i.relname as index_name,
+                    array_agg(a.attname ORDER BY k.n) as columns,
+                    ix.indisunique as is_unique, ix.indisprimary as is_primary, am.amname as index_type
+             FROM pg_index ix
+             JOIN pg_class i ON i.oid = ix.indexrelid
+             JOIN pg_class t ON t.oid = ix.indrelid
+             JOIN pg_namespace n ON n.oid = t.relnamespace
+             JOIN pg_am am ON am.oid = i.relam
+             CROSS JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, n)
+             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+             WHERE t.relname = $1 AND n.nspname = $2
+             GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname
+             ORDER BY i.relname
+           ) idx_q) as indexes_json,
+
+           (SELECT COALESCE(json_agg(row_to_json(fk_q)), '[]'::json) FROM (
+             SELECT tc.constraint_name as fk_name, kcu.column_name as col_name,
+                    ccu.table_name as ref_table, ccu.column_name as ref_col,
+                    rc.update_rule as on_update, rc.delete_rule as on_delete
+             FROM information_schema.table_constraints tc
+             JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+             JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name
+             JOIN information_schema.referential_constraints rc ON rc.constraint_name = tc.constraint_name
+             WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = $1 AND tc.table_schema = $2
+             ORDER BY tc.constraint_name
+           ) fk_q) as fks_json`,
+        [table, schemaName]
+      )
+
+      const row = result.rows[0] as any
+      const rawCols = row?.columns_json ?? []
+      const rawIdxs = row?.indexes_json ?? []
+      const rawFks = row?.fks_json ?? []
+
+      // Transform columns
+      const columns = (rawCols as any[]).map((r: any) => {
+        const isPk = Boolean(r.is_pk)
+        const isSerial = (r.default_val || '').includes('nextval')
+        let columnKey = ''
+        if (isPk) columnKey = 'PRI'
+        else if (r.col_key_extra === 'UNI') columnKey = 'UNI'
+        return {
+          name: r.col_name, type: r.col_type,
+          nullable: r.nullable === 'YES', defaultValue: r.default_val,
+          isPrimaryKey: isPk,
+          isAutoIncrement: isSerial || r.is_identity === 'YES',
+          extra: isSerial ? 'serial' : (r.identity_gen ? `identity(${r.identity_gen})` : undefined),
+          comment: r.comment || undefined,
+          ordinalPosition: Number(r.ordinal_pos),
+          charset: null, collation: r.collation || null, columnKey,
+          identityGeneration: r.identity_gen || null,
+          isGenerated: r.is_generated === 'ALWAYS',
+          generationExpression: r.gen_expr || null,
+        }
+      })
+
+      // Transform indexes
+      const indexes = (rawIdxs as any[]).map((r: any) => ({
+        name: r.index_name, columns: r.columns,
+        isUnique: Boolean(r.is_unique), isPrimary: Boolean(r.is_primary),
+        type: r.index_type || 'btree'
+      }))
+
+      // Transform foreign keys — aggregate columns per FK name
+      const fkMap = new Map<string, any>()
+      for (const r of rawFks as any[]) {
+        const name = r.fk_name
+        if (!fkMap.has(name)) {
+          fkMap.set(name, {
+            name, columns: [], referencedTable: r.ref_table,
+            referencedColumns: [], onUpdate: r.on_update, onDelete: r.on_delete
+          })
+        }
+        fkMap.get(name)!.columns.push(r.col_name)
+        fkMap.get(name)!.referencedColumns.push(r.ref_col)
+      }
+      const foreignKeys = Array.from(fkMap.values())
+
+      return { columns, indexes, foreignKeys }
     }
   }
 

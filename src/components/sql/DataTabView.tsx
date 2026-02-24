@@ -14,6 +14,8 @@ import type {
   TableFilter,
   StagedChange,
   SchemaColumn,
+  SchemaIndex,
+  SchemaForeignKey,
 } from '@/types/sql'
 
 // Lazy-load StructureTabView — only needed when user toggles to structure mode
@@ -147,7 +149,7 @@ export const DataTabView = React.memo(function DataTabView({
   dbType,
 }: DataTabViewProps) {
   // Store — staged changes + connection info for inline editing
-  const { upsertStagedChange, removeStagedChange, stagedChanges, addHistoryEntry, connectionConfig, currentDatabase } = useSQLConnection(connectionId)
+  const { upsertStagedChange, removeStagedChange, stagedChanges, connectionConfig, currentDatabase } = useSQLConnection(connectionId)
 
   // State
   const [result, setResult] = useState<QueryResult | null>(null)
@@ -162,6 +164,8 @@ export const DataTabView = React.memo(function DataTabView({
   const [primaryKeyColumns, setPrimaryKeyColumns] = useState<string[]>([])
   const [columnMeta, setColumnMeta] = useState<SchemaColumn[]>([])
   const [foreignKeyMap, setForeignKeyMap] = useState<ForeignKeyMap>({})
+  const [foreignKeysRaw, setForeignKeysRaw] = useState<SchemaForeignKey[]>([])
+  const [indexes, setIndexes] = useState<SchemaIndex[]>([])
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([])
   const [isCountLoading, setIsCountLoading] = useState(false)
 
@@ -182,8 +186,7 @@ export const DataTabView = React.memo(function DataTabView({
   const cacheKeyRef = useRef<string>('')
   const resultRef = useRef<QueryResult | null>(null)
 
-  // ── Query logging helper (uses ref to avoid circular deps with executeQuery) ──
-   const logQueryRef = useRef<(query: string, params: unknown[] | undefined, timeMs: number, rowCount?: number, errorMsg?: string) => void>(() => {})
+  // Query logging is now handled by the main-process query-executed event (subscribed in SQLView)
 
   // ── Query execution ──
 
@@ -231,19 +234,14 @@ export const DataTabView = React.memo(function DataTabView({
         // Check if this query is still current
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
-        const t0 = performance.now()
         const queryResponse = await (window as any).novadeck.sql.query(
           sqlSessionId,
           query,
           params
         )
-        const elapsed = performance.now() - t0
 
         // Check again after async call
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
-
-        // Log the SELECT query
-        logQueryRef.current(query, params, elapsed, queryResponse.data?.rowCount, queryResponse.success ? undefined : queryResponse.error)
 
         // Unwrap IPC envelope { success, data, error }
         if (!queryResponse.success) {
@@ -285,8 +283,6 @@ export const DataTabView = React.memo(function DataTabView({
           const cElapsed = performance.now() - ct0
 
           if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
-
-          logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
 
           if (!countResponse.success) {
             throw new Error(countResponse.error ?? 'Count query failed')
@@ -337,6 +333,8 @@ export const DataTabView = React.memo(function DataTabView({
     resultRef.current = null
     setError(null)
     setPrimaryKeyColumns([])
+    setIndexes([])
+    setForeignKeysRaw([])
     cacheKeyRef.current = ''
 
     executeQuery({
@@ -345,30 +343,27 @@ export const DataTabView = React.memo(function DataTabView({
       currentFilters: [],
     })
 
-    // Fetch column metadata (primary keys + auto-increment info) for inline editing
+    // Fetch all table metadata in a single query (columns, indexes, foreign keys).
+    // One network roundtrip over the SSH tunnel instead of three separate queries.
     ;(async () => {
       try {
-        const res = await (window as any).novadeck.sql.getColumns(sqlSessionId, table, schema)
-        if (res?.success && Array.isArray(res.data)) {
-          setColumnMeta(res.data)
-          const pkCols = res.data
-            .filter((c: any) => c.isPrimaryKey)
-            .map((c: any) => c.name)
-          setPrimaryKeyColumns(pkCols)
-        }
-      } catch {
-        // Non-critical — inline editing will fall back to full-row WHERE
-      }
-    })()
+        const res = await (window as any).novadeck.sql.getTableStructure(sqlSessionId, table, schema)
+        if (res?.success && res.data) {
+          const { columns: cols, indexes: idxs, foreignKeys: fks } = res.data as {
+            columns: SchemaColumn[]; indexes: any[]; foreignKeys: any[]
+          }
 
-    // Fetch foreign key metadata for FK navigation arrows
-    ;(async () => {
-      try {
-        const res = await (window as any).novadeck.sql.getForeignKeys(sqlSessionId, table, schema)
-        if (res?.success && Array.isArray(res.data)) {
+          // Column metadata — used for inline editing (PK detection, auto-increment)
+          setColumnMeta(cols)
+          setPrimaryKeyColumns(cols.filter((c) => c.isPrimaryKey).map((c) => c.name))
+
+          // Index metadata — used by StructureTabView
+          setIndexes(idxs)
+
+          // Foreign key metadata — used for FK navigation arrows + StructureTabView
+          setForeignKeysRaw(fks)
           const fkMap: ForeignKeyMap = {}
-          for (const fk of res.data) {
-            // Map each FK column to its referenced table/column
+          for (const fk of fks) {
             for (let i = 0; i < fk.columns.length; i++) {
               fkMap[fk.columns[i]] = {
                 referencedTable: fk.referencedTable,
@@ -379,7 +374,7 @@ export const DataTabView = React.memo(function DataTabView({
           setForeignKeyMap(fkMap)
         }
       } catch {
-        // Non-critical — FK arrows just won't appear
+        // Non-critical — inline editing falls back to full-row WHERE, FK arrows won't appear
       }
     })()
 
@@ -678,39 +673,6 @@ export const DataTabView = React.memo(function DataTabView({
     [stagedChanges, table, schema]
   )
 
-  /** Interpolate parameter placeholders for display in the query log */
-  const formatQueryForLog = useCallback((query: string, params?: unknown[]): string => {
-    if (!params || params.length === 0) return query
-    let idx = 0
-    // Handle both ? (MySQL) and $N (Postgres) placeholders
-    return query.replace(/\?|\$\d+/g, (match) => {
-      const paramIdx = match === '?' ? idx++ : parseInt(match.slice(1), 10) - 1
-      const val = params[paramIdx]
-      if (val === null || val === undefined) return 'NULL'
-      if (typeof val === 'number') return String(val)
-      if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE'
-      // String values — escape single quotes for display
-      return `'${String(val).replace(/'/g, "''")}'`
-    })
-  }, [])
-
-  /** Helper: log a query to the history store */
-  const logQuery = useCallback((query: string, params: unknown[] | undefined, timeMs: number, rowCount?: number, errorMsg?: string) => {
-    addHistoryEntry({
-      id: crypto.randomUUID(),
-      query: formatQueryForLog(query, params),
-      database: '', // filled later from currentDatabase if needed
-      executedAt: Date.now(),
-      executionTimeMs: timeMs,
-      rowCount,
-      error: errorMsg,
-      isFavorite: false,
-    })
-  }, [addHistoryEntry, formatQueryForLog])
-
-  // Keep the ref in sync so executeQuery can call it without a dep cycle
-  logQueryRef.current = logQuery
-
   const handleSaveChanges = useCallback(async () => {
     if (tableChanges.length === 0 || savingRef.current) return
     savingRef.current = true
@@ -721,9 +683,7 @@ export const DataTabView = React.memo(function DataTabView({
 
     try {
       // ── BEGIN transaction ──
-      const beginT0 = performance.now()
       const beginRes = await queryApi.query(sqlSessionId, 'BEGIN', [])
-      logQuery('BEGIN', undefined, performance.now() - beginT0, undefined, beginRes.success ? undefined : beginRes.error)
       if (!beginRes.success) {
         throw new Error(`BEGIN failed: ${beginRes.error}`)
       }
@@ -768,10 +728,7 @@ export const DataTabView = React.memo(function DataTabView({
         const limitClause = dbType === 'mysql' ? ' LIMIT 1' : ''
         const sql = `UPDATE ${fullTable} SET ${setClauses.join(', ')} WHERE ${whereParts.join(' AND ')}${limitClause}`
 
-        const t0 = performance.now()
         const res = await queryApi.query(sqlSessionId, sql, params)
-        const elapsed = performance.now() - t0
-        logQuery(sql, params, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
 
         if (!res.success) {
           throw new Error(`${change.column ?? 'update'}: ${res.error}`)
@@ -809,10 +766,7 @@ export const DataTabView = React.memo(function DataTabView({
         const sql = `INSERT INTO ${fullTable} (${quotedCols}) VALUES (${placeholders})`
         const params = values
 
-        const t0 = performance.now()
         const res = await queryApi.query(sqlSessionId, sql, params)
-        const elapsed = performance.now() - t0
-        logQuery(sql, params, elapsed, res.data?.affectedRows, res.success ? undefined : res.error)
 
         if (!res.success) {
           throw new Error(`insert: ${res.error}`)
@@ -822,10 +776,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // ── COMMIT transaction ──
-      const commitT0 = performance.now()
       const commitRes = await queryApi.query(sqlSessionId, 'COMMIT', [])
-      logQuery('COMMIT', undefined, performance.now() - commitT0, undefined, commitRes.success ? undefined : commitRes.error)
-
       if (!commitRes.success) {
         throw new Error(`COMMIT failed: ${commitRes.error}`)
       }
@@ -847,9 +798,7 @@ export const DataTabView = React.memo(function DataTabView({
     } catch (err: any) {
       // ── ROLLBACK on any failure ──
       try {
-        const rbT0 = performance.now()
-        const rbRes = await queryApi.query(sqlSessionId, 'ROLLBACK', [])
-        logQuery('ROLLBACK', undefined, performance.now() - rbT0, undefined, rbRes.success ? undefined : rbRes.error)
+        await queryApi.query(sqlSessionId, 'ROLLBACK', [])
       } catch {
         // Rollback failed — nothing we can do
       }
@@ -858,7 +807,7 @@ export const DataTabView = React.memo(function DataTabView({
       setIsSaving(false)
       savingRef.current = false
     }
-  }, [tableChanges, dbType, sqlSessionId, removeStagedChange, logQuery, executeQuery, pagination, sortColumn, sortDirection, filters, columnMeta])
+  }, [tableChanges, dbType, sqlSessionId, removeStagedChange, executeQuery, pagination, sortColumn, sortDirection, filters, columnMeta])
 
   const handleDiscardChanges = useCallback(() => {
     // Only remove changes for this table, not all connection changes
@@ -1026,11 +975,7 @@ export const DataTabView = React.memo(function DataTabView({
     setIsCountLoading(true)
     try {
       const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, filters)
-      const ct0 = performance.now()
       const countResponse = await (window as any).novadeck.sql.query(sqlSessionId, countQuery, countParams)
-      const cElapsed = performance.now() - ct0
-
-      logQueryRef.current(countQuery, countParams, cElapsed, undefined, countResponse.success ? undefined : countResponse.error)
 
       if (countResponse.success) {
         const totalRows = Number(((countResponse.data as QueryResult).rows[0] as any)?.count ?? 0)
@@ -1134,6 +1079,9 @@ export const DataTabView = React.memo(function DataTabView({
               schema={schema}
               dbType={dbType}
               connectionId={connectionId}
+              prefetchedColumns={columnMeta}
+              prefetchedIndexes={indexes}
+              prefetchedForeignKeys={foreignKeysRaw}
             />
           </Suspense>
         </div>

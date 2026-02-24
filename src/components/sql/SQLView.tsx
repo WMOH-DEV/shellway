@@ -31,7 +31,7 @@ import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn } from '@/types/sql'
+import type { SQLTab, SchemaColumn, QueryHistoryEntry } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -135,6 +135,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     removeTab,
     setActiveTab,
     setSelectedTable,
+    addHistoryEntry,
   } = useSQLConnection(connectionId)
 
   // ── Check if SQL sub-tab is actually the active one (not hidden behind Terminal/SFTP) ──
@@ -164,6 +165,42 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
   useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive)
+
+  // ── Subscribe to ALL query executions from the main process ──
+  // This captures schema queries (getColumns, getIndexes, etc.) that bypass the renderer-side logQuery.
+  // Using main-process events ensures the log is always up-to-date regardless of component lifecycle.
+  useEffect(() => {
+    if (!sqlSessionId) return
+    const unsub = window.novadeck.sql.onQueryExecuted((sid, info) => {
+      if (sid !== sqlSessionId) return
+
+      // Interpolate parameter placeholders for display (? for MySQL, $N for Postgres)
+      let displayQuery = info.query
+      if (info.params && info.params.length > 0) {
+        let idx = 0
+        displayQuery = info.query.replace(/\?|\$\d+/g, (match) => {
+          const paramIdx = match === '?' ? idx++ : parseInt(match.slice(1), 10) - 1
+          const val = info.params![paramIdx]
+          if (val === null || val === undefined) return 'NULL'
+          if (typeof val === 'number') return String(val)
+          if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE'
+          return `'${String(val).replace(/'/g, "''")}'`
+        })
+      }
+
+      addHistoryEntry({
+        id: crypto.randomUUID(),
+        query: displayQuery,
+        database: '',
+        executedAt: Date.now(),
+        executionTimeMs: info.executionTimeMs,
+        rowCount: info.rowCount,
+        error: info.error,
+        isFavorite: false,
+      })
+    })
+    return () => { unsub() }
+  }, [sqlSessionId, addHistoryEntry])
 
   // ── Derived: active tab ──
   const activeTab = useMemo(

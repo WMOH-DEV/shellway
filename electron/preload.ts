@@ -363,6 +363,8 @@ const api = {
       ipcRenderer.invoke('sql:getIndexes', sqlSessionId, table, schema),
     getForeignKeys: (sqlSessionId: string, table: string, schema?: string) =>
       ipcRenderer.invoke('sql:getForeignKeys', sqlSessionId, table, schema),
+    getTableStructure: (sqlSessionId: string, table: string, schema?: string) =>
+      ipcRenderer.invoke('sql:getTableStructure', sqlSessionId, table, schema),
     getRowCount: (sqlSessionId: string, table: string, schema?: string) =>
       ipcRenderer.invoke('sql:getRowCount', sqlSessionId, table, schema),
     getPrimaryKeys: (sqlSessionId: string, table: string, schema?: string) =>
@@ -421,6 +423,16 @@ const api = {
         callback(sqlSessionId, progress)
       ipcRenderer.on('sql:transfer:progress', handler)
       return () => ipcRenderer.removeListener('sql:transfer:progress', handler)
+    },
+
+    /** Subscribe to ALL query executions (schema queries, data queries, DDL, etc.) */
+    onQueryExecuted: (callback: (sqlSessionId: string, info: {
+      query: string; params?: unknown[]; executionTimeMs: number; rowCount?: number; error?: string
+    }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, sqlSessionId: string, info: any) =>
+        callback(sqlSessionId, info)
+      ipcRenderer.on('sql:query-executed', handler)
+      return () => ipcRenderer.removeListener('sql:query-executed', handler)
     },
   },
 

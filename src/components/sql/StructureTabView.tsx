@@ -40,6 +40,12 @@ interface StructureTabViewProps {
   dbType: DatabaseType
   /** Unused — reserved for future features like refresh event binding */
   connectionId?: string
+  /** Pre-fetched column metadata from DataTabView — avoids cold-start query on first visit */
+  prefetchedColumns?: SchemaColumn[]
+  /** Pre-fetched index metadata from DataTabView */
+  prefetchedIndexes?: SchemaIndex[]
+  /** Pre-fetched foreign key metadata from DataTabView */
+  prefetchedForeignKeys?: SchemaForeignKey[]
 }
 
 // ── Constants ──
@@ -891,12 +897,17 @@ export const StructureTabView = memo(function StructureTabView({
   schema,
   dbType,
   connectionId,
+  prefetchedColumns,
+  prefetchedIndexes,
+  prefetchedForeignKeys,
 }: StructureTabViewProps) {
   // connectionId reserved for future use (e.g. event binding)
   const [columns, setColumns] = useState<StructureColumn[]>([])
   const [indexes, setIndexes] = useState<SchemaIndex[]>([])
   const [foreignKeys, setForeignKeys] = useState<SchemaForeignKey[]>([])
-  const [loading, setLoading] = useState(true)
+  // Start as not-loading if we have pre-fetched data
+  const hasPrefetch = !!(prefetchedColumns?.length || prefetchedIndexes?.length || prefetchedForeignKeys?.length)
+  const [loading, setLoading] = useState(!hasPrefetch)
   const [showDDLPreview, setShowDDLPreview] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -911,34 +922,87 @@ export const StructureTabView = memo(function StructureTabView({
     [dbType]
   )
 
-  const fetchAll = useCallback(async () => {
+  // Abort controller for cancelling in-flight server fetches (e.g. when prefetched data arrives)
+  const fetchAbortRef = useRef<AbortController | null>(null)
+
+  /** Fetch all structure data from the server (used for refresh and fallback) */
+  const fetchFromServer = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError(null)
     try {
-      const [colsRes, idxsRes, fksRes] = await Promise.all([
-        window.novadeck.sql.getColumns(sqlSessionId, table, schema),
-        window.novadeck.sql.getIndexes(sqlSessionId, table, schema),
-        window.novadeck.sql.getForeignKeys(sqlSessionId, table, schema),
-      ])
-      if (colsRes.success && colsRes.data) {
-        setColumns(
-          (colsRes.data as SchemaColumn[]).map((c, i) =>
-            schemaColumnToStructure(c, i)
-          )
-        )
+      // Single query — columns + indexes + foreign keys in one roundtrip
+      const res = await window.novadeck.sql.getTableStructure(sqlSessionId, table, schema)
+      if (signal?.aborted) return
+
+      if (res.success && res.data) {
+        const { columns: cols, indexes: idxs, foreignKeys: fks } = res.data as {
+          columns: SchemaColumn[]; indexes: any[]; foreignKeys: any[]
+        }
+        setColumns(cols.map((c, i) => schemaColumnToStructure(c, i)))
+        setIndexes(idxs)
+        setForeignKeys(fks)
+      } else {
+        setError(res?.error || 'Failed to load table structure')
       }
-      if (idxsRes.success && idxsRes.data) setIndexes(idxsRes.data)
-      if (fksRes.success && fksRes.data) setForeignKeys(fksRes.data)
     } catch {
-      setError('Failed to load table structure')
+      if (!signal?.aborted) setError('Failed to load table structure')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [sqlSessionId, table, schema])
 
+  // Track whether we've applied pre-fetched data for this table
+  const prefetchAppliedRef = useRef<string>('')
+
+  // Primary effect: runs on table change. Uses prefetched data if available, otherwise fetches from server
   useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
+    const tableKey = `${sqlSessionId}:${schema || '_'}.${table}`
+    prefetchAppliedRef.current = ''
+
+    // Cancel any in-flight server fetch
+    fetchAbortRef.current?.abort()
+
+    if (prefetchedColumns?.length) {
+      // Pre-fetched data is already available — use it immediately
+      prefetchAppliedRef.current = tableKey
+      setColumns(prefetchedColumns.map((c, i) => schemaColumnToStructure(c, i)))
+      setIndexes(prefetchedIndexes ?? [])
+      setForeignKeys(prefetchedForeignKeys ?? [])
+      setLoading(false)
+      return
+    }
+
+    // No pre-fetched data yet — start server fetch (will be cancelled if prefetch arrives)
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
+    fetchFromServer(controller.signal)
+
+    return () => controller.abort()
+  }, [sqlSessionId, table, schema]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Secondary effect: watches for late-arriving prefetched data.
+  // If the user clicks Structure before DataTabView's IPC calls resolve,
+  // the primary effect starts a server fetch. When the prefetched data arrives
+  // via props, this effect cancels the server fetch and applies the data — avoiding double queries.
+  useEffect(() => {
+    const tableKey = `${sqlSessionId}:${schema || '_'}.${table}`
+
+    // Only apply if: we have data, haven't applied it yet, and no user edits are pending
+    if (
+      prefetchAppliedRef.current === tableKey ||
+      !prefetchedColumns?.length
+    ) return
+
+    prefetchAppliedRef.current = tableKey
+
+    // Cancel any in-flight server fetch — prefetched data wins
+    fetchAbortRef.current?.abort()
+
+    setColumns(prefetchedColumns.map((c, i) => schemaColumnToStructure(c, i)))
+    setIndexes(prefetchedIndexes ?? [])
+    setForeignKeys(prefetchedForeignKeys ?? [])
+    setLoading(false)
+  }, [prefetchedColumns, prefetchedIndexes, prefetchedForeignKeys, sqlSessionId, table, schema])
 
   // FK column names for badge display
   const fkColumnNames = useMemo(
@@ -1008,9 +1072,9 @@ export const StructureTabView = memo(function StructureTabView({
   }, [handleAddColumn])
 
   const handleDiscardAll = useCallback(() => {
-    fetchAll()
+    fetchFromServer()
     setSuccessMsg(null)
-  }, [fetchAll])
+  }, [fetchFromServer])
 
   // ── Change detection ──
 
@@ -1081,7 +1145,7 @@ export const StructureTabView = memo(function StructureTabView({
         setShowDDLPreview(false)
         setSuccessMsg('Structure changes applied successfully')
         // Refresh data from server
-        await fetchAll()
+        await fetchFromServer()
         // Clear success after 4s
         setTimeout(() => setSuccessMsg(null), 4000)
       } else {
@@ -1092,7 +1156,7 @@ export const StructureTabView = memo(function StructureTabView({
     } finally {
       setExecuting(false)
     }
-  }, [pendingStatements, sqlSessionId, fetchAll])
+  }, [pendingStatements, sqlSessionId, fetchFromServer])
 
   // ── Table header classes ──
 
@@ -1162,7 +1226,7 @@ export const StructureTabView = memo(function StructureTabView({
           <Button
             size="sm"
             variant="ghost"
-            onClick={fetchAll}
+            onClick={() => fetchFromServer()}
             disabled={loading}
           >
             <RefreshCw size={13} className={cn(loading && 'animate-spin')} />
