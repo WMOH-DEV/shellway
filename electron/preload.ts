@@ -492,6 +492,20 @@ const api = {
     }
   },
 
+  // ── Service Manager ──
+  services: {
+    probe: (connectionId: string) =>
+      ipcRenderer.invoke('services:probe', connectionId),
+    list: (connectionId: string) =>
+      ipcRenderer.invoke('services:list', connectionId),
+    details: (connectionId: string, unit: string) =>
+      ipcRenderer.invoke('services:details', connectionId, unit),
+    action: (connectionId: string, unit: string, action: string) =>
+      ipcRenderer.invoke('services:action', connectionId, unit, action),
+    logs: (connectionId: string, unit: string, lines?: number, since?: string) =>
+      ipcRenderer.invoke('services:logs', connectionId, unit, lines, since)
+  },
+
   // ── Host Key Management ──
   hostkey: {
     getAll: () => ipcRenderer.invoke('hostkey:getAll') as Promise<unknown[]>,

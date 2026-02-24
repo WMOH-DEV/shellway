@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -21,15 +21,18 @@ import { useConnectionStore } from '@/stores/connectionStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useServiceManagerStore } from '@/stores/serviceManagerStore'
 import type { ConnectionTab } from '@/types/session'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
+const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
 
 const SUB_TABS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'monitor', label: 'Monitor', icon: <Activity size={13} /> },
+  { id: 'services', label: 'Services', icon: <Cog size={13} /> },
   { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
   { id: 'info', label: 'Info', icon: <Info size={13} /> },
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
@@ -109,6 +112,11 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     // Clear monitor store data when shutting down the monitor tab so it starts fresh next time
     if (subTabId === 'monitor') {
       useMonitorStore.getState().clearConnection(tab.id)
+    }
+
+    // Clear service manager store data when shutting down the services tab
+    if (subTabId === 'services') {
+      useServiceManagerStore.getState().clearConnection(tab.id)
     }
 
     // Remove from mounted panels so it fully unmounts
@@ -391,6 +399,15 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
                 <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+              </Suspense>
+            </div>
+          )}
+
+          {/* Services — conditional render (unmounts to stop polling) */}
+          {tab.activeSubTab === 'services' && runningSubTabs.has('services') && (
+            <div className="absolute inset-0 flex flex-col">
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Services...</div>}>
+                <ServiceManagerView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
               </Suspense>
             </div>
           )}
