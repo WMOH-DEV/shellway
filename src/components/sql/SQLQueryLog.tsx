@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Copy, Trash2, Code2, AlignJustify } from 'lucide-react'
+import { AlertCircle, Trash2, Code2, AlignJustify } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useSQLConnection } from '@/stores/sqlStore'
 import type { QueryHistoryEntry } from '@/types/sql'
@@ -102,11 +102,6 @@ interface LogEntryProps {
 }
 
 const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }: LogEntryProps) {
-  const handleCopy = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    navigator.clipboard.writeText(entry.query).catch(() => {})
-  }, [entry.query])
-
   const displayQuery = useMemo(
     () => beauty ? entry.query : compactSQL(entry.query),
     [entry.query, beauty]
@@ -139,9 +134,9 @@ const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }
         {timeStr}
       </span>
 
-      {/* Query text */}
+      {/* Query text — freely selectable for copy */}
       <pre className={cn(
-        'flex-1 break-words leading-relaxed min-w-0 text-[11px]',
+        'flex-1 break-words leading-relaxed min-w-0 text-[11px] select-text cursor-text',
         beauty ? 'whitespace-pre-wrap' : 'whitespace-normal',
         entry.error ? 'text-red-400' : !syntaxHighlight ? 'text-nd-text-primary' : ''
       )}>
@@ -163,15 +158,6 @@ const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }
             <span className="text-nd-text-muted tabular-nums text-[10px]">{Math.round(entry.executionTimeMs)}ms</span>
           </>
         )}
-
-        {/* Copy button */}
-        <button
-          onClick={handleCopy}
-          className="p-0.5 rounded text-nd-text-muted/30 hover:text-nd-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Copy query"
-        >
-          <Copy size={10} />
-        </button>
       </div>
     </div>
   )
