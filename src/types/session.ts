@@ -213,7 +213,7 @@ export interface ConnectionTab {
   /** Tab type — 'ssh' (default) for full SSH sessions, 'database' for standalone SQL connections */
   type?: 'ssh' | 'database'
   status: ConnectionStatus
-  activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'info' | 'log'
+  activeSubTab: 'terminal' | 'sftp' | 'sql' | 'port-forwarding' | 'monitor' | 'info' | 'log'
   /** Whether Terminal + SFTP split view is active for this tab */
   splitView?: boolean
   error?: string

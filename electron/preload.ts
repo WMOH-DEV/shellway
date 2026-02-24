@@ -440,6 +440,46 @@ const api = {
       } | null>
   },
 
+  // ── Server Monitor ──
+  monitor: {
+    start: (connectionId: string) =>
+      ipcRenderer.invoke('monitor:start', connectionId) as Promise<{
+        success: boolean; error?: string
+      }>,
+    stop: (connectionId: string) =>
+      ipcRenderer.invoke('monitor:stop', connectionId) as Promise<{
+        success: boolean
+      }>,
+    getHistory: (connectionId: string) =>
+      ipcRenderer.invoke('monitor:getHistory', connectionId) as Promise<unknown[]>,
+    getLatest: (connectionId: string) =>
+      ipcRenderer.invoke('monitor:getLatest', connectionId) as Promise<unknown | null>,
+    getStatus: (connectionId: string) =>
+      ipcRenderer.invoke('monitor:getStatus', connectionId) as Promise<string>,
+    killProcess: (connectionId: string, pid: number, signal?: number) =>
+      ipcRenderer.invoke('monitor:killProcess', connectionId, pid, signal) as Promise<{
+        success: boolean; error?: string
+      }>,
+    onData: (callback: (connectionId: string, snapshot: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connId: string, snapshot: unknown) =>
+        callback(connId, snapshot)
+      ipcRenderer.on('monitor:data', handler)
+      return () => ipcRenderer.removeListener('monitor:data', handler)
+    },
+    onStatus: (callback: (connectionId: string, status: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connId: string, status: string) =>
+        callback(connId, status)
+      ipcRenderer.on('monitor:status', handler)
+      return () => ipcRenderer.removeListener('monitor:status', handler)
+    },
+    onError: (callback: (connectionId: string, error: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connId: string, error: string) =>
+        callback(connId, error)
+      ipcRenderer.on('monitor:error', handler)
+      return () => ipcRenderer.removeListener('monitor:error', handler)
+    }
+  },
+
   // ── Host Key Management ──
   hostkey: {
     getAll: () => ipcRenderer.invoke('hostkey:getAll') as Promise<unknown[]>,

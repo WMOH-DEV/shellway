@@ -17,6 +17,7 @@ import { registerPortForwardIPC } from './ipc/portforward.ipc'
 import { registerHealthIPC } from './ipc/health.ipc'
 import { registerSQLIPC } from './ipc/sql.ipc'
 import { registerExportIPC } from './ipc/export.ipc'
+import { registerMonitorIPC, getMonitorService } from './ipc/monitor.ipc'
 import { getSettingsStore } from './ipc/settings.ipc'
 import { initNotificationService } from './services/NotificationService'
 import { getLogService } from './services/LogService'
@@ -331,6 +332,7 @@ app.whenReady().then(() => {
   registerHealthIPC()
   registerSQLIPC()
   registerExportIPC()
+  registerMonitorIPC()
 
   // Initialize notification service (after settings IPC is registered)
   initNotificationService(getSettingsStore())
@@ -400,6 +402,9 @@ app.on('window-all-closed', () => {
     watcher.close()
   }
   activeWatchers.clear()
+
+  // Stop all monitor polling
+  getMonitorService().stopAll()
 
   if (process.platform !== 'darwin') {
     app.quit()

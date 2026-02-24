@@ -4,6 +4,7 @@ import { getLogService, LogService } from '../services/LogService'
 import { getClientKeyStore } from './clientkey.ipc'
 import { getNotificationService } from '../services/NotificationService'
 import { getHealthService } from './health.ipc'
+import { getMonitorService } from './monitor.ipc'
 import { getSettingsStore } from './settings.ipc'
 import { cleanupSFTP, cleanupAllSFTP } from './sftp.ipc'
 
@@ -237,6 +238,7 @@ export function registerSSHIPC(): void {
       LogService.disconnectedByUser(logService, conn.sessionId)
     }
     getHealthService().stopMonitoring(connectionId)
+    getMonitorService().removeMonitoring(connectionId)
     cleanupSFTP(connectionId)
     sshService.disconnect(connectionId)
   })
@@ -247,6 +249,7 @@ export function registerSSHIPC(): void {
 
   ipcMain.handle('ssh:disconnectAll', () => {
     cleanupAllSFTP()
+    getMonitorService().stopAll()
     sshService.disconnectAll()
   })
 

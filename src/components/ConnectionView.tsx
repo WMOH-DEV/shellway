@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Info, ScrollText, Columns, X
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -19,11 +19,14 @@ import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { ConnectionTab } from '@/types/session'
 
+const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
+
 const SUB_TABS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
+  { id: 'monitor', label: 'Monitor', icon: <Activity size={13} /> },
   { id: 'info', label: 'Info', icon: <Info size={13} /> },
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
 ]
@@ -187,6 +190,15 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           {/* Port Forwarding — conditionally rendered */}
           {tab.activeSubTab === 'port-forwarding' && (
             <PortForwardingView connectionId={tab.id} />
+          )}
+
+          {/* Monitor — conditional render (unmounts to stop SSH polling when not visible) */}
+          {tab.activeSubTab === 'monitor' && (
+            <div className="absolute inset-0 flex flex-col">
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
+                <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+              </Suspense>
+            </div>
           )}
 
           {/* Info — Connection Health Dashboard */}
