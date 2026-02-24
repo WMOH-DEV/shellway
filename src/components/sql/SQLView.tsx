@@ -205,6 +205,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     setConnectionError,
     addTab,
     removeTab,
+    removeTabs,
     setActiveTab,
     setSelectedTable,
     addHistoryEntry,
@@ -642,6 +643,20 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [connectionId, removeTab, setSelectedTable]
   )
 
+  const handleCloseTabs = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return
+      // If any closing tab references the currently selected table, clear selectedTable
+      const connState = getSQLConnectionState(connectionId)
+      const closingTabs = connState.tabs.filter((t) => ids.includes(t.id))
+      if (closingTabs.some((t) => t.table && t.table === connState.selectedTable)) {
+        setSelectedTable(null)
+      }
+      removeTabs(ids)
+    },
+    [connectionId, removeTabs, setSelectedTable]
+  )
+
   const handleNewQuery = useCallback(() => {
     const queryCount = tabs.filter((t) => t.type === 'query').length + 1
     const newTab: SQLTab = {
@@ -1039,6 +1054,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         activeTabId={activeTabId}
         onSelect={handleTabSelect}
         onClose={handleTabClose}
+        onCloseTabs={handleCloseTabs}
         onNewQuery={handleNewQuery}
       />
 

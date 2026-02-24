@@ -92,6 +92,8 @@ interface SQLStoreState {
   // ── Tab actions ──
   addTab: (connectionId: string, tab: SQLTab) => void
   removeTab: (connectionId: string, id: string) => void
+  /** Remove multiple tabs at once. If the active tab is among them, selects the nearest remaining tab. */
+  removeTabs: (connectionId: string, ids: string[]) => void
   setActiveTab: (connectionId: string, id: string) => void
   updateTab: (connectionId: string, id: string, updates: Partial<SQLTab>) => void
 
@@ -269,6 +271,27 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       return { tabs: newTabs, activeTabId: newActiveId }
     })),
 
+  removeTabs: (connectionId, ids) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => {
+      const idsToRemove = new Set(ids)
+      const newTabs = conn.tabs.filter((t) => !idsToRemove.has(t.id))
+      let newActiveId = conn.activeTabId
+
+      // If the active tab was removed, pick the nearest remaining tab
+      if (newActiveId && idsToRemove.has(newActiveId)) {
+        if (newTabs.length === 0) {
+          newActiveId = null
+        } else {
+          // Try to select the tab that was at the same position
+          const oldIdx = conn.tabs.findIndex((t) => t.id === newActiveId)
+          const clampedIdx = Math.min(oldIdx, newTabs.length - 1)
+          newActiveId = newTabs[Math.max(0, clampedIdx)].id
+        }
+      }
+
+      return { tabs: newTabs, activeTabId: newActiveId }
+    })),
+
   setActiveTab: (connectionId, id) =>
     set((s) => updateConn(s.connections, connectionId, () => ({ activeTabId: id }))),
 
@@ -433,6 +456,7 @@ export function useSQLConnection(connectionId: string) {
 
       addTab: (tab: SQLTab) => s.addTab(connectionId, tab),
       removeTab: (id: string) => s.removeTab(connectionId, id),
+      removeTabs: (ids: string[]) => s.removeTabs(connectionId, ids),
       setActiveTab: (id: string) => s.setActiveTab(connectionId, id),
       updateTab: (id: string, updates: Partial<SQLTab>) => s.updateTab(connectionId, id, updates),
 
