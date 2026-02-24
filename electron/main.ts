@@ -18,6 +18,7 @@ import { registerHealthIPC } from './ipc/health.ipc'
 import { registerSQLIPC } from './ipc/sql.ipc'
 import { registerExportIPC } from './ipc/export.ipc'
 import { registerMonitorIPC, getMonitorService } from './ipc/monitor.ipc'
+import { registerServiceManagerIPC } from './ipc/servicemanager.ipc'
 import { getSettingsStore } from './ipc/settings.ipc'
 import { initNotificationService } from './services/NotificationService'
 import { getLogService } from './services/LogService'
@@ -333,6 +334,7 @@ app.whenReady().then(() => {
   registerSQLIPC()
   registerExportIPC()
   registerMonitorIPC()
+  registerServiceManagerIPC()
 
   // Initialize notification service (after settings IPC is registered)
   initNotificationService(getSettingsStore())
