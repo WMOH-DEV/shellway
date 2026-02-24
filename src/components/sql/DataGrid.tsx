@@ -268,6 +268,41 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
   const gridTheme = resolvedTheme === 'light' ? shellwayLightTheme : shellwayDarkTheme
 
+  // ── Column width persistence ref ──
+  // Holds the current column widths for this table. Read by columnDefs useMemo so that
+  // every time columnDefs re-runs (foreignKeys load, editedCells change, etc.), the
+  // correct widths are baked into the ColDef objects — preventing ag-grid from
+  // resetting widths to defaultColDef.width (150px) on column definition updates.
+  //
+  // Initialized from localStorage on mount (synchronous — available for first render).
+  // Updated eagerly in onColumnResized (before the debounced localStorage save).
+  const columnWidthsRef = useRef<Record<string, number> | null>(null)
+  const columnWidthsKeyRef = useRef(columnWidthsKey)
+
+  // Load saved widths when the table key changes (component mount or table switch)
+  if (columnWidthsKeyRef.current !== columnWidthsKey) {
+    columnWidthsKeyRef.current = columnWidthsKey
+    if (columnWidthsKey) {
+      try {
+        const raw = localStorage.getItem(columnWidthsKey)
+        columnWidthsRef.current = raw ? JSON.parse(raw) : null
+      } catch {
+        columnWidthsRef.current = null
+      }
+    } else {
+      columnWidthsRef.current = null
+    }
+  }
+  // Also initialize on very first render
+  if (columnWidthsRef.current === null && columnWidthsKey) {
+    try {
+      const raw = localStorage.getItem(columnWidthsKey)
+      columnWidthsRef.current = raw ? JSON.parse(raw) : null
+    } catch {
+      columnWidthsRef.current = null
+    }
+  }
+
   // Close cell context menu on click outside or scroll
   useEffect(() => {
     if (!contextMenu) return
@@ -358,9 +393,15 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     )
   }, [columnMeta])
 
-  // Column definitions derived from result fields — only table columns, no row numbers
+  // Column definitions derived from result fields — only table columns, no row numbers.
+  // Saved widths are baked into each ColDef from columnWidthsRef so that every time
+  // this useMemo re-runs (foreignKeys load, editedCells change, etc.), the correct
+  // widths are always present — preventing ag-grid from resetting to defaults.
   const columnDefs = useMemo<ColDef[]>(() => {
     if (!result?.fields?.length) return []
+
+    // Read current widths from ref (initialized from localStorage, updated on resize)
+    const savedWidths = columnWidthsRef.current
 
     return result.fields.map((field) => {
       const col: ColDef = {
@@ -376,9 +417,16 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         },
       }
 
+      // Apply saved width if available — takes priority over type-specific defaults
+      if (savedWidths && savedWidths[field.name] !== undefined) {
+        col.width = savedWidths[field.name]
+      } else if (isBooleanType(field.type)) {
+        col.width = 80
+      }
+      // No explicit width = use defaultColDef.width (150px)
+
       if (isBooleanType(field.type)) {
         col.cellRenderer = BooleanCellRenderer
-        col.width = 80
       } else if (foreignKeys && foreignKeys[field.name]) {
         // FK column — use FK-aware renderer with navigation arrow
         col.cellRenderer = FKCellRenderer
@@ -626,27 +674,25 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     }
     api.resetColumnState()
     // Clear saved column widths — columns reset to defaultColDef.width (150px)
+    columnWidthsRef.current = null
     if (columnWidthsKeyRef.current) {
       try { localStorage.removeItem(columnWidthsKeyRef.current) } catch {}
     }
     setHeaderContextMenu(null)
   }, [])
 
-  // Auto-size columns on first data render
-  // ── Column width persistence ──
+  // ── Column width persistence — save on resize ──
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const columnWidthsKeyRef = useRef(columnWidthsKey)
-  columnWidthsKeyRef.current = columnWidthsKey
 
   const onColumnResized = useCallback((event: { finished?: boolean; source?: string }) => {
     // Only persist after user finishes dragging — ignore programmatic resizes
     if (!event.finished || !columnWidthsKeyRef.current) return
     if (event.source !== 'uiColumnResized') return
 
-    // Debounce to avoid writing on every pixel of drag
-    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
-    resizeTimerRef.current = setTimeout(() => {
-      if (!gridRef.current?.api || !columnWidthsKeyRef.current) return
+    // Immediately update the ref so that if columnDefs useMemo re-runs (e.g. due to
+    // editedCells changing), the new ColDefs will include the correct widths — not
+    // stale ones from localStorage (which hasn't been written yet due to debounce).
+    if (gridRef.current?.api) {
       const state = gridRef.current.api.getColumnState()
       const widths: Record<string, number> = {}
       for (const col of state) {
@@ -654,8 +700,15 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
           widths[col.colId] = col.width
         }
       }
+      columnWidthsRef.current = widths
+    }
+
+    // Debounce the localStorage write (300ms) to avoid writing on every pixel of drag
+    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
+    resizeTimerRef.current = setTimeout(() => {
+      if (!columnWidthsKeyRef.current || !columnWidthsRef.current) return
       try {
-        localStorage.setItem(columnWidthsKeyRef.current, JSON.stringify(widths))
+        localStorage.setItem(columnWidthsKeyRef.current, JSON.stringify(columnWidthsRef.current))
       } catch {
         // Storage full or unavailable — ignore
       }
@@ -663,7 +716,8 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   }, [])
 
   const onGridReady = useCallback((_event: GridReadyEvent) => {
-    // Column sizing is handled in the useEffect below (after data loads)
+    // Grid API is now available — no additional action needed since
+    // column widths are baked directly into columnDefs from the ref.
   }, [])
 
   // ── Track hidden columns for external column picker ──
@@ -692,6 +746,13 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     return () => clearTimeout(t)
   }, [result?.fields, syncHiddenColumns])
 
+  // Clean up debounce timer on unmount to prevent stale localStorage writes
+  useEffect(() => {
+    return () => {
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
+    }
+  }, [])
+
   // ── Column visibility toggle helpers ──
   const handleShowAllColumns = useCallback(() => {
     const api = gridRef.current?.api
@@ -712,38 +773,11 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
     showAllColumns: handleShowAllColumns,
   }), [handleToggleColumn, handleShowAllColumns])
 
-  // Restore saved column widths when data first loads.
-  // No auto-sizing to content — defaultColDef.width (150px) is the baseline.
-  // Users can manually resize and their widths are persisted per-table.
-  const prevWidthContextRef = useRef<string>('')
-  useEffect(() => {
-    if (!gridRef.current?.api || !result?.fields?.length) return
-
-    // Run when columns OR table identity changes (handles tables with same column names)
-    const contextKey = `${columnWidthsKey}|${result.fields.map((f) => f.name).join(',')}`
-    if (contextKey === prevWidthContextRef.current) return
-    prevWidthContextRef.current = contextKey
-
-    // Try to restore saved column widths
-    if (columnWidthsKey) {
-      try {
-        const saved = localStorage.getItem(columnWidthsKey)
-        if (saved) {
-          const widths: Record<string, number> = JSON.parse(saved)
-          const hasMatch = result.fields.some((f) => widths[f.name] !== undefined)
-          if (hasMatch) {
-            const state = gridRef.current.api.getColumnState().map((col) => ({
-              ...col,
-              width: widths[col.colId!] ?? col.width,
-            }))
-            gridRef.current.api.applyColumnState({ state })
-          }
-        }
-      } catch {
-        // Corrupted data — use default width from defaultColDef
-      }
-    }
-  }, [result?.fields, columnWidthsKey])
+  // Column width restore is no longer done via a post-render useEffect.
+  // Instead, saved widths are baked directly into the columnDefs useMemo via
+  // columnWidthsRef. This eliminates the race condition where async metadata
+  // loads (foreignKeys, columnMeta) caused columnDefs to re-run and ag-grid
+  // to reset widths back to defaultColDef.width (150px).
 
   // Inject __rowIndex for stable identity
   const rowDataWithIndex = useMemo(

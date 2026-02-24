@@ -49,19 +49,38 @@ export function registerTerminalIPC(): void {
 
         const win = BrowserWindow.fromWebContents(event.sender)
 
-        // Forward shell output to renderer
+        // Forward shell output to renderer — batch rapid data chunks into a single
+        // IPC message per tick. High-throughput output (e.g. `cat largefile.txt`)
+        // fires many tiny data events; without batching, each one triggers a separate
+        // IPC serialization + deserialization cycle that congests the main thread.
+        let pendingData = ''
+        let flushScheduled = false
         shell.on('data', (data: Buffer) => {
-          win?.webContents.send('terminal:data', shellId, data.toString('utf-8'))
+          pendingData += data.toString('utf-8')
+          if (!flushScheduled) {
+            flushScheduled = true
+            process.nextTick(() => {
+              if (pendingData && win && !win.isDestroyed()) {
+                win.webContents.send('terminal:data', shellId, pendingData)
+              }
+              pendingData = ''
+              flushScheduled = false
+            })
+          }
         })
 
-        // Handle shell close
+        // Handle shell close — guard against double-fire (ssh2 can emit both
+        // 'close' and 'exit' for the same shell; without the guard, the renderer
+        // receives two terminal:exit events and LogService logs close twice).
         shell.on('close', () => {
+          if (!activeShells.has(shellId)) return
           activeShells.delete(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
           win?.webContents.send('terminal:exit', shellId, 0)
         })
 
         shell.on('exit', (code: number) => {
+          if (!activeShells.has(shellId)) return
           activeShells.delete(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
           win?.webContents.send('terminal:exit', shellId, code)
@@ -75,14 +94,17 @@ export function registerTerminalIPC(): void {
     }
   )
 
-  ipcMain.handle('terminal:write', (_event, shellId: string, data: string) => {
+  // Fire-and-forget: terminal:write does not need a response.
+  // Using ipcMain.on (not .handle) eliminates the round-trip IPC cost per keystroke.
+  ipcMain.on('terminal:write', (_event, shellId: string, data: string) => {
     const shell = activeShells.get(shellId)
     if (shell && shell.writable) {
       shell.write(data)
     }
   })
 
-  ipcMain.handle(
+  // Fire-and-forget: terminal:resize does not need a response.
+  ipcMain.on(
     'terminal:resize',
     (_event, shellId: string, cols: number, rows: number) => {
       const shell = activeShells.get(shellId)

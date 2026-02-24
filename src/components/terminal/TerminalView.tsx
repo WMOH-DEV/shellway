@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { cn } from '@/utils/cn'
 import { TERMINAL_THEMES } from '@/data/terminalThemes'
@@ -118,6 +119,20 @@ export function TerminalView({
     terminal.loadAddon(searchAddon)
 
     terminal.open(containerRef.current)
+
+    // Use WebGL renderer for significantly better performance.
+    // Falls back to the default DOM renderer if WebGL is unavailable.
+    try {
+      const webglAddon = new WebglAddon()
+      // Dispose WebGL addon gracefully if it loses context (e.g. GPU driver reset)
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose()
+      })
+      terminal.loadAddon(webglAddon)
+    } catch {
+      // WebGL not available — DOM renderer is used automatically
+    }
+
     fitAddon.fit()
 
     terminalRef.current = terminal

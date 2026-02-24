@@ -211,9 +211,9 @@ const api = {
         success: boolean
         error?: string
       }>,
-    write: (shellId: string, data: string) => ipcRenderer.invoke('terminal:write', shellId, data),
+    write: (shellId: string, data: string) => ipcRenderer.send('terminal:write', shellId, data),
     resize: (shellId: string, cols: number, rows: number) =>
-      ipcRenderer.invoke('terminal:resize', shellId, cols, rows),
+      ipcRenderer.send('terminal:resize', shellId, cols, rows),
     close: (shellId: string) => ipcRenderer.invoke('terminal:close', shellId),
     onData: (callback: (shellId: string, data: string) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, shellId: string, data: string) =>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   Plus, X, Terminal as TerminalIcon, Search,
   ChevronUp, ChevronDown, Trash2, Code2
@@ -54,10 +54,13 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
     { id: uuid(), name: 'Shell 1' }
   ])
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id)
-  const [searchAddons, setSearchAddons] = useState<Map<string, SearchAddon>>(new Map())
-  const [clearHandlers, setClearHandlers] = useState<Map<string, () => void>>(new Map())
-  const [focusHandlers, setFocusHandlers] = useState<Map<string, () => void>>(new Map())
-  const [pasteHandlers, setPasteHandlers] = useState<Map<string, (text: string) => void>>(new Map())
+  // Handler maps — stored as refs (not state) because they are lookup tables for
+  // imperative callbacks, not drivers of UI rendering. Using useState caused 4
+  // unnecessary re-renders per terminal tab creation.
+  const searchAddonsRef = useRef(new Map<string, SearchAddon>())
+  const clearHandlersRef = useRef(new Map<string, () => void>())
+  const focusHandlersRef = useRef(new Map<string, () => void>())
+  const pasteHandlersRef = useRef(new Map<string, (text: string) => void>())
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
@@ -80,10 +83,10 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       window.novadeck.terminal.close(id)
 
       // Clean up handler maps to avoid holding references to disposed Terminal instances
-      setSearchAddons((prev) => { const m = new Map(prev); m.delete(id); return m })
-      setClearHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
-      setFocusHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
-      setPasteHandlers((prev) => { const m = new Map(prev); m.delete(id); return m })
+      searchAddonsRef.current.delete(id)
+      clearHandlersRef.current.delete(id)
+      focusHandlersRef.current.delete(id)
+      pasteHandlersRef.current.delete(id)
 
       setTabs((prev) => prev.filter((t) => t.id !== id))
       if (activeTabId === id) {
@@ -97,7 +100,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
 
   const handleSearch = useCallback(
     (query: string, direction: 'next' | 'prev') => {
-      const addon = searchAddons.get(activeTabId)
+      const addon = searchAddonsRef.current.get(activeTabId)
       if (!addon || !query) return
       if (direction === 'next') {
         addon.findNext(query)
@@ -105,48 +108,48 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
         addon.findPrevious(query)
       }
     },
-    [searchAddons, activeTabId]
+    [activeTabId]
   )
 
   const registerSearchAddon = useCallback((shellId: string, addon: SearchAddon) => {
-    setSearchAddons((prev) => new Map(prev).set(shellId, addon))
+    searchAddonsRef.current.set(shellId, addon)
   }, [])
 
   const registerClearHandler = useCallback((shellId: string, clearFn: () => void) => {
-    setClearHandlers((prev) => new Map(prev).set(shellId, clearFn))
+    clearHandlersRef.current.set(shellId, clearFn)
   }, [])
 
   const registerFocusHandler = useCallback((shellId: string, focusFn: () => void) => {
-    setFocusHandlers((prev) => new Map(prev).set(shellId, focusFn))
+    focusHandlersRef.current.set(shellId, focusFn)
   }, [])
 
   const registerPasteHandler = useCallback((shellId: string, pasteFn: (text: string) => void) => {
-    setPasteHandlers((prev) => new Map(prev).set(shellId, pasteFn))
+    pasteHandlersRef.current.set(shellId, pasteFn)
   }, [])
 
   const handleClear = useCallback(() => {
-    const clearFn = clearHandlers.get(activeTabId)
+    const clearFn = clearHandlersRef.current.get(activeTabId)
     if (clearFn) clearFn()
-  }, [clearHandlers, activeTabId])
+  }, [activeTabId])
 
   /** Re-focus the active terminal (e.g. after palette/modal closes) */
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
-      const focusFn = focusHandlers.get(activeTabId)
+      const focusFn = focusHandlersRef.current.get(activeTabId)
       if (focusFn) focusFn()
     })
-  }, [focusHandlers, activeTabId])
+  }, [activeTabId])
 
   /** Insert text into the active terminal via xterm paste (flows through onData for buffer tracking) */
   const pasteIntoTerminal = useCallback((text: string) => {
-    const pasteFn = pasteHandlers.get(activeTabId)
+    const pasteFn = pasteHandlersRef.current.get(activeTabId)
     if (pasteFn) {
       pasteFn(text)
     } else {
       // Fallback to direct IPC write if paste handler not yet registered
       window.novadeck.terminal.write(activeTabId, text)
     }
-  }, [pasteHandlers, activeTabId])
+  }, [activeTabId])
 
   return (
     <div className="flex flex-col h-full">
