@@ -6,10 +6,16 @@ import { cn } from '@/utils/cn'
 import {
   Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
   XCircle, Filter, EyeOff, RotateCcw, Clipboard,
-  ExternalLink, Plus, Trash2,
+  ExternalLink, Plus, Trash2, ChevronDown,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import type { QueryResult, SchemaColumn } from '@/types/sql'
+import {
+  TimestampDropdownMenu,
+  isTimestampType,
+  SQL_EXPR_PREFIX,
+  type TimestampDropdownState,
+} from '@/components/sql/TimestampCellEditor'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -153,6 +159,7 @@ interface DataGridProps {
   onDuplicateRow?: (rowData: Record<string, unknown>) => void
   /** Called when user requests deleting rows by their indices */
   onDeleteRows?: (rowIndices: number[]) => void
+
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -183,7 +190,15 @@ function NullCellRenderer(params: { value: unknown }) {
   if (params.value === null || params.value === undefined) {
     return <span className="italic text-nd-text-muted select-none">(NULL)</span>
   }
-  return <>{String(params.value)}</>
+  // Display SQL expression sentinels with special styling
+  const str = String(params.value)
+  if (str === `${SQL_EXPR_PREFIX}NOW()`) {
+    return <span className="text-nd-accent font-medium select-none">NOW()</span>
+  }
+  if (str === `${SQL_EXPR_PREFIX}DEFAULT`) {
+    return <span className="text-nd-text-muted italic select-none">DEFAULT</span>
+  }
+  return <>{str}</>
 }
 
 function BooleanCellRenderer(params: { value: unknown }) {
@@ -320,6 +335,7 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
   const containerRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [headerContextMenu, setHeaderContextMenu] = useState<HeaderContextMenuState | null>(null)
+  const [timestampDropdown, setTimestampDropdown] = useState<TimestampDropdownState | null>(null)
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
   const gridTheme = resolvedTheme === 'light' ? shellwayLightTheme : shellwayDarkTheme
 
@@ -406,6 +422,100 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       window.removeEventListener('scroll', close, true)
     }
   }, [headerContextMenu])
+
+  // ── Timestamp column detection (for hover icon overlay) ──
+
+  const timestampColumns = useMemo(() => {
+    if (!result?.fields) return new Set<string>()
+    return new Set(
+      result.fields.filter((f) => isTimestampType(f.type)).map((f) => f.name)
+    )
+  }, [result?.fields])
+
+  // ── Floating timestamp icon — tracks hovered timestamp cell ──
+
+  const [tsIconTarget, setTsIconTarget] = useState<{
+    cellEl: HTMLElement
+    rowIndex: number
+    field: string
+    value: unknown
+  } | null>(null)
+
+  // Track hovered cell via event delegation on the grid container
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || timestampColumns.size === 0 || !onCellEdit) return
+
+    let currentCell: HTMLElement | null = null
+
+    const handleMouseOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const cell = target.closest<HTMLElement>('.ag-cell')
+      if (!cell || cell === currentCell) return
+      currentCell = cell
+
+      const colId = cell.getAttribute('col-id')
+      if (!colId || !timestampColumns.has(colId)) {
+        setTsIconTarget(null)
+        return
+      }
+
+      // Find the row element to get the row index
+      const row = cell.closest<HTMLElement>('.ag-row')
+      if (!row) { setTsIconTarget(null); return }
+      const rowIdx = parseInt(row.getAttribute('row-index') ?? '', 10)
+      if (isNaN(rowIdx)) { setTsIconTarget(null); return }
+
+      // Get the cell value from the row data
+      const rowNode = gridRef.current?.api?.getRowNode(String(rowIdx))
+      const value = rowNode?.data?.[colId]
+
+      setTsIconTarget({ cellEl: cell, rowIndex: rowIdx, field: colId, value })
+    }
+
+    const handleMouseLeave = () => {
+      currentCell = null
+      setTsIconTarget(null)
+    }
+
+    container.addEventListener('mouseover', handleMouseOver)
+    container.addEventListener('mouseleave', handleMouseLeave)
+    return () => {
+      container.removeEventListener('mouseover', handleMouseOver)
+      container.removeEventListener('mouseleave', handleMouseLeave)
+    }
+  }, [timestampColumns, onCellEdit])
+
+  // Compute icon position from the target cell element
+  const tsIconPos = useMemo(() => {
+    if (!tsIconTarget) return null
+    const rect = tsIconTarget.cellEl.getBoundingClientRect()
+    return {
+      top: rect.top + (rect.height - 18) / 2,
+      left: rect.right - 20,
+    }
+  }, [tsIconTarget])
+
+  // ── Timestamp dropdown handlers ──
+
+  const handleTimestampDropdown = useCallback((state: TimestampDropdownState) => {
+    setTimestampDropdown(state)
+    setTsIconTarget(null) // hide icon when dropdown opens
+    // Dismiss other menus
+    setContextMenu(null)
+    setHeaderContextMenu(null)
+  }, [])
+
+  const handleTimestampSetValue = useCallback(
+    (rowIndex: number, field: string, value: unknown) => {
+      if (!gridRef.current?.api) return
+      const rowNode = gridRef.current.api.getRowNode(String(rowIndex))
+      if (!rowNode) return
+      // setDataValue triggers onCellValueChanged → flows through handleCellEdit
+      rowNode.setDataValue(field, value)
+    },
+    []
+  )
 
   // Keyboard Delete/Backspace handler for selected rows
   useEffect(() => {
@@ -578,6 +688,10 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
       unSortIcon: true,
       sortingOrder: ['desc', 'asc', null], // Start with desc — data is already asc by default
       width: 150,
+      // Disable ag-grid's automatic cell data type detection. Without this,
+      // AllCommunityModule detects Date objects / date strings and auto-assigns
+      // a date-picker cell editor — preventing free-text typing in timestamp cells.
+      cellDataType: false,
     }),
     []
   )
@@ -907,6 +1021,10 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
         context={{ foreignKeys, onNavigateFK }}
         animateRows={false}
         suppressRowVirtualisation={false}
+        // Prevents header/body horizontal scroll desync — ag-grid's column virtualization
+        // causes the header to lag behind the body when scrolling. Rendering all columns
+        // eliminates the lag. Acceptable for typical SQL tables (rarely 200+ columns).
+        suppressColumnVirtualisation={true}
         rowSelection="multiple"
         enableCellTextSelection
         suppressRowClickSelection={false}
@@ -1000,6 +1118,42 @@ export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProp
             onClick={handleHeaderRemoveSort}
           />
         </div>
+      )}
+
+      {/* Floating timestamp cell icon — positioned at the right edge of the hovered timestamp cell */}
+      {tsIconTarget && tsIconPos && !timestampDropdown && (
+        <button
+          className="fixed z-40 flex items-center justify-center w-[18px] h-[18px] rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface-hover transition-colors"
+          style={{ top: tsIconPos.top, left: tsIconPos.left }}
+          onMouseDown={(e) => {
+            // Prevent ag-grid from processing this click (cell selection, etc.)
+            e.stopPropagation()
+            e.preventDefault()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            handleTimestampDropdown({
+              rowIndex: tsIconTarget.rowIndex,
+              field: tsIconTarget.field,
+              x: rect.left,
+              y: rect.bottom + 2,
+              currentValue: tsIconTarget.value,
+            })
+          }}
+          title="Timestamp options"
+        >
+          <ChevronDown size={12} />
+        </button>
+      )}
+
+      {/* Floating timestamp dropdown menu */}
+      {timestampDropdown && (
+        <TimestampDropdownMenu
+          state={timestampDropdown}
+          onClose={() => setTimestampDropdown(null)}
+          onSetValue={handleTimestampSetValue}
+        />
       )}
     </div>
   )

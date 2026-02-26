@@ -1,4 +1,5 @@
 import type { StagedChange, DatabaseType } from '@/types/sql'
+import { SQL_EXPR_PREFIX, resolveSQLExpr } from '@/components/sql/TimestampCellEditor'
 
 // ── Identifier & value quoting ──
 
@@ -13,6 +14,11 @@ function escapeString(value: string): string {
 
 function formatValue(value: unknown, dbType: DatabaseType): string {
   if (value === null || value === undefined) return 'NULL'
+
+  // SQL expression sentinels (NOW(), DEFAULT) — emit whitelisted raw expression
+  if (typeof value === 'string' && value.startsWith(SQL_EXPR_PREFIX)) {
+    return resolveSQLExpr(value)
+  }
 
   if (typeof value === 'boolean') {
     if (dbType === 'mysql') return value ? '1' : '0'

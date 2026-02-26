@@ -120,6 +120,12 @@
   opacity: 0.35;
 }
 
+/* ── ag-Grid header/body scroll sync — promote to compositor layer ── */
+.ag-header-viewport,
+.ag-body-viewport {
+  will-change: scroll-position;
+}
+
 /* ── ag-Grid edited row/cell highlighting ── */
 .ag-row-edited {
   background-color: rgba(245, 158, 11, 0.08) !important;

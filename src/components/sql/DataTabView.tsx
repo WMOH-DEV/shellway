@@ -6,6 +6,7 @@ import { PaginationBar, type TableViewMode } from '@/components/sql/PaginationBa
 import { FilterBar } from '@/components/sql/FilterBar'
 import { buildWhereClause } from '@/utils/sqlFilterBuilder'
 import { useSQLConnection } from '@/stores/sqlStore'
+import { SQL_EXPR_PREFIX, resolveSQLExpr } from '@/components/sql/TimestampCellEditor'
 import type {
   DatabaseType,
   PaginationState,
@@ -134,6 +135,40 @@ function buildPrimaryKey(
     pk[col] = row[col]
   }
   return pk
+}
+
+// ── Cell value comparison ──
+
+/**
+ * Compare two cell values for equality, normalising for type mismatches caused
+ * by ag-grid's text editor (always returns strings). Handles:
+ *  - null/undefined symmetry (null == undefined → true)
+ *  - Date ↔ string (PG returns Date objects; ag-grid text editor returns strings)
+ *  - numeric string ↔ number ("42" == 42)
+ *  - SQL expression sentinels — never equal to an original DB value
+ */
+/** Normalise a date/timestamp string for comparison — collapse "T" ↔ " " separator */
+function normaliseDateStr(s: string): string {
+  // "2023-09-03T16:13:26" → "2023-09-03 16:13:26" (standard SQL format)
+  return s.replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/, '$1 $2')
+}
+
+function valuesAreEqual(a: unknown, b: unknown): boolean {
+  // Strict match (handles string↔string for MySQL dateStrings)
+  if (a === b) return true
+  // null / undefined equivalence
+  if ((a === null || a === undefined) && (b === null || b === undefined)) return true
+  // If either is null/undefined but not both, they differ
+  if (a == null || b == null) return false
+  // SQL expression sentinels are never "equal" to an original DB value
+  if (typeof a === 'string' && a.startsWith(SQL_EXPR_PREFIX)) return false
+  if (typeof b === 'string' && b.startsWith(SQL_EXPR_PREFIX)) return false
+  // Date ↔ string: normalise Date to its toString() form (what ag-grid text editor produces)
+  const strA = a instanceof Date ? a.toString() : String(a)
+  const strB = b instanceof Date ? b.toString() : String(b)
+  if (strA === strB) return true
+  // Also compare with normalised date format (space vs T separator)
+  return normaliseDateStr(strA) === normaliseDateStr(strB)
 }
 
 // ── Default state ──
@@ -606,6 +641,11 @@ export const DataTabView = React.memo(function DataTabView({
         return
       }
 
+      // ── Early exit: if old and new values are effectively the same, skip ──
+      // ag-grid's text editor always returns strings, so a Date object from PG
+      // becomes its string form. Compare normalized forms to avoid false positives.
+      if (valuesAreEqual(_oldValue, newValue)) return
+
       // ── Normal row edit (existing DB row) ──
       const cellKey = `edit-${table}-${rowIndex}-${field}`
 
@@ -615,13 +655,9 @@ export const DataTabView = React.memo(function DataTabView({
       }
       const originalValue = originalValuesRef.current.get(cellKey)
 
-      // Check if the new value reverts back to the original (strict comparison)
-      // ag-grid returns string values from text editors, so compare stringified
-      // forms only when both are non-null/non-undefined
-      let isReverted = newValue === originalValue
-      if (!isReverted && newValue != null && originalValue != null) {
-        isReverted = String(newValue) === String(originalValue)
-      }
+      // Check if the new value reverts back to the original
+      // ag-grid returns string values from text editors, so compare normalised forms
+      const isReverted = valuesAreEqual(newValue, originalValue)
 
       // Find existing staged change for this cell
       const existingChange = currentStaged.find((c) => c.id === cellKey)
@@ -824,13 +860,18 @@ export const DataTabView = React.memo(function DataTabView({
         let paramIdx = 1
 
         for (const [col, { new: newVal }] of Object.entries(change.changes)) {
-          if (dbType === 'mysql') {
-            setClauses.push(`${quoteIdentifier(col, dbType)} = ?`)
+          const quotedCol = quoteIdentifier(col, dbType)
+          // Handle SQL expression sentinels (NOW(), DEFAULT) — inject whitelisted raw SQL, no parameter
+          if (typeof newVal === 'string' && newVal.startsWith(SQL_EXPR_PREFIX)) {
+            setClauses.push(`${quotedCol} = ${resolveSQLExpr(newVal)}`)
+          } else if (dbType === 'mysql') {
+            setClauses.push(`${quotedCol} = ?`)
+            params.push(newVal)
           } else {
-            setClauses.push(`${quoteIdentifier(col, dbType)} = $${paramIdx}`)
+            setClauses.push(`${quotedCol} = $${paramIdx}`)
             paramIdx++
+            params.push(newVal)
           }
-          params.push(newVal)
         }
 
         // Build WHERE clause from primary key
@@ -877,19 +918,28 @@ export const DataTabView = React.memo(function DataTabView({
         if (entries.length === 0) continue
 
         const columns = entries.map(([col]) => col)
-        const values = entries.map(([, val]) => val)
         const fullTable = buildFullTableName(change.table, change.schema, dbType)
-
         const quotedCols = columns.map((c) => quoteIdentifier(c, dbType)).join(', ')
-        let placeholders: string
-        if (dbType === 'mysql') {
-          placeholders = columns.map(() => '?').join(', ')
-        } else {
-          placeholders = columns.map((_, i) => `$${i + 1}`).join(', ')
+
+        // Build placeholders and params, handling SQL expression sentinels
+        const placeholderParts: string[] = []
+        const params: unknown[] = []
+        let pgIdx = 1
+        for (const [, val] of entries) {
+          if (typeof val === 'string' && val.startsWith(SQL_EXPR_PREFIX)) {
+            // Whitelisted SQL expression — inject directly, no parameter
+            placeholderParts.push(resolveSQLExpr(val))
+          } else if (dbType === 'mysql') {
+            placeholderParts.push('?')
+            params.push(val)
+          } else {
+            placeholderParts.push(`$${pgIdx}`)
+            pgIdx++
+            params.push(val)
+          }
         }
 
-        const sql = `INSERT INTO ${fullTable} (${quotedCols}) VALUES (${placeholders})`
-        const params = values
+        const sql = `INSERT INTO ${fullTable} (${quotedCols}) VALUES (${placeholderParts.join(', ')})`
 
         const res = await queryApi.query(sqlSessionId, sql, params)
 
