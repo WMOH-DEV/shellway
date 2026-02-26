@@ -94,24 +94,23 @@ export function QueryMonitor({
     [onCancelQuery]
   )
 
-  // Render nothing when there are no running queries
-  if (count === 0) return null
-
   const now = Date.now()
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Trigger button — compact toolbar style with pulsing badge */}
-      <Tooltip content={`${count} running ${count === 1 ? 'query' : 'queries'}`} side="bottom">
+      {/* Trigger button — always visible; pulsing icon when queries are running */}
+      <Tooltip content={count > 0 ? `${count} running ${count === 1 ? 'query' : 'queries'}` : 'No running queries'} side="bottom">
         <button
-          onClick={toggleOpen}
+          onClick={count > 0 ? toggleOpen : undefined}
           className={cn(
             'flex items-center gap-1.5 h-8 px-2 rounded text-xs font-medium transition-colors',
-            'text-nd-text-secondary hover:text-nd-text-primary hover:bg-nd-surface',
+            count > 0
+              ? 'text-nd-text-secondary hover:text-nd-text-primary hover:bg-nd-surface cursor-pointer'
+              : 'text-nd-text-muted cursor-default',
             open && 'bg-nd-surface text-nd-text-primary'
           )}
         >
-          <Activity size={14} className="text-nd-accent animate-pulse" />
+          <Activity size={14} className={cn(count > 0 ? 'text-nd-accent animate-pulse' : 'text-nd-text-muted')} />
           <span className="tabular-nums">{count}</span>
         </button>
       </Tooltip>

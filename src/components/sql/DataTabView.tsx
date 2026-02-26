@@ -1089,17 +1089,18 @@ export const DataTabView = React.memo(function DataTabView({
     }
     const handleRefreshData = (e: Event) => {
       const detail = (e as CustomEvent).detail
-      if (detail?.connectionId === connectionId) {
-        // Invalidate cache so re-fetch is forced
-        cacheKeyRef.current = ''
-        executeQuery({
-          page: pagination.page,
-          pageSize: pagination.pageSize,
-          sort: sortColumn,
-          sortDir: sortDirection,
-          currentFilters: filters,
-        })
-      }
+      if (detail?.connectionId !== connectionId) return
+      // If a specific table is targeted, only refresh if it matches this tab
+      if (detail.table && detail.table !== table) return
+      // Invalidate cache so re-fetch is forced
+      cacheKeyRef.current = ''
+      executeQuery({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        sort: sortColumn,
+        sortDir: sortDirection,
+        currentFilters: filters,
+      })
     }
     const handleUndoChange = (e: Event) => {
       const detail = (e as CustomEvent).detail
@@ -1306,15 +1307,14 @@ export const DataTabView = React.memo(function DataTabView({
         </div>
       )}
 
-      {/* Loading indicator — only in data mode */}
-      {isDataMode && isLoading && (
-        <div className="absolute right-3 top-3 z-10">
-          <Loader2 size={16} className="animate-spin text-nd-accent" />
-        </div>
-      )}
-
       {/* Data Grid — hidden (not unmounted) when in structure mode to preserve scroll/state */}
       <div className={cn('relative flex-1 overflow-hidden', !isDataMode && 'hidden')}>
+        {/* Loading indicator — centered inside the grid container */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+            <Loader2 size={16} className="animate-spin text-nd-accent" />
+          </div>
+        )}
         <DataGrid
           ref={dataGridRef}
           result={resultWithInserts}

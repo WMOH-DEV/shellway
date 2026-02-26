@@ -891,12 +891,16 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [tabs])
 
   // ── Save / Discard dispatchers (status bar → DataTabView via events) ──
-  // ── Refresh data in the active data tab ──
-  const handleRefreshData = useCallback(() => {
+  // ── Refresh data in the active data tab only ──
+  const handleRefreshActiveTable = useCallback(() => {
     if (!sqlSessionId) return
+    const tab = getSQLConnectionState(connectionId).tabs.find(
+      (t) => t.id === getSQLConnectionState(connectionId).activeTabId
+    )
+    if (!tab?.table) return // Only refresh data tabs (not query editors)
     window.dispatchEvent(
       new CustomEvent('sql:refresh-data', {
-        detail: { sqlSessionId, connectionId },
+        detail: { sqlSessionId, connectionId, table: tab.table },
       })
     )
   }, [sqlSessionId, connectionId])
@@ -1182,8 +1186,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         {/* Right group: actions */}
         <ToolbarButton
           icon={<RefreshCw size={13} />}
-          title="Refresh data (F5)"
-          onClick={handleRefreshData}
+          title="Refresh current table (F5)"
+          onClick={handleRefreshActiveTable}
         />
         <ToolbarButton
           icon={<Plus size={14} />}
