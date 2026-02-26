@@ -159,11 +159,20 @@ const FilterRow = React.memo(function FilterRow({
   const isBetween = filter.operator === 'between'
 
   const columnOptions = useMemo(
-    () => [
-      { value: '__raw_sql__', label: 'Raw SQL' },
-      ...columns.map((c) => ({ value: c.name, label: c.name })),
-    ],
-    [columns]
+    () => {
+      const options = [
+        { value: '__raw_sql__', label: 'Raw SQL' },
+        ...columns.map((c) => ({ value: c.name, label: c.name })),
+      ]
+      // If saved filter references a column not yet in the list (columns still loading
+      // from the query), include it directly so the Select shows the correct name
+      // instead of falling back to "Raw SQL"
+      if (filter.column !== '__raw_sql__' && !columns.some((c) => c.name === filter.column)) {
+        options.splice(1, 0, { value: filter.column, label: filter.column })
+      }
+      return options
+    },
+    [columns, filter.column]
   )
 
   const operatorOptions = useMemo(

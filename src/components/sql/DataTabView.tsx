@@ -192,6 +192,21 @@ export const DataTabView = React.memo(function DataTabView({
   // Store — staged changes + connection info for inline editing
   const { upsertStagedChange, removeStagedChange, stagedChanges, connectionConfig, currentDatabase, addRunningQuery } = useSQLConnection(connectionId)
 
+  // Stable key for persisting filters per table across sessions
+  // Format: sql-flt:{type}:{host}:{port}:{database}:{schema}.{table}
+  const filtersKey = useMemo(() => {
+    if (!connectionConfig) return undefined
+    const parts = [
+      'sql-flt',
+      connectionConfig.type,
+      connectionConfig.host,
+      connectionConfig.port,
+      currentDatabase || connectionConfig.database || '_',
+      schema ? `${schema}.${table}` : table,
+    ]
+    return parts.join(':')
+  }, [connectionConfig, currentDatabase, schema, table])
+
   // State
   const [result, setResult] = useState<QueryResult | null>(null)
   const [columns, setColumns] = useState<QueryField[]>([])
@@ -256,12 +271,13 @@ export const DataTabView = React.memo(function DataTabView({
         return // already loaded
       }
 
-      // Cancel any in-flight query (renderer-side + server-side)
+      // Cancel any in-flight query (renderer-side only — abort prevents stale state updates).
+      // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
+      // connection thread, not a specific query. On a shared connection, the KILL can
+      // race and kill a DIFFERENT query that started executing after the intended target
+      // completed. Server-side KILL is only safe for explicit user actions (QueryMonitor).
       if (abortRef.current) {
         abortRef.current.abort()
-      }
-      if (ipcQueryIdRef.current) {
-        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
       }
       const controller = new AbortController()
       abortRef.current = controller
@@ -425,10 +441,29 @@ export const DataTabView = React.memo(function DataTabView({
   // ── Initial load ──
 
   useEffect(() => {
+    // Restore persisted filters for this table (survives tab close, session close, app restart)
+    let savedFilters: TableFilter[] = []
+    if (filtersKey) {
+      try {
+        const raw = localStorage.getItem(filtersKey)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) {
+            // Validate each filter has required shape — guards against schema changes
+            savedFilters = parsed.filter(
+              (f: unknown): f is TableFilter =>
+                typeof f === 'object' && f !== null && 'column' in f && 'operator' in f && 'id' in f
+            )
+          }
+        }
+      } catch { /* corrupt data — start fresh */ }
+    }
+
     setPagination(defaultPagination())
     setSortColumn(undefined)
     setSortDirection('asc')
-    setFilters([])
+    setFilters(savedFilters)
+    filtersRef.current = savedFilters
     setResult(null)
     resultRef.current = null
     setError(null)
@@ -438,57 +473,62 @@ export const DataTabView = React.memo(function DataTabView({
     setForeignKeysRaw([])
     cacheKeyRef.current = ''
 
-    executeQuery({
-      page: 1,
-      pageSize: DEFAULT_PAGE_SIZE,
-      currentFilters: [],
-    })
+    // Defer queries to next tick — React StrictMode (dev) synchronously unmounts
+    // and remounts components, so clearTimeout in cleanup prevents the first mount's
+    // queries from firing. Only the real mount's queries execute, eliminating
+    // duplicate queries on the shared MySQL connection.
+    const initTimer = setTimeout(() => {
+      executeQuery({
+        page: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+        currentFilters: savedFilters,
+      })
 
-    // Fetch all table metadata in a single query (columns, indexes, foreign keys).
-    // One network roundtrip over the SSH tunnel instead of three separate queries.
-    ;(async () => {
-      try {
-        const res = await (window as any).novadeck.sql.getTableStructure(sqlSessionId, table, schema)
-        if (res?.success && res.data) {
-          const { columns: cols, indexes: idxs, foreignKeys: fks } = res.data as {
-            columns: SchemaColumn[]; indexes: any[]; foreignKeys: any[]
-          }
+      // Fetch all table metadata in a single query (columns, indexes, foreign keys).
+      // One network roundtrip over the SSH tunnel instead of three separate queries.
+      ;(async () => {
+        try {
+          const res = await (window as any).novadeck.sql.getTableStructure(sqlSessionId, table, schema)
+          if (res?.success && res.data) {
+            const { columns: cols, indexes: idxs, foreignKeys: fks } = res.data as {
+              columns: SchemaColumn[]; indexes: any[]; foreignKeys: any[]
+            }
 
-          // Column metadata — used for inline editing (PK detection, auto-increment)
-          setColumnMeta(cols)
-          const pkCols = cols.filter((c) => c.isPrimaryKey).map((c) => c.name)
-          setPrimaryKeyColumns(pkCols)
-          primaryKeyColumnsRef.current = pkCols
+            // Column metadata — used for inline editing (PK detection, auto-increment)
+            setColumnMeta(cols)
+            const pkCols = cols.filter((c) => c.isPrimaryKey).map((c) => c.name)
+            setPrimaryKeyColumns(pkCols)
+            primaryKeyColumnsRef.current = pkCols
 
-          // Index metadata — used by StructureTabView
-          setIndexes(idxs)
+            // Index metadata — used by StructureTabView
+            setIndexes(idxs)
 
-          // Foreign key metadata — used for FK navigation arrows + StructureTabView
-          setForeignKeysRaw(fks)
-          const fkMap: ForeignKeyMap = {}
-          for (const fk of fks) {
-            for (let i = 0; i < fk.columns.length; i++) {
-              fkMap[fk.columns[i]] = {
-                referencedTable: fk.referencedTable,
-                referencedColumn: fk.referencedColumns[i] || fk.referencedColumns[0],
+            // Foreign key metadata — used for FK navigation arrows + StructureTabView
+            setForeignKeysRaw(fks)
+            const fkMap: ForeignKeyMap = {}
+            for (const fk of fks) {
+              for (let i = 0; i < fk.columns.length; i++) {
+                fkMap[fk.columns[i]] = {
+                  referencedTable: fk.referencedTable,
+                  referencedColumn: fk.referencedColumns[i] || fk.referencedColumns[0],
+                }
               }
             }
+            setForeignKeyMap(fkMap)
           }
-          setForeignKeyMap(fkMap)
+        } catch {
+          // Non-critical — inline editing falls back to full-row WHERE, FK arrows won't appear
         }
-      } catch {
-        // Non-critical — inline editing falls back to full-row WHERE, FK arrows won't appear
-      }
-    })()
+      })()
+    }, 0)
 
     return () => {
+      clearTimeout(initTimer)
       abortRef.current?.abort()
       if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current)
-      // Cancel the in-flight query on the main process (prevents stale queries from executing)
-      if (ipcQueryIdRef.current) {
-        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
-        ipcQueryIdRef.current = null
-      }
+      // Reset the query ID ref so stale results are discarded.
+      // We do NOT send server-side KILL QUERY in cleanup — see comment in executeQuery.
+      ipcQueryIdRef.current = null
     }
   }, [table, schema, connectionId, sqlSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -587,9 +627,16 @@ export const DataTabView = React.memo(function DataTabView({
         value: '',
       }
       setFocusFilterId(id)
-      setFilters((prev) => [...prev, newFilter])
+      setFilters((prev) => {
+        const updated = [...prev, newFilter]
+        // Persist immediately so the new filter row survives tab/app close
+        if (filtersKey) {
+          try { localStorage.setItem(filtersKey, JSON.stringify(updated)) } catch {}
+        }
+        return updated
+      })
     },
-    []
+    [filtersKey]
   )
 
   // Refs always hold latest values so callbacks never use stale closures
@@ -601,7 +648,17 @@ export const DataTabView = React.memo(function DataTabView({
   const handleFiltersChange = useCallback((newFilters: TableFilter[]) => {
     filtersRef.current = newFilters
     setFilters(newFilters)
-  }, [])
+    // Persist filters to localStorage so they survive tab/session/app close
+    if (filtersKey) {
+      try {
+        if (newFilters.length > 0) {
+          localStorage.setItem(filtersKey, JSON.stringify(newFilters))
+        } else {
+          localStorage.removeItem(filtersKey)
+        }
+      } catch { /* storage full or unavailable — non-critical */ }
+    }
+  }, [filtersKey])
 
   const handleFiltersApply = useCallback(() => {
     // Debounce filter application — reads filtersRef to avoid stale closures
@@ -1161,6 +1218,10 @@ export const DataTabView = React.memo(function DataTabView({
       const newFilters = [newFilter]
       filtersRef.current = newFilters
       setFilters(newFilters)
+      // Persist FK-navigation filters
+      if (filtersKey) {
+        try { localStorage.setItem(filtersKey, JSON.stringify(newFilters)) } catch {}
+      }
       // Trigger query with the new filter
       setPagination((p) => ({ ...p, page: 1 }))
       executeQuery({
@@ -1309,9 +1370,9 @@ export const DataTabView = React.memo(function DataTabView({
 
       {/* Data Grid — hidden (not unmounted) when in structure mode to preserve scroll/state */}
       <div className={cn('relative flex-1 overflow-hidden', !isDataMode && 'hidden')}>
-        {/* Loading indicator — centered inside the grid container */}
+        {/* Subtle loading indicator — small spinner in top-right corner inside the relative container */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="absolute right-3 top-3 z-10 pointer-events-none">
             <Loader2 size={16} className="animate-spin text-nd-accent" />
           </div>
         )}

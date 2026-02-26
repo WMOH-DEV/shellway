@@ -243,10 +243,11 @@ export const QueryEditor = React.memo(function QueryEditor({
       const trimmed = query.trim()
       if (!trimmed) return
 
-      // Cancel any previous in-flight query (server-side + race protection)
-      if (ipcQueryIdRef.current) {
-        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
-      }
+      // Race protection — increment counter so stale results are discarded.
+      // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
+      // connection thread, not a specific query. On a shared connection, the KILL can
+      // race and kill a DIFFERENT query. Server-side KILL is only for explicit user
+      // actions (QueryMonitor Kill button).
       const thisQueryId = ++queryIdCounterRef.current
       const thisIpcQueryId = crypto.randomUUID()
       ipcQueryIdRef.current = thisIpcQueryId
@@ -389,13 +390,13 @@ export const QueryEditor = React.memo(function QueryEditor({
     [debouncedSetQuery]
   )
 
-  // ── Cleanup autocomplete + cancel in-flight query on unmount ──
+  // ── Cleanup autocomplete on unmount ──
   useEffect(() => {
     return () => {
       completionDisposableRef.current?.dispose()
-      if (ipcQueryIdRef.current) {
-        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
-      }
+      // Reset query ref — stale results discarded via queryIdCounterRef guard.
+      // No server-side KILL: see comment in executeQuery.
+      ipcQueryIdRef.current = null
     }
   }, [])
 

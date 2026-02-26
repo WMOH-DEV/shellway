@@ -109,12 +109,15 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Refresh data (default F5) ──
+      // ── Refresh active table (default F5) ──
       if (matchesBinding(e, 'sql:refresh')) {
         e.preventDefault()
+        const conn = getSQLConnectionState(connectionIdRef.current)
+        const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
+        if (!activeTab?.table) return // Only refresh data tabs
         window.dispatchEvent(
           new CustomEvent('sql:refresh-data', {
-            detail: { sqlSessionId: sqlSessionRef.current, connectionId: connectionIdRef.current },
+            detail: { sqlSessionId: sqlSessionRef.current, connectionId: connectionIdRef.current, table: activeTab.table },
           })
         )
         return

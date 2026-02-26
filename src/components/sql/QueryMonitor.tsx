@@ -102,6 +102,8 @@ export function QueryMonitor({
       <Tooltip content={count > 0 ? `${count} running ${count === 1 ? 'query' : 'queries'}` : 'No running queries'} side="bottom">
         <button
           onClick={count > 0 ? toggleOpen : undefined}
+          aria-disabled={count === 0}
+          tabIndex={count === 0 ? -1 : 0}
           className={cn(
             'flex items-center gap-1.5 h-8 px-2 rounded text-xs font-medium transition-colors',
             count > 0

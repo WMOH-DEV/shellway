@@ -894,9 +894,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   // ── Refresh data in the active data tab only ──
   const handleRefreshActiveTable = useCallback(() => {
     if (!sqlSessionId) return
-    const tab = getSQLConnectionState(connectionId).tabs.find(
-      (t) => t.id === getSQLConnectionState(connectionId).activeTabId
-    )
+    const conn = getSQLConnectionState(connectionId)
+    const tab = conn.tabs.find((t) => t.id === conn.activeTabId)
     if (!tab?.table) return // Only refresh data tabs (not query editors)
     window.dispatchEvent(
       new CustomEvent('sql:refresh-data', {
