@@ -347,9 +347,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                           ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
                           : isSelected
                             ? 'bg-nd-surface/80 ring-1 ring-nd-border'
-                            : hasConnection
-                              ? 'bg-nd-surface/80'
-                              : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                            : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
                       )}
                     >
                       <div
@@ -391,7 +389,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                       'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
                       isActive
                         ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
-                        : 'bg-nd-surface/80 hover:bg-nd-surface'
+                        : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
                     )}
                   >
                     <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
