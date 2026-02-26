@@ -13,7 +13,8 @@ import type {
   StagedChange,
   QueryHistoryEntry,
   QueryError,
-  TransferProgress
+  TransferProgress,
+  RunningQuery
 } from '@/types/sql'
 
 // ── Sort state for data grid ──
@@ -63,6 +64,9 @@ export interface SQLConnectionSlice {
 
   // ── History ──
   history: QueryHistoryEntry[]
+
+  // ── Running Queries ──
+  runningQueries: RunningQuery[]
 
   // ── Data Transfer ──
   activeTransfer: TransferProgress | null
@@ -125,6 +129,11 @@ interface SQLStoreState {
   clearHistory: (connectionId: string) => void
   toggleHistoryFavorite: (connectionId: string, id: string) => void
 
+  // ── Running queries actions ──
+  addRunningQuery: (connectionId: string, query: RunningQuery) => void
+  removeRunningQuery: (connectionId: string, queryId: string) => void
+  clearRunningQueries: (connectionId: string) => void
+
   // ── Transfer actions ──
   setActiveTransfer: (connectionId: string, progress: TransferProgress | null) => void
   clearLastTransferResult: (connectionId: string) => void
@@ -175,6 +184,8 @@ const INITIAL_CONNECTION_STATE: SQLConnectionSlice = {
   queryError: null,
 
   history: [],
+
+  runningQueries: [],
 
   activeTransfer: null,
   lastTransferResult: null
@@ -392,6 +403,21 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       )
     }))),
 
+  // ── Running queries actions ──
+
+  addRunningQuery: (connectionId, query) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => ({
+      runningQueries: [...conn.runningQueries, query]
+    }))),
+
+  removeRunningQuery: (connectionId, queryId) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => ({
+      runningQueries: conn.runningQueries.filter((q) => q.queryId !== queryId)
+    }))),
+
+  clearRunningQueries: (connectionId) =>
+    set((s) => updateConn(s.connections, connectionId, () => ({ runningQueries: [] }))),
+
   // ── Transfer actions ──
 
   setActiveTransfer: (connectionId, progress) =>
@@ -482,6 +508,10 @@ export function useSQLConnection(connectionId: string) {
       addHistoryEntry: (entry: QueryHistoryEntry) => s.addHistoryEntry(connectionId, entry),
       clearHistory: () => s.clearHistory(connectionId),
       toggleHistoryFavorite: (id: string) => s.toggleHistoryFavorite(connectionId, id),
+
+      addRunningQuery: (query: RunningQuery) => s.addRunningQuery(connectionId, query),
+      removeRunningQuery: (queryId: string) => s.removeRunningQuery(connectionId, queryId),
+      clearRunningQueries: () => s.clearRunningQueries(connectionId),
 
       setActiveTransfer: (progress: TransferProgress | null) => s.setActiveTransfer(connectionId, progress),
       clearLastTransferResult: () => s.clearLastTransferResult(connectionId),

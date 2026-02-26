@@ -31,6 +31,19 @@ sqlService.on('query-executed', (sqlSessionId: string, info: {
   }
 })
 
+// Forward query lifecycle events for the running queries monitor
+sqlService.on('query-started', (queryId: string, sqlSessionId: string, query: string) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('sql:query-started', queryId, sqlSessionId, query)
+  }
+})
+
+sqlService.on('query-completed', (queryId: string, sqlSessionId: string) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('sql:query-completed', queryId, sqlSessionId)
+  }
+})
+
 /** Get the SQLConfigStore singleton (for use by other services) */
 export function getSQLConfigStore(): SQLConfigStore {
   return sqlConfigStore
@@ -163,13 +176,35 @@ export function registerSQLIPC(): void {
     return { success: true }
   })
 
-  ipcMain.handle('sql:query', async (_event, sqlSessionId: string, query: string, params?: unknown[]) => {
+  ipcMain.handle('sql:query', async (_event, sqlSessionId: string, query: string, params?: unknown[], queryId?: string) => {
     try {
-      const result = await sqlService.executeQuery(sqlSessionId, query, params)
+      const result = await sqlService.executeQuery(sqlSessionId, query, params, queryId)
       return { success: true, data: result }
     } catch (err: any) {
       return { success: false, error: err.message || String(err) }
     }
+  })
+
+  // ── Cancel a running query ──
+  ipcMain.handle('sql:cancelQuery', async (_event, queryId: string) => {
+    if (!queryId || typeof queryId !== 'string') {
+      return { success: false, error: 'Invalid query ID' }
+    }
+    return sqlService.cancelQuery(queryId)
+  })
+
+  // ── Cancel all running queries for a session ──
+  ipcMain.handle('sql:cancelAllQueries', async (_event, sqlSessionId: string) => {
+    if (!sqlSessionId || typeof sqlSessionId !== 'string') {
+      return { success: false, error: 'Invalid session ID' }
+    }
+    await sqlService.cancelAllSessionQueries(sqlSessionId)
+    return { success: true }
+  })
+
+  // ── Get running queries ──
+  ipcMain.handle('sql:getRunningQueries', (_event, sqlSessionId?: string) => {
+    return sqlService.getRunningQueries(sqlSessionId)
   })
 
   ipcMain.handle('sql:getDatabases', async (_event, sqlSessionId: string) => {

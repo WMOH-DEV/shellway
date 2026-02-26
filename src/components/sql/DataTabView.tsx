@@ -190,7 +190,7 @@ export const DataTabView = React.memo(function DataTabView({
   dbType,
 }: DataTabViewProps) {
   // Store — staged changes + connection info for inline editing
-  const { upsertStagedChange, removeStagedChange, stagedChanges, connectionConfig, currentDatabase } = useSQLConnection(connectionId)
+  const { upsertStagedChange, removeStagedChange, stagedChanges, connectionConfig, currentDatabase, addRunningQuery } = useSQLConnection(connectionId)
 
   // State
   const [result, setResult] = useState<QueryResult | null>(null)
@@ -222,6 +222,8 @@ export const DataTabView = React.memo(function DataTabView({
   const abortRef = useRef<AbortController | null>(null)
   const filterDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const queryIdRef = useRef(0)
+  /** Tracks the IPC-level queryId for server-side cancellation */
+  const ipcQueryIdRef = useRef<string | null>(null)
 
   // Ref for primary key columns — used by buildDataQuery for default ORDER BY
   // Using a ref so executeQuery doesn't need to be recreated when PKs load
@@ -254,13 +256,28 @@ export const DataTabView = React.memo(function DataTabView({
         return // already loaded
       }
 
-      // Cancel any in-flight query and track this query's ID
+      // Cancel any in-flight query (renderer-side + server-side)
       if (abortRef.current) {
         abortRef.current.abort()
+      }
+      if (ipcQueryIdRef.current) {
+        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
       }
       const controller = new AbortController()
       abortRef.current = controller
       const thisQueryId = ++queryIdRef.current
+      const thisIpcQueryId = crypto.randomUUID()
+      ipcQueryIdRef.current = thisIpcQueryId
+
+      // Pre-register with the store so QueryMonitor shows it with correct source
+      addRunningQuery({
+        queryId: thisIpcQueryId,
+        sqlSessionId,
+        query: `SELECT * FROM ${table}`,
+        startedAt: Date.now(),
+        source: 'data',
+        table,
+      })
 
       setIsLoading(true)
       setError(null)
@@ -285,7 +302,8 @@ export const DataTabView = React.memo(function DataTabView({
         const queryResponse = await (window as any).novadeck.sql.query(
           sqlSessionId,
           query,
-          params
+          params,
+          thisIpcQueryId
         )
 
         // Check again after async call
@@ -466,6 +484,11 @@ export const DataTabView = React.memo(function DataTabView({
     return () => {
       abortRef.current?.abort()
       if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current)
+      // Cancel the in-flight query on the main process (prevents stale queries from executing)
+      if (ipcQueryIdRef.current) {
+        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
+        ipcQueryIdRef.current = null
+      }
     }
   }, [table, schema, connectionId, sqlSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -207,6 +207,10 @@ export const QueryEditor = React.memo(function QueryEditor({
   const [showHistory, setShowHistory] = useState(false)
   const [showExport, setShowExport] = useState(false)
 
+  // Race condition protection — prevents stale results from overwriting newer ones
+  const queryIdCounterRef = useRef(0)
+  const ipcQueryIdRef = useRef<string | null>(null)
+
   // Store selectors (scoped to this connection)
   const {
     tables,
@@ -214,6 +218,7 @@ export const QueryEditor = React.memo(function QueryEditor({
     databases,
     setCurrentQuery,
     setQueryError,
+    addRunningQuery,
   } = useSQLConnection(connectionId)
 
   // Debounced store sync — avoid updating store on every keystroke
@@ -232,11 +237,28 @@ export const QueryEditor = React.memo(function QueryEditor({
     [tables, columns, databases]
   )
 
-  // ── Execute query via IPC ──
+  // ── Execute query via IPC (with race condition protection) ──
   const executeQuery = useCallback(
     async (query: string) => {
       const trimmed = query.trim()
       if (!trimmed) return
+
+      // Cancel any previous in-flight query (server-side + race protection)
+      if (ipcQueryIdRef.current) {
+        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
+      }
+      const thisQueryId = ++queryIdCounterRef.current
+      const thisIpcQueryId = crypto.randomUUID()
+      ipcQueryIdRef.current = thisIpcQueryId
+
+      // Pre-register with the running queries monitor
+      addRunningQuery({
+        queryId: thisIpcQueryId,
+        sqlSessionId,
+        query: trimmed.length > 200 ? trimmed.slice(0, 200) + '…' : trimmed,
+        startedAt: Date.now(),
+        source: 'editor',
+      })
 
       setIsLoading(true)
       setError(null)
@@ -245,12 +267,18 @@ export const QueryEditor = React.memo(function QueryEditor({
       const startTime = performance.now()
 
       try {
-        const res = await (window as any).novadeck.sql.query(sqlSessionId, trimmed)
+        const res = await (window as any).novadeck.sql.query(sqlSessionId, trimmed, undefined, thisIpcQueryId)
+
+        // Race guard — a newer query may have started while we were awaiting
+        if (thisQueryId !== queryIdCounterRef.current) return
+
         const execTime = Math.round(performance.now() - startTime)
 
         // IPC returns { success, data, error }
         if (!res.success) {
           const errMsg = typeof res.error === 'string' ? res.error : res.error?.message ?? 'Query failed'
+          // Don't show "Query cancelled" as an error — it was intentional
+          if (errMsg === 'Query cancelled') return
           const qError: QueryError = {
             message: errMsg,
             code: res.error?.code,
@@ -272,15 +300,19 @@ export const QueryEditor = React.memo(function QueryEditor({
           setResult(queryResult)
         }
       } catch (err) {
+        if (thisQueryId !== queryIdCounterRef.current) return
         const message = err instanceof Error ? err.message : String(err)
+        if (message === 'Query cancelled') return
         const qError: QueryError = { message }
         setError(qError)
         setQueryError(qError)
       } finally {
-        setIsLoading(false)
+        if (thisQueryId === queryIdCounterRef.current) {
+          setIsLoading(false)
+        }
       }
     },
-    [connectionId, sqlSessionId, setQueryError]
+    [connectionId, sqlSessionId, setQueryError, addRunningQuery]
   )
 
   // ── Run full query ──
@@ -357,10 +389,13 @@ export const QueryEditor = React.memo(function QueryEditor({
     [debouncedSetQuery]
   )
 
-  // ── Cleanup autocomplete on unmount ──
+  // ── Cleanup autocomplete + cancel in-flight query on unmount ──
   useEffect(() => {
     return () => {
       completionDisposableRef.current?.dispose()
+      if (ipcQueryIdRef.current) {
+        window.novadeck.sql.cancelQuery(ipcQueryIdRef.current).catch(() => {})
+      }
     }
   }, [])
 

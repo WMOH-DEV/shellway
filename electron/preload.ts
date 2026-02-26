@@ -349,8 +349,16 @@ const api = {
       ipcRenderer.invoke('sql:connect', sqlSessionId, connectionId, config),
     disconnect: (sqlSessionId: string) =>
       ipcRenderer.invoke('sql:disconnect', sqlSessionId),
-    query: (sqlSessionId: string, query: string, params?: unknown[]) =>
-      ipcRenderer.invoke('sql:query', sqlSessionId, query, params),
+    query: (sqlSessionId: string, query: string, params?: unknown[], queryId?: string) =>
+      ipcRenderer.invoke('sql:query', sqlSessionId, query, params, queryId),
+    cancelQuery: (queryId: string) =>
+      ipcRenderer.invoke('sql:cancelQuery', queryId) as Promise<{ success: boolean; error?: string }>,
+    cancelAllQueries: (sqlSessionId: string) =>
+      ipcRenderer.invoke('sql:cancelAllQueries', sqlSessionId) as Promise<{ success: boolean; error?: string }>,
+    getRunningQueries: (sqlSessionId?: string) =>
+      ipcRenderer.invoke('sql:getRunningQueries', sqlSessionId) as Promise<{
+        queryId: string; sqlSessionId: string; query: string; startedAt: number; cancelled: boolean
+      }[]>,
     getDatabases: (sqlSessionId: string) =>
       ipcRenderer.invoke('sql:getDatabases', sqlSessionId),
     switchDatabase: (sqlSessionId: string, database: string) =>
@@ -433,6 +441,22 @@ const api = {
         callback(sqlSessionId, info)
       ipcRenderer.on('sql:query-executed', handler)
       return () => ipcRenderer.removeListener('sql:query-executed', handler)
+    },
+
+    /** Query started — a query began execution on the main process */
+    onQueryStarted: (callback: (queryId: string, sqlSessionId: string, query: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, queryId: string, sqlSessionId: string, query: string) =>
+        callback(queryId, sqlSessionId, query)
+      ipcRenderer.on('sql:query-started', handler)
+      return () => ipcRenderer.removeListener('sql:query-started', handler)
+    },
+
+    /** Query completed — a query finished (success, error, or cancelled) */
+    onQueryCompleted: (callback: (queryId: string, sqlSessionId: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, queryId: string, sqlSessionId: string) =>
+        callback(queryId, sqlSessionId)
+      ipcRenderer.on('sql:query-completed', handler)
+      return () => ipcRenderer.removeListener('sql:query-completed', handler)
     },
   },
 

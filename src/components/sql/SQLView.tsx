@@ -30,8 +30,9 @@ import { ImportCSVDialog } from './ImportCSVDialog'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
+import { QueryMonitor } from './QueryMonitor'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn, QueryHistoryEntry } from '@/types/sql'
+import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -209,6 +210,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     setActiveTab,
     setSelectedTable,
     addHistoryEntry,
+    runningQueries,
+    addRunningQuery,
+    removeRunningQuery,
   } = useSQLConnection(connectionId)
 
   // ── Check if SQL sub-tab is actually the active one (not hidden behind Terminal/SFTP) ──
@@ -274,6 +278,35 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     })
     return () => { unsub() }
   }, [sqlSessionId, addHistoryEntry])
+
+  // ── Subscribe to query lifecycle events for the running queries monitor ──
+  useEffect(() => {
+    if (!sqlSessionId) return
+
+    const unsubStarted = window.novadeck.sql.onQueryStarted((queryId, sid, query) => {
+      if (sid !== sqlSessionId) return
+      // Skip if already registered by DataTabView or QueryEditor (they pre-register with correct source)
+      const existing = getSQLConnectionState(connectionId).runningQueries
+      if (existing.some((q) => q.queryId === queryId)) return
+      addRunningQuery({
+        queryId,
+        sqlSessionId: sid,
+        query,
+        startedAt: Date.now(),
+        source: 'internal',
+      })
+    })
+
+    const unsubCompleted = window.novadeck.sql.onQueryCompleted((queryId, sid) => {
+      if (sid !== sqlSessionId) return
+      removeRunningQuery(queryId)
+    })
+
+    return () => {
+      unsubStarted()
+      unsubCompleted()
+    }
+  }, [sqlSessionId, connectionId, addRunningQuery, removeRunningQuery])
 
   // ── Derived: active tab ──
   const activeTab = useMemo(
@@ -418,6 +451,15 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
     reset()
   }, [sqlSessionId, reset])
+
+  const handleCancelQuery = useCallback((queryId: string) => {
+    window.novadeck.sql.cancelQuery(queryId).catch(() => {})
+  }, [])
+
+  const handleCancelAllQueries = useCallback(() => {
+    if (!sqlSessionId) return
+    window.novadeck.sql.cancelAllQueries(sqlSessionId).catch(() => {})
+  }, [sqlSessionId])
 
   const handleRetry = useCallback(() => {
     setConnectionStatus('disconnected')
@@ -1173,6 +1215,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           }}
         />
         <ToolbarSep />
+        <QueryMonitor
+          runningQueries={runningQueries.filter((q) => q.source !== 'internal')}
+          onCancelQuery={handleCancelQuery}
+          onCancelAll={handleCancelAllQueries}
+        />
         <ToolbarButton
           icon={<PanelBottom size={14} />}
           title={showQueryLog ? 'Hide query log' : 'Show query log'}

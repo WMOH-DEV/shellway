@@ -237,6 +237,19 @@ export interface SQLTab {
   isDirty?: boolean
 }
 
+// ── Running Queries ──
+
+export interface RunningQuery {
+  queryId: string
+  sqlSessionId: string
+  query: string
+  startedAt: number
+  /** Source of the query: 'data' = DataTabView, 'editor' = QueryEditor, 'internal' = schema/metadata */
+  source: 'data' | 'editor' | 'internal'
+  /** Table name if this query was triggered by a data tab */
+  table?: string
+}
+
 // ── Data Transfer ──
 
 export type TransferOperation = 'export' | 'import' | 'backup' | 'restore'

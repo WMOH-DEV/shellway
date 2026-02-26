@@ -2,6 +2,7 @@
 
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
+import { randomUUID } from 'crypto'
 
 // ── Types (duplicated server-side to avoid cross-process imports) ──
 
@@ -34,6 +35,19 @@ interface ActiveConnection {
   type: DatabaseType
   conn: any                    // mysql2 Connection or pg Client
   database: string
+  /** Preserved config for creating management connections (used by cancel) */
+  config: DBConfig
+  /** MySQL thread ID or PostgreSQL backend PID — set after connect */
+  connectionPid: number | null
+}
+
+/** Tracked in-flight query */
+export interface TrackedQuery {
+  queryId: string
+  sqlSessionId: string
+  query: string
+  startedAt: number
+  cancelled: boolean
 }
 
 /**
@@ -42,6 +56,8 @@ interface ActiveConnection {
  */
 export class SQLService extends EventEmitter {
   private connections = new Map<string, ActiveConnection>()
+  /** In-flight queries tracked by queryId */
+  private runningQueries = new Map<string, TrackedQuery>()
 
   // ── Connect ──
 
@@ -115,7 +131,9 @@ export class SQLService extends EventEmitter {
     this.connections.set(sqlSessionId, {
       type: 'mysql',
       conn,
-      database: currentDb
+      database: currentDb,
+      config,
+      connectionPid: conn.threadId ?? null
     })
 
     return { success: true }
@@ -152,7 +170,9 @@ export class SQLService extends EventEmitter {
     this.connections.set(sqlSessionId, {
       type: 'postgres',
       conn: client,
-      database: currentDb
+      database: currentDb,
+      config,
+      connectionPid: (client as any).processID ?? null
     })
 
     return { success: true }
@@ -163,6 +183,15 @@ export class SQLService extends EventEmitter {
   async disconnect(sqlSessionId: string): Promise<void> {
     const active = this.connections.get(sqlSessionId)
     if (!active) return
+
+    // Clean up any orphaned running queries for this session
+    for (const [qid, tracked] of this.runningQueries) {
+      if (tracked.sqlSessionId === sqlSessionId) {
+        tracked.cancelled = true
+        this.runningQueries.delete(qid)
+        this.emit('query-completed', qid, sqlSessionId)
+      }
+    }
 
     const DISCONNECT_TIMEOUT_MS = 3000
 
@@ -196,33 +225,57 @@ export class SQLService extends EventEmitter {
   async executeQuery(
     sqlSessionId: string,
     query: string,
-    params?: unknown[]
+    params?: unknown[],
+    queryId?: string
   ): Promise<DBQueryResult> {
     const active = this.connections.get(sqlSessionId)
     if (!active) throw new Error('Not connected to database')
 
+    // Track this query
+    const qid = queryId || randomUUID()
+    const tracked: TrackedQuery = {
+      queryId: qid,
+      sqlSessionId,
+      query,
+      startedAt: Date.now(),
+      cancelled: false
+    }
+    this.runningQueries.set(qid, tracked)
+    this.emit('query-started', qid, sqlSessionId, query)
+
     const start = performance.now()
 
     try {
+      let result: DBQueryResult
       if (active.type === 'mysql') {
-        const result = await this.executeMySQLQuery(active, query, params, start)
-        this.emit('query-executed', sqlSessionId, {
-          query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
-        })
-        return result
+        result = await this.executeMySQLQuery(active, query, params, start)
       } else {
-        const result = await this.executePostgresQuery(active, query, params, start)
-        this.emit('query-executed', sqlSessionId, {
-          query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
-        })
-        return result
+        result = await this.executePostgresQuery(active, query, params, start)
       }
+
+      // Check if cancelled while awaiting
+      if (this.runningQueries.get(qid)?.cancelled) {
+        this.emit('query-executed', sqlSessionId, {
+          query, params, executionTimeMs: result.executionTimeMs, error: 'Query cancelled',
+        })
+        throw new Error('Query cancelled')
+      }
+
+      this.emit('query-executed', sqlSessionId, {
+        query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
+      })
+      return result
     } catch (err: any) {
       const elapsed = Math.round(performance.now() - start)
+      const isCancelled = this.runningQueries.get(qid)?.cancelled
+      const errorMsg = isCancelled ? 'Query cancelled' : (err.message || String(err))
       this.emit('query-executed', sqlSessionId, {
-        query, params, executionTimeMs: elapsed, error: err.message || String(err),
+        query, params, executionTimeMs: elapsed, error: errorMsg,
       })
-      throw new Error(err.message || String(err))
+      throw new Error(errorMsg)
+    } finally {
+      this.runningQueries.delete(qid)
+      this.emit('query-completed', qid, sqlSessionId)
     }
   }
 
@@ -281,6 +334,110 @@ export class SQLService extends EventEmitter {
       executionTimeMs: elapsed,
       truncated: false
     }
+  }
+
+  // ── Query Cancellation ──
+
+  /**
+   * Cancel a running query by queryId.
+   * Marks it as cancelled and attempts a server-side kill (best-effort).
+   * MySQL: KILL QUERY <threadId> via a temporary management connection.
+   * PostgreSQL: SELECT pg_cancel_backend(<pid>) via a temporary management connection.
+   */
+  async cancelQuery(queryId: string): Promise<{ success: boolean; error?: string }> {
+    const tracked = this.runningQueries.get(queryId)
+    if (!tracked) return { success: false, error: 'Query not found or already completed' }
+
+    // Mark as cancelled immediately — result will be discarded when it returns
+    tracked.cancelled = true
+
+    const active = this.connections.get(tracked.sqlSessionId)
+    if (!active || !active.connectionPid) {
+      return { success: true } // Marked as cancelled, but can't send server kill
+    }
+
+    // Validate PID is a safe positive integer before use in SQL
+    const pid = active.connectionPid
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
+      return { success: true }
+    }
+
+    // Attempt server-side kill via a temporary management connection
+    try {
+      if (active.type === 'mysql') {
+        const mysql = await import('mysql2/promise')
+        const mgmt = await mysql.createConnection({
+          host: active.config.host,
+          port: active.config.port,
+          user: active.config.user,
+          password: active.config.password,
+          database: active.config.database,
+          ssl: this.resolveSSL(active.config),
+          connectTimeout: 5000
+        })
+        try {
+          // Use parameterized query — mysql2 supports KILL QUERY with parameters
+          await mgmt.execute('KILL QUERY ?', [pid])
+        } finally {
+          await mgmt.end().catch(() => {})
+        }
+      } else {
+        const { Client } = await import('pg')
+        const sslOpts = this.resolveSSL(active.config)
+        const mgmt = new Client({
+          host: active.config.host,
+          port: active.config.port,
+          user: active.config.user,
+          password: active.config.password,
+          database: active.config.database,
+          ssl: sslOpts ? (sslOpts.rejectUnauthorized !== undefined ? sslOpts : { rejectUnauthorized: false }) : undefined,
+          connectionTimeoutMillis: 5000
+        })
+        await mgmt.connect()
+        try {
+          await mgmt.query('SELECT pg_cancel_backend($1)', [active.connectionPid])
+        } finally {
+          await mgmt.end().catch(() => {})
+        }
+      }
+      return { success: true }
+    } catch (err: any) {
+      // Server kill failed, but query is still marked as cancelled
+      return { success: true, error: `Server kill failed (query still marked cancelled): ${err.message}` }
+    }
+  }
+
+  /**
+   * Cancel all running queries for a given SQL session.
+   * Only creates one management connection for the server-side KILL
+   * since all queries share the same DB connection/thread.
+   */
+  async cancelAllSessionQueries(sqlSessionId: string): Promise<void> {
+    const queryIds: string[] = []
+    for (const [qid, tracked] of this.runningQueries) {
+      if (tracked.sqlSessionId === sqlSessionId && !tracked.cancelled) {
+        queryIds.push(qid)
+      }
+    }
+    if (queryIds.length === 0) return
+
+    // First query gets the full server-side kill (creates management connection)
+    await this.cancelQuery(queryIds[0])
+
+    // Remaining queries just get marked as cancelled (no redundant management connections)
+    for (let i = 1; i < queryIds.length; i++) {
+      const tracked = this.runningQueries.get(queryIds[i])
+      if (tracked) tracked.cancelled = true
+    }
+  }
+
+  /**
+   * Get all currently running queries, optionally filtered by session.
+   */
+  getRunningQueries(sqlSessionId?: string): TrackedQuery[] {
+    const all = Array.from(this.runningQueries.values())
+    if (sqlSessionId) return all.filter((q) => q.sqlSessionId === sqlSessionId)
+    return all
   }
 
   // ── Schema Introspection ──
