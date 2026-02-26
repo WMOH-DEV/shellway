@@ -134,13 +134,13 @@ export function SessionCard({
         // Active tab = accent left border + filled bg
         isActiveTab
           ? 'bg-nd-accent/10 border-l-2 border-l-nd-accent border-y border-r border-y-nd-accent/20 border-r-nd-accent/20 px-2 py-2'
-          // Connected but not active = subtle indicator
-          : hasConnection
-            ? 'bg-nd-surface/80 border-l-2 border-l-nd-success/50 border border-nd-border/50 px-2 py-2'
-            // Selected for preview (disconnected) = soft highlight
-            : isSelected
-              ? 'bg-nd-surface/60 border border-nd-border/60 px-2.5 py-2'
-              // Not connected — hover only, no persistent selection
+          // Selected for preview (disconnected) = soft highlight
+          : isSelected
+            ? 'bg-nd-surface/60 border border-nd-border/60 px-2.5 py-2'
+            // Connected but not active = green left border, no background
+            : hasConnection
+              ? 'border-l-2 border-l-nd-success/50 border-y border-r border-transparent hover:bg-nd-surface/60 px-2 py-2'
+              // Not connected — hover only, no persistent background
               : 'hover:bg-nd-surface/60 border border-transparent px-2.5 py-2',
         // Keyboard focus ring
         isFocused && 'ring-1 ring-nd-accent/60 bg-nd-surface/40',

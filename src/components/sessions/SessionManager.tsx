@@ -352,6 +352,8 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
         setSelectedSessionId(null)
       } else {
         // No tab — show disconnected session preview
+        // Clear activeTabId so the DisconnectedSessionView becomes visible
+        setActiveTab(null)
         setSelectedSessionId(session.id)
       }
     },
