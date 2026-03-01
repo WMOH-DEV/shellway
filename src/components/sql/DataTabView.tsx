@@ -174,7 +174,7 @@ function valuesAreEqual(a: unknown, b: unknown): boolean {
 // ── Default state ──
 
 const DEFAULT_PAGE_SIZE = 200
-const FILTER_DEBOUNCE_MS = 500
+
 
 function defaultPagination(): PaginationState {
   return { page: 1, pageSize: DEFAULT_PAGE_SIZE, totalRows: 0, totalPages: 0 }
@@ -235,10 +235,14 @@ export const DataTabView = React.memo(function DataTabView({
 
   // Refs for cancellation, debouncing, and race condition prevention
   const abortRef = useRef<AbortController | null>(null)
-  const filterDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const queryIdRef = useRef(0)
   /** Tracks the IPC-level queryId for server-side cancellation */
   const ipcQueryIdRef = useRef<string | null>(null)
+  /** Tracks the IPC-level queryId for the count/estimate query so it can be
+   *  cancelled server-side when a new data query starts — prevents the old
+   *  count query from holding the single MySQL connection busy. */
+  const countQueryIdRef = useRef<string | null>(null)
 
   // Ref for primary key columns — used by buildDataQuery for default ORDER BY
   // Using a ref so executeQuery doesn't need to be recreated when PKs load
@@ -272,12 +276,23 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // Cancel any in-flight query (renderer-side only — abort prevents stale state updates).
-      // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
-      // connection thread, not a specific query. On a shared connection, the KILL can
-      // race and kill a DIFFERENT query that started executing after the intended target
-      // completed. Server-side KILL is only safe for explicit user actions (QueryMonitor).
+      // We do NOT send server-side KILL QUERY for the DATA query because KILL QUERY
+      // targets the connection thread, not a specific query. On a shared connection,
+      // the KILL can race and kill a DIFFERENT query that started executing after the
+      // intended target completed. Server-side KILL is only safe for explicit user
+      // actions (QueryMonitor).
       if (abortRef.current) {
         abortRef.current.abort()
+      }
+
+      // Cancel any in-flight COUNT / estimated-count query server-side.
+      // Unlike the data query, we actively kill this one because it may be
+      // holding the single MySQL connection busy, blocking the new data query
+      // from starting.  The count query is non-critical — pagination will just
+      // keep its previous values if the kill succeeds before it completes.
+      if (countQueryIdRef.current) {
+        ;(window as any).novadeck.sql.cancelQuery(countQueryIdRef.current).catch(() => {})
+        countQueryIdRef.current = null
       }
       const controller = new AbortController()
       abortRef.current = controller
@@ -341,71 +356,78 @@ export const DataTabView = React.memo(function DataTabView({
           setColumns(queryResult.fields)
         }
 
-        // Fetch row count — use fast estimated count when no filters are active,
-        // exact COUNT(*) only when filters are applied (filtered sets are typically small).
+        // Data is ready — clear loading overlay immediately so the grid is interactive.
+        // The row count query below may take much longer on large tables; it uses
+        // its own `isCountLoading` state so the PaginationBar can show a spinner
+        // without blocking the entire grid.
+        setIsLoading(false)
+
+        // Fetch row count — always start with the fast estimated count from
+        // DB statistics (INFORMATION_SCHEMA / pg_class).  Only auto-run an exact
+        // COUNT(*) when the table is small (≤ 500k estimated rows).  For large
+        // tables the user can trigger an exact count manually via the "Count"
+        // button in the pagination bar — same behaviour for both filtered and
+        // unfiltered queries.
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
 
         const hasFilters = currentFilters.some((f) => f.enabled)
         setIsDataFiltered(hasFilters)
 
-        if (hasFilters) {
-          // Exact count needed for filtered results
-          const { query: countQuery, params: countParams } = buildCountQuery(
-            table,
-            schema,
-            dbType,
-            currentFilters
-          )
-
-          const ct0 = performance.now()
-          const countResponse = await (window as any).novadeck.sql.query(
-            sqlSessionId,
-            countQuery,
-            countParams
-          )
-          const cElapsed = performance.now() - ct0
-
-          if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
-
-          if (!countResponse.success) {
-            throw new Error(countResponse.error ?? 'Count query failed')
+        setIsCountLoading(true)
+        // Track the count query so it can be killed server-side if the user
+        // triggers a new data query while it's still in-flight.
+        const countQid = crypto.randomUUID()
+        countQueryIdRef.current = countQid
+        try {
+          // Step 1: Fast estimated count from DB statistics.
+          // Use sql:query directly (instead of the opaque getRowCount IPC) so
+          // we can pass our own queryId for cancellation.
+          let estimatedRows = 0
+          if (dbType === 'mysql') {
+            const estRes = await (window as any).novadeck.sql.query(
+              sqlSessionId,
+              'SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+              [table],
+              countQid
+            )
+            if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+            if (estRes.success) {
+              estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0))
+            }
+          } else {
+            const estRes = await (window as any).novadeck.sql.query(
+              sqlSessionId,
+              'SELECT reltuples::bigint as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2',
+              [table, schema || 'public'],
+              countQid
+            )
+            if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
+            if (estRes.success) {
+              estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0))
+            }
           }
-          const countResult: QueryResult = countResponse.data
 
-          const totalRows = Number((countResult.rows[0] as any)?.count ?? 0)
-          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
-
-          setPagination({ page, pageSize, totalRows, totalPages, isEstimatedCount: false })
-        } else {
-          // Fast estimated count from DB statistics (INFORMATION_SCHEMA / pg_class)
-          const estimateResponse = await (window as any).novadeck.sql.getRowCount(
-            sqlSessionId,
-            table,
-            schema
-          )
-
-          if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
-
-          const estimatedRows = estimateResponse?.success
-            ? Math.max(0, Number(estimateResponse.data ?? 0))
-            : 0
-
-          // For small/medium tables, auto-fetch the exact count (like TablePlus).
-          // SELECT COUNT(*) is fast for tables under ~500k rows but expensive for
-          // multi-million-row tables, so we only do it when the estimate is low.
+          // Step 2: Only auto-count when the table is small enough that
+          // COUNT(*) is fast (under ~500k rows).  For multi-million-row tables,
+          // use the estimate and let the user request an exact count.
           const EXACT_COUNT_THRESHOLD = 500_000
 
           if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
+            // Small table — exact COUNT(*) is cheap, run it now.
             const { query: countQuery, params: countParams } = buildCountQuery(
               table,
               schema,
               dbType,
-              []
+              currentFilters
             )
+            // New query ID so the server can track/cancel this separately
+            const exactCountQid = crypto.randomUUID()
+            countQueryIdRef.current = exactCountQid
             const countResponse = await (window as any).novadeck.sql.query(
               sqlSessionId,
               countQuery,
-              countParams
+              countParams,
+              exactCountQid
             )
 
             if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return
@@ -422,8 +444,16 @@ export const DataTabView = React.memo(function DataTabView({
               setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true })
             }
           } else {
+            // Large table — use estimated count, user can click "Count" for exact
             const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize))
             setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true })
+          }
+        } catch {
+          // Count query failure is non-critical — keep existing pagination
+        } finally {
+          if (!controller.signal.aborted && thisQueryId === queryIdRef.current) {
+            setIsCountLoading(false)
+            countQueryIdRef.current = null
           }
         }
       } catch (err: any) {
@@ -525,7 +555,6 @@ export const DataTabView = React.memo(function DataTabView({
     return () => {
       clearTimeout(initTimer)
       abortRef.current?.abort()
-      if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current)
       // Reset the query ID ref so stale results are discarded.
       // We do NOT send server-side KILL QUERY in cleanup — see comment in executeQuery.
       ipcQueryIdRef.current = null
@@ -661,19 +690,18 @@ export const DataTabView = React.memo(function DataTabView({
   }, [filtersKey])
 
   const handleFiltersApply = useCallback(() => {
-    // Debounce filter application — reads filtersRef to avoid stale closures
-    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current)
-    filterDebounceRef.current = setTimeout(() => {
-      discardPendingChanges()
-      setPagination((prev) => ({ ...prev, page: 1 }))
-      executeQuery({
-        page: 1,
-        pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
-        currentFilters: filtersRef.current,
-      })
-    }, FILTER_DEBOUNCE_MS)
+    // Execute immediately — the user explicitly clicked "Apply" / "Apply All"
+    // or pressed Enter, so there is no reason to delay.
+    // Reads filtersRef to avoid stale closures.
+    discardPendingChanges()
+    setPagination((prev) => ({ ...prev, page: 1 }))
+    executeQuery({
+      page: 1,
+      pageSize: pagination.pageSize,
+      sort: sortColumn,
+      sortDir: sortDirection,
+      currentFilters: filtersRef.current,
+    })
   }, [executeQuery, pagination.pageSize, sortColumn, sortDirection, discardPendingChanges])
 
   // ── Staged insert rows (computed early — used by handleCellEdit) ──
@@ -1300,10 +1328,12 @@ export const DataTabView = React.memo(function DataTabView({
   const handleExactCount = useCallback(async () => {
     if (!sqlSessionId || isCountLoading) return
     const snapshotQueryId = queryIdRef.current
+    const qid = crypto.randomUUID()
+    countQueryIdRef.current = qid
     setIsCountLoading(true)
     try {
       const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, filters)
-      const countResponse = await (window as any).novadeck.sql.query(sqlSessionId, countQuery, countParams)
+      const countResponse = await (window as any).novadeck.sql.query(sqlSessionId, countQuery, countParams, qid)
 
       // Guard: if a new table/query started while COUNT(*) was in-flight, discard stale result
       if (snapshotQueryId !== queryIdRef.current) return
@@ -1317,6 +1347,7 @@ export const DataTabView = React.memo(function DataTabView({
       // Non-critical — keep the estimated count
     } finally {
       setIsCountLoading(false)
+      countQueryIdRef.current = null
     }
   }, [sqlSessionId, table, schema, dbType, filters, pagination.pageSize, isCountLoading])
 
