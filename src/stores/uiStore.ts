@@ -1,103 +1,109 @@
-import { create } from 'zustand'
-import type { Theme } from '@/types/settings'
+import { create } from "zustand";
+import type { Theme } from "@/types/settings";
 
 interface UIState {
   // ── Theme ──
-  theme: Theme
-  resolvedTheme: 'dark' | 'light'
-  setTheme: (theme: Theme) => void
+  theme: Theme;
+  resolvedTheme: "dark" | "light";
+  setTheme: (theme: Theme) => void;
 
   // ── Sidebar ──
-  sidebarOpen: boolean
-  sidebarWidth: number
-  toggleSidebar: () => void
-  setSidebarWidth: (width: number) => void
+  sidebarOpen: boolean;
+  sidebarWidth: number;
+  toggleSidebar: () => void;
+  setSidebarWidth: (width: number) => void;
 
   // ── Sidebar active panel ──
-  sidebarPanel: 'sessions' | 'databases'
-  setSidebarPanel: (panel: 'sessions' | 'databases') => void
+  sidebarPanel: "sessions" | "databases";
+  setSidebarPanel: (panel: "sessions" | "databases") => void;
 
   // ── Sidebar groups ──
-  expandedGroups: Set<string>
-  toggleGroup: (group: string) => void
-  setExpandedGroups: (groups: Set<string>) => void
+  expandedGroups: Set<string>;
+  toggleGroup: (group: string) => void;
+  setExpandedGroups: (groups: Set<string>) => void;
 
   // ── Transfer queue ──
-  transferQueueOpen: boolean
-  toggleTransferQueue: () => void
+  transferQueueOpen: boolean;
+  toggleTransferQueue: () => void;
 
   // ── Bottom panel tab ──
-  bottomPanelTab: 'transfers' | 'log'
-  setBottomPanelTab: (tab: 'transfers' | 'log') => void
+  bottomPanelTab: "transfers" | "log";
+  setBottomPanelTab: (tab: "transfers" | "log") => void;
 
   // ── Modals / panels ──
-  settingsOpen: boolean
-  toggleSettings: () => void
-  aboutOpen: boolean
-  toggleAbout: () => void
+  settingsOpen: boolean;
+  toggleSettings: () => void;
+  aboutOpen: boolean;
+  toggleAbout: () => void;
 
   // ── Host Key Manager ──
-  hostKeyManagerOpen: boolean
-  toggleHostKeyManager: () => void
+  hostKeyManagerOpen: boolean;
+  toggleHostKeyManager: () => void;
 
   // ── Client Key Manager ──
-  clientKeyManagerOpen: boolean
-  toggleClientKeyManager: () => void
+  clientKeyManagerOpen: boolean;
+  toggleClientKeyManager: () => void;
 
   // ── Split View ──
-  splitViewEnabled: boolean
-  splitViewLayout: 'horizontal' | 'vertical'
-  splitViewRatio: number
-  setSplitView: (enabled: boolean, layout?: 'horizontal' | 'vertical', ratio?: number) => void
+  splitViewEnabled: boolean;
+  splitViewLayout: "horizontal" | "vertical";
+  splitViewRatio: number;
+  setSplitView: (
+    enabled: boolean,
+    layout?: "horizontal" | "vertical",
+    ratio?: number,
+  ) => void;
 
   // ── Session Form (triggered from WelcomeScreen) ──
-  sessionFormRequested: boolean
-  requestSessionForm: () => void
-  clearSessionFormRequest: () => void
+  sessionFormRequested: boolean;
+  requestSessionForm: () => void;
+  clearSessionFormRequest: () => void;
 
   // ── Database connect (triggered from WelcomeScreen) ──
-  databaseConnectRequested: boolean
-  requestDatabaseConnect: () => void
-  clearDatabaseConnectRequest: () => void
+  databaseConnectRequested: boolean;
+  requestDatabaseConnect: () => void;
+  clearDatabaseConnectRequest: () => void;
 
   // ── Selected Session (disconnected preview in main area) ──
-  selectedSessionId: string | null
-  setSelectedSessionId: (id: string | null) => void
+  selectedSessionId: string | null;
+  setSelectedSessionId: (id: string | null) => void;
 
   // ── Connect Session request (triggered from DisconnectedSessionView) ──
-  connectSessionId: string | null
-  requestConnectSession: (sessionId: string) => void
-  clearConnectSessionRequest: () => void
+  connectSessionId: string | null;
+  requestConnectSession: (sessionId: string) => void;
+  clearConnectSessionRequest: () => void;
 }
 
 /** Resolve theme value to actual 'dark' | 'light' */
-function resolveTheme(theme: Theme): 'dark' | 'light' {
-  if (theme === 'system') {
+function resolveTheme(theme: Theme): "dark" | "light" {
+  if (theme === "system") {
     // Check system preference
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
     }
-    return 'dark'
+    return "dark";
   }
-  return theme
+  return theme;
 }
 
 /** Apply theme class to document */
-function applyTheme(resolved: 'dark' | 'light'): void {
-  if (typeof document === 'undefined') return
-  const root = document.documentElement
-  root.classList.remove('dark', 'light')
-  root.classList.add(resolved)
+function applyTheme(resolved: "dark" | "light"): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.classList.remove("dark", "light");
+  root.classList.add(resolved);
 }
 
 export const useUIStore = create<UIState>((set) => ({
   // ── Theme ──
-  theme: 'dark',
-  resolvedTheme: 'dark',
+  theme: "dark",
+  resolvedTheme: "dark",
   setTheme: (theme) => {
-    const resolved = resolveTheme(theme)
-    applyTheme(resolved)
-    set({ theme, resolvedTheme: resolved })
+    const resolved = resolveTheme(theme);
+    applyTheme(resolved);
+    set({ theme, resolvedTheme: resolved });
   },
 
   // ── Sidebar ──
@@ -107,26 +113,27 @@ export const useUIStore = create<UIState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
 
   // ── Sidebar active panel ──
-  sidebarPanel: 'sessions',
+  sidebarPanel: "sessions",
   setSidebarPanel: (panel) => set({ sidebarPanel: panel }),
 
   // ── Sidebar groups ──
   expandedGroups: new Set<string>(),
   toggleGroup: (group) =>
     set((s) => {
-      const next = new Set(s.expandedGroups)
-      if (next.has(group)) next.delete(group)
-      else next.add(group)
-      return { expandedGroups: next }
+      const next = new Set(s.expandedGroups);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return { expandedGroups: next };
     }),
   setExpandedGroups: (groups) => set({ expandedGroups: groups }),
 
   // ── Transfer queue ──
   transferQueueOpen: false,
-  toggleTransferQueue: () => set((s) => ({ transferQueueOpen: !s.transferQueueOpen })),
+  toggleTransferQueue: () =>
+    set((s) => ({ transferQueueOpen: !s.transferQueueOpen })),
 
   // ── Bottom panel tab ──
-  bottomPanelTab: 'transfers',
+  bottomPanelTab: "transfers",
   setBottomPanelTab: (tab) => set({ bottomPanelTab: tab }),
 
   // ── Modals ──
@@ -137,21 +144,23 @@ export const useUIStore = create<UIState>((set) => ({
 
   // ── Host Key Manager ──
   hostKeyManagerOpen: false,
-  toggleHostKeyManager: () => set((s) => ({ hostKeyManagerOpen: !s.hostKeyManagerOpen })),
+  toggleHostKeyManager: () =>
+    set((s) => ({ hostKeyManagerOpen: !s.hostKeyManagerOpen })),
 
   // ── Client Key Manager ──
   clientKeyManagerOpen: false,
-  toggleClientKeyManager: () => set((s) => ({ clientKeyManagerOpen: !s.clientKeyManagerOpen })),
+  toggleClientKeyManager: () =>
+    set((s) => ({ clientKeyManagerOpen: !s.clientKeyManagerOpen })),
 
   // ── Split View ──
   splitViewEnabled: false,
-  splitViewLayout: 'horizontal',
+  splitViewLayout: "horizontal",
   splitViewRatio: 0.5,
   setSplitView: (enabled, layout, ratio) =>
     set((s) => ({
       splitViewEnabled: enabled,
       splitViewLayout: layout ?? s.splitViewLayout,
-      splitViewRatio: ratio ?? s.splitViewRatio
+      splitViewRatio: ratio ?? s.splitViewRatio,
     })),
 
   // ── Session Form (triggered from WelcomeScreen) ──
@@ -170,6 +179,7 @@ export const useUIStore = create<UIState>((set) => ({
 
   // ── Connect Session request ──
   connectSessionId: null,
-  requestConnectSession: (sessionId) => set({ connectSessionId: sessionId, selectedSessionId: null }),
+  requestConnectSession: (sessionId) =>
+    set({ connectSessionId: sessionId, selectedSessionId: null }),
   clearConnectSessionRequest: () => set({ connectSessionId: null }),
-}))
+}));

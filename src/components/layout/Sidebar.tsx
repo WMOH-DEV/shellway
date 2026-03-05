@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from "react";
 import {
   Settings,
   ChevronLeft,
@@ -8,42 +8,48 @@ import {
   Plus,
   Database,
   Server,
-} from 'lucide-react'
-import { cn } from '@/utils/cn'
-import { useUIStore } from '@/stores/uiStore'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useConnectionStore } from '@/stores/connectionStore'
-import { SessionManager } from '@/components/sessions/SessionManager'
-import { SessionForm, type SessionFormData } from '@/components/sessions/SessionForm'
-import { DatabasesPanel } from '@/components/layout/DatabasesPanel'
-import { useSession } from '@/hooks/useSession'
-import { Tooltip } from '@/components/ui/Tooltip'
-import { toast } from '@/components/ui/Toast'
-import type { Session } from '@/types/session'
+} from "lucide-react";
+import { cn } from "@/utils/cn";
+import { useUIStore } from "@/stores/uiStore";
+import { useSessionStore } from "@/stores/sessionStore";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { SessionManager } from "@/components/sessions/SessionManager";
+import {
+  SessionForm,
+  type SessionFormData,
+} from "@/components/sessions/SessionForm";
+import { DatabasesPanel } from "@/components/layout/DatabasesPanel";
+import { useSession } from "@/hooks/useSession";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { toast } from "@/components/ui/Toast";
+import type { Session } from "@/types/session";
 
 /** Minimal shape for a saved standalone DB config — used only for collapsed-view avatars */
 interface SavedDBConfig {
-  sessionId: string
-  connectionName?: string
-  type: 'mysql' | 'postgres'
-  host: string
-  port: number
-  database: string
+  sessionId: string;
+  connectionName?: string;
+  type: "mysql" | "postgres";
+  host: string;
+  port: number;
+  database: string;
 }
 
 interface SidebarProps {
-  onConnect: (session: Session, defaultSubTab?: 'terminal' | 'sftp' | 'both') => void
-  onConnectDatabase: () => void
-  onOpenSavedDatabase: (savedSessionId: string, name?: string) => void
+  onConnect: (
+    session: Session,
+    defaultSubTab?: "terminal" | "sftp" | "both",
+  ) => void;
+  onConnectDatabase: () => void;
+  onOpenSavedDatabase: (savedSessionId: string, name?: string) => void;
 }
 
 // ── Panel toggle button ──
 
 interface PanelTabProps {
-  icon: React.ReactNode
-  label: string
-  active: boolean
-  onClick: () => void
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
 }
 
 function PanelTab({ icon, label, active, onClick }: PanelTabProps) {
@@ -52,17 +58,17 @@ function PanelTab({ icon, label, active, onClick }: PanelTabProps) {
       <button
         onClick={onClick}
         className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+          "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
           active
-            ? 'bg-nd-accent/10 text-nd-accent border border-nd-accent/20'
-            : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+            ? "bg-nd-accent/10 text-nd-accent border border-nd-accent/20"
+            : "text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface",
         )}
       >
         {icon}
         <span>{label}</span>
       </button>
     </Tooltip>
-  )
+  );
 }
 
 /**
@@ -74,7 +80,11 @@ function PanelTab({ icon, label, active, onClick }: PanelTabProps) {
  *
  * Collapsed (icon-only) view shows all connection avatars regardless of panel.
  */
-export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: SidebarProps) {
+export function Sidebar({
+  onConnect,
+  onConnectDatabase,
+  onOpenSavedDatabase,
+}: SidebarProps) {
   const {
     sidebarOpen,
     toggleSidebar,
@@ -85,64 +95,70 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
     setSelectedSessionId,
     sidebarPanel,
     setSidebarPanel,
-  } = useUIStore()
+  } = useUIStore();
 
-  const { sessions } = useSessionStore()
-  const { tabs, activeTabId, setActiveTab } = useConnectionStore()
+  const { sessions } = useSessionStore();
+  const { tabs, activeTabId, setActiveTab } = useConnectionStore();
 
-  const width = sidebarOpen ? 260 : 48
+  const width = sidebarOpen ? 260 : 48;
 
   // ── Sorted sessions for collapsed icon view ──
   const sortedSessions = useMemo(() => {
     return [...sessions].sort((a, b) => {
-      const aOrder = a.sortOrder ?? Infinity
-      const bOrder = b.sortOrder ?? Infinity
-      if (aOrder !== bOrder) return aOrder - bOrder
-      const aCreated = a.createdAt ?? 0
-      const bCreated = b.createdAt ?? 0
-      if (aCreated !== bCreated) return aCreated - bCreated
-      return a.name.localeCompare(b.name)
-    })
-  }, [sessions])
+      const aOrder = a.sortOrder ?? Infinity;
+      const bOrder = b.sortOrder ?? Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      const aCreated = a.createdAt ?? 0;
+      const bCreated = b.createdAt ?? 0;
+      if (aCreated !== bCreated) return aCreated - bCreated;
+      return a.name.localeCompare(b.name);
+    });
+  }, [sessions]);
 
   // ── Saved DB configs — only needed for collapsed-view avatars ──
   // DatabasesPanel owns its own copy for the expanded view.
-  const [savedDBsCollapsed, setSavedDBsCollapsed] = useState<SavedDBConfig[]>([])
+  const [savedDBsCollapsed, setSavedDBsCollapsed] = useState<SavedDBConfig[]>(
+    [],
+  );
 
   const dbTabCount = useMemo(
-    () => tabs.filter((t) => t.type === 'database').length,
-    [tabs]
-  )
+    () => tabs.filter((t) => t.type === "database").length,
+    [tabs],
+  );
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     window.novadeck.sql
       .configGetStandalone()
       .then((result) => {
         if (!cancelled && result?.success && Array.isArray(result.data)) {
-          setSavedDBsCollapsed(result.data as SavedDBConfig[])
+          setSavedDBsCollapsed(result.data as SavedDBConfig[]);
         }
       })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [dbTabCount])
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [dbTabCount]);
 
   const savedDBsNotOpenCollapsed = useMemo(() => {
-    const openIds = new Set(tabs.filter((t) => t.type === 'database').map((t) => t.sessionId))
-    return savedDBsCollapsed.filter((db) => !openIds.has(db.sessionId))
-  }, [savedDBsCollapsed, tabs])
+    const openIds = new Set(
+      tabs.filter((t) => t.type === "database").map((t) => t.sessionId),
+    );
+    return savedDBsCollapsed.filter((db) => !openIds.has(db.sessionId));
+  }, [savedDBsCollapsed, tabs]);
 
   // ── Session form for collapsed sidebar "+" button ──
-  const { createSession } = useSession()
-  const [collapsedFormOpen, setCollapsedFormOpen] = useState(false)
-  const { sessionFormRequested, clearSessionFormRequest } = useUIStore()
+  const { createSession } = useSession();
+  const [collapsedFormOpen, setCollapsedFormOpen] = useState(false);
+  const { sessionFormRequested, clearSessionFormRequest } = useUIStore();
 
   useEffect(() => {
     if (sessionFormRequested && !sidebarOpen) {
-      setCollapsedFormOpen(true)
-      clearSessionFormRequest()
+      setCollapsedFormOpen(true);
+      clearSessionFormRequest();
     }
-  }, [sessionFormRequested, sidebarOpen, clearSessionFormRequest])
+  }, [sessionFormRequested, sidebarOpen, clearSessionFormRequest]);
 
   const handleCollapsedFormSave = useCallback(
     async (data: SessionFormData) => {
@@ -164,40 +180,43 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
         environmentVariables: data.environmentVariables,
         viewPreferences: data.viewPreferences,
         notes: data.notes || undefined,
-      }
-      await createSession(sessionData as Parameters<typeof createSession>[0])
-      toast.success('Session created', `${data.name || data.host} has been added`)
-      setCollapsedFormOpen(false)
+      };
+      await createSession(sessionData as Parameters<typeof createSession>[0]);
+      toast.success(
+        "Session created",
+        `${data.name || data.host} has been added`,
+      );
+      setCollapsedFormOpen(false);
     },
-    [createSession]
-  )
+    [createSession],
+  );
 
   // ── Auto-switch panel when the active tab type changes ──
   // (e.g. user clicks a DB tab from collapsed view → switch to Databases panel)
   useEffect(() => {
-    const activeTab = tabs.find((t) => t.id === activeTabId)
-    if (!activeTab) return
-    if (activeTab.type === 'database' && sidebarPanel !== 'databases') {
-      setSidebarPanel('databases')
-    } else if (activeTab.type !== 'database' && sidebarPanel !== 'sessions') {
-      setSidebarPanel('sessions')
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (!activeTab) return;
+    if (activeTab.type === "database" && sidebarPanel !== "databases") {
+      setSidebarPanel("databases");
+    } else if (activeTab.type !== "database" && sidebarPanel !== "sessions") {
+      setSidebarPanel("sessions");
     }
     // Intentionally omit sidebarPanel from deps — we only react to activeTabId changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId])
+  }, [activeTabId]);
 
   return (
     <aside
       className={cn(
-        'flex flex-col h-full bg-nd-bg-secondary border-r border-nd-border shrink-0 transition-all duration-200 overflow-hidden'
+        "flex flex-col h-full bg-nd-bg-secondary border-r border-nd-border shrink-0 transition-all duration-200 overflow-hidden",
       )}
       style={{ width }}
     >
       {/* ── Header ── */}
       <div
         className={cn(
-          'flex items-center h-10 shrink-0 border-b border-nd-border',
-          sidebarOpen ? 'px-2 gap-1' : 'justify-center px-0'
+          "flex items-center h-10 shrink-0 border-b border-nd-border",
+          sidebarOpen ? "px-2 gap-1" : "justify-center px-0",
         )}
       >
         {sidebarOpen && (
@@ -205,25 +224,32 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
             <PanelTab
               icon={<Server size={13} />}
               label="Sessions"
-              active={sidebarPanel === 'sessions'}
-              onClick={() => setSidebarPanel('sessions')}
+              active={sidebarPanel === "sessions"}
+              onClick={() => setSidebarPanel("sessions")}
             />
             <PanelTab
               icon={<Database size={13} />}
               label="Databases"
-              active={sidebarPanel === 'databases'}
-              onClick={() => setSidebarPanel('databases')}
+              active={sidebarPanel === "databases"}
+              onClick={() => setSidebarPanel("databases")}
             />
             <div className="flex-1" />
           </>
         )}
 
-        <Tooltip content={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} side="right">
+        <Tooltip
+          content={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          side="right"
+        >
           <button
             onClick={toggleSidebar}
             className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors shrink-0"
           >
-            {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+            {sidebarOpen ? (
+              <ChevronLeft size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
         </Tooltip>
       </div>
@@ -231,7 +257,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
       {sidebarOpen ? (
         <>
           {/* ── Active panel ── */}
-          {sidebarPanel === 'sessions' ? (
+          {sidebarPanel === "sessions" ? (
             <SessionManager onConnect={onConnect} />
           ) : (
             <DatabasesPanel
@@ -271,77 +297,81 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
       ) : (
         /* ── Collapsed icon-only view ── */
         <div className="flex flex-col items-center flex-1 overflow-hidden">
-          {/* Quick-add buttons */}
+          {/* Quick-add button — scoped to the active panel */}
           <div className="shrink-0 py-1.5 w-full flex flex-col items-center gap-0.5 border-b border-nd-border">
-            <Tooltip content="New Session" side="right">
-              <button
-                onClick={() => useUIStore.getState().requestSessionForm()}
-                className="flex items-center justify-center w-9 h-7 rounded-md text-nd-accent hover:bg-nd-surface transition-colors"
-              >
-                <Plus size={16} />
-              </button>
-            </Tooltip>
-            <Tooltip content="Connect to Database" side="right">
-              <button
-                onClick={onConnectDatabase}
-                className="flex items-center justify-center w-9 h-7 rounded-md text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface transition-colors"
-              >
-                <Database size={15} />
-              </button>
-            </Tooltip>
+            {sidebarPanel === "sessions" ? (
+              <Tooltip content="New Session" side="right">
+                <button
+                  onClick={() => useUIStore.getState().requestSessionForm()}
+                  className="flex items-center justify-center w-9 h-7 rounded-md text-nd-accent hover:bg-nd-surface transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip content="New Database Connection" side="right">
+                <button
+                  onClick={onConnectDatabase}
+                  className="flex items-center justify-center w-9 h-7 rounded-md text-nd-accent hover:bg-nd-surface transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              </Tooltip>
+            )}
           </div>
 
-          {/* All connection avatars */}
+          {/* Connection avatars — scoped to the active panel */}
           <div className="flex flex-col items-center gap-0.5 py-1.5 flex-1 overflow-y-auto scrollbar-none w-full">
-            {/* SSH session avatars */}
-            {sortedSessions.map((session) => {
-              const tab = tabs.find((t) => t.sessionId === session.id)
-              const isConnected = tab?.status === 'connected'
+            {/* SSH session avatars — sessions panel only */}
+            {sidebarPanel === "sessions" && sortedSessions.map((session) => {
+              const tab = tabs.find((t) => t.sessionId === session.id);
+              const isConnected = tab?.status === "connected";
               const isConnecting =
-                tab?.status === 'connecting' || tab?.status === 'authenticating'
-              const isError = tab?.status === 'error'
-              const isActive = tab?.id === activeTabId
-              const isSelected = selectedSessionId === session.id && !tab
+                tab?.status === "connecting" ||
+                tab?.status === "authenticating";
+              const isError = tab?.status === "error";
+              const isActive = tab?.id === activeTabId;
+              const isSelected = selectedSessionId === session.id && !tab;
 
               return (
                 <Tooltip
                   key={session.id}
                   content={`${session.name}${
                     isConnected
-                      ? ' (connected)'
+                      ? " (connected)"
                       : isConnecting
-                        ? ' (connecting)'
+                        ? " (connecting)"
                         : isError
-                          ? ' (error)'
-                          : ''
+                          ? " (error)"
+                          : ""
                   }`}
                   side="right"
                 >
                   <button
                     onClick={() => {
                       if (tab) {
-                        setActiveTab(tab.id)
-                        setSelectedSessionId(null)
+                        setActiveTab(tab.id);
+                        setSelectedSessionId(null);
                       } else {
-                        setActiveTab(null)
-                        setSelectedSessionId(session.id)
+                        setActiveTab(null);
+                        setSelectedSessionId(session.id);
                       }
                     }}
                     onDoubleClick={() => {
-                      if (!tab) onConnect(session)
+                      if (!tab) onConnect(session);
                     }}
                     className={cn(
-                      'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
+                      "relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0",
                       isActive
-                        ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
+                        ? "bg-nd-accent/15 ring-1 ring-nd-accent"
                         : isSelected
-                          ? 'bg-nd-surface/80 ring-1 ring-nd-border'
-                          : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                          ? "bg-nd-surface/80 ring-1 ring-nd-border"
+                          : "hover:bg-nd-surface opacity-60 hover:opacity-100",
                     )}
                   >
                     <div
                       className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white/90"
-                      style={{ backgroundColor: session.color || '#71717a' }}
+                      style={{ backgroundColor: session.color || "#71717a" }}
                     >
                       {session.name.charAt(0).toUpperCase()}
                     </div>
@@ -357,28 +387,32 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                     )}
                   </button>
                 </Tooltip>
-              )
+              );
             })}
 
-            {/* Open standalone database tab avatars */}
-            {tabs
-              .filter((t) => t.type === 'database')
+            {/* Open standalone database tab avatars — databases panel only */}
+            {sidebarPanel === "databases" && tabs
+              .filter((t) => t.type === "database")
               .map((dbTab) => {
-                const isActive = dbTab.id === activeTabId
-                const isDbConnected = dbTab.status === 'connected'
-                const isDbConnecting = dbTab.status === 'connecting'
+                const isActive = dbTab.id === activeTabId;
+                const isDbConnected = dbTab.status === "connected";
+                const isDbConnecting = dbTab.status === "connecting";
                 return (
-                  <Tooltip key={dbTab.id} content={dbTab.sessionName || 'Database'} side="right">
+                  <Tooltip
+                    key={dbTab.id}
+                    content={dbTab.sessionName || "Database"}
+                    side="right"
+                  >
                     <button
                       onClick={() => {
-                        setActiveTab(dbTab.id)
-                        setSelectedSessionId(null)
+                        setActiveTab(dbTab.id);
+                        setSelectedSessionId(null);
                       }}
                       className={cn(
-                        'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
+                        "relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0",
                         isActive
-                          ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
-                          : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                          ? "bg-nd-accent/15 ring-1 ring-nd-accent"
+                          : "hover:bg-nd-surface opacity-60 hover:opacity-100",
                       )}
                     >
                       <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
@@ -392,14 +426,14 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                       )}
                     </button>
                   </Tooltip>
-                )
+                );
               })}
 
-            {/* Saved-but-not-open database avatars */}
-            {savedDBsNotOpenCollapsed.map((db) => {
+            {/* Saved-but-not-open database avatars — databases panel only */}
+            {sidebarPanel === "databases" && savedDBsNotOpenCollapsed.map((db) => {
               const label =
                 db.connectionName ||
-                `${db.type.toUpperCase()} · ${db.database || db.host}`
+                `${db.type.toUpperCase()} · ${db.database || db.host}`;
               return (
                 <Tooltip key={db.sessionId} content={label} side="right">
                   <button
@@ -411,7 +445,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
                     </div>
                   </button>
                 </Tooltip>
-              )
+              );
             })}
           </div>
 
@@ -450,10 +484,14 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
         <SessionForm
           open={collapsedFormOpen}
           onClose={() => setCollapsedFormOpen(false)}
-          groups={[...new Set(sessions.map((s) => s.group).filter(Boolean) as string[])]}
+          groups={[
+            ...new Set(
+              sessions.map((s) => s.group).filter(Boolean) as string[],
+            ),
+          ]}
           onSave={handleCollapsedFormSave}
         />
       )}
     </aside>
-  )
+  );
 }

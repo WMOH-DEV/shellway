@@ -1,26 +1,26 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Database, Plus, Search, X } from 'lucide-react'
-import { cn } from '@/utils/cn'
-import { useConnectionStore } from '@/stores/connectionStore'
-import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
-import { Button } from '@/components/ui/Button'
-import { Tooltip } from '@/components/ui/Tooltip'
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Database, Plus, Search, X } from "lucide-react";
+import { cn } from "@/utils/cn";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { getSQLConnectionState, useSQLStore } from "@/stores/sqlStore";
+import { Button } from "@/components/ui/Button";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /** Minimal shape returned by SQLConfigStore for standalone DB configs */
 interface SavedDBConfig {
-  sessionId: string
-  connectionName?: string
-  type: 'mysql' | 'postgres'
-  host: string
-  port: number
-  database: string
+  sessionId: string;
+  connectionName?: string;
+  type: "mysql" | "postgres";
+  host: string;
+  port: number;
+  database: string;
 }
 
 interface DatabasesPanelProps {
   /** Open the SQL connect dialog to add a new standalone DB connection */
-  onConnectDatabase: () => void
+  onConnectDatabase: () => void;
   /** Re-open a previously saved (but currently closed) DB connection */
-  onOpenSavedDatabase: (savedSessionId: string, name?: string) => void
+  onOpenSavedDatabase: (savedSessionId: string, name?: string) => void;
 }
 
 /**
@@ -32,104 +32,111 @@ interface DatabasesPanelProps {
  *  - Provide a search input that filters both lists
  *  - Provide a "New Connection" button to open the SQL connect dialog
  */
-export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: DatabasesPanelProps) {
-  const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
+export function DatabasesPanel({
+  onConnectDatabase,
+  onOpenSavedDatabase,
+}: DatabasesPanelProps) {
+  const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore();
 
   // ── Saved standalone DB configs ──
-  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>([])
+  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>([]);
 
   // Refresh saved configs only when the count of open DB tabs changes
   // (new connection saved / tab closed)
   const dbTabCount = useMemo(
-    () => tabs.filter((t) => t.type === 'database').length,
-    [tabs]
-  )
+    () => tabs.filter((t) => t.type === "database").length,
+    [tabs],
+  );
 
   const loadSavedDBs = useCallback(async () => {
     try {
-      const result = await window.novadeck.sql.configGetStandalone()
+      const result = await window.novadeck.sql.configGetStandalone();
       if (result?.success && Array.isArray(result.data)) {
-        setSavedDBs(result.data as SavedDBConfig[])
+        setSavedDBs(result.data as SavedDBConfig[]);
       }
-    } catch { /* ignore */ }
-  }, [])
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
-    loadSavedDBs()
-  }, [loadSavedDBs, dbTabCount])
+    loadSavedDBs();
+  }, [loadSavedDBs, dbTabCount]);
 
   // ── Search ──
-  const [searchQuery, setSearchQuery] = useState('')
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const q = searchQuery.toLowerCase()
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const q = searchQuery.toLowerCase();
 
   // ── Derived data ──
 
   const openDBTabs = useMemo(
-    () => tabs.filter((t) => t.type === 'database'),
-    [tabs]
-  )
+    () => tabs.filter((t) => t.type === "database"),
+    [tabs],
+  );
 
   const openSessionIds = useMemo(
     () => new Set(openDBTabs.map((t) => t.sessionId)),
-    [openDBTabs]
-  )
+    [openDBTabs],
+  );
 
   const savedDBsNotOpen = useMemo(
     () => savedDBs.filter((db) => !openSessionIds.has(db.sessionId)),
-    [savedDBs, openSessionIds]
-  )
+    [savedDBs, openSessionIds],
+  );
 
   // Filter open tabs by sessionName
   const filteredOpenTabs = useMemo(() => {
-    if (!q) return openDBTabs
+    if (!q) return openDBTabs;
     return openDBTabs.filter((t) =>
-      (t.sessionName ?? '').toLowerCase().includes(q)
-    )
-  }, [openDBTabs, q])
+      (t.sessionName ?? "").toLowerCase().includes(q),
+    );
+  }, [openDBTabs, q]);
 
   // Filter saved-but-not-open by name / host / db / type
   const filteredSavedDBs = useMemo(() => {
-    if (!q) return savedDBsNotOpen
+    if (!q) return savedDBsNotOpen;
     return savedDBsNotOpen.filter((db) => {
-      const label = (db.connectionName || '').toLowerCase()
+      const label = (db.connectionName || "").toLowerCase();
       return (
         label.includes(q) ||
         db.host.toLowerCase().includes(q) ||
-        (db.database || '').toLowerCase().includes(q) ||
+        (db.database || "").toLowerCase().includes(q) ||
         db.type.toLowerCase().includes(q)
-      )
-    })
-  }, [savedDBsNotOpen, q])
+      );
+    });
+  }, [savedDBsNotOpen, q]);
 
-  const hasResults = filteredOpenTabs.length > 0 || filteredSavedDBs.length > 0
-  const isEmpty = openDBTabs.length === 0 && savedDBsNotOpen.length === 0
+  const hasResults = filteredOpenTabs.length > 0 || filteredSavedDBs.length > 0;
+  const isEmpty = openDBTabs.length === 0 && savedDBsNotOpen.length === 0;
 
   // ── Handlers ──
 
   const handleCloseTab = useCallback(
     (tabId: string, e: React.MouseEvent) => {
-      e.stopPropagation()
-      const sqlState = getSQLConnectionState(tabId)
+      e.stopPropagation();
+      const sqlState = getSQLConnectionState(tabId);
       if (sqlState.sqlSessionId) {
-        window.novadeck.sql.disconnect(sqlState.sqlSessionId).catch(() => {})
+        window.novadeck.sql.disconnect(sqlState.sqlSessionId).catch(() => {});
       }
-      useSQLStore.getState().removeConnection(tabId)
-      removeTab(tabId)
+      useSQLStore.getState().removeConnection(tabId);
+      removeTab(tabId);
     },
-    [removeTab]
-  )
+    [removeTab],
+  );
 
   const handleDeleteSaved = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
-      e.stopPropagation()
+      e.stopPropagation();
       window.novadeck.sql
         .configDelete(sessionId)
-        .then(() => setSavedDBs((prev) => prev.filter((d) => d.sessionId !== sessionId)))
-        .catch(() => {})
+        .then(() =>
+          setSavedDBs((prev) => prev.filter((d) => d.sessionId !== sessionId)),
+        )
+        .catch(() => {});
     },
-    []
-  )
+    [],
+  );
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -148,8 +155,10 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => requestAnimationFrame(() => searchInputRef.current?.focus())}
-            className={searchQuery ? 'text-nd-accent' : ''}
+            onClick={() =>
+              requestAnimationFrame(() => searchInputRef.current?.focus())
+            }
+            className={searchQuery ? "text-nd-accent" : ""}
           >
             <Search size={14} />
           </Button>
@@ -169,9 +178,9 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setSearchQuery('')
-                searchInputRef.current?.blur()
+              if (e.key === "Escape") {
+                setSearchQuery("");
+                searchInputRef.current?.blur();
               }
             }}
             placeholder="Search databases..."
@@ -199,8 +208,12 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
             <div className="w-12 h-12 rounded-xl bg-nd-surface flex items-center justify-center mb-3">
               <Search size={20} className="text-nd-text-muted" />
             </div>
-            <p className="text-sm text-nd-text-secondary">No matching databases</p>
-            <p className="text-2xs text-nd-text-muted mt-1">Try a different search term</p>
+            <p className="text-sm text-nd-text-secondary">
+              No matching databases
+            </p>
+            <p className="text-2xs text-nd-text-muted mt-1">
+              Try a different search term
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-0.5 pb-2">
@@ -211,24 +224,28 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
                   Open
                 </p>
                 {filteredOpenTabs.map((dbTab) => {
-                  const isActive = dbTab.id === activeTabId
+                  const isActive = dbTab.id === activeTabId;
                   return (
                     <button
                       key={dbTab.id}
                       onClick={() => setActiveTab(dbTab.id)}
                       className={cn(
-                        'group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors',
+                        "group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
                         isActive
-                          ? 'bg-nd-accent/10 text-nd-accent border border-nd-accent/30'
-                          : 'text-nd-text-secondary hover:bg-nd-surface'
+                          ? "bg-nd-accent/10 text-nd-accent border border-nd-accent/30"
+                          : "text-nd-text-secondary hover:bg-nd-surface",
                       )}
                     >
                       <Database
                         size={13}
-                        className={isActive ? 'text-nd-accent shrink-0' : 'text-nd-text-muted shrink-0'}
+                        className={
+                          isActive
+                            ? "text-nd-accent shrink-0"
+                            : "text-nd-text-muted shrink-0"
+                        }
                       />
                       <span className="truncate flex-1 text-left">
-                        {dbTab.sessionName || 'Database'}
+                        {dbTab.sessionName || "Database"}
                       </span>
                       <span
                         role="button"
@@ -239,7 +256,7 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
                         <X size={12} />
                       </span>
                     </button>
-                  )
+                  );
                 })}
               </>
             )}
@@ -253,14 +270,17 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
                 {filteredSavedDBs.map((db) => {
                   const label =
                     db.connectionName ||
-                    `${db.type.toUpperCase()} · ${db.database || db.host}`
+                    `${db.type.toUpperCase()} · ${db.database || db.host}`;
                   return (
                     <button
                       key={db.sessionId}
                       onClick={() => onOpenSavedDatabase(db.sessionId, label)}
                       className="group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface transition-colors"
                     >
-                      <Database size={13} className="text-nd-text-muted opacity-50 shrink-0" />
+                      <Database
+                        size={13}
+                        className="text-nd-text-muted opacity-50 shrink-0"
+                      />
                       <span className="truncate flex-1 text-left">{label}</span>
                       <span
                         role="button"
@@ -271,7 +291,7 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
                         <X size={12} />
                       </span>
                     </button>
-                  )
+                  );
                 })}
               </>
             )}
@@ -279,5 +299,5 @@ export function DatabasesPanel({ onConnectDatabase, onOpenSavedDatabase }: Datab
         )}
       </div>
     </div>
-  )
+  );
 }
