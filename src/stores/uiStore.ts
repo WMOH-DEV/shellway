@@ -13,6 +13,10 @@ interface UIState {
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
 
+  // ── Sidebar active panel ──
+  sidebarPanel: 'sessions' | 'databases'
+  setSidebarPanel: (panel: 'sessions' | 'databases') => void
+
   // ── Sidebar groups ──
   expandedGroups: Set<string>
   toggleGroup: (group: string) => void
@@ -101,6 +105,10 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarWidth: 260,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
+
+  // ── Sidebar active panel ──
+  sidebarPanel: 'sessions',
+  setSidebarPanel: (panel) => set({ sidebarPanel: panel }),
 
   // ── Sidebar groups ──
   expandedGroups: new Set<string>(),

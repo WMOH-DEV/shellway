@@ -7,21 +7,21 @@ import {
   KeyRound,
   Plus,
   Database,
-  X
+  Server,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useUIStore } from '@/stores/uiStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
 import { SessionManager } from '@/components/sessions/SessionManager'
 import { SessionForm, type SessionFormData } from '@/components/sessions/SessionForm'
+import { DatabasesPanel } from '@/components/layout/DatabasesPanel'
 import { useSession } from '@/hooks/useSession'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { toast } from '@/components/ui/Toast'
 import type { Session } from '@/types/session'
 
-/** Minimal shape for a saved standalone DB config (from SQLConfigStore via IPC) */
+/** Minimal shape for a saved standalone DB config — used only for collapsed-view avatars */
 interface SavedDBConfig {
   sessionId: string
   connectionName?: string
@@ -37,47 +37,62 @@ interface SidebarProps {
   onOpenSavedDatabase: (savedSessionId: string, name?: string) => void
 }
 
+// ── Panel toggle button ──
+
+interface PanelTabProps {
+  icon: React.ReactNode
+  label: string
+  active: boolean
+  onClick: () => void
+}
+
+function PanelTab({ icon, label, active, onClick }: PanelTabProps) {
+  return (
+    <Tooltip content={label} side="bottom">
+      <button
+        onClick={onClick}
+        className={cn(
+          'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+          active
+            ? 'bg-nd-accent/10 text-nd-accent border border-nd-accent/20'
+            : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
+        )}
+      >
+        {icon}
+        <span>{label}</span>
+      </button>
+    </Tooltip>
+  )
+}
+
 /**
- * Left sidebar — the primary connection switcher (replaces top TabBar).
- * Session cards double as connection tabs: single-click switches, close disconnects.
- * Collapsible to icon-only (48px) with compact session avatars.
+ * Left sidebar — the primary connection switcher.
+ *
+ * Expanded view uses two panel-toggle buttons in the header:
+ *   • Sessions  — SSH/SFTP sessions (via SessionManager, includes search + groups)
+ *   • Databases — Standalone DB connections (via DatabasesPanel, includes search)
+ *
+ * Collapsed (icon-only) view shows all connection avatars regardless of panel.
  */
 export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: SidebarProps) {
-  const { sidebarOpen, toggleSidebar, toggleSettings, toggleHostKeyManager, toggleClientKeyManager, selectedSessionId, setSelectedSessionId } = useUIStore()
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    toggleSettings,
+    toggleHostKeyManager,
+    toggleClientKeyManager,
+    selectedSessionId,
+    setSelectedSessionId,
+    sidebarPanel,
+    setSidebarPanel,
+  } = useUIStore()
+
   const { sessions } = useSessionStore()
-  const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore()
-
-  // ── Saved standalone DB configs (persisted across restarts) ──
-  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>([])
-
-  // Track database tab count to refresh saved configs only when DB tabs are added/removed
-  const dbTabCount = useMemo(() => tabs.filter((t) => t.type === 'database').length, [tabs])
-
-  // Load saved standalone DB configs on mount and when DB tab count changes
-  // (to refresh after a new DB is saved/connected or a DB tab is closed)
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const result = await window.novadeck.sql.configGetStandalone()
-        if (!cancelled && result?.success && Array.isArray(result.data)) {
-          setSavedDBs(result.data as SavedDBConfig[])
-        }
-      } catch { /* ignore */ }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [dbTabCount])
-
-  // Saved DBs that are NOT currently open as tabs
-  const savedDBsNotOpen = useMemo(() => {
-    const openSessionIds = new Set(tabs.filter((t) => t.type === 'database').map((t) => t.sessionId))
-    return savedDBs.filter((db) => !openSessionIds.has(db.sessionId))
-  }, [savedDBs, tabs])
+  const { tabs, activeTabId, setActiveTab } = useConnectionStore()
 
   const width = sidebarOpen ? 260 : 48
 
-  // Sort sessions for collapsed view (same logic as SessionManager)
+  // ── Sorted sessions for collapsed icon view ──
   const sortedSessions = useMemo(() => {
     return [...sessions].sort((a, b) => {
       const aOrder = a.sortOrder ?? Infinity
@@ -90,12 +105,38 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
     })
   }, [sessions])
 
+  // ── Saved DB configs — only needed for collapsed-view avatars ──
+  // DatabasesPanel owns its own copy for the expanded view.
+  const [savedDBsCollapsed, setSavedDBsCollapsed] = useState<SavedDBConfig[]>([])
+
+  const dbTabCount = useMemo(
+    () => tabs.filter((t) => t.type === 'database').length,
+    [tabs]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    window.novadeck.sql
+      .configGetStandalone()
+      .then((result) => {
+        if (!cancelled && result?.success && Array.isArray(result.data)) {
+          setSavedDBsCollapsed(result.data as SavedDBConfig[])
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [dbTabCount])
+
+  const savedDBsNotOpenCollapsed = useMemo(() => {
+    const openIds = new Set(tabs.filter((t) => t.type === 'database').map((t) => t.sessionId))
+    return savedDBsCollapsed.filter((db) => !openIds.has(db.sessionId))
+  }, [savedDBsCollapsed, tabs])
+
   // ── Session form for collapsed sidebar "+" button ──
   const { createSession } = useSession()
   const [collapsedFormOpen, setCollapsedFormOpen] = useState(false)
   const { sessionFormRequested, clearSessionFormRequest } = useUIStore()
 
-  // Listen for sessionFormRequested when sidebar is collapsed
   useEffect(() => {
     if (sessionFormRequested && !sidebarOpen) {
       setCollapsedFormOpen(true)
@@ -124,26 +165,26 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
         viewPreferences: data.viewPreferences,
         notes: data.notes || undefined,
       }
-      await createSession(sessionData as any)
+      await createSession(sessionData as Parameters<typeof createSession>[0])
       toast.success('Session created', `${data.name || data.host} has been added`)
       setCollapsedFormOpen(false)
     },
     [createSession]
   )
 
-  const handleCloseTab = useCallback(
-    (sessionId: string, e: React.MouseEvent) => {
-      e.stopPropagation()
-      const tab = tabs.find((t) => t.sessionId === sessionId)
-      if (tab) {
-        if (tab.type !== 'database') {
-          window.novadeck.ssh.disconnect?.(tab.id).catch(() => {})
-        }
-        removeTab(tab.id)
-      }
-    },
-    [tabs, removeTab]
-  )
+  // ── Auto-switch panel when the active tab type changes ──
+  // (e.g. user clicks a DB tab from collapsed view → switch to Databases panel)
+  useEffect(() => {
+    const activeTab = tabs.find((t) => t.id === activeTabId)
+    if (!activeTab) return
+    if (activeTab.type === 'database' && sidebarPanel !== 'databases') {
+      setSidebarPanel('databases')
+    } else if (activeTab.type !== 'database' && sidebarPanel !== 'sessions') {
+      setSidebarPanel('sessions')
+    }
+    // Intentionally omit sidebarPanel from deps — we only react to activeTabId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId])
 
   return (
     <aside
@@ -152,17 +193,35 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
       )}
       style={{ width }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 h-10 shrink-0 border-b border-nd-border">
-        {sidebarOpen && (
-          <span className="text-xs font-semibold text-nd-text-secondary uppercase tracking-wider">
-            Sessions
-          </span>
+      {/* ── Header ── */}
+      <div
+        className={cn(
+          'flex items-center h-10 shrink-0 border-b border-nd-border',
+          sidebarOpen ? 'px-2 gap-1' : 'justify-center px-0'
         )}
+      >
+        {sidebarOpen && (
+          <>
+            <PanelTab
+              icon={<Server size={13} />}
+              label="Sessions"
+              active={sidebarPanel === 'sessions'}
+              onClick={() => setSidebarPanel('sessions')}
+            />
+            <PanelTab
+              icon={<Database size={13} />}
+              label="Databases"
+              active={sidebarPanel === 'databases'}
+              onClick={() => setSidebarPanel('databases')}
+            />
+            <div className="flex-1" />
+          </>
+        )}
+
         <Tooltip content={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} side="right">
           <button
             onClick={toggleSidebar}
-            className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+            className="p-1 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors shrink-0"
           >
             {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
           </button>
@@ -171,129 +230,48 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
 
       {sidebarOpen ? (
         <>
-          {/* SessionManager handles everything — sessions are both saved items AND connection tabs */}
-          <SessionManager onConnect={onConnect} />
-
-          {/* Standalone database tabs + saved configs — shown below the session list */}
-          {(tabs.filter((t) => t.type === 'database').length > 0 || savedDBsNotOpen.length > 0) && (
-            <div className="shrink-0 border-t border-nd-border px-2 py-1.5">
-              <span className="text-2xs font-semibold text-nd-text-muted uppercase tracking-wider px-1 mb-1 block">
-                Databases
-              </span>
-              <div className="flex flex-col gap-0.5">
-                {/* Currently open database tabs */}
-                {tabs.filter((t) => t.type === 'database').map((dbTab) => {
-                  const isActive = dbTab.id === activeTabId
-                  return (
-                    <button
-                      key={dbTab.id}
-                      onClick={() => { setActiveTab(dbTab.id); setSelectedSessionId(null) }}
-                      className={cn(
-                        'group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors',
-                        isActive
-                          ? 'bg-nd-accent/10 text-nd-accent border border-nd-accent/30'
-                          : 'text-nd-text-secondary hover:bg-nd-surface'
-                      )}
-                    >
-                      <Database size={13} className={isActive ? 'text-nd-accent' : 'text-nd-text-muted'} />
-                      <span className="truncate">{dbTab.sessionName || 'Database'}</span>
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Explicitly disconnect SQL session before removing tab
-                          const sqlState = getSQLConnectionState(dbTab.id)
-                          if (sqlState.sqlSessionId) {
-                            window.novadeck.sql.disconnect(sqlState.sqlSessionId).catch(() => {})
-                          }
-                          useSQLStore.getState().removeConnection(dbTab.id)
-                          removeTab(dbTab.id)
-                        }}
-                        className="ml-auto p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
-                        title="Close"
-                      >
-                        <X size={12} />
-                      </span>
-                    </button>
-                  )
-                })}
-
-                {/* Saved but not currently open databases */}
-                {savedDBsNotOpen.map((db) => {
-                  const label = db.connectionName || `${db.type.toUpperCase()} · ${db.database || db.host}`
-                  return (
-                    <button
-                      key={db.sessionId}
-                      onClick={() => onOpenSavedDatabase(db.sessionId, label)}
-                      className="group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface transition-colors"
-                    >
-                      <Database size={13} className="text-nd-text-muted opacity-50" />
-                      <span className="truncate">{label}</span>
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Delete the saved config permanently
-                          window.novadeck.sql.configDelete(db.sessionId)
-                            .then(() => setSavedDBs((prev) => prev.filter((d) => d.sessionId !== db.sessionId)))
-                            .catch(() => {})
-                        }}
-                        className="ml-auto p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
-                        title="Delete saved connection"
-                      >
-                        <X size={12} />
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+          {/* ── Active panel ── */}
+          {sidebarPanel === 'sessions' ? (
+            <SessionManager onConnect={onConnect} />
+          ) : (
+            <DatabasesPanel
+              onConnectDatabase={onConnectDatabase}
+              onOpenSavedDatabase={onOpenSavedDatabase}
+            />
           )}
 
-          {/* Bottom Actions */}
-          <div className="shrink-0 border-t border-nd-border px-3 py-2 flex flex-col gap-1.5">
-            {/* Database quick connect */}
-            <button
-              onClick={onConnectDatabase}
-              className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-nd-text-secondary hover:text-nd-accent hover:bg-nd-accent/10 transition-colors"
-            >
-              <Database size={14} />
-              <span>Connect to Database</span>
-            </button>
-            <div className="flex items-center gap-1">
-              <Tooltip content="Settings" side="top">
-                <button
-                  onClick={toggleSettings}
-                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-                >
-                  <Settings size={15} />
-                </button>
-              </Tooltip>
-              <Tooltip content="Client Key Manager" side="top">
-                <button
-                  onClick={toggleClientKeyManager}
-                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-                >
-                  <KeyRound size={15} />
-                </button>
-              </Tooltip>
-              <Tooltip content="Host Key Manager" side="top">
-                <button
-                  onClick={toggleHostKeyManager}
-                  className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
-                >
-                  <Shield size={15} />
-                </button>
-              </Tooltip>
-              <div className="flex-1" />
-              <span className="text-2xs text-nd-text-muted">{sessions.length} sessions</span>
-            </div>
+          {/* ── Bottom utility bar ── */}
+          <div className="shrink-0 border-t border-nd-border px-3 py-2 flex items-center gap-1">
+            <Tooltip content="Settings" side="top">
+              <button
+                onClick={toggleSettings}
+                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Settings size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Client Key Manager" side="top">
+              <button
+                onClick={toggleClientKeyManager}
+                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <KeyRound size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Host Key Manager" side="top">
+              <button
+                onClick={toggleHostKeyManager}
+                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Shield size={15} />
+              </button>
+            </Tooltip>
           </div>
         </>
       ) : (
         /* ── Collapsed icon-only view ── */
         <div className="flex flex-col items-center flex-1 overflow-hidden">
-          {/* Action buttons */}
+          {/* Quick-add buttons */}
           <div className="shrink-0 py-1.5 w-full flex flex-col items-center gap-0.5 border-b border-nd-border">
             <Tooltip content="New Session" side="right">
               <button
@@ -312,105 +290,116 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
               </button>
             </Tooltip>
           </div>
+
+          {/* All connection avatars */}
           <div className="flex flex-col items-center gap-0.5 py-1.5 flex-1 overflow-y-auto scrollbar-none w-full">
             {/* SSH session avatars */}
             {sortedSessions.map((session) => {
-                const tab = tabs.find((t) => t.sessionId === session.id)
-                const isConnected = tab?.status === 'connected'
-                const isConnecting = tab?.status === 'connecting' || tab?.status === 'authenticating'
-                const isError = tab?.status === 'error'
-                const isActive = tab?.id === activeTabId
-                const isSelected = selectedSessionId === session.id && !tab
-                const hasConnection = !!tab
+              const tab = tabs.find((t) => t.sessionId === session.id)
+              const isConnected = tab?.status === 'connected'
+              const isConnecting =
+                tab?.status === 'connecting' || tab?.status === 'authenticating'
+              const isError = tab?.status === 'error'
+              const isActive = tab?.id === activeTabId
+              const isSelected = selectedSessionId === session.id && !tab
 
-                return (
-                  <Tooltip
-                    key={session.id}
-                    content={`${session.name}${isConnected ? ' (connected)' : isConnecting ? ' (connecting)' : isError ? ' (error)' : ''}`}
-                    side="right"
-                  >
-                    <button
-                      onClick={() => {
-                        if (tab) {
-                          setActiveTab(tab.id)
-                          setSelectedSessionId(null)
-                        } else {
-                          // Clear activeTabId so the DisconnectedSessionView becomes visible
-                          setActiveTab(null)
-                          setSelectedSessionId(session.id)
-                        }
-                      }}
-                      onDoubleClick={() => {
-                        if (!tab) onConnect(session)
-                      }}
-                      className={cn(
-                        'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
-                        isActive
-                          ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
-                          : isSelected
-                            ? 'bg-nd-surface/80 ring-1 ring-nd-border'
-                            : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
-                      )}
-                    >
-                      <div
-                        className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white/90"
-                        style={{ backgroundColor: session.color || '#71717a' }}
-                      >
-                        {session.name.charAt(0).toUpperCase()}
-                      </div>
-
-                      {/* Status indicator */}
-                      {isConnected && (
-                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
-                      )}
-                      {isConnecting && (
-                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
-                      )}
-                      {isError && (
-                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-error border border-nd-bg-secondary" />
-                      )}
-                    </button>
-                  </Tooltip>
-                )
-              })}
-
-            {/* Standalone database tab avatars (open) */}
-            {tabs.filter((t) => t.type === 'database').map((dbTab) => {
-              const isActive = dbTab.id === activeTabId
-              const isDbConnected = dbTab.status === 'connected'
-              const isDbConnecting = dbTab.status === 'connecting'
               return (
                 <Tooltip
-                  key={dbTab.id}
-                  content={dbTab.sessionName || 'Database'}
+                  key={session.id}
+                  content={`${session.name}${
+                    isConnected
+                      ? ' (connected)'
+                      : isConnecting
+                        ? ' (connecting)'
+                        : isError
+                          ? ' (error)'
+                          : ''
+                  }`}
                   side="right"
                 >
                   <button
-                    onClick={() => { setActiveTab(dbTab.id); setSelectedSessionId(null) }}
+                    onClick={() => {
+                      if (tab) {
+                        setActiveTab(tab.id)
+                        setSelectedSessionId(null)
+                      } else {
+                        setActiveTab(null)
+                        setSelectedSessionId(session.id)
+                      }
+                    }}
+                    onDoubleClick={() => {
+                      if (!tab) onConnect(session)
+                    }}
                     className={cn(
                       'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
                       isActive
                         ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
-                        : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                        : isSelected
+                          ? 'bg-nd-surface/80 ring-1 ring-nd-border'
+                          : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
                     )}
                   >
-                    <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
-                      <Database size={12} className="text-white/90" />
+                    <div
+                      className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white/90"
+                      style={{ backgroundColor: session.color || '#71717a' }}
+                    >
+                      {session.name.charAt(0).toUpperCase()}
                     </div>
-                    {isDbConnected && (
+
+                    {isConnected && (
                       <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
                     )}
-                    {isDbConnecting && (
+                    {isConnecting && (
                       <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
+                    )}
+                    {isError && (
+                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-error border border-nd-bg-secondary" />
                     )}
                   </button>
                 </Tooltip>
               )
             })}
 
-            {/* Saved but not open database avatars */}
-            {savedDBsNotOpen.map((db) => {
-              const label = db.connectionName || `${db.type.toUpperCase()} · ${db.database || db.host}`
+            {/* Open standalone database tab avatars */}
+            {tabs
+              .filter((t) => t.type === 'database')
+              .map((dbTab) => {
+                const isActive = dbTab.id === activeTabId
+                const isDbConnected = dbTab.status === 'connected'
+                const isDbConnecting = dbTab.status === 'connecting'
+                return (
+                  <Tooltip key={dbTab.id} content={dbTab.sessionName || 'Database'} side="right">
+                    <button
+                      onClick={() => {
+                        setActiveTab(dbTab.id)
+                        setSelectedSessionId(null)
+                      }}
+                      className={cn(
+                        'relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0',
+                        isActive
+                          ? 'bg-nd-accent/15 ring-1 ring-nd-accent'
+                          : 'hover:bg-nd-surface opacity-60 hover:opacity-100'
+                      )}
+                    >
+                      <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
+                        <Database size={12} className="text-white/90" />
+                      </div>
+                      {isDbConnected && (
+                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
+                      )}
+                      {isDbConnecting && (
+                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
+                      )}
+                    </button>
+                  </Tooltip>
+                )
+              })}
+
+            {/* Saved-but-not-open database avatars */}
+            {savedDBsNotOpenCollapsed.map((db) => {
+              const label =
+                db.connectionName ||
+                `${db.type.toUpperCase()} · ${db.database || db.host}`
               return (
                 <Tooltip key={db.sessionId} content={label} side="right">
                   <button
@@ -426,7 +415,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
             })}
           </div>
 
-          {/* Bottom actions */}
+          {/* Bottom utility icons */}
           <div className="flex flex-col items-center gap-1 py-2 shrink-0 border-t border-nd-border w-full">
             <Tooltip content="Client Key Manager" side="right">
               <button
@@ -455,6 +444,7 @@ export function Sidebar({ onConnect, onConnectDatabase, onOpenSavedDatabase }: S
           </div>
         </div>
       )}
+
       {/* Session form — rendered at sidebar level so it works when collapsed */}
       {collapsedFormOpen && (
         <SessionForm
