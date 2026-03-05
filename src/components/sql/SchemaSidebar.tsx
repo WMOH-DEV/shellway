@@ -341,6 +341,7 @@ export function SchemaSidebar({
     sqlSessionId,
     setSelectedTable,
     setTables,
+    setColumns,
     setDatabases,
     setCurrentDatabase,
     setSchemaLoading,
@@ -515,6 +516,14 @@ export function SchemaSidebar({
       const result = await window.novadeck.sql.getTables(sqlSessionId)
       if (result.success && result.data) {
         setTables(result.data)
+        // Fetch all columns in the background for autocomplete — fire-and-forget
+        ;(window as any).novadeck.sql.getAllColumns(sqlSessionId)
+          .then((colResult: any) => {
+            if (colResult?.success && Array.isArray(colResult.data)) {
+              setColumns(colResult.data)
+            }
+          })
+          .catch(() => {})
       } else {
         setFetchError(result.error ?? 'Failed to load tables')
       }
@@ -523,7 +532,7 @@ export function SchemaSidebar({
     } finally {
       setSchemaLoading(false)
     }
-  }, [sqlSessionId, setTables, setSchemaLoading])
+  }, [sqlSessionId, setTables, setColumns, setSchemaLoading])
 
   const fetchDatabases = useCallback(async () => {
     if (!sqlSessionId) return

@@ -58,6 +58,23 @@ const COLUMN_CONTEXT_KEYWORDS = ['SELECT', 'WHERE', 'ON', 'SET', 'ORDER BY', 'GR
 const DATABASE_CONTEXT_KEYWORDS = ['USE', 'DATABASE']
 
 /**
+ * Extracts table names referenced in FROM and JOIN clauses of the query so far.
+ * Used to scope column suggestions to the relevant tables.
+ */
+function extractReferencedTables(sql: string): Set<string> {
+  const tables = new Set<string>()
+  // Match: FROM tablename [alias], JOIN tablename [alias]
+  const pattern = /\b(?:FROM|JOIN|UPDATE|INTO)\s+([`"\[]?\w+[`"\]]?)(?:\s+(?:AS\s+)?([`"\[]?\w+[`"\]]?))?/gi
+  let m: RegExpExecArray | null
+  while ((m = pattern.exec(sql)) !== null) {
+    const rawTable = m[1].replace(/[`"\[\]]/g, '')
+    tables.add(rawTable.toLowerCase())
+    if (m[2]) tables.add(m[2].replace(/[`"\[\]]/g, '').toLowerCase()) // also add alias
+  }
+  return tables
+}
+
+/**
  * Analyses the text before the cursor to determine what the user
  * is likely trying to complete.
  */
@@ -153,17 +170,37 @@ export function registerSQLCompletionProvider(
 
       // ── Column suggestions (after dot or after column-context keyword) ──
       if (ctx.wantsColumn) {
-        const columns = ctx.tablePrefix
-          ? schema.columns // When prefixed, show all loaded columns (they belong to the selected table)
-          : schema.columns
+        // Parse the full query text to find tables referenced in FROM/JOIN
+        const fullText = model.getValue()
+        const referencedTables = extractReferencedTables(fullText)
 
-        for (const col of columns) {
+        // If we have tableName metadata on columns, prioritise columns from
+        // referenced tables; fall back to showing all columns if no schema loaded yet.
+        const columnsToShow = schema.columns.length === 0
+          ? []
+          : (ctx.tablePrefix
+              // "table." prefix: filter to that specific table
+              ? schema.columns.filter(
+                  (c) => c.tableName?.toLowerCase() === ctx.tablePrefix!.toLowerCase()
+                )
+              // Regular column context: prefer referenced tables; fall back to all
+              : referencedTables.size > 0 && schema.columns.some((c) => c.tableName)
+                ? schema.columns.filter(
+                    (c) => !c.tableName || referencedTables.has(c.tableName.toLowerCase())
+                  )
+                : schema.columns
+            )
+
+        for (const col of columnsToShow) {
           suggestions.push({
             label: col.name,
             kind: Kind.Field,
-            detail: `${col.type}${col.nullable ? ' | NULL' : ''}`,
+            detail: col.tableName
+              ? `${col.tableName}.${col.name} — ${col.type}${col.nullable ? ' | NULL' : ''}`
+              : `${col.type}${col.nullable ? ' | NULL' : ''}`,
             insertText: col.name,
-            range
+            range,
+            sortText: '!' + col.name // Sort columns above keywords
           } as CompletionItem)
         }
       }

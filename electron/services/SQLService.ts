@@ -518,6 +518,60 @@ export class SQLService extends EventEmitter {
     }
   }
 
+  async getAllColumns(sqlSessionId: string): Promise<{
+    tableName: string; name: string; type: string; nullable: boolean
+    isPrimaryKey: boolean; isAutoIncrement: boolean
+  }[]> {
+    const active = this.connections.get(sqlSessionId)
+    if (!active) throw new Error('Not connected')
+
+    if (active.type === 'mysql') {
+      const result = await this.executeQuery(
+        sqlSessionId,
+        `SELECT TABLE_NAME as table_name, COLUMN_NAME as col_name,
+                COLUMN_TYPE as col_type, IS_NULLABLE as nullable,
+                COLUMN_KEY as col_key, EXTRA as extra
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+         ORDER BY TABLE_NAME, ORDINAL_POSITION`
+      )
+      return result.rows.map((r: any) => ({
+        tableName: r.table_name,
+        name: r.col_name,
+        type: r.col_type,
+        nullable: r.nullable === 'YES',
+        isPrimaryKey: r.col_key === 'PRI',
+        isAutoIncrement: (r.extra || '').includes('auto_increment'),
+      }))
+    } else {
+      const result = await this.executeQuery(
+        sqlSessionId,
+        `SELECT c.table_name, c.column_name as col_name,
+                c.data_type as col_type, c.is_nullable as nullable,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk,
+                CASE WHEN c.is_identity = 'YES' OR c.column_default LIKE 'nextval%' THEN true ELSE false END as is_auto
+         FROM information_schema.columns c
+         LEFT JOIN (
+           SELECT ku.column_name, ku.table_name
+           FROM information_schema.table_constraints tc
+           JOIN information_schema.key_column_usage ku
+             ON tc.constraint_name = ku.constraint_name AND tc.table_schema = ku.table_schema
+           WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
+         ) pk ON pk.column_name = c.column_name AND pk.table_name = c.table_name
+         WHERE c.table_schema = 'public'
+         ORDER BY c.table_name, c.ordinal_position`
+      )
+      return result.rows.map((r: any) => ({
+        tableName: r.table_name,
+        name: r.col_name,
+        type: r.col_type,
+        nullable: r.nullable === 'YES',
+        isPrimaryKey: Boolean(r.is_pk),
+        isAutoIncrement: Boolean(r.is_auto),
+      }))
+    }
+  }
+
   async getColumns(
     sqlSessionId: string,
     table: string,

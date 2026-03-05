@@ -316,15 +316,11 @@ export const QueryEditor = React.memo(function QueryEditor({
     [connectionId, sqlSessionId, setQueryError, addRunningQuery]
   )
 
-  // ── Run full query ──
+  // ── Run full query (always runs entire editor content, ignores any selection) ──
   const handleRun = useCallback(() => {
     const editor = editorRef.current
     if (!editor) return
-    const selection = editor.getSelection()
-    const selectedText = selection && !selection.isEmpty()
-      ? editor.getModel()?.getValueInRange(selection) ?? ''
-      : ''
-    const query = selectedText || editor.getValue()
+    const query = editor.getValue()
     executeQuery(query)
   }, [executeQuery])
 
@@ -344,6 +340,11 @@ export const QueryEditor = React.memo(function QueryEditor({
   const handleRunSelectedRef = useRef(handleRunSelected)
   handleRunSelectedRef.current = handleRunSelected
 
+  // ── Stable ref for schema — lets the Monaco completion provider always read
+  // the latest tables/columns/databases without needing to re-register ──
+  const getSchemaRef = useRef(getSchema)
+  getSchemaRef.current = getSchema
+
   // ── Monaco mount ──
   const handleEditorMount: OnMount = useCallback(
     (editor, monaco) => {
@@ -353,8 +354,9 @@ export const QueryEditor = React.memo(function QueryEditor({
       defineShellwayTheme(monaco)
       monaco.editor.setTheme('shellway-dark')
 
-      // Register autocomplete
-      completionDisposableRef.current = registerSQLCompletionProvider(monaco, getSchema)
+      // Register autocomplete — pass a stable wrapper so the provider always
+      // calls the latest getSchema even after tables/columns/databases load
+      completionDisposableRef.current = registerSQLCompletionProvider(monaco, () => getSchemaRef.current())
 
       // ── Keybindings ──
       // Use refs so these always call the latest handler, even if sqlSessionId changes
@@ -379,7 +381,7 @@ export const QueryEditor = React.memo(function QueryEditor({
       // Focus editor on mount
       editor.focus()
     },
-    [getSchema] // No longer depends on handleRun/handleRunSelected — uses refs
+    [] // Uses refs for all callbacks — no deps needed
   )
 
   // ── Editor content change (debounced) ──

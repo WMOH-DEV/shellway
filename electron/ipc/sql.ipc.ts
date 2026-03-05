@@ -222,6 +222,11 @@ export function registerSQLIPC(): void {
     catch (err: any) { return { success: false, error: err.message } }
   })
 
+  ipcMain.handle('sql:getAllColumns', async (_event, sqlSessionId: string) => {
+    try { return { success: true, data: await sqlService.getAllColumns(sqlSessionId) } }
+    catch (err: any) { return { success: false, error: err.message } }
+  })
+
   ipcMain.handle('sql:getColumns', async (_event, sqlSessionId: string, table: string, schema?: string) => {
     try { return { success: true, data: await sqlService.getColumns(sqlSessionId, table, schema) } }
     catch (err: any) { return { success: false, error: err.message } }

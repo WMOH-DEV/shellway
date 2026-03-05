@@ -44,6 +44,8 @@ export interface SchemaColumn {
   isAutoIncrement: boolean
   extra?: string
   comment?: string
+  /** Table this column belongs to — used for autocomplete */
+  tableName?: string
   /** Ordinal position (1-based) */
   ordinalPosition?: number
   /** Character set (MySQL only) */
