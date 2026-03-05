@@ -323,130 +323,133 @@ export function Sidebar({
           {/* Connection avatars — scoped to the active panel */}
           <div className="flex flex-col items-center gap-0.5 py-1.5 flex-1 overflow-y-auto scrollbar-none w-full">
             {/* SSH session avatars — sessions panel only */}
-            {sidebarPanel === "sessions" && sortedSessions.map((session) => {
-              const tab = tabs.find((t) => t.sessionId === session.id);
-              const isConnected = tab?.status === "connected";
-              const isConnecting =
-                tab?.status === "connecting" ||
-                tab?.status === "authenticating";
-              const isError = tab?.status === "error";
-              const isActive = tab?.id === activeTabId;
-              const isSelected = selectedSessionId === session.id && !tab;
+            {sidebarPanel === "sessions" &&
+              sortedSessions.map((session) => {
+                const tab = tabs.find((t) => t.sessionId === session.id);
+                const isConnected = tab?.status === "connected";
+                const isConnecting =
+                  tab?.status === "connecting" ||
+                  tab?.status === "authenticating";
+                const isError = tab?.status === "error";
+                const isActive = tab?.id === activeTabId;
+                const isSelected = selectedSessionId === session.id && !tab;
 
-              return (
-                <Tooltip
-                  key={session.id}
-                  content={`${session.name}${
-                    isConnected
-                      ? " (connected)"
-                      : isConnecting
-                        ? " (connecting)"
-                        : isError
-                          ? " (error)"
-                          : ""
-                  }`}
-                  side="right"
-                >
-                  <button
-                    onClick={() => {
-                      if (tab) {
-                        setActiveTab(tab.id);
-                        setSelectedSessionId(null);
-                      } else {
-                        setActiveTab(null);
-                        setSelectedSessionId(session.id);
-                      }
-                    }}
-                    onDoubleClick={() => {
-                      if (!tab) onConnect(session);
-                    }}
-                    className={cn(
-                      "relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0",
-                      isActive
-                        ? "bg-nd-accent/15 ring-1 ring-nd-accent"
-                        : isSelected
-                          ? "bg-nd-surface/80 ring-1 ring-nd-border"
-                          : "hover:bg-nd-surface opacity-60 hover:opacity-100",
-                    )}
-                  >
-                    <div
-                      className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white/90"
-                      style={{ backgroundColor: session.color || "#71717a" }}
-                    >
-                      {session.name.charAt(0).toUpperCase()}
-                    </div>
-
-                    {isConnected && (
-                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
-                    )}
-                    {isConnecting && (
-                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
-                    )}
-                    {isError && (
-                      <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-error border border-nd-bg-secondary" />
-                    )}
-                  </button>
-                </Tooltip>
-              );
-            })}
-
-            {/* Open standalone database tab avatars — databases panel only */}
-            {sidebarPanel === "databases" && tabs
-              .filter((t) => t.type === "database")
-              .map((dbTab) => {
-                const isActive = dbTab.id === activeTabId;
-                const isDbConnected = dbTab.status === "connected";
-                const isDbConnecting = dbTab.status === "connecting";
                 return (
                   <Tooltip
-                    key={dbTab.id}
-                    content={dbTab.sessionName || "Database"}
+                    key={session.id}
+                    content={`${session.name}${
+                      isConnected
+                        ? " (connected)"
+                        : isConnecting
+                          ? " (connecting)"
+                          : isError
+                            ? " (error)"
+                            : ""
+                    }`}
                     side="right"
                   >
                     <button
                       onClick={() => {
-                        setActiveTab(dbTab.id);
-                        setSelectedSessionId(null);
+                        if (tab) {
+                          setActiveTab(tab.id);
+                          setSelectedSessionId(null);
+                        } else {
+                          setActiveTab(null);
+                          setSelectedSessionId(session.id);
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        if (!tab) onConnect(session);
                       }}
                       className={cn(
                         "relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0",
                         isActive
                           ? "bg-nd-accent/15 ring-1 ring-nd-accent"
-                          : "hover:bg-nd-surface opacity-60 hover:opacity-100",
+                          : isSelected
+                            ? "bg-nd-surface/80 ring-1 ring-nd-border"
+                            : "hover:bg-nd-surface opacity-60 hover:opacity-100",
                       )}
                     >
-                      <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
-                        <Database size={12} className="text-white/90" />
+                      <div
+                        className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white/90"
+                        style={{ backgroundColor: session.color || "#71717a" }}
+                      >
+                        {session.name.charAt(0).toUpperCase()}
                       </div>
-                      {isDbConnected && (
+
+                      {isConnected && (
                         <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
                       )}
-                      {isDbConnecting && (
+                      {isConnecting && (
                         <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
+                      )}
+                      {isError && (
+                        <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-error border border-nd-bg-secondary" />
                       )}
                     </button>
                   </Tooltip>
                 );
               })}
 
+            {/* Open standalone database tab avatars — databases panel only */}
+            {sidebarPanel === "databases" &&
+              tabs
+                .filter((t) => t.type === "database")
+                .map((dbTab) => {
+                  const isActive = dbTab.id === activeTabId;
+                  const isDbConnected = dbTab.status === "connected";
+                  const isDbConnecting = dbTab.status === "connecting";
+                  return (
+                    <Tooltip
+                      key={dbTab.id}
+                      content={dbTab.sessionName || "Database"}
+                      side="right"
+                    >
+                      <button
+                        onClick={() => {
+                          setActiveTab(dbTab.id);
+                          setSelectedSessionId(null);
+                        }}
+                        className={cn(
+                          "relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0",
+                          isActive
+                            ? "bg-nd-accent/15 ring-1 ring-nd-accent"
+                            : "hover:bg-nd-surface opacity-60 hover:opacity-100",
+                        )}
+                      >
+                        <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
+                          <Database size={12} className="text-white/90" />
+                        </div>
+                        {isDbConnected && (
+                          <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-success border border-nd-bg-secondary" />
+                        )}
+                        {isDbConnecting && (
+                          <span className="absolute bottom-0.5 right-1 w-2 h-2 rounded-full bg-nd-warning border border-nd-bg-secondary animate-pulse" />
+                        )}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+
             {/* Saved-but-not-open database avatars — databases panel only */}
-            {sidebarPanel === "databases" && savedDBsNotOpenCollapsed.map((db) => {
-              const label =
-                db.connectionName ||
-                `${db.type.toUpperCase()} · ${db.database || db.host}`;
-              return (
-                <Tooltip key={db.sessionId} content={label} side="right">
-                  <button
-                    onClick={() => onOpenSavedDatabase(db.sessionId, label)}
-                    className="relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0 opacity-50 hover:opacity-100 hover:bg-nd-surface"
-                  >
-                    <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600/50">
-                      <Database size={12} className="text-white/70" />
-                    </div>
-                  </button>
-                </Tooltip>
-              );
-            })}
+            {sidebarPanel === "databases" &&
+              savedDBsNotOpenCollapsed.map((db) => {
+                const label =
+                  db.connectionName ||
+                  `${db.type.toUpperCase()} · ${db.database || db.host}`;
+                return (
+                  <Tooltip key={db.sessionId} content={label} side="right">
+                    <button
+                      onClick={() => onOpenSavedDatabase(db.sessionId, label)}
+                      className="relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0 opacity-50 hover:opacity-100 hover:bg-nd-surface"
+                    >
+                      <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600/50">
+                        <Database size={12} className="text-white/70" />
+                      </div>
+                    </button>
+                  </Tooltip>
+                );
+              })}
           </div>
 
           {/* Bottom utility icons */}
