@@ -285,7 +285,12 @@ export class SQLService extends EventEmitter {
     params: unknown[] | undefined,
     start: number
   ): Promise<DBQueryResult> {
-    const [rows, fields] = await active.conn.execute(query, params)
+    // Use text protocol (.query()) instead of binary prepared statements (.execute()).
+    // The binary protocol (COM_STMT_PREPARE/COM_STMT_EXECUTE) has known compatibility
+    // issues with certain column types (JSON, GEOMETRY, BIT, generated columns) and
+    // can fail with "Incorrect arguments to mysqld_stmt_execute" on valid tables.
+    // The text protocol works universally and mysql2 handles param escaping safely.
+    const [rows, fields] = await active.conn.query(query, params)
     const elapsed = Math.round(performance.now() - start)
 
     // Handle non-SELECT queries (INSERT, UPDATE, DELETE)

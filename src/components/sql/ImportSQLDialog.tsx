@@ -7,6 +7,7 @@ import {
   XCircle,
   Loader2,
   Clock,
+  ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Modal } from '@/components/ui/Modal'
@@ -79,6 +80,14 @@ export function ImportSQLDialog({
   const [elapsed, setElapsed] = useState(0)
   const startTimeRef = useRef<number>(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const errorListRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll error list to latest error
+  useEffect(() => {
+    if (errorsExpanded && errorListRef.current) {
+      errorListRef.current.scrollTop = errorListRef.current.scrollHeight
+    }
+  }, [importErrors.length, errorsExpanded])
 
   const hasDangerousStatements = (scanResult?.dangerousStatements.length ?? 0) > 0
 
@@ -466,11 +475,32 @@ export function ImportSQLDialog({
                 {formatElapsed(elapsed)}
               </span>
               {importErrors.length > 0 && (
-                <span className="text-red-400">
+                <button
+                  onClick={() => setErrorsExpanded((v) => !v)}
+                  className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors"
+                >
                   {importErrors.length} error{importErrors.length !== 1 ? 's' : ''}
-                </span>
+                  <ChevronDown
+                    size={12}
+                    className={cn('transition-transform', errorsExpanded && 'rotate-180')}
+                  />
+                </button>
               )}
             </div>
+
+            {/* Live error list (visible during import) */}
+            {importErrors.length > 0 && errorsExpanded && (
+              <div
+                ref={errorListRef}
+                className="max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1"
+              >
+                {importErrors.map((err, i) => (
+                  <p key={i} className="text-[11px] font-mono text-red-400 break-all">
+                    {err}
+                  </p>
+                ))}
+              </div>
+            )}
 
             {/* Cancel */}
             <div className="flex justify-end pt-1">
@@ -544,12 +574,19 @@ export function ImportSQLDialog({
               <div>
                 <button
                   onClick={() => setErrorsExpanded((v) => !v)}
-                  className="text-xs text-nd-text-muted hover:text-nd-text-secondary transition-colors"
+                  className="flex items-center gap-1 text-xs text-nd-text-muted hover:text-nd-text-secondary transition-colors"
                 >
                   {errorsExpanded ? 'Hide' : 'Show'} errors ({importErrors.length})
+                  <ChevronDown
+                    size={12}
+                    className={cn('transition-transform', errorsExpanded && 'rotate-180')}
+                  />
                 </button>
                 {errorsExpanded && (
-                  <div className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1">
+                  <div
+                    ref={errorListRef}
+                    className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1"
+                  >
                     {importErrors.map((err, i) => (
                       <p key={i} className="text-[11px] font-mono text-red-400 break-all">
                         {err}

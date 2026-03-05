@@ -6,7 +6,7 @@ import { stat } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import type { Client as SSHClient } from 'ssh2'
 import { SQLService, DatabaseType } from './SQLService'
-import { splitSQLStatements, scanDangerousStatements, countStatements } from '../utils/sqlParser'
+import { splitSQLStatements, preScanStatements } from '../utils/sqlParser'
 import { parseCSVStream, previewCSV as csvPreview } from '../utils/csvParser'
 import { shellEscape, validateIdentifier, quoteIdentifier, validateBinaryPath } from '../utils/shellEscape'
 
@@ -670,6 +670,14 @@ export class SQLDataTransferService extends EventEmitter {
               message: `Executed ${statementCount} statements${errorCount > 0 ? ` (${errorCount} errors)` : ''}...`,
             })
           }
+
+          // Yield to event loop periodically so V8's garbage collector can run.
+          // Without this, rapid statement execution keeps the main thread busy and
+          // GC never gets a chance to reclaim memory from processed statements,
+          // eventually causing OOM on large imports.
+          if ((statementCount + errorCount) % 200 === 0) {
+            await new Promise<void>((resolve) => setImmediate(resolve))
+          }
         }
 
         if (options.useTransaction) {
@@ -1004,15 +1012,13 @@ export class SQLDataTransferService extends EventEmitter {
     const fileStat = await stat(filePath)
     const fileSize = fileStat.size
 
-    // Count statements (first stream)
-    const countStream = createReadStream(filePath, { encoding: 'utf-8' })
-    const statementCount = await countStatements(countStream)
+    // Single-pass: count statements AND scan for dangerous patterns simultaneously.
+    // Previously this read the file twice (once for count, once for scan), which
+    // doubled I/O and memory pressure on large SQL dumps.
+    const stream = createReadStream(filePath, { encoding: 'utf-8' })
+    const { count, dangerous } = await preScanStatements(stream)
 
-    // Scan for dangerous statements (second stream)
-    const scanStream = createReadStream(filePath, { encoding: 'utf-8' })
-    const dangerousStatements = await scanDangerousStatements(scanStream)
-
-    return { statementCount, dangerousStatements, fileSize }
+    return { statementCount: count, dangerousStatements: dangerous, fileSize }
   }
 
   // ── DDL Generation ──

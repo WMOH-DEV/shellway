@@ -27,7 +27,11 @@ export async function* splitSQLStatements(stream: Readable): AsyncGenerator<stri
   const rl = createInterface({ input: stream, crlfDelay: Infinity })
 
   let state: ParserState = 'normal'
-  let buffer = ''
+  // Use array-based buffering instead of string concatenation.
+  // String concat (`buffer += line`) creates O(n) intermediate string objects per line,
+  // which under heavy load (large SQL dumps) overwhelms V8's garbage collector and
+  // causes OOM crashes. Array.push + join() at yield time avoids all intermediate copies.
+  let bufferParts: string[] = []
   let delimiter = ';'
 
   for await (const line of rl) {
@@ -40,11 +44,9 @@ export async function* splitSQLStatements(stream: Readable): AsyncGenerator<stri
       }
     }
 
-    // Append the line to the buffer (preserve newlines for multi-line statements)
-    if (buffer.length > 0) {
-      buffer += '\n'
-    }
-    buffer += line
+    // Append the line to the buffer parts (each line stored as a separate reference —
+    // no copying until we actually yield a complete statement)
+    bufferParts.push(line)
 
     // Process character-by-character to track state.
     // We use a mutable `scanLine` so that after yielding a statement we can
@@ -102,17 +104,18 @@ export async function* splitSQLStatements(stream: Readable): AsyncGenerator<stri
               : scanLine.substring(i, i + delimiter.length) === delimiter
 
           if (isDelim) {
-            // Everything in the buffer up to (but not including) this delimiter
-            // is the current statement. The buffer currently ends with the full
-            // scanLine; we need to chop off from the delimiter position onward.
-            const charsFromDelimToEnd = scanLine.length - i
-            const statement = buffer.substring(0, buffer.length - charsFromDelimToEnd).trim()
+            // Build statement from buffer parts.
+            // scanLine is always the last element of bufferParts (either the original
+            // line or a 'rest' from a previous delimiter within the same line).
+            // Replace it with only the portion before the delimiter, then join once.
+            bufferParts[bufferParts.length - 1] = scanLine.substring(0, i)
+            const statement = bufferParts.join('\n').trim()
             if (statement.length > 0) {
               yield statement
             }
             // Reset: buffer and scanLine become the remainder after the delimiter
             const rest = scanLine.substring(i + delimiter.length)
-            buffer = rest
+            bufferParts = rest.length > 0 ? [rest] : []
             scanLine = rest
             i = 0
             continue
@@ -190,9 +193,11 @@ export async function* splitSQLStatements(stream: Readable): AsyncGenerator<stri
   }
 
   // Yield any remaining content in buffer
-  const finalStmt = buffer.trim()
-  if (finalStmt.length > 0) {
-    yield finalStmt
+  if (bufferParts.length > 0) {
+    const finalStmt = bufferParts.join('\n').trim()
+    if (finalStmt.length > 0) {
+      yield finalStmt
+    }
   }
 }
 
@@ -220,16 +225,46 @@ const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; description: string }> = [
  */
 export async function scanDangerousStatements(stream: Readable): Promise<string[]> {
   const found = new Set<string>()
+  // All dangerous patterns match at the start of statements (^\s*...),
+  // so we only need the first ~200 characters — avoids running regex on
+  // multi-MB INSERT statements.
+  const HEAD_SIZE = 200
 
   for await (const stmt of splitSQLStatements(stream)) {
+    const head = stmt.length > HEAD_SIZE ? stmt.substring(0, HEAD_SIZE) : stmt
     for (const { pattern, description } of DANGEROUS_PATTERNS) {
-      if (pattern.test(stmt)) {
+      if (pattern.test(head)) {
         found.add(description)
       }
     }
   }
 
   return Array.from(found)
+}
+
+/**
+ * Combined single-pass pre-scan: count statements AND detect dangerous patterns.
+ * Avoids reading the file twice (once for count, once for scan).
+ */
+export async function preScanStatements(stream: Readable): Promise<{
+  count: number
+  dangerous: string[]
+}> {
+  let count = 0
+  const found = new Set<string>()
+  const HEAD_SIZE = 200
+
+  for await (const stmt of splitSQLStatements(stream)) {
+    count++
+    const head = stmt.length > HEAD_SIZE ? stmt.substring(0, HEAD_SIZE) : stmt
+    for (const { pattern, description } of DANGEROUS_PATTERNS) {
+      if (pattern.test(head)) {
+        found.add(description)
+      }
+    }
+  }
+
+  return { count, dangerous: Array.from(found) }
 }
 
 /**
