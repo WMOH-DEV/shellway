@@ -567,6 +567,20 @@ const api = {
     ) => {
       ipcRenderer.send(`hostkey:verify-response:${connectionId}`, response)
     }
+  },
+
+  updater: {
+    onUpdateAvailable: (callback: (info: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, info: unknown) => callback(info)
+      ipcRenderer.on('updater:update-available', handler)
+      return () => ipcRenderer.removeListener('updater:update-available', handler)
+    },
+    onUpdateDownloaded: (callback: (info: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, info: unknown) => callback(info)
+      ipcRenderer.on('updater:update-downloaded', handler)
+      return () => ipcRenderer.removeListener('updater:update-downloaded', handler)
+    },
+    installAndRestart: () => ipcRenderer.invoke('updater:install-and-restart')
   }
 }
 

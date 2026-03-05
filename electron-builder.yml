@@ -48,5 +48,5 @@ linux:
   category: Network
 publish:
   provider: github
-  owner: shellway
+  owner: WMOH-DEV
   repo: shellway

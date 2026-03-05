@@ -4,6 +4,7 @@ import { readFile, writeFile, stat } from 'fs/promises'
 import { watch, type FSWatcher } from 'fs'
 import { spawn } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { registerSessionIPC } from './ipc/session.ipc'
 import { registerSettingsIPC } from './ipc/settings.ipc'
 import { registerSSHIPC } from './ipc/ssh.ipc'
@@ -395,6 +396,33 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  // ──── Auto-updater ────
+  // Only check for updates in production builds (not dev mode)
+  if (!is.dev) {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on('update-available', (info) => {
+      mainWindow.webContents.send('updater:update-available', info)
+    })
+
+    autoUpdater.on('update-downloaded', (info) => {
+      mainWindow.webContents.send('updater:update-downloaded', info)
+    })
+
+    autoUpdater.on('error', (err) => {
+      console.error('[auto-updater]', err.message)
+    })
+
+    // Check for updates 5 seconds after the window is ready (avoid blocking startup)
+    setTimeout(() => autoUpdater.checkForUpdates(), 5000)
+  }
+
+  // Renderer can trigger an install-and-restart
+  ipcMain.handle('updater:install-and-restart', () => {
+    autoUpdater.quitAndInstall()
   })
 })
 
