@@ -1,73 +1,111 @@
-import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/utils/cn'
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/utils/cn";
 
 export interface ContextMenuItem {
-  id: string
-  label: string
-  icon?: ReactNode
-  shortcut?: string
-  disabled?: boolean
-  danger?: boolean
-  separator?: boolean
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  shortcut?: string;
+  disabled?: boolean;
+  danger?: boolean;
+  separator?: boolean;
 }
 
 interface ContextMenuProps {
-  children: ReactNode
-  items: ContextMenuItem[]
-  onSelect: (id: string) => void
-  className?: string
+  children: ReactNode;
+  items: ContextMenuItem[];
+  onSelect: (id: string) => void;
+  className?: string;
 }
 
-export function ContextMenu({ children, items, onSelect, className }: ContextMenuProps) {
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+export function ContextMenu({
+  children,
+  items,
+  onSelect,
+  className,
+}: ContextMenuProps) {
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Keep a ref to the latest items so the native event handler (registered once)
+  // can read them without needing to be re-registered on every items change.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
-  const close = useCallback(() => setPosition(null), [])
+  const close = useCallback(() => setPosition(null), []);
 
   // Use native DOM listener (capture phase) — matches the proven working pattern
   // from DataGrid header context menu. React's synthetic onContextMenu doesn't
   // reliably fire in Electron's renderer process.
   useEffect(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper) return
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
 
     const handleContextMenu = (e: MouseEvent): void => {
-      e.preventDefault()
-      e.stopPropagation()
-      setPosition({ x: e.clientX, y: e.clientY })
-    }
+      e.preventDefault();
+      e.stopPropagation();
 
-    wrapper.addEventListener('contextmenu', handleContextMenu, true)
+      // Estimate menu dimensions to avoid overflowing the viewport.
+      // Each regular item is ~32px tall; separators are ~9px; add 8px vertical padding.
+      const currentItems = itemsRef.current;
+      const estimatedHeight = currentItems.reduce(
+        (h, i) => h + (i.separator ? 9 : 32),
+        8,
+      );
+      const estimatedWidth = 200;
+
+      const x =
+        e.clientX + estimatedWidth > window.innerWidth
+          ? e.clientX - estimatedWidth
+          : e.clientX;
+      const y =
+        e.clientY + estimatedHeight > window.innerHeight
+          ? e.clientY - estimatedHeight
+          : e.clientY;
+
+      setPosition({ x, y });
+    };
+
+    wrapper.addEventListener("contextmenu", handleContextMenu, true);
     return () => {
-      wrapper.removeEventListener('contextmenu', handleContextMenu, true)
-    }
-  }, [])
+      wrapper.removeEventListener("contextmenu", handleContextMenu, true);
+    };
+  }, []);
 
   // Close on mousedown outside menu, any right-click elsewhere, Escape, or scroll
   useEffect(() => {
-    if (!position) return
+    if (!position) return;
 
     const onMouseDown = (e: MouseEvent) => {
-      if (menuRef.current && menuRef.current.contains(e.target as Node)) return
-      close()
-    }
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
+      close();
+    };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    const onScroll = () => close()
+      if (e.key === "Escape") close();
+    };
+    const onScroll = () => close();
 
-    document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('keydown', onKeyDown)
-    document.addEventListener('scroll', onScroll, true)
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("scroll", onScroll, true);
 
     return () => {
-      document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('keydown', onKeyDown)
-      document.removeEventListener('scroll', onScroll, true)
-    }
-  }, [position, close])
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("scroll", onScroll, true);
+    };
+  }, [position, close]);
 
   return (
     <>
@@ -95,31 +133,35 @@ export function ContextMenu({ children, items, onSelect, className }: ContextMen
                   disabled={item.disabled}
                   onClick={() => {
                     if (!item.disabled) {
-                      onSelect(item.id)
-                      close()
+                      onSelect(item.id);
+                      close();
                     }
                   }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors',
-                    'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
+                    "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors",
+                    "hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed",
                     item.danger
-                      ? 'text-nd-error hover:text-nd-error'
-                      : 'text-nd-text-primary'
+                      ? "text-nd-error hover:text-nd-error"
+                      : "text-nd-text-primary",
                   )}
                 >
                   {item.icon && (
-                    <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>
+                    <span className="shrink-0 w-4 text-nd-text-muted">
+                      {item.icon}
+                    </span>
                   )}
                   <span className="flex-1">{item.label}</span>
                   {item.shortcut && (
-                    <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
+                    <span className="text-2xs text-nd-text-muted">
+                      {item.shortcut}
+                    </span>
                   )}
                 </button>
-              )
+              ),
             )}
           </motion.div>
         )}
       </AnimatePresence>
     </>
-  )
+  );
 }

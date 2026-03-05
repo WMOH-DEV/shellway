@@ -1,84 +1,115 @@
-import React, { useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react'
-import { AgGridReact } from 'ag-grid-react'
-import type { ColDef, GetRowIdParams, CellContextMenuEvent, GridReadyEvent } from 'ag-grid-community'
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community'
-import { cn } from '@/utils/cn'
+import React, {
+  useMemo,
+  useCallback,
+  useRef,
+  useState,
+  useEffect,
+  useImperativeHandle,
+} from "react";
+import { AgGridReact } from "ag-grid-react";
+import type {
+  ColDef,
+  GetRowIdParams,
+  CellContextMenuEvent,
+  GridReadyEvent,
+} from "ag-grid-community";
 import {
-  Copy, ClipboardCopy, FileJson, ArrowUpAZ, ArrowDownAZ,
-  XCircle, Filter, EyeOff, RotateCcw, Clipboard,
-  ExternalLink, Plus, Trash2, ChevronDown,
-} from 'lucide-react'
-import { useUIStore } from '@/stores/uiStore'
-import type { QueryResult, SchemaColumn } from '@/types/sql'
+  AllCommunityModule,
+  ModuleRegistry,
+  themeQuartz,
+} from "ag-grid-community";
+import { cn } from "@/utils/cn";
+import {
+  Copy,
+  ClipboardCopy,
+  FileJson,
+  ArrowUpAZ,
+  ArrowDownAZ,
+  XCircle,
+  Filter,
+  EyeOff,
+  RotateCcw,
+  Clipboard,
+  ExternalLink,
+  Plus,
+  Trash2,
+  ChevronDown,
+} from "lucide-react";
+import { useUIStore } from "@/stores/uiStore";
+import type { QueryResult, SchemaColumn } from "@/types/sql";
 import {
   TimestampDropdownMenu,
   isTimestampType,
   SQL_EXPR_PREFIX,
   type TimestampDropdownState,
-} from '@/components/sql/TimestampCellEditor'
+} from "@/components/sql/TimestampCellEditor";
 
-ModuleRegistry.registerModules([AllCommunityModule])
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 // ── Shared theme params (non-color) ──
 const sharedThemeParams = {
   headerFontWeight: 600,
-  cellEditingBorder: { color: 'rgb(59, 130, 246)', style: 'solid' as const, width: 1 },
+  cellEditingBorder: {
+    color: "rgb(59, 130, 246)",
+    style: "solid" as const,
+    width: 1,
+  },
   borderRadius: 0,
   wrapperBorderRadius: 0,
-  fontFamily: 'inherit',
+  fontFamily: "inherit",
   fontSize: 13,
   headerFontSize: 12,
   iconSize: 12,
   cellHorizontalPadding: 10,
   spacing: 4,
   columnBorder: true,
-}
+};
 
 // ── Dark theme matching Shellway's dark design tokens ──
 const shellwayDarkTheme = themeQuartz.withParams({
   ...sharedThemeParams,
-  backgroundColor: 'rgb(15, 17, 23)',
-  foregroundColor: 'rgb(228, 228, 231)',
-  headerBackgroundColor: 'rgb(22, 25, 34)',
-  headerTextColor: 'rgb(161, 161, 170)',
-  borderColor: 'rgb(46, 51, 72)',
-  rowBorder: 'rgb(46, 51, 72)',
-  rowHoverColor: 'rgb(37, 40, 54)',
-  selectedRowBackgroundColor: 'rgba(59, 130, 246, 0.15)',
-  headerColumnResizeHandleColor: 'rgb(61, 67, 99)',
-  chromeBackgroundColor: 'rgb(22, 25, 34)',
-  oddRowBackgroundColor: 'rgb(18, 20, 28)',
-})
+  backgroundColor: "rgb(15, 17, 23)",
+  foregroundColor: "rgb(228, 228, 231)",
+  headerBackgroundColor: "rgb(22, 25, 34)",
+  headerTextColor: "rgb(161, 161, 170)",
+  borderColor: "rgb(46, 51, 72)",
+  rowBorder: "rgb(46, 51, 72)",
+  rowHoverColor: "rgb(37, 40, 54)",
+  selectedRowBackgroundColor: "rgba(59, 130, 246, 0.15)",
+  headerColumnResizeHandleColor: "rgb(61, 67, 99)",
+  chromeBackgroundColor: "rgb(22, 25, 34)",
+  oddRowBackgroundColor: "rgb(18, 20, 28)",
+});
 
 // ── Light theme matching Shellway's light design tokens ──
 const shellwayLightTheme = themeQuartz.withParams({
   ...sharedThemeParams,
-  backgroundColor: 'rgb(255, 255, 255)',
-  foregroundColor: 'rgb(15, 23, 42)',
-  headerBackgroundColor: 'rgb(248, 250, 252)',
-  headerTextColor: 'rgb(71, 85, 105)',
-  borderColor: 'rgb(226, 232, 240)',
-  rowBorder: 'rgb(226, 232, 240)',
-  rowHoverColor: 'rgb(248, 250, 252)',
-  selectedRowBackgroundColor: 'rgba(59, 130, 246, 0.1)',
-  headerColumnResizeHandleColor: 'rgb(203, 213, 225)',
-  chromeBackgroundColor: 'rgb(248, 250, 252)',
-  oddRowBackgroundColor: 'rgb(248, 250, 252)',
-})
+  backgroundColor: "rgb(255, 255, 255)",
+  foregroundColor: "rgb(15, 23, 42)",
+  headerBackgroundColor: "rgb(248, 250, 252)",
+  headerTextColor: "rgb(71, 85, 105)",
+  borderColor: "rgb(226, 232, 240)",
+  rowBorder: "rgb(226, 232, 240)",
+  rowHoverColor: "rgb(248, 250, 252)",
+  selectedRowBackgroundColor: "rgba(59, 130, 246, 0.1)",
+  headerColumnResizeHandleColor: "rgb(203, 213, 225)",
+  chromeBackgroundColor: "rgb(248, 250, 252)",
+  oddRowBackgroundColor: "rgb(248, 250, 252)",
+});
 
 // ── Auto-width constants ──
 // Maximum width (in px) that auto-sizing can assign to a column.
 // Prevents JSON blobs or large text from blowing up column widths.
-const MAX_AUTO_WIDTH = 250
+const MAX_AUTO_WIDTH = 250;
 // Minimum width for auto-sized columns (keeps narrow columns readable)
-const MIN_AUTO_WIDTH = 80
+const MIN_AUTO_WIDTH = 80;
 // Average character width in pixels at 13px font size (Inter/system font).
 // Used to estimate column widths from data without DOM measurement.
-const CHAR_WIDTH_PX = 7.5
+const CHAR_WIDTH_PX = 7.5;
 // Horizontal padding per cell (cellHorizontalPadding × 2 sides + sort icon space)
-const CELL_PADDING_PX = 28
+const CELL_PADDING_PX = 28;
 // Maximum number of rows to sample when estimating column widths
-const WIDTH_SAMPLE_ROWS = 100
+const WIDTH_SAMPLE_ROWS = 100;
 
 /**
  * Estimate the optimal column width based on the header name and a sample of row data.
@@ -87,38 +118,40 @@ const WIDTH_SAMPLE_ROWS = 100
 function estimateColumnWidth(
   headerName: string,
   rows: Record<string, unknown>[],
-  fieldName: string
+  fieldName: string,
 ): number {
   // Start with header text width (header is 12px, slightly narrower chars but bold)
-  let maxCharLen = headerName.length
+  let maxCharLen = headerName.length;
 
   // Sample rows to find the longest cell content
-  const sampleSize = Math.min(rows.length, WIDTH_SAMPLE_ROWS)
+  const sampleSize = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
   for (let i = 0; i < sampleSize; i++) {
-    const value = rows[i]?.[fieldName]
+    const value = rows[i]?.[fieldName];
     if (value === null || value === undefined) {
       // "(NULL)" display
-      maxCharLen = Math.max(maxCharLen, 6)
-      continue
+      maxCharLen = Math.max(maxCharLen, 6);
+      continue;
     }
-    let displayLen: number
-    if (typeof value === 'object') {
+    let displayLen: number;
+    if (typeof value === "object") {
       // JSON objects — show a preview, don't measure the full blob
-      const str = JSON.stringify(value)
-      displayLen = Math.min(str.length, 40)
-    } else if (typeof value === 'boolean') {
-      displayLen = 5 // "true" / "false"
+      const str = JSON.stringify(value);
+      displayLen = Math.min(str.length, 40);
+    } else if (typeof value === "boolean") {
+      displayLen = 5; // "true" / "false"
     } else {
-      const str = String(value)
+      const str = String(value);
       // Only measure up to the first line break for multiline text
-      const firstLine = str.indexOf('\n')
-      displayLen = firstLine >= 0 ? firstLine : str.length
+      const firstLine = str.indexOf("\n");
+      displayLen = firstLine >= 0 ? firstLine : str.length;
     }
-    maxCharLen = Math.max(maxCharLen, displayLen)
+    maxCharLen = Math.max(maxCharLen, displayLen);
   }
 
-  const estimatedWidth = Math.round(maxCharLen * CHAR_WIDTH_PX + CELL_PADDING_PX)
-  return Math.max(MIN_AUTO_WIDTH, Math.min(MAX_AUTO_WIDTH, estimatedWidth))
+  const estimatedWidth = Math.round(
+    maxCharLen * CHAR_WIDTH_PX + CELL_PADDING_PX,
+  );
+  return Math.max(MIN_AUTO_WIDTH, Math.min(MAX_AUTO_WIDTH, estimatedWidth));
 }
 
 // ── Props ──
@@ -126,86 +159,110 @@ function estimateColumnWidth(
 /** Map of column name → FK target info for FK navigation */
 export interface ForeignKeyMap {
   [columnName: string]: {
-    referencedTable: string
-    referencedColumn: string
-  }
+    referencedTable: string;
+    referencedColumn: string;
+  };
 }
 
 interface DataGridProps {
-  result: QueryResult | null
+  result: QueryResult | null;
   /** column=null means sort was removed */
-  onSort: (column: string | null, direction: 'asc' | 'desc') => void
-  isLoading: boolean
-  onCellEdit?: (rowIndex: number, field: string, oldValue: unknown, newValue: unknown) => void
+  onSort: (column: string | null, direction: "asc" | "desc") => void;
+  isLoading: boolean;
+  onCellEdit?: (
+    rowIndex: number,
+    field: string,
+    oldValue: unknown,
+    newValue: unknown,
+  ) => void;
   /** Column metadata — used to determine which columns are editable */
-  columnMeta?: SchemaColumn[]
+  columnMeta?: SchemaColumn[];
   /** Called when user selects "Filter with column" from header context menu */
-  onFilterColumn?: (column: string) => void
+  onFilterColumn?: (column: string) => void;
   /** Set of row indices that have pending staged changes (for visual highlighting) */
-  editedRows?: Set<number>
+  editedRows?: Set<number>;
   /** Set of "rowIndex-field" keys for cells with pending changes (for cell-level highlighting) */
-  editedCells?: Set<string>
+  editedCells?: Set<string>;
   /** Unique key for persisting column widths (e.g. "sql-colw:mysql:host:3306:mydb:users") */
-  columnWidthsKey?: string
+  columnWidthsKey?: string;
   /** FK column map for navigation arrows */
-  foreignKeys?: ForeignKeyMap
+  foreignKeys?: ForeignKeyMap;
   /** Called when user clicks FK arrow — navigate to referenced table */
-  onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
+  onNavigateFK?: (
+    table: string,
+    filterColumn: string,
+    filterValue: unknown,
+  ) => void;
   /** Called when hidden columns list changes (for external column picker in PaginationBar) */
-  onHiddenColumnsChange?: (hiddenColumns: string[]) => void
+  onHiddenColumnsChange?: (hiddenColumns: string[]) => void;
   /** Called when user requests inserting an empty row */
-  onInsertRow?: () => void
+  onInsertRow?: () => void;
   /** Called when user requests duplicating a row */
-  onDuplicateRow?: (rowData: Record<string, unknown>) => void
+  onDuplicateRow?: (rowData: Record<string, unknown>) => void;
   /** Called when user requests deleting rows by their indices */
-  onDeleteRows?: (rowIndices: number[]) => void
-
+  onDeleteRows?: (rowIndices: number[]) => void;
+  /** Actual table name used in generated SQL (e.g. `users` or `schema.users`). Falls back to 'table_name' if omitted. */
+  tableName?: string;
 }
 
 /** Imperative handle exposed by DataGrid via ref */
 export interface DataGridHandle {
-  toggleColumn: (colId: string, show: boolean) => void
-  showAllColumns: () => void
+  toggleColumn: (colId: string, show: boolean) => void;
+  showAllColumns: () => void;
 }
 
 // ── Context menu state (cell right-click) ──
 
 interface ContextMenuState {
-  x: number
-  y: number
-  items: { label: string; icon: React.ReactNode; action: () => void; separator?: boolean }[]
+  x: number;
+  y: number;
+  items: {
+    label: string;
+    icon: React.ReactNode;
+    action: () => void;
+    separator?: boolean;
+  }[];
 }
 
 // ── Header context menu state ──
 
 interface HeaderContextMenuState {
-  x: number
-  y: number
-  column: string
+  x: number;
+  y: number;
+  column: string;
 }
 
 // ── Custom cell renderers (minimal — only for NULL and boolean) ──
 
 function NullCellRenderer(params: { value: unknown }) {
   if (params.value === null || params.value === undefined) {
-    return <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    return (
+      <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    );
   }
   // Display SQL expression sentinels with special styling
-  const str = String(params.value)
+  const str = String(params.value);
   if (str === `${SQL_EXPR_PREFIX}NOW()`) {
-    return <span className="text-nd-accent font-medium select-none">NOW()</span>
+    return (
+      <span className="text-nd-accent font-medium select-none">NOW()</span>
+    );
   }
   if (str === `${SQL_EXPR_PREFIX}DEFAULT`) {
-    return <span className="text-nd-text-muted italic select-none">DEFAULT</span>
+    return (
+      <span className="text-nd-text-muted italic select-none">DEFAULT</span>
+    );
   }
-  return <>{str}</>
+  return <>{str}</>;
 }
 
 function BooleanCellRenderer(params: { value: unknown }) {
   if (params.value === null || params.value === undefined) {
-    return <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    return (
+      <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    );
   }
-  const checked = params.value === true || params.value === 1 || params.value === '1'
+  const checked =
+    params.value === true || params.value === 1 || params.value === "1";
   return (
     <input
       type="checkbox"
@@ -213,33 +270,39 @@ function BooleanCellRenderer(params: { value: unknown }) {
       readOnly
       className="pointer-events-none accent-nd-accent"
     />
-  )
+  );
 }
 
 // ── FK cell renderer — shows value + navigation arrow ──
 
 function FKCellRenderer(props: {
-  value: unknown
-  colDef: { field?: string }
+  value: unknown;
+  colDef: { field?: string };
   context: {
-    foreignKeys?: ForeignKeyMap
-    onNavigateFK?: (table: string, filterColumn: string, filterValue: unknown) => void
-  }
+    foreignKeys?: ForeignKeyMap;
+    onNavigateFK?: (
+      table: string,
+      filterColumn: string,
+      filterValue: unknown,
+    ) => void;
+  };
 }) {
-  const { value, colDef, context } = props
-  const field = colDef?.field
-  const fk = field ? context.foreignKeys?.[field] : null
+  const { value, colDef, context } = props;
+  const field = colDef?.field;
+  const fk = field ? context.foreignKeys?.[field] : null;
 
   if (value === null || value === undefined) {
-    return <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    return (
+      <span className="italic text-nd-text-muted select-none">(NULL)</span>
+    );
   }
 
   const handleFKClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
+    e.stopPropagation();
     if (fk && context.onNavigateFK && value !== null && value !== undefined) {
-      context.onNavigateFK(fk.referencedTable, fk.referencedColumn, value)
+      context.onNavigateFK(fk.referencedTable, fk.referencedColumn, value);
     }
-  }
+  };
 
   return (
     <span className="flex items-center gap-1 w-full group/fk">
@@ -254,36 +317,41 @@ function FKCellRenderer(props: {
         </button>
       )}
     </span>
-  )
+  );
 }
 
 // ── Column type detection ──
 
 const BOOLEAN_TYPES = new Set([
-  'boolean',
-  'bool',
-  'tinyint(1)',
-  'bit',
-  'bit(1)',
-])
+  "boolean",
+  "bool",
+  "tinyint(1)",
+  "bit",
+  "bit(1)",
+]);
 
 function isBooleanType(type: string): boolean {
-  return BOOLEAN_TYPES.has(type.toLowerCase())
+  return BOOLEAN_TYPES.has(type.toLowerCase());
 }
 
 function needsNullRenderer(type: string): boolean {
-  return !isBooleanType(type)
+  return !isBooleanType(type);
 }
 
 // ── Clamp context menu position to stay within viewport ──
 
-function clampMenuPosition(x: number, y: number, menuWidth: number, menuHeight: number) {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
+function clampMenuPosition(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   return {
     left: x + menuWidth > vw ? Math.max(0, vw - menuWidth - 4) : x,
     top: y + menuHeight > vh ? Math.max(0, vh - menuHeight - 4) : y,
-  }
+  };
 }
 
 // ── Context menu button component ──
@@ -293,9 +361,9 @@ function CtxMenuItem({
   label,
   onClick,
 }: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -305,856 +373,975 @@ function CtxMenuItem({
       {icon}
       {label}
     </button>
-  )
+  );
 }
 
 function CtxSeparator() {
-  return <div className="my-1 h-px bg-nd-border" />
+  return <div className="my-1 h-px bg-nd-border" />;
 }
 
 // ── Component ──
 
-export const DataGrid = React.memo(React.forwardRef<DataGridHandle, DataGridProps>(function DataGrid({
-  result,
-  onSort,
-  isLoading,
-  onCellEdit,
-  columnMeta,
-  onFilterColumn,
-  editedRows,
-  editedCells,
-  columnWidthsKey,
-  foreignKeys,
-  onNavigateFK,
-  onHiddenColumnsChange,
-  onInsertRow,
-  onDuplicateRow,
-  onDeleteRows,
-}, ref) {
-  const gridRef = useRef<AgGridReact>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
-  const [headerContextMenu, setHeaderContextMenu] = useState<HeaderContextMenuState | null>(null)
-  const [timestampDropdown, setTimestampDropdown] = useState<TimestampDropdownState | null>(null)
-  const resolvedTheme = useUIStore((s) => s.resolvedTheme)
-  const gridTheme = resolvedTheme === 'light' ? shellwayLightTheme : shellwayDarkTheme
-
-  // ── Column width persistence ref ──
-  // Holds the current column widths for this table. Read by columnDefs useMemo so that
-  // every time columnDefs re-runs (foreignKeys load, editedCells change, etc.), the
-  // correct widths are baked into the ColDef objects — preventing ag-grid from
-  // resetting widths to defaultColDef.width on column definition updates.
-  //
-  // Initialized from localStorage on mount (synchronous — available for first render).
-  // Updated eagerly in onColumnResized (before the debounced localStorage save).
-  const columnWidthsRef = useRef<Record<string, number> | null>(null)
-  const columnWidthsKeyRef = useRef(columnWidthsKey)
-
-  // Read saved column widths from localStorage (returns null if unavailable)
-  const readSavedWidths = (key: string): Record<string, number> | null => {
-    try {
-      const raw = localStorage.getItem(key)
-      return raw ? JSON.parse(raw) : null
-    } catch {
-      return null
-    }
-  }
-
-  // Load saved widths when the table key changes (component mount or table switch)
-  if (columnWidthsKeyRef.current !== columnWidthsKey) {
-    columnWidthsKeyRef.current = columnWidthsKey
-    columnWidthsRef.current = columnWidthsKey ? readSavedWidths(columnWidthsKey) : null
-  }
-  // Also initialize on very first render
-  if (columnWidthsRef.current === null && columnWidthsKey) {
-    columnWidthsRef.current = readSavedWidths(columnWidthsKey)
-  }
-
-  // Cache auto-estimated widths per field set — recalculated when fields change,
-  // NOT when rows change (to avoid re-estimating on pagination or cell edits).
-  const estimatedWidthsRef = useRef<Record<string, number> | null>(null)
-  const prevFieldsRef = useRef<string>('')
-  const fieldsFingerprint = result?.fields ? JSON.stringify(result.fields.map((f) => f.name)) : ''
-
-  // Compute estimated widths from field definitions + row data.
-  // Boolean columns get MIN_AUTO_WIDTH; all others get content-based estimates.
-  const computeEstimatedWidths = () => {
-    if (!result?.fields?.length || !result.rows?.length) return null
-    const widths: Record<string, number> = {}
-    for (const field of result.fields) {
-      widths[field.name] = isBooleanType(field.type)
-        ? MIN_AUTO_WIDTH
-        : estimateColumnWidth(field.name, result.rows, field.name)
-    }
-    return widths
-  }
-
-  // Recompute when fields change (new query or table switch)
-  if (fieldsFingerprint !== prevFieldsRef.current) {
-    prevFieldsRef.current = fieldsFingerprint
-    estimatedWidthsRef.current = computeEstimatedWidths()
-  }
-  // Also compute on very first render if not yet computed and data is available
-  if (!estimatedWidthsRef.current && result?.fields?.length && result.rows?.length) {
-    estimatedWidthsRef.current = computeEstimatedWidths()
-  }
-
-  // Close cell context menu on click outside or scroll
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    window.addEventListener('click', close)
-    window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('scroll', close, true)
-    }
-  }, [contextMenu])
-
-  // Close header context menu on click outside or scroll
-  useEffect(() => {
-    if (!headerContextMenu) return
-    const close = () => setHeaderContextMenu(null)
-    window.addEventListener('click', close)
-    window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('scroll', close, true)
-    }
-  }, [headerContextMenu])
-
-  // ── Timestamp column detection (for hover icon overlay) ──
-
-  const timestampColumns = useMemo(() => {
-    if (!result?.fields) return new Set<string>()
-    return new Set(
-      result.fields.filter((f) => isTimestampType(f.type)).map((f) => f.name)
-    )
-  }, [result?.fields])
-
-  // ── Floating timestamp icon — tracks hovered timestamp cell ──
-
-  const [tsIconTarget, setTsIconTarget] = useState<{
-    cellEl: HTMLElement
-    rowIndex: number
-    field: string
-    value: unknown
-  } | null>(null)
-
-  // Track hovered cell via event delegation on the grid container
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || timestampColumns.size === 0 || !onCellEdit) return
-
-    let currentCell: HTMLElement | null = null
-
-    const handleMouseOver = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      const cell = target.closest<HTMLElement>('.ag-cell')
-      if (!cell || cell === currentCell) return
-      currentCell = cell
-
-      const colId = cell.getAttribute('col-id')
-      if (!colId || !timestampColumns.has(colId)) {
-        setTsIconTarget(null)
-        return
-      }
-
-      // Find the row element to get the row index
-      const row = cell.closest<HTMLElement>('.ag-row')
-      if (!row) { setTsIconTarget(null); return }
-      const rowIdx = parseInt(row.getAttribute('row-index') ?? '', 10)
-      if (isNaN(rowIdx)) { setTsIconTarget(null); return }
-
-      // Get the cell value from the row data
-      const rowNode = gridRef.current?.api?.getRowNode(String(rowIdx))
-      const value = rowNode?.data?.[colId]
-
-      setTsIconTarget({ cellEl: cell, rowIndex: rowIdx, field: colId, value })
-    }
-
-    const handleMouseLeave = () => {
-      currentCell = null
-      setTsIconTarget(null)
-    }
-
-    container.addEventListener('mouseover', handleMouseOver)
-    container.addEventListener('mouseleave', handleMouseLeave)
-    return () => {
-      container.removeEventListener('mouseover', handleMouseOver)
-      container.removeEventListener('mouseleave', handleMouseLeave)
-    }
-  }, [timestampColumns, onCellEdit])
-
-  // Compute icon position from the target cell element
-  const tsIconPos = useMemo(() => {
-    if (!tsIconTarget) return null
-    const rect = tsIconTarget.cellEl.getBoundingClientRect()
-    return {
-      top: rect.top + (rect.height - 18) / 2,
-      left: rect.right - 20,
-    }
-  }, [tsIconTarget])
-
-  // ── Timestamp dropdown handlers ──
-
-  const handleTimestampDropdown = useCallback((state: TimestampDropdownState) => {
-    setTimestampDropdown(state)
-    setTsIconTarget(null) // hide icon when dropdown opens
-    // Dismiss other menus
-    setContextMenu(null)
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleTimestampSetValue = useCallback(
-    (rowIndex: number, field: string, value: unknown) => {
-      if (!gridRef.current?.api) return
-      const rowNode = gridRef.current.api.getRowNode(String(rowIndex))
-      if (!rowNode) return
-      // setDataValue triggers onCellValueChanged → flows through handleCellEdit
-      rowNode.setDataValue(field, value)
+export const DataGrid = React.memo(
+  React.forwardRef<DataGridHandle, DataGridProps>(function DataGrid(
+    {
+      result,
+      onSort,
+      isLoading,
+      onCellEdit,
+      columnMeta,
+      onFilterColumn,
+      editedRows,
+      editedCells,
+      columnWidthsKey,
+      foreignKeys,
+      onNavigateFK,
+      onHiddenColumnsChange,
+      onInsertRow,
+      onDuplicateRow,
+      onDeleteRows,
+      tableName,
     },
-    []
-  )
+    ref,
+  ) {
+    const gridRef = useRef<AgGridReact>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
+      null,
+    );
+    const [headerContextMenu, setHeaderContextMenu] =
+      useState<HeaderContextMenuState | null>(null);
+    const [timestampDropdown, setTimestampDropdown] =
+      useState<TimestampDropdownState | null>(null);
+    const resolvedTheme = useUIStore((s) => s.resolvedTheme);
+    const gridTheme =
+      resolvedTheme === "light" ? shellwayLightTheme : shellwayDarkTheme;
 
-  // Keyboard Delete/Backspace handler for selected rows
-  useEffect(() => {
-    if (!onDeleteRows) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Only trigger when Delete or Backspace is pressed
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
-      // Don't trigger when editing a cell or inside an input/textarea
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
-      // Don't trigger when inside Monaco editor
-      if (target.closest('.monaco-editor')) return
-      // Check if we're within this grid container
-      if (!containerRef.current?.contains(target)) return
+    // ── Column width persistence ref ──
+    // Holds the current column widths for this table. Read by columnDefs useMemo so that
+    // every time columnDefs re-runs (foreignKeys load, editedCells change, etc.), the
+    // correct widths are baked into the ColDef objects — preventing ag-grid from
+    // resetting widths to defaultColDef.width on column definition updates.
+    //
+    // Initialized from localStorage on mount (synchronous — available for first render).
+    // Updated eagerly in onColumnResized (before the debounced localStorage save).
+    const columnWidthsRef = useRef<Record<string, number> | null>(null);
+    const columnWidthsKeyRef = useRef(columnWidthsKey);
 
-      const selectedRows = gridRef.current?.api?.getSelectedRows() ?? []
-      if (selectedRows.length === 0) return
+    // Read saved column widths from localStorage (returns null if unavailable)
+    const readSavedWidths = (key: string): Record<string, number> | null => {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    };
 
-      e.preventDefault()
-      const indices = selectedRows.map((r: Record<string, unknown>) => r.__rowIndex as number)
-      onDeleteRows(indices)
+    // Load saved widths when the table key changes (component mount or table switch)
+    if (columnWidthsKeyRef.current !== columnWidthsKey) {
+      columnWidthsKeyRef.current = columnWidthsKey;
+      columnWidthsRef.current = columnWidthsKey
+        ? readSavedWidths(columnWidthsKey)
+        : null;
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onDeleteRows])
-
-  // Header right-click listener (event delegation on grid container)
-  // Attach header right-click handler — re-run when result changes
-  // (the container div is conditionally rendered based on result/isLoading)
-  const hasGrid = !!(result || isLoading)
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const handleHeaderRightClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      const headerCell = target.closest('.ag-header-cell')
-      if (!headerCell) return
-      // Ensure it's within the header area (not a cell that happens to match)
-      const headerArea = target.closest('.ag-header')
-      if (!headerArea) return
-
-      e.preventDefault()
-      e.stopPropagation()
-
-      const colId = headerCell.getAttribute('col-id')
-      if (!colId) return
-
-      setHeaderContextMenu({ x: e.clientX, y: e.clientY, column: colId })
-      // Dismiss cell context menu if open
-      setContextMenu(null)
+    // Also initialize on very first render
+    if (columnWidthsRef.current === null && columnWidthsKey) {
+      columnWidthsRef.current = readSavedWidths(columnWidthsKey);
     }
 
-    container.addEventListener('contextmenu', handleHeaderRightClick, true)
-    return () => container.removeEventListener('contextmenu', handleHeaderRightClick, true)
-  }, [hasGrid])
+    // Cache auto-estimated widths per field set — recalculated when fields change,
+    // NOT when rows change (to avoid re-estimating on pagination or cell edits).
+    const estimatedWidthsRef = useRef<Record<string, number> | null>(null);
+    const prevFieldsRef = useRef<string>("");
+    const fieldsFingerprint = result?.fields
+      ? JSON.stringify(result.fields.map((f) => f.name))
+      : "";
 
-  // Build a set of non-editable column names (auto-increment PKs, computed columns)
-  const nonEditableColumns = useMemo(() => {
-    if (!columnMeta) return new Set<string>()
-    return new Set(
-      columnMeta
-        .filter((c) => c.isAutoIncrement || (c.isPrimaryKey && c.isAutoIncrement))
-        .map((c) => c.name)
-    )
-  }, [columnMeta])
+    // Compute estimated widths from field definitions + row data.
+    // Boolean columns get MIN_AUTO_WIDTH; all others get content-based estimates.
+    const computeEstimatedWidths = () => {
+      if (!result?.fields?.length || !result.rows?.length) return null;
+      const widths: Record<string, number> = {};
+      for (const field of result.fields) {
+        widths[field.name] = isBooleanType(field.type)
+          ? MIN_AUTO_WIDTH
+          : estimateColumnWidth(field.name, result.rows, field.name);
+      }
+      return widths;
+    };
 
-  // Column definitions derived from result fields — only table columns, no row numbers.
-  // Saved widths are baked into each ColDef from columnWidthsRef so that every time
-  // this useMemo re-runs (foreignKeys load, editedCells change, etc.), the correct
-  // widths are always present — preventing ag-grid from resetting to defaults.
-  const columnDefs = useMemo<ColDef[]>(() => {
-    if (!result?.fields?.length) return []
+    // Recompute when fields change (new query or table switch)
+    if (fieldsFingerprint !== prevFieldsRef.current) {
+      prevFieldsRef.current = fieldsFingerprint;
+      estimatedWidthsRef.current = computeEstimatedWidths();
+    }
+    // Also compute on very first render if not yet computed and data is available
+    if (
+      !estimatedWidthsRef.current &&
+      result?.fields?.length &&
+      result.rows?.length
+    ) {
+      estimatedWidthsRef.current = computeEstimatedWidths();
+    }
 
-    // Read current widths from ref (initialized from localStorage, updated on resize)
-    const savedWidths = columnWidthsRef.current
+    // Close cell context menu on click outside or scroll
+    useEffect(() => {
+      if (!contextMenu) return;
+      const close = () => setContextMenu(null);
+      window.addEventListener("click", close);
+      window.addEventListener("scroll", close, true);
+      return () => {
+        window.removeEventListener("click", close);
+        window.removeEventListener("scroll", close, true);
+      };
+    }, [contextMenu]);
 
-    return result.fields.map((field) => {
-      const col: ColDef = {
-        headerName: field.name,
-        field: field.name,
+    // Close header context menu on click outside or scroll
+    useEffect(() => {
+      if (!headerContextMenu) return;
+      const close = () => setHeaderContextMenu(null);
+      window.addEventListener("click", close);
+      window.addEventListener("scroll", close, true);
+      return () => {
+        window.removeEventListener("click", close);
+        window.removeEventListener("scroll", close, true);
+      };
+    }, [headerContextMenu]);
+
+    // ── Timestamp column detection (for hover icon overlay) ──
+
+    const timestampColumns = useMemo(() => {
+      if (!result?.fields) return new Set<string>();
+      return new Set(
+        result.fields.filter((f) => isTimestampType(f.type)).map((f) => f.name),
+      );
+    }, [result?.fields]);
+
+    // ── Floating timestamp icon — tracks hovered timestamp cell ──
+
+    const [tsIconTarget, setTsIconTarget] = useState<{
+      cellEl: HTMLElement;
+      rowIndex: number;
+      field: string;
+      value: unknown;
+    } | null>(null);
+
+    // Track hovered cell via event delegation on the grid container
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container || timestampColumns.size === 0 || !onCellEdit) return;
+
+      let currentCell: HTMLElement | null = null;
+
+      const handleMouseOver = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const cell = target.closest<HTMLElement>(".ag-cell");
+        if (!cell || cell === currentCell) return;
+        currentCell = cell;
+
+        const colId = cell.getAttribute("col-id");
+        if (!colId || !timestampColumns.has(colId)) {
+          setTsIconTarget(null);
+          return;
+        }
+
+        // Find the row element to get the row index
+        const row = cell.closest<HTMLElement>(".ag-row");
+        if (!row) {
+          setTsIconTarget(null);
+          return;
+        }
+        const rowIdx = parseInt(row.getAttribute("row-index") ?? "", 10);
+        if (isNaN(rowIdx)) {
+          setTsIconTarget(null);
+          return;
+        }
+
+        // Get the cell value from the row data
+        const rowNode = gridRef.current?.api?.getRowNode(String(rowIdx));
+        const value = rowNode?.data?.[colId];
+
+        setTsIconTarget({
+          cellEl: cell,
+          rowIndex: rowIdx,
+          field: colId,
+          value,
+        });
+      };
+
+      const handleMouseLeave = () => {
+        currentCell = null;
+        setTsIconTarget(null);
+      };
+
+      container.addEventListener("mouseover", handleMouseOver);
+      container.addEventListener("mouseleave", handleMouseLeave);
+      return () => {
+        container.removeEventListener("mouseover", handleMouseOver);
+        container.removeEventListener("mouseleave", handleMouseLeave);
+      };
+    }, [timestampColumns, onCellEdit]);
+
+    // Compute icon position from the target cell element
+    const tsIconPos = useMemo(() => {
+      if (!tsIconTarget) return null;
+      const rect = tsIconTarget.cellEl.getBoundingClientRect();
+      return {
+        top: rect.top + (rect.height - 18) / 2,
+        left: rect.right - 20,
+      };
+    }, [tsIconTarget]);
+
+    // ── Timestamp dropdown handlers ──
+
+    const handleTimestampDropdown = useCallback(
+      (state: TimestampDropdownState) => {
+        setTimestampDropdown(state);
+        setTsIconTarget(null); // hide icon when dropdown opens
+        // Dismiss other menus
+        setContextMenu(null);
+        setHeaderContextMenu(null);
+      },
+      [],
+    );
+
+    const handleTimestampSetValue = useCallback(
+      (rowIndex: number, field: string, value: unknown) => {
+        if (!gridRef.current?.api) return;
+        const rowNode = gridRef.current.api.getRowNode(String(rowIndex));
+        if (!rowNode) return;
+        // setDataValue triggers onCellValueChanged → flows through handleCellEdit
+        rowNode.setDataValue(field, value);
+      },
+      [],
+    );
+
+    // Keyboard Delete/Backspace handler for selected rows
+    useEffect(() => {
+      if (!onDeleteRows) return;
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // Only trigger when Delete or Backspace is pressed
+        if (e.key !== "Delete" && e.key !== "Backspace") return;
+        // Don't trigger when editing a cell or inside an input/textarea
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable
+        )
+          return;
+        // Don't trigger when inside Monaco editor
+        if (target.closest(".monaco-editor")) return;
+        // Check if we're within this grid container
+        if (!containerRef.current?.contains(target)) return;
+
+        const selectedRows = gridRef.current?.api?.getSelectedRows() ?? [];
+        if (selectedRows.length === 0) return;
+
+        e.preventDefault();
+        const indices = selectedRows.map(
+          (r: Record<string, unknown>) => r.__rowIndex as number,
+        );
+        onDeleteRows(indices);
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [onDeleteRows]);
+
+    // Header right-click listener (event delegation on grid container)
+    // Attach header right-click handler — re-run when result changes
+    // (the container div is conditionally rendered based on result/isLoading)
+    const hasGrid = !!(result || isLoading);
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const handleHeaderRightClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const headerCell = target.closest(".ag-header-cell");
+        if (!headerCell) return;
+        // Ensure it's within the header area (not a cell that happens to match)
+        const headerArea = target.closest(".ag-header");
+        if (!headerArea) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const colId = headerCell.getAttribute("col-id");
+        if (!colId) return;
+
+        setHeaderContextMenu({ x: e.clientX, y: e.clientY, column: colId });
+        // Dismiss cell context menu if open
+        setContextMenu(null);
+      };
+
+      container.addEventListener("contextmenu", handleHeaderRightClick, true);
+      return () =>
+        container.removeEventListener(
+          "contextmenu",
+          handleHeaderRightClick,
+          true,
+        );
+    }, [hasGrid]);
+
+    // Build a set of non-editable column names (auto-increment PKs, computed columns)
+    const nonEditableColumns = useMemo(() => {
+      if (!columnMeta) return new Set<string>();
+      return new Set(
+        columnMeta
+          .filter(
+            (c) => c.isAutoIncrement || (c.isPrimaryKey && c.isAutoIncrement),
+          )
+          .map((c) => c.name),
+      );
+    }, [columnMeta]);
+
+    // Column definitions derived from result fields — only table columns, no row numbers.
+    // Saved widths are baked into each ColDef from columnWidthsRef so that every time
+    // this useMemo re-runs (foreignKeys load, editedCells change, etc.), the correct
+    // widths are always present — preventing ag-grid from resetting to defaults.
+    const columnDefs = useMemo<ColDef[]>(() => {
+      if (!result?.fields?.length) return [];
+
+      // Read current widths from ref (initialized from localStorage, updated on resize)
+      const savedWidths = columnWidthsRef.current;
+
+      return result.fields.map((field) => {
+        const col: ColDef = {
+          headerName: field.name,
+          field: field.name,
+          resizable: true,
+          filter: false,
+          cellStyle: { fontSize: "13px" },
+          tooltipValueGetter: (params) => {
+            if (params.value === null || params.value === undefined)
+              return "(NULL)";
+            const str =
+              typeof params.value === "object"
+                ? JSON.stringify(params.value, null, 2)
+                : String(params.value);
+            return str.length > 100 ? str : undefined;
+          },
+        };
+
+        // Width priority: P1 saved user width → P2 auto-size from content → P3 capped at MAX_AUTO_WIDTH
+        if (savedWidths && savedWidths[field.name] !== undefined) {
+          // P1: User has manually resized this column — always respect their preference
+          col.width = savedWidths[field.name];
+        } else if (isBooleanType(field.type)) {
+          col.width = MIN_AUTO_WIDTH;
+        } else if (estimatedWidthsRef.current?.[field.name] !== undefined) {
+          // P2 + P3: Content-based estimated width, clamped to [MIN_AUTO_WIDTH, MAX_AUTO_WIDTH]
+          col.width = estimatedWidthsRef.current[field.name];
+        }
+        // No estimated width yet = use defaultColDef.width (150px) as fallback
+
+        if (isBooleanType(field.type)) {
+          col.cellRenderer = BooleanCellRenderer;
+        } else if (foreignKeys && foreignKeys[field.name]) {
+          // FK column — use FK-aware renderer with navigation arrow
+          col.cellRenderer = FKCellRenderer;
+        } else if (needsNullRenderer(field.type)) {
+          col.cellRenderer = NullCellRenderer;
+        }
+
+        // Only make non-auto-increment columns editable
+        if (onCellEdit && !nonEditableColumns.has(field.name)) {
+          col.editable = true;
+        }
+
+        // Highlight individual edited cells
+        if (editedCells) {
+          col.cellClassRules = {
+            "ag-cell-edited": (params) => {
+              if (!params.data) return false;
+              const idx = params.data.__rowIndex as number;
+              return editedCells.has(`${idx}-${field.name}`);
+            },
+          };
+        }
+
+        return col;
+      });
+    }, [
+      result?.fields,
+      onCellEdit,
+      nonEditableColumns,
+      editedCells,
+      foreignKeys,
+    ]);
+
+    // Row data
+    const rowData = useMemo(() => result?.rows ?? [], [result?.rows]);
+
+    // Row class rules — highlight rows with staged changes
+    const getRowClass = useCallback(
+      (params: { data?: Record<string, unknown> }) => {
+        if (!editedRows || !params.data) return "";
+        const idx = params.data.__rowIndex as number;
+        return editedRows.has(idx) ? "ag-row-edited" : "";
+      },
+      [editedRows],
+    );
+
+    // Force ag-grid to re-evaluate row/cell classes when edited sets change
+    useEffect(() => {
+      if (!gridRef.current?.api) return;
+      // redrawRows re-evaluates getRowClass and cellClassRules for all visible rows
+      gridRef.current.api.redrawRows();
+    }, [editedRows, editedCells]);
+
+    // Stable row IDs
+    const getRowId = useCallback(
+      (params: GetRowIdParams) => String(params.data.__rowIndex ?? 0),
+      [],
+    );
+
+    // Default column settings — sortable with no-op comparator (server-side sorting only)
+    // Default width (150px) is the initial width before auto-sizing kicks in on first
+    // data render. Auto-sizing respects: P1 saved user widths → P2 content auto-size
+    // → P3 clamped at MAX_AUTO_WIDTH to prevent JSON/text blobs from blowing up columns.
+    const defaultColDef = useMemo<ColDef>(
+      () => ({
+        sortable: true,
         resizable: true,
         filter: false,
-        cellStyle: { fontSize: '13px' },
-        tooltipValueGetter: (params) => {
-          if (params.value === null || params.value === undefined) return '(NULL)'
-          const str = typeof params.value === 'object' ? JSON.stringify(params.value, null, 2) : String(params.value)
-          return str.length > 100 ? str : undefined
-        },
-      }
+        suppressHeaderMenuButton: true,
+        comparator: () => 0, // Prevent client-side sorting; server-side only
+        unSortIcon: true,
+        sortingOrder: ["desc", "asc", null], // Start with desc — data is already asc by default
+        width: 150,
+        // Disable ag-grid's automatic cell data type detection. Without this,
+        // AllCommunityModule detects Date objects / date strings and auto-assigns
+        // a date-picker cell editor — preventing free-text typing in timestamp cells.
+        cellDataType: false,
+      }),
+      [],
+    );
 
-      // Width priority: P1 saved user width → P2 auto-size from content → P3 capped at MAX_AUTO_WIDTH
-      if (savedWidths && savedWidths[field.name] !== undefined) {
-        // P1: User has manually resized this column — always respect their preference
-        col.width = savedWidths[field.name]
-      } else if (isBooleanType(field.type)) {
-        col.width = MIN_AUTO_WIDTH
-      } else if (estimatedWidthsRef.current?.[field.name] !== undefined) {
-        // P2 + P3: Content-based estimated width, clamped to [MIN_AUTO_WIDTH, MAX_AUTO_WIDTH]
-        col.width = estimatedWidthsRef.current[field.name]
-      }
-      // No estimated width yet = use defaultColDef.width (150px) as fallback
-
-      if (isBooleanType(field.type)) {
-        col.cellRenderer = BooleanCellRenderer
-      } else if (foreignKeys && foreignKeys[field.name]) {
-        // FK column — use FK-aware renderer with navigation arrow
-        col.cellRenderer = FKCellRenderer
-      } else if (needsNullRenderer(field.type)) {
-        col.cellRenderer = NullCellRenderer
-      }
-
-      // Only make non-auto-increment columns editable
-      if (onCellEdit && !nonEditableColumns.has(field.name)) {
-        col.editable = true
-      }
-
-      // Highlight individual edited cells
-      if (editedCells) {
-        col.cellClassRules = {
-          'ag-cell-edited': (params) => {
-            if (!params.data) return false
-            const idx = params.data.__rowIndex as number
-            return editedCells.has(`${idx}-${field.name}`)
-          },
+    // Handle header click for server-side sorting (asc → desc → none)
+    const onSortChanged = useCallback(() => {
+      if (!gridRef.current?.api) return;
+      const sortModel = gridRef.current.api
+        .getColumnState()
+        .filter((c) => c.sort);
+      if (sortModel.length > 0) {
+        const { colId, sort } = sortModel[0];
+        if (colId && sort) {
+          onSort(colId, sort as "asc" | "desc");
         }
+      } else {
+        // Sort was removed (3rd click cycle)
+        onSort(null, "asc");
       }
+    }, [onSort]);
 
-      return col
-    })
-  }, [result?.fields, onCellEdit, nonEditableColumns, editedCells, foreignKeys])
-
-  // Row data
-  const rowData = useMemo(() => result?.rows ?? [], [result?.rows])
-
-  // Row class rules — highlight rows with staged changes
-  const getRowClass = useCallback(
-    (params: { data?: Record<string, unknown> }) => {
-      if (!editedRows || !params.data) return ''
-      const idx = params.data.__rowIndex as number
-      return editedRows.has(idx) ? 'ag-row-edited' : ''
-    },
-    [editedRows]
-  )
-
-  // Force ag-grid to re-evaluate row/cell classes when edited sets change
-  useEffect(() => {
-    if (!gridRef.current?.api) return
-    // redrawRows re-evaluates getRowClass and cellClassRules for all visible rows
-    gridRef.current.api.redrawRows()
-  }, [editedRows, editedCells])
-
-  // Stable row IDs
-  const getRowId = useCallback(
-    (params: GetRowIdParams) => String(params.data.__rowIndex ?? 0),
-    []
-  )
-
-  // Default column settings — sortable with no-op comparator (server-side sorting only)
-  // Default width (150px) is the initial width before auto-sizing kicks in on first
-  // data render. Auto-sizing respects: P1 saved user widths → P2 content auto-size
-  // → P3 clamped at MAX_AUTO_WIDTH to prevent JSON/text blobs from blowing up columns.
-  const defaultColDef = useMemo<ColDef>(
-    () => ({
-      sortable: true,
-      resizable: true,
-      filter: false,
-      suppressHeaderMenuButton: true,
-      comparator: () => 0, // Prevent client-side sorting; server-side only
-      unSortIcon: true,
-      sortingOrder: ['desc', 'asc', null], // Start with desc — data is already asc by default
-      width: 150,
-      // Disable ag-grid's automatic cell data type detection. Without this,
-      // AllCommunityModule detects Date objects / date strings and auto-assigns
-      // a date-picker cell editor — preventing free-text typing in timestamp cells.
-      cellDataType: false,
-    }),
-    []
-  )
-
-  // Handle header click for server-side sorting (asc → desc → none)
-  const onSortChanged = useCallback(() => {
-    if (!gridRef.current?.api) return
-    const sortModel = gridRef.current.api.getColumnState().filter((c) => c.sort)
-    if (sortModel.length > 0) {
-      const { colId, sort } = sortModel[0]
-      if (colId && sort) {
-        onSort(colId, sort as 'asc' | 'desc')
-      }
-    } else {
-      // Sort was removed (3rd click cycle)
-      onSort(null, 'asc')
-    }
-  }, [onSort])
-
-  // Cell edit handler
-  const onCellValueChanged = useCallback(
-    (event: { rowIndex: number | null; colDef: ColDef; oldValue: unknown; newValue: unknown }) => {
-      if (!onCellEdit || event.rowIndex === null) return
-      onCellEdit(event.rowIndex, event.colDef.field ?? '', event.oldValue, event.newValue)
-    },
-    [onCellEdit]
-  )
-
-  // Right-click context menu on cells
-  const onCellContextMenu = useCallback((event: CellContextMenuEvent) => {
-    const nativeEvent = event.event as MouseEvent | undefined
-    nativeEvent?.preventDefault()
-
-    const cellValue = event.value
-    const rowData = event.data
-
-    const items: ContextMenuState['items'] = [
-      {
-        label: 'Copy Cell',
-        icon: <Copy size={13} />,
-        action: () => {
-          const text = cellValue === null || cellValue === undefined
-            ? ''
-            : typeof cellValue === 'object'
-              ? JSON.stringify(cellValue)
-              : String(cellValue)
-          navigator.clipboard.writeText(text)
-        },
+    // Cell edit handler
+    const onCellValueChanged = useCallback(
+      (event: {
+        rowIndex: number | null;
+        colDef: ColDef;
+        oldValue: unknown;
+        newValue: unknown;
+      }) => {
+        if (!onCellEdit || event.rowIndex === null) return;
+        onCellEdit(
+          event.rowIndex,
+          event.colDef.field ?? "",
+          event.oldValue,
+          event.newValue,
+        );
       },
-      {
-        label: 'Copy Row as JSON',
-        icon: <FileJson size={13} />,
-        action: () => {
-          if (rowData) {
-            const { __rowIndex, ...clean } = rowData
-            navigator.clipboard.writeText(JSON.stringify(clean, null, 2))
-          }
-        },
-      },
-      {
-        label: 'Copy Row as INSERT',
-        icon: <ClipboardCopy size={13} />,
-        action: () => {
-          if (rowData) {
-            const { __rowIndex, ...clean } = rowData
-            const cols = Object.keys(clean).join(', ')
-            const vals = Object.values(clean)
-              .map((v) =>
-                v === null || v === undefined
-                  ? 'NULL'
-                  : typeof v === 'number'
-                    ? String(v)
-                    : `'${String(v).replace(/'/g, "''")}'`
-              )
-              .join(', ')
-            navigator.clipboard.writeText(`INSERT INTO table_name (${cols}) VALUES (${vals});`)
-          }
-        },
-      },
-    ]
+      [onCellEdit],
+    );
 
-    // Insert / Duplicate row actions
-    if (onInsertRow || onDuplicateRow) {
-      items.push({ label: '', icon: null, action: () => {}, separator: true })
-      if (onInsertRow) {
-        items.push({
-          label: 'Insert Empty Row',
-          icon: <Plus size={13} />,
-          action: () => onInsertRow(),
-        })
-      }
-      if (onDuplicateRow && rowData) {
-          items.push({
-            label: 'Duplicate Row',
+    // Right-click context menu on cells
+    const onCellContextMenu = useCallback(
+      (event: CellContextMenuEvent) => {
+        const nativeEvent = event.event as MouseEvent | undefined;
+        nativeEvent?.preventDefault();
+
+        const cellValue = event.value;
+        const rowData = event.data;
+
+        const items: ContextMenuState["items"] = [
+          {
+            label: "Copy Cell",
             icon: <Copy size={13} />,
             action: () => {
-              const { __rowIndex, ...clean } = rowData
-              onDuplicateRow(clean)
+              const text =
+                cellValue === null || cellValue === undefined
+                  ? ""
+                  : typeof cellValue === "object"
+                    ? JSON.stringify(cellValue)
+                    : String(cellValue);
+              navigator.clipboard.writeText(text);
             },
-          })
-        }
-        if (onDeleteRows && rowData) {
-          const rowIndex = rowData.__rowIndex as number
+          },
+          {
+            label: "Copy Row as JSON",
+            icon: <FileJson size={13} />,
+            action: () => {
+              if (rowData) {
+                const { __rowIndex, ...clean } = rowData;
+                navigator.clipboard.writeText(JSON.stringify(clean, null, 2));
+              }
+            },
+          },
+          {
+            label: "Copy Row as INSERT",
+            icon: <ClipboardCopy size={13} />,
+            action: () => {
+              if (rowData) {
+                const { __rowIndex, ...clean } = rowData;
+                const cols = Object.keys(clean).join(", ");
+                const vals = Object.values(clean)
+                  .map((v) =>
+                    v === null || v === undefined
+                      ? "NULL"
+                      : typeof v === "number"
+                        ? String(v)
+                        : `'${String(v).replace(/'/g, "''")}'`,
+                  )
+                  .join(", ");
+                navigator.clipboard.writeText(
+                  `INSERT INTO ${tableName ?? "table_name"} (${cols}) VALUES (${vals});`,
+                );
+              }
+            },
+          },
+        ];
+
+        // Insert / Duplicate row actions
+        if (onInsertRow || onDuplicateRow) {
           items.push({
-            label: 'Delete Row',
-            icon: <Trash2 size={13} />,
-            action: () => onDeleteRows([rowIndex]),
-          })
+            label: "",
+            icon: null,
+            action: () => {},
+            separator: true,
+          });
+          if (onInsertRow) {
+            items.push({
+              label: "Insert Empty Row",
+              icon: <Plus size={13} />,
+              action: () => onInsertRow(),
+            });
+          }
+          if (onDuplicateRow && rowData) {
+            items.push({
+              label: "Duplicate Row",
+              icon: <Copy size={13} />,
+              action: () => {
+                const { __rowIndex, ...clean } = rowData;
+                onDuplicateRow(clean);
+              },
+            });
+          }
+          if (onDeleteRows && rowData) {
+            const rowIndex = rowData.__rowIndex as number;
+            items.push({
+              label: "Delete Row",
+              icon: <Trash2 size={13} />,
+              action: () => onDeleteRows([rowIndex]),
+            });
+          }
         }
-    }
 
-    // Delete selected rows (multi-select)
-    if (onDeleteRows) {
-      const selectedRows = gridRef.current?.api?.getSelectedRows() ?? []
-      if (selectedRows.length > 1) {
-        const indices = selectedRows.map((r: Record<string, unknown>) => r.__rowIndex as number)
-        items.push({ label: '', icon: null, action: () => {}, separator: true })
-        items.push({
-          label: `Delete ${selectedRows.length} Selected Rows`,
-          icon: <Trash2 size={13} />,
-          action: () => onDeleteRows(indices),
-        })
+        // Delete selected rows (multi-select)
+        if (onDeleteRows) {
+          const selectedRows = gridRef.current?.api?.getSelectedRows() ?? [];
+          if (selectedRows.length > 1) {
+            const indices = selectedRows.map(
+              (r: Record<string, unknown>) => r.__rowIndex as number,
+            );
+            items.push({
+              label: "",
+              icon: null,
+              action: () => {},
+              separator: true,
+            });
+            items.push({
+              label: `Delete ${selectedRows.length} Selected Rows`,
+              icon: <Trash2 size={13} />,
+              action: () => onDeleteRows(indices),
+            });
+          }
+        }
+
+        setContextMenu({
+          x: nativeEvent?.clientX ?? 0,
+          y: nativeEvent?.clientY ?? 0,
+          items,
+        });
+      },
+      [onInsertRow, onDuplicateRow, onDeleteRows],
+    );
+
+    // ── Header context menu actions ──
+
+    const handleHeaderCopyName = useCallback((column: string) => {
+      navigator.clipboard.writeText(column);
+      setHeaderContextMenu(null);
+    }, []);
+
+    const handleHeaderSortAsc = useCallback((column: string) => {
+      gridRef.current?.api?.applyColumnState({
+        state: [{ colId: column, sort: "asc" }],
+        defaultState: { sort: null },
+      });
+      setHeaderContextMenu(null);
+    }, []);
+
+    const handleHeaderSortDesc = useCallback((column: string) => {
+      gridRef.current?.api?.applyColumnState({
+        state: [{ colId: column, sort: "desc" }],
+        defaultState: { sort: null },
+      });
+      setHeaderContextMenu(null);
+    }, []);
+
+    const handleHeaderRemoveSort = useCallback(() => {
+      gridRef.current?.api?.applyColumnState({
+        defaultState: { sort: null },
+      });
+      setHeaderContextMenu(null);
+    }, []);
+
+    const handleHeaderFilterColumn = useCallback(
+      (column: string) => {
+        onFilterColumn?.(column);
+        setHeaderContextMenu(null);
+      },
+      [onFilterColumn],
+    );
+
+    const handleHeaderHideColumn = useCallback((column: string) => {
+      gridRef.current?.api?.setColumnsVisible([column], false);
+      setHeaderContextMenu(null);
+    }, []);
+
+    const handleHeaderResetColumns = useCallback(() => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      // Unhide all columns first
+      const allCols = api.getColumns()?.map((c) => c.getColId()) ?? [];
+      if (allCols.length > 0) {
+        api.setColumnsVisible(allCols, true);
       }
-    }
-
-    setContextMenu({
-      x: nativeEvent?.clientX ?? 0,
-      y: nativeEvent?.clientY ?? 0,
-      items,
-    })
-  }, [onInsertRow, onDuplicateRow, onDeleteRows])
-
-  // ── Header context menu actions ──
-
-  const handleHeaderCopyName = useCallback((column: string) => {
-    navigator.clipboard.writeText(column)
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleHeaderSortAsc = useCallback((column: string) => {
-    gridRef.current?.api?.applyColumnState({
-      state: [{ colId: column, sort: 'asc' }],
-      defaultState: { sort: null },
-    })
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleHeaderSortDesc = useCallback((column: string) => {
-    gridRef.current?.api?.applyColumnState({
-      state: [{ colId: column, sort: 'desc' }],
-      defaultState: { sort: null },
-    })
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleHeaderRemoveSort = useCallback(() => {
-    gridRef.current?.api?.applyColumnState({
-      defaultState: { sort: null },
-    })
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleHeaderFilterColumn = useCallback((column: string) => {
-    onFilterColumn?.(column)
-    setHeaderContextMenu(null)
-  }, [onFilterColumn])
-
-  const handleHeaderHideColumn = useCallback((column: string) => {
-    gridRef.current?.api?.setColumnsVisible([column], false)
-    setHeaderContextMenu(null)
-  }, [])
-
-  const handleHeaderResetColumns = useCallback(() => {
-    const api = gridRef.current?.api
-    if (!api) return
-    // Unhide all columns first
-    const allCols = api.getColumns()?.map((c) => c.getColId()) ?? []
-    if (allCols.length > 0) {
-      api.setColumnsVisible(allCols, true)
-    }
-    api.resetColumnState()
-    // Clear saved column widths — estimated widths from data are applied immediately
-    // via the API, and will also be picked up on the next columnDefs recomputation.
-    columnWidthsRef.current = null
-    if (columnWidthsKeyRef.current) {
-      try { localStorage.removeItem(columnWidthsKeyRef.current) } catch {}
-    }
-    // Apply estimated widths immediately if available
-    if (estimatedWidthsRef.current) {
-      const widthEntries = Object.entries(estimatedWidthsRef.current)
-        .map(([key, newWidth]) => ({ key, newWidth }))
-      if (widthEntries.length > 0) {
-        api.setColumnWidths(widthEntries)
+      api.resetColumnState();
+      // Clear saved column widths — estimated widths from data are applied immediately
+      // via the API, and will also be picked up on the next columnDefs recomputation.
+      columnWidthsRef.current = null;
+      if (columnWidthsKeyRef.current) {
+        try {
+          localStorage.removeItem(columnWidthsKeyRef.current);
+        } catch {}
       }
-    }
-    setHeaderContextMenu(null)
-  }, [])
-
-  // ── Column width persistence — save on resize ──
-  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const onColumnResized = useCallback((event: { finished?: boolean; source?: string }) => {
-    // Only persist after user finishes dragging — ignore programmatic resizes
-    if (!event.finished || !columnWidthsKeyRef.current) return
-    if (event.source !== 'uiColumnResized') return
-
-    // Immediately update the ref so that if columnDefs useMemo re-runs (e.g. due to
-    // editedCells changing), the new ColDefs will include the correct widths — not
-    // stale ones from localStorage (which hasn't been written yet due to debounce).
-    if (gridRef.current?.api) {
-      const state = gridRef.current.api.getColumnState()
-      const widths: Record<string, number> = {}
-      for (const col of state) {
-        if (col.colId && col.width) {
-          widths[col.colId] = col.width
+      // Apply estimated widths immediately if available
+      if (estimatedWidthsRef.current) {
+        const widthEntries = Object.entries(estimatedWidthsRef.current).map(
+          ([key, newWidth]) => ({ key, newWidth }),
+        );
+        if (widthEntries.length > 0) {
+          api.setColumnWidths(widthEntries);
         }
       }
-      columnWidthsRef.current = widths
+      setHeaderContextMenu(null);
+    }, []);
+
+    // ── Column width persistence — save on resize ──
+    const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const onColumnResized = useCallback(
+      (event: { finished?: boolean; source?: string }) => {
+        // Only persist after user finishes dragging — ignore programmatic resizes
+        if (!event.finished || !columnWidthsKeyRef.current) return;
+        if (event.source !== "uiColumnResized") return;
+
+        // Immediately update the ref so that if columnDefs useMemo re-runs (e.g. due to
+        // editedCells changing), the new ColDefs will include the correct widths — not
+        // stale ones from localStorage (which hasn't been written yet due to debounce).
+        if (gridRef.current?.api) {
+          const state = gridRef.current.api.getColumnState();
+          const widths: Record<string, number> = {};
+          for (const col of state) {
+            if (col.colId && col.width) {
+              widths[col.colId] = col.width;
+            }
+          }
+          columnWidthsRef.current = widths;
+        }
+
+        // Debounce the localStorage write (300ms) to avoid writing on every pixel of drag
+        if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = setTimeout(() => {
+          if (!columnWidthsKeyRef.current || !columnWidthsRef.current) return;
+          try {
+            localStorage.setItem(
+              columnWidthsKeyRef.current,
+              JSON.stringify(columnWidthsRef.current),
+            );
+          } catch {
+            // Storage full or unavailable — ignore
+          }
+        }, 300);
+      },
+      [],
+    );
+
+    const onGridReady = useCallback((_event: GridReadyEvent) => {
+      // Grid API is now available — no additional action needed since
+      // column widths are baked directly into columnDefs from the ref.
+    }, []);
+
+    // ── Track hidden columns for external column picker ──
+    const onHiddenColumnsChangeRef = useRef(onHiddenColumnsChange);
+    onHiddenColumnsChangeRef.current = onHiddenColumnsChange;
+
+    const syncHiddenColumns = useCallback(() => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const hidden = api
+        .getColumnState()
+        .filter((c) => c.hide)
+        .map((c) => c.colId!)
+        .filter(Boolean);
+      onHiddenColumnsChangeRef.current?.(hidden);
+    }, []);
+
+    // Listen for column visibility changes
+    const onColumnVisible = useCallback(() => {
+      syncHiddenColumns();
+    }, [syncHiddenColumns]);
+
+    // Reset hidden columns when table changes, then sync after state restore
+    useEffect(() => {
+      onHiddenColumnsChangeRef.current?.([]);
+      const t = setTimeout(syncHiddenColumns, 100);
+      return () => clearTimeout(t);
+    }, [result?.fields, syncHiddenColumns]);
+
+    // Clean up debounce timer on unmount to prevent stale localStorage writes
+    useEffect(() => {
+      return () => {
+        if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      };
+    }, []);
+
+    // ── Column visibility toggle helpers ──
+    const handleShowAllColumns = useCallback(() => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const allCols = api.getColumns()?.map((c) => c.getColId()) ?? [];
+      api.setColumnsVisible(allCols, true);
+      syncHiddenColumns();
+    }, [syncHiddenColumns]);
+
+    const handleToggleColumn = useCallback(
+      (colId: string, visible: boolean) => {
+        gridRef.current?.api?.setColumnsVisible([colId], visible);
+        syncHiddenColumns();
+      },
+      [syncHiddenColumns],
+    );
+
+    // Expose column visibility controls to parent via ref
+    useImperativeHandle(
+      ref,
+      () => ({
+        toggleColumn: handleToggleColumn,
+        showAllColumns: handleShowAllColumns,
+      }),
+      [handleToggleColumn, handleShowAllColumns],
+    );
+
+    // Column width restore is no longer done via a post-render useEffect.
+    // Instead, saved widths are baked directly into the columnDefs useMemo via
+    // columnWidthsRef. This eliminates the race condition where async metadata
+    // loads (foreignKeys, columnMeta) caused columnDefs to re-run and ag-grid
+    // to reset widths back to defaultColDef.width (150px).
+
+    // Inject __rowIndex for stable identity
+    const rowDataWithIndex = useMemo(
+      () => rowData.map((row, i) => ({ ...row, __rowIndex: i })),
+      [rowData],
+    );
+
+    if (!result && !isLoading) {
+      return (
+        <div className="flex h-full items-center justify-center text-nd-text-muted text-sm">
+          Select a table to browse data
+        </div>
+      );
     }
 
-    // Debounce the localStorage write (300ms) to avoid writing on every pixel of drag
-    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
-    resizeTimerRef.current = setTimeout(() => {
-      if (!columnWidthsKeyRef.current || !columnWidthsRef.current) return
-      try {
-        localStorage.setItem(columnWidthsKeyRef.current, JSON.stringify(columnWidthsRef.current))
-      } catch {
-        // Storage full or unavailable — ignore
-      }
-    }, 300)
-  }, [])
-
-  const onGridReady = useCallback((_event: GridReadyEvent) => {
-    // Grid API is now available — no additional action needed since
-    // column widths are baked directly into columnDefs from the ref.
-  }, [])
-
-  // ── Track hidden columns for external column picker ──
-  const onHiddenColumnsChangeRef = useRef(onHiddenColumnsChange)
-  onHiddenColumnsChangeRef.current = onHiddenColumnsChange
-
-  const syncHiddenColumns = useCallback(() => {
-    const api = gridRef.current?.api
-    if (!api) return
-    const hidden = api.getColumnState()
-      .filter((c) => c.hide)
-      .map((c) => c.colId!)
-      .filter(Boolean)
-    onHiddenColumnsChangeRef.current?.(hidden)
-  }, [])
-
-  // Listen for column visibility changes
-  const onColumnVisible = useCallback(() => {
-    syncHiddenColumns()
-  }, [syncHiddenColumns])
-
-  // Reset hidden columns when table changes, then sync after state restore
-  useEffect(() => {
-    onHiddenColumnsChangeRef.current?.([])
-    const t = setTimeout(syncHiddenColumns, 100)
-    return () => clearTimeout(t)
-  }, [result?.fields, syncHiddenColumns])
-
-  // Clean up debounce timer on unmount to prevent stale localStorage writes
-  useEffect(() => {
-    return () => {
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
-    }
-  }, [])
-
-  // ── Column visibility toggle helpers ──
-  const handleShowAllColumns = useCallback(() => {
-    const api = gridRef.current?.api
-    if (!api) return
-    const allCols = api.getColumns()?.map((c) => c.getColId()) ?? []
-    api.setColumnsVisible(allCols, true)
-    syncHiddenColumns()
-  }, [syncHiddenColumns])
-
-  const handleToggleColumn = useCallback((colId: string, visible: boolean) => {
-    gridRef.current?.api?.setColumnsVisible([colId], visible)
-    syncHiddenColumns()
-  }, [syncHiddenColumns])
-
-  // Expose column visibility controls to parent via ref
-  useImperativeHandle(ref, () => ({
-    toggleColumn: handleToggleColumn,
-    showAllColumns: handleShowAllColumns,
-  }), [handleToggleColumn, handleShowAllColumns])
-
-  // Column width restore is no longer done via a post-render useEffect.
-  // Instead, saved widths are baked directly into the columnDefs useMemo via
-  // columnWidthsRef. This eliminates the race condition where async metadata
-  // loads (foreignKeys, columnMeta) caused columnDefs to re-run and ag-grid
-  // to reset widths back to defaultColDef.width (150px).
-
-  // Inject __rowIndex for stable identity
-  const rowDataWithIndex = useMemo(
-    () => rowData.map((row, i) => ({ ...row, __rowIndex: i })),
-    [rowData]
-  )
-
-  if (!result && !isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-nd-text-muted text-sm">
-        Select a table to browse data
-      </div>
-    )
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className={cn(
-        'h-full w-full relative',
-        isLoading && 'opacity-60 pointer-events-none'
-      )}
-    >
-      <AgGridReact
-        ref={gridRef}
-        theme={gridTheme}
-        rowData={rowDataWithIndex}
-        columnDefs={columnDefs}
-        defaultColDef={defaultColDef}
-        getRowId={getRowId}
-        getRowClass={getRowClass}
-        context={{ foreignKeys, onNavigateFK }}
-        animateRows={false}
-        suppressRowVirtualisation={false}
-        // Prevents header/body horizontal scroll desync — ag-grid's column virtualization
-        // causes the header to lag behind the body when scrolling. Rendering all columns
-        // eliminates the lag. Acceptable for typical SQL tables (rarely 200+ columns).
-        suppressColumnVirtualisation={true}
-        rowSelection="multiple"
-        enableCellTextSelection
-        suppressRowClickSelection={false}
-        headerHeight={32}
-        rowHeight={28}
-        tooltipShowDelay={300}
-        onSortChanged={onSortChanged}
-        onCellValueChanged={onCellValueChanged}
-        onCellContextMenu={onCellContextMenu}
-        onGridReady={onGridReady}
-        onColumnResized={onColumnResized}
-        onColumnVisible={onColumnVisible}
-        noRowsOverlayComponent={() => (
-          <span className="text-nd-text-muted text-sm">No rows found</span>
+      <div
+        ref={containerRef}
+        className={cn(
+          "h-full w-full relative",
+          isLoading && "opacity-60 pointer-events-none",
         )}
-        loadingOverlayComponent={() => (
-          <span className="text-nd-text-muted text-sm">Loading...</span>
-        )}
-        loading={isLoading && !result}
-      />
-
-      {/* Floating cell context menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 min-w-[180px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
-          style={clampMenuPosition(contextMenu.x, contextMenu.y, 200, contextMenu.items.length * 30 + 8)}
-        >
-          {contextMenu.items.map((item, idx) =>
-            item.separator ? (
-              <CtxSeparator key={`sep-${idx}`} />
-            ) : (
-              <CtxMenuItem
-                key={item.label}
-                icon={item.icon}
-                label={item.label}
-                onClick={() => {
-                  item.action()
-                  setContextMenu(null)
-                }}
-              />
-            )
+      >
+        <AgGridReact
+          ref={gridRef}
+          theme={gridTheme}
+          rowData={rowDataWithIndex}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          getRowId={getRowId}
+          getRowClass={getRowClass}
+          context={{ foreignKeys, onNavigateFK }}
+          animateRows={false}
+          suppressRowVirtualisation={false}
+          // Prevents header/body horizontal scroll desync — ag-grid's column virtualization
+          // causes the header to lag behind the body when scrolling. Rendering all columns
+          // eliminates the lag. Acceptable for typical SQL tables (rarely 200+ columns).
+          suppressColumnVirtualisation={true}
+          rowSelection="multiple"
+          enableCellTextSelection
+          suppressRowClickSelection={false}
+          headerHeight={32}
+          rowHeight={28}
+          tooltipShowDelay={300}
+          onSortChanged={onSortChanged}
+          onCellValueChanged={onCellValueChanged}
+          onCellContextMenu={onCellContextMenu}
+          onGridReady={onGridReady}
+          onColumnResized={onColumnResized}
+          onColumnVisible={onColumnVisible}
+          noRowsOverlayComponent={() => (
+            <span className="text-nd-text-muted text-sm">No rows found</span>
           )}
-        </div>
-      )}
-
-      {/* Floating header context menu */}
-      {headerContextMenu && (
-        <div
-          className="fixed z-50 min-w-[240px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
-          style={clampMenuPosition(headerContextMenu.x, headerContextMenu.y, 260, 280)}
-        >
-          <CtxMenuItem
-            icon={<Clipboard size={13} />}
-            label="Copy name"
-            onClick={() => handleHeaderCopyName(headerContextMenu.column)}
-          />
-
-          <CtxSeparator />
-
-          <CtxMenuItem
-            icon={<Filter size={13} />}
-            label="Filter with column"
-            onClick={() => handleHeaderFilterColumn(headerContextMenu.column)}
-          />
-          <CtxMenuItem
-            icon={<EyeOff size={13} />}
-            label="Hide this column"
-            onClick={() => handleHeaderHideColumn(headerContextMenu.column)}
-          />
-          <CtxMenuItem
-            icon={<RotateCcw size={13} />}
-            label="Reset column Positions and Widths"
-            onClick={handleHeaderResetColumns}
-          />
-
-          <CtxSeparator />
-
-          <CtxMenuItem
-            icon={<ArrowUpAZ size={13} />}
-            label="Sort Ascending"
-            onClick={() => handleHeaderSortAsc(headerContextMenu.column)}
-          />
-          <CtxMenuItem
-            icon={<ArrowDownAZ size={13} />}
-            label="Sort Descending"
-            onClick={() => handleHeaderSortDesc(headerContextMenu.column)}
-          />
-          <CtxMenuItem
-            icon={<XCircle size={13} />}
-            label="Remove sort"
-            onClick={handleHeaderRemoveSort}
-          />
-        </div>
-      )}
-
-      {/* Floating timestamp cell icon — positioned at the right edge of the hovered timestamp cell */}
-      {tsIconTarget && tsIconPos && !timestampDropdown && (
-        <button
-          className="fixed z-40 flex items-center justify-center w-[18px] h-[18px] rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface-hover transition-colors"
-          style={{ top: tsIconPos.top, left: tsIconPos.left }}
-          onMouseDown={(e) => {
-            // Prevent ag-grid from processing this click (cell selection, etc.)
-            e.stopPropagation()
-            e.preventDefault()
-          }}
-          onClick={(e) => {
-            e.stopPropagation()
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-            handleTimestampDropdown({
-              rowIndex: tsIconTarget.rowIndex,
-              field: tsIconTarget.field,
-              x: rect.left,
-              y: rect.bottom + 2,
-              currentValue: tsIconTarget.value,
-            })
-          }}
-          title="Timestamp options"
-        >
-          <ChevronDown size={12} />
-        </button>
-      )}
-
-      {/* Floating timestamp dropdown menu */}
-      {timestampDropdown && (
-        <TimestampDropdownMenu
-          state={timestampDropdown}
-          onClose={() => setTimestampDropdown(null)}
-          onSetValue={handleTimestampSetValue}
+          loadingOverlayComponent={() => (
+            <span className="text-nd-text-muted text-sm">Loading...</span>
+          )}
+          loading={isLoading && !result}
         />
-      )}
-    </div>
-  )
-}))
+
+        {/* Floating cell context menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-50 min-w-[180px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
+            style={clampMenuPosition(
+              contextMenu.x,
+              contextMenu.y,
+              200,
+              contextMenu.items.length * 30 + 8,
+            )}
+          >
+            {contextMenu.items.map((item, idx) =>
+              item.separator ? (
+                <CtxSeparator key={`sep-${idx}`} />
+              ) : (
+                <CtxMenuItem
+                  key={item.label}
+                  icon={item.icon}
+                  label={item.label}
+                  onClick={() => {
+                    item.action();
+                    setContextMenu(null);
+                  }}
+                />
+              ),
+            )}
+          </div>
+        )}
+
+        {/* Floating header context menu */}
+        {headerContextMenu && (
+          <div
+            className="fixed z-50 min-w-[240px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
+            style={clampMenuPosition(
+              headerContextMenu.x,
+              headerContextMenu.y,
+              260,
+              280,
+            )}
+          >
+            <CtxMenuItem
+              icon={<Clipboard size={13} />}
+              label="Copy name"
+              onClick={() => handleHeaderCopyName(headerContextMenu.column)}
+            />
+
+            <CtxSeparator />
+
+            <CtxMenuItem
+              icon={<Filter size={13} />}
+              label="Filter with column"
+              onClick={() => handleHeaderFilterColumn(headerContextMenu.column)}
+            />
+            <CtxMenuItem
+              icon={<EyeOff size={13} />}
+              label="Hide this column"
+              onClick={() => handleHeaderHideColumn(headerContextMenu.column)}
+            />
+            <CtxMenuItem
+              icon={<RotateCcw size={13} />}
+              label="Reset column Positions and Widths"
+              onClick={handleHeaderResetColumns}
+            />
+
+            <CtxSeparator />
+
+            <CtxMenuItem
+              icon={<ArrowUpAZ size={13} />}
+              label="Sort Ascending"
+              onClick={() => handleHeaderSortAsc(headerContextMenu.column)}
+            />
+            <CtxMenuItem
+              icon={<ArrowDownAZ size={13} />}
+              label="Sort Descending"
+              onClick={() => handleHeaderSortDesc(headerContextMenu.column)}
+            />
+            <CtxMenuItem
+              icon={<XCircle size={13} />}
+              label="Remove sort"
+              onClick={handleHeaderRemoveSort}
+            />
+          </div>
+        )}
+
+        {/* Floating timestamp cell icon — positioned at the right edge of the hovered timestamp cell */}
+        {tsIconTarget && tsIconPos && !timestampDropdown && (
+          <button
+            className="fixed z-40 flex items-center justify-center w-[18px] h-[18px] rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface-hover transition-colors"
+            style={{ top: tsIconPos.top, left: tsIconPos.left }}
+            onMouseDown={(e) => {
+              // Prevent ag-grid from processing this click (cell selection, etc.)
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = (
+                e.currentTarget as HTMLElement
+              ).getBoundingClientRect();
+              handleTimestampDropdown({
+                rowIndex: tsIconTarget.rowIndex,
+                field: tsIconTarget.field,
+                x: rect.left,
+                y: rect.bottom + 2,
+                currentValue: tsIconTarget.value,
+              });
+            }}
+            title="Timestamp options"
+          >
+            <ChevronDown size={12} />
+          </button>
+        )}
+
+        {/* Floating timestamp dropdown menu */}
+        {timestampDropdown && (
+          <TimestampDropdownMenu
+            state={timestampDropdown}
+            onClose={() => setTimestampDropdown(null)}
+            onSetValue={handleTimestampSetValue}
+          />
+        )}
+      </div>
+    );
+  }),
+);
