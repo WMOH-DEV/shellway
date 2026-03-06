@@ -1,53 +1,53 @@
 // electron/services/SQLService.ts
 
-import { EventEmitter } from 'events'
-import { Readable } from 'stream'
-import { randomUUID } from 'crypto'
+import { EventEmitter } from "events";
+import { Readable } from "stream";
+import { randomUUID } from "crypto";
 
 // ── Types (duplicated server-side to avoid cross-process imports) ──
 
-export type DatabaseType = 'mysql' | 'postgres'
+export type DatabaseType = "mysql" | "postgres";
 
-export type SSLMode = 'disabled' | 'preferred' | 'required' | 'verify-full'
+export type SSLMode = "disabled" | "preferred" | "required" | "verify-full";
 
 export interface DBConfig {
-  type: DatabaseType
-  host: string
-  port: number
-  user: string
-  password: string
-  database?: string
-  ssl?: boolean
-  sslMode?: SSLMode
+  type: DatabaseType;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database?: string;
+  ssl?: boolean;
+  sslMode?: SSLMode;
 }
 
 export interface DBQueryResult {
-  fields: { name: string; type: string; table?: string }[]
-  rows: Record<string, unknown>[]
-  rowCount: number
-  affectedRows?: number
-  executionTimeMs: number
-  truncated: boolean
-  totalRowEstimate?: number
+  fields: { name: string; type: string; table?: string }[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  affectedRows?: number;
+  executionTimeMs: number;
+  truncated: boolean;
+  totalRowEstimate?: number;
 }
 
 interface ActiveConnection {
-  type: DatabaseType
-  conn: any                    // mysql2 Connection or pg Client
-  database: string
+  type: DatabaseType;
+  conn: any; // mysql2 Connection or pg Client
+  database: string;
   /** Preserved config for creating management connections (used by cancel) */
-  config: DBConfig
+  config: DBConfig;
   /** MySQL thread ID or PostgreSQL backend PID — set after connect */
-  connectionPid: number | null
+  connectionPid: number | null;
 }
 
 /** Tracked in-flight query */
 export interface TrackedQuery {
-  queryId: string
-  sqlSessionId: string
-  query: string
-  startedAt: number
-  cancelled: boolean
+  queryId: string;
+  sqlSessionId: string;
+  query: string;
+  startedAt: number;
+  cancelled: boolean;
 }
 
 /**
@@ -55,57 +55,66 @@ export interface TrackedQuery {
  * Each connection is keyed by a unique sessionId (separate from SSH connectionId).
  */
 export class SQLService extends EventEmitter {
-  private connections = new Map<string, ActiveConnection>()
+  private connections = new Map<string, ActiveConnection>();
   /** In-flight queries tracked by queryId */
-  private runningQueries = new Map<string, TrackedQuery>()
+  private runningQueries = new Map<string, TrackedQuery>();
 
   // ── Connect ──
 
   async connect(
     sqlSessionId: string,
-    config: DBConfig
+    config: DBConfig,
   ): Promise<{ success: boolean; error?: string; currentDatabase?: string }> {
     // Disconnect existing if any
-    await this.disconnect(sqlSessionId).catch(() => {})
+    await this.disconnect(sqlSessionId).catch(() => {});
 
     try {
-      let result: { success: boolean; error?: string }
-      if (config.type === 'mysql') {
-        result = await this.connectMySQL(sqlSessionId, config)
-      } else if (config.type === 'postgres') {
-        result = await this.connectPostgres(sqlSessionId, config)
+      let result: { success: boolean; error?: string };
+      if (config.type === "mysql") {
+        result = await this.connectMySQL(sqlSessionId, config);
+      } else if (config.type === "postgres") {
+        result = await this.connectPostgres(sqlSessionId, config);
       } else {
-        return { success: false, error: `Unsupported database type: ${config.type}` }
+        return {
+          success: false,
+          error: `Unsupported database type: ${config.type}`,
+        };
       }
 
       if (result.success) {
-        const currentDatabase = this.getCurrentDatabase(sqlSessionId) ?? undefined
-        return { ...result, currentDatabase }
+        const currentDatabase =
+          this.getCurrentDatabase(sqlSessionId) ?? undefined;
+        return { ...result, currentDatabase };
       }
-      return result
+      return result;
     } catch (err: any) {
-      return { success: false, error: err.message || String(err) }
+      return { success: false, error: err.message || String(err) };
     }
   }
 
   /** Resolve SSL options from sslMode or legacy ssl boolean */
   private resolveSSL(config: DBConfig): any {
-    const mode = config.sslMode ?? (config.ssl ? 'preferred' : 'disabled')
+    const mode = config.sslMode ?? (config.ssl ? "preferred" : "disabled");
     switch (mode) {
-      case 'disabled': return undefined
-      case 'preferred': return {}
-      case 'required': return { rejectUnauthorized: false }
-      case 'verify-full': return { rejectUnauthorized: true }
-      default: return undefined
+      case "disabled":
+        return undefined;
+      case "preferred":
+        return {};
+      case "required":
+        return { rejectUnauthorized: false };
+      case "verify-full":
+        return { rejectUnauthorized: true };
+      default:
+        return undefined;
     }
   }
 
   private async connectMySQL(
     sqlSessionId: string,
-    config: DBConfig
+    config: DBConfig,
   ): Promise<{ success: boolean; error?: string }> {
-    const mysql = await import('mysql2/promise')
-    const dbName = config.database?.trim() || undefined
+    const mysql = await import("mysql2/promise");
+    const dbName = config.database?.trim() || undefined;
     const conn = await mysql.createConnection({
       host: config.host,
       port: config.port,
@@ -116,108 +125,119 @@ export class SQLService extends EventEmitter {
       connectTimeout: 10000,
       supportBigNumbers: true,
       bigNumberStrings: true,
-      dateStrings: true
-    })
+      dateStrings: true,
+    });
 
     // Discover current database if none specified
-    let currentDb = dbName ?? ''
+    let currentDb = dbName ?? "";
     if (!currentDb) {
       try {
-        const [rows] = await conn.execute('SELECT DATABASE() as db')
-        currentDb = (rows as any)?.[0]?.db ?? ''
-      } catch { /* ignore */ }
+        const [rows] = await conn.execute("SELECT DATABASE() as db");
+        currentDb = (rows as any)?.[0]?.db ?? "";
+      } catch {
+        /* ignore */
+      }
     }
 
     this.connections.set(sqlSessionId, {
-      type: 'mysql',
+      type: "mysql",
       conn,
       database: currentDb,
       config,
-      connectionPid: conn.threadId ?? null
-    })
+      connectionPid: conn.threadId ?? null,
+    });
 
-    return { success: true }
+    return { success: true };
   }
 
   private async connectPostgres(
     sqlSessionId: string,
-    config: DBConfig
+    config: DBConfig,
   ): Promise<{ success: boolean; error?: string }> {
-    const { Client } = await import('pg')
-    const dbName = config.database?.trim() || undefined
-    const sslOpts = this.resolveSSL(config)
+    const { Client } = await import("pg");
+    const dbName = config.database?.trim() || undefined;
+    const sslOpts = this.resolveSSL(config);
     const client = new Client({
       host: config.host,
       port: config.port,
       user: config.user,
       password: config.password,
       database: dbName, // pg defaults to username if undefined
-      ssl: sslOpts ? (sslOpts.rejectUnauthorized !== undefined ? sslOpts : { rejectUnauthorized: false }) : undefined,
-      connectionTimeoutMillis: 10000
-    })
+      ssl: sslOpts
+        ? sslOpts.rejectUnauthorized !== undefined
+          ? sslOpts
+          : { rejectUnauthorized: false }
+        : undefined,
+      connectionTimeoutMillis: 10000,
+    });
 
-    await client.connect()
+    await client.connect();
 
     // Discover current database
-    let currentDb = dbName ?? ''
+    let currentDb = dbName ?? "";
     if (!currentDb) {
       try {
-        const res = await client.query('SELECT current_database() as db')
-        currentDb = res.rows?.[0]?.db ?? ''
-      } catch { /* ignore */ }
+        const res = await client.query("SELECT current_database() as db");
+        currentDb = res.rows?.[0]?.db ?? "";
+      } catch {
+        /* ignore */
+      }
     }
 
     this.connections.set(sqlSessionId, {
-      type: 'postgres',
+      type: "postgres",
       conn: client,
       database: currentDb,
       config,
-      connectionPid: (client as any).processID ?? null
-    })
+      connectionPid: (client as any).processID ?? null,
+    });
 
-    return { success: true }
+    return { success: true };
   }
 
   // ── Disconnect ──
 
   async disconnect(sqlSessionId: string): Promise<void> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) return
+    const active = this.connections.get(sqlSessionId);
+    if (!active) return;
 
     // Clean up any orphaned running queries for this session
     for (const [qid, tracked] of this.runningQueries) {
       if (tracked.sqlSessionId === sqlSessionId) {
-        tracked.cancelled = true
-        this.runningQueries.delete(qid)
-        this.emit('query-completed', qid, sqlSessionId)
+        tracked.cancelled = true;
+        this.runningQueries.delete(qid);
+        this.emit("query-completed", qid, sqlSessionId);
       }
     }
 
-    const DISCONNECT_TIMEOUT_MS = 3000
+    const DISCONNECT_TIMEOUT_MS = 3000;
 
     try {
       const endPromise =
-        active.type === 'mysql' ? active.conn.end() : active.conn.end()
+        active.type === "mysql" ? active.conn.end() : active.conn.end();
       await Promise.race([
         endPromise,
         new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error('Disconnect timed out')), DISCONNECT_TIMEOUT_MS)
+          setTimeout(
+            () => reject(new Error("Disconnect timed out")),
+            DISCONNECT_TIMEOUT_MS,
+          ),
         ),
-      ])
+      ]);
     } catch {
       // Ignore disconnect errors (including timeout)
     } finally {
-      this.connections.delete(sqlSessionId)
+      this.connections.delete(sqlSessionId);
     }
   }
 
   async disconnectAll(): Promise<void> {
-    const ids = Array.from(this.connections.keys())
-    await Promise.allSettled(ids.map((id) => this.disconnect(id)))
+    const ids = Array.from(this.connections.keys());
+    await Promise.allSettled(ids.map((id) => this.disconnect(id)));
   }
 
   isConnected(sqlSessionId: string): boolean {
-    return this.connections.has(sqlSessionId)
+    return this.connections.has(sqlSessionId);
   }
 
   // ── Execute Query ──
@@ -226,56 +246,67 @@ export class SQLService extends EventEmitter {
     sqlSessionId: string,
     query: string,
     params?: unknown[],
-    queryId?: string
+    queryId?: string,
   ): Promise<DBQueryResult> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected to database')
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected to database");
 
     // Track this query
-    const qid = queryId || randomUUID()
+    const qid = queryId || randomUUID();
     const tracked: TrackedQuery = {
       queryId: qid,
       sqlSessionId,
       query,
       startedAt: Date.now(),
-      cancelled: false
-    }
-    this.runningQueries.set(qid, tracked)
-    this.emit('query-started', qid, sqlSessionId, query)
+      cancelled: false,
+    };
+    this.runningQueries.set(qid, tracked);
+    this.emit("query-started", qid, sqlSessionId, query);
 
-    const start = performance.now()
+    const start = performance.now();
 
     try {
-      let result: DBQueryResult
-      if (active.type === 'mysql') {
-        result = await this.executeMySQLQuery(active, query, params, start)
+      let result: DBQueryResult;
+      if (active.type === "mysql") {
+        result = await this.executeMySQLQuery(active, query, params, start);
       } else {
-        result = await this.executePostgresQuery(active, query, params, start)
+        result = await this.executePostgresQuery(active, query, params, start);
       }
 
       // Check if cancelled while awaiting
       if (this.runningQueries.get(qid)?.cancelled) {
-        this.emit('query-executed', sqlSessionId, {
-          query, params, executionTimeMs: result.executionTimeMs, error: 'Query cancelled',
-        })
-        throw new Error('Query cancelled')
+        this.emit("query-executed", sqlSessionId, {
+          query,
+          params,
+          executionTimeMs: result.executionTimeMs,
+          error: "Query cancelled",
+        });
+        throw new Error("Query cancelled");
       }
 
-      this.emit('query-executed', sqlSessionId, {
-        query, params, executionTimeMs: result.executionTimeMs, rowCount: result.rowCount,
-      })
-      return result
+      this.emit("query-executed", sqlSessionId, {
+        query,
+        params,
+        executionTimeMs: result.executionTimeMs,
+        rowCount: result.rowCount,
+      });
+      return result;
     } catch (err: any) {
-      const elapsed = Math.round(performance.now() - start)
-      const isCancelled = this.runningQueries.get(qid)?.cancelled
-      const errorMsg = isCancelled ? 'Query cancelled' : (err.message || String(err))
-      this.emit('query-executed', sqlSessionId, {
-        query, params, executionTimeMs: elapsed, error: errorMsg,
-      })
-      throw new Error(errorMsg)
+      const elapsed = Math.round(performance.now() - start);
+      const isCancelled = this.runningQueries.get(qid)?.cancelled;
+      const errorMsg = isCancelled
+        ? "Query cancelled"
+        : err.message || String(err);
+      this.emit("query-executed", sqlSessionId, {
+        query,
+        params,
+        executionTimeMs: elapsed,
+        error: errorMsg,
+      });
+      throw new Error(errorMsg);
     } finally {
-      this.runningQueries.delete(qid)
-      this.emit('query-completed', qid, sqlSessionId)
+      this.runningQueries.delete(qid);
+      this.emit("query-completed", qid, sqlSessionId);
     }
   }
 
@@ -283,15 +314,15 @@ export class SQLService extends EventEmitter {
     active: ActiveConnection,
     query: string,
     params: unknown[] | undefined,
-    start: number
+    start: number,
   ): Promise<DBQueryResult> {
     // Use text protocol (.query()) instead of binary prepared statements (.execute()).
     // The binary protocol (COM_STMT_PREPARE/COM_STMT_EXECUTE) has known compatibility
     // issues with certain column types (JSON, GEOMETRY, BIT, generated columns) and
     // can fail with "Incorrect arguments to mysqld_stmt_execute" on valid tables.
     // The text protocol works universally and mysql2 handles param escaping safely.
-    const [rows, fields] = await active.conn.query(query, params)
-    const elapsed = Math.round(performance.now() - start)
+    const [rows, fields] = await active.conn.query(query, params);
+    const elapsed = Math.round(performance.now() - start);
 
     // Handle non-SELECT queries (INSERT, UPDATE, DELETE)
     if (!Array.isArray(rows)) {
@@ -301,44 +332,44 @@ export class SQLService extends EventEmitter {
         rowCount: 0,
         affectedRows: (rows as any).affectedRows ?? 0,
         executionTimeMs: elapsed,
-        truncated: false
-      }
+        truncated: false,
+      };
     }
 
     return {
       fields: (fields || []).map((f: any) => ({
         name: f.name,
         type: this.mysqlFieldType(f.columnType),
-        table: f.table || undefined
+        table: f.table || undefined,
       })),
       rows: rows as Record<string, unknown>[],
       rowCount: rows.length,
       executionTimeMs: elapsed,
-      truncated: false
-    }
+      truncated: false,
+    };
   }
 
   private async executePostgresQuery(
     active: ActiveConnection,
     query: string,
     params: unknown[] | undefined,
-    start: number
+    start: number,
   ): Promise<DBQueryResult> {
-    const result = await active.conn.query(query, params)
-    const elapsed = Math.round(performance.now() - start)
+    const result = await active.conn.query(query, params);
+    const elapsed = Math.round(performance.now() - start);
 
     return {
       fields: (result.fields || []).map((f: any) => ({
         name: f.name,
         type: String(f.dataTypeID),
-        table: f.tableID ? String(f.tableID) : undefined
+        table: f.tableID ? String(f.tableID) : undefined,
       })),
       rows: result.rows || [],
       rowCount: result.rows?.length ?? 0,
       affectedRows: result.rowCount ?? undefined,
       executionTimeMs: elapsed,
-      truncated: false
-    }
+      truncated: false,
+    };
   }
 
   // ── Query Cancellation ──
@@ -349,28 +380,31 @@ export class SQLService extends EventEmitter {
    * MySQL: KILL QUERY <threadId> via a temporary management connection.
    * PostgreSQL: SELECT pg_cancel_backend(<pid>) via a temporary management connection.
    */
-  async cancelQuery(queryId: string): Promise<{ success: boolean; error?: string }> {
-    const tracked = this.runningQueries.get(queryId)
-    if (!tracked) return { success: false, error: 'Query not found or already completed' }
+  async cancelQuery(
+    queryId: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const tracked = this.runningQueries.get(queryId);
+    if (!tracked)
+      return { success: false, error: "Query not found or already completed" };
 
     // Mark as cancelled immediately — result will be discarded when it returns
-    tracked.cancelled = true
+    tracked.cancelled = true;
 
-    const active = this.connections.get(tracked.sqlSessionId)
+    const active = this.connections.get(tracked.sqlSessionId);
     if (!active || !active.connectionPid) {
-      return { success: true } // Marked as cancelled, but can't send server kill
+      return { success: true }; // Marked as cancelled, but can't send server kill
     }
 
     // Validate PID is a safe positive integer before use in SQL
-    const pid = active.connectionPid
-    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
-      return { success: true }
+    const pid = active.connectionPid;
+    if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+      return { success: true };
     }
 
     // Attempt server-side kill via a temporary management connection
     try {
-      if (active.type === 'mysql') {
-        const mysql = await import('mysql2/promise')
+      if (active.type === "mysql") {
+        const mysql = await import("mysql2/promise");
         const mgmt = await mysql.createConnection({
           host: active.config.host,
           port: active.config.port,
@@ -378,37 +412,46 @@ export class SQLService extends EventEmitter {
           password: active.config.password,
           database: active.config.database,
           ssl: this.resolveSSL(active.config),
-          connectTimeout: 5000
-        })
+          connectTimeout: 5000,
+        });
         try {
           // Use parameterized query — mysql2 supports KILL QUERY with parameters
-          await mgmt.execute('KILL QUERY ?', [pid])
+          await mgmt.execute("KILL QUERY ?", [pid]);
         } finally {
-          await mgmt.end().catch(() => {})
+          await mgmt.end().catch(() => {});
         }
       } else {
-        const { Client } = await import('pg')
-        const sslOpts = this.resolveSSL(active.config)
+        const { Client } = await import("pg");
+        const sslOpts = this.resolveSSL(active.config);
         const mgmt = new Client({
           host: active.config.host,
           port: active.config.port,
           user: active.config.user,
           password: active.config.password,
           database: active.config.database,
-          ssl: sslOpts ? (sslOpts.rejectUnauthorized !== undefined ? sslOpts : { rejectUnauthorized: false }) : undefined,
-          connectionTimeoutMillis: 5000
-        })
-        await mgmt.connect()
+          ssl: sslOpts
+            ? sslOpts.rejectUnauthorized !== undefined
+              ? sslOpts
+              : { rejectUnauthorized: false }
+            : undefined,
+          connectionTimeoutMillis: 5000,
+        });
+        await mgmt.connect();
         try {
-          await mgmt.query('SELECT pg_cancel_backend($1)', [active.connectionPid])
+          await mgmt.query("SELECT pg_cancel_backend($1)", [
+            active.connectionPid,
+          ]);
         } finally {
-          await mgmt.end().catch(() => {})
+          await mgmt.end().catch(() => {});
         }
       }
-      return { success: true }
+      return { success: true };
     } catch (err: any) {
       // Server kill failed, but query is still marked as cancelled
-      return { success: true, error: `Server kill failed (query still marked cancelled): ${err.message}` }
+      return {
+        success: true,
+        error: `Server kill failed (query still marked cancelled): ${err.message}`,
+      };
     }
   }
 
@@ -418,21 +461,21 @@ export class SQLService extends EventEmitter {
    * since all queries share the same DB connection/thread.
    */
   async cancelAllSessionQueries(sqlSessionId: string): Promise<void> {
-    const queryIds: string[] = []
+    const queryIds: string[] = [];
     for (const [qid, tracked] of this.runningQueries) {
       if (tracked.sqlSessionId === sqlSessionId && !tracked.cancelled) {
-        queryIds.push(qid)
+        queryIds.push(qid);
       }
     }
-    if (queryIds.length === 0) return
+    if (queryIds.length === 0) return;
 
     // First query gets the full server-side kill (creates management connection)
-    await this.cancelQuery(queryIds[0])
+    await this.cancelQuery(queryIds[0]);
 
     // Remaining queries just get marked as cancelled (no redundant management connections)
     for (let i = 1; i < queryIds.length; i++) {
-      const tracked = this.runningQueries.get(queryIds[i])
-      if (tracked) tracked.cancelled = true
+      const tracked = this.runningQueries.get(queryIds[i]);
+      if (tracked) tracked.cancelled = true;
     }
   }
 
@@ -440,60 +483,65 @@ export class SQLService extends EventEmitter {
    * Get all currently running queries, optionally filtered by session.
    */
   getRunningQueries(sqlSessionId?: string): TrackedQuery[] {
-    const all = Array.from(this.runningQueries.values())
-    if (sqlSessionId) return all.filter((q) => q.sqlSessionId === sqlSessionId)
-    return all
+    const all = Array.from(this.runningQueries.values());
+    if (sqlSessionId) return all.filter((q) => q.sqlSessionId === sqlSessionId);
+    return all;
   }
 
   // ── Schema Introspection ──
 
   async getDatabases(sqlSessionId: string): Promise<string[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
-      const result = await this.executeQuery(sqlSessionId, 'SHOW DATABASES')
-      return result.rows.map((r: any) => r.Database || r.database)
+    if (active.type === "mysql") {
+      const result = await this.executeQuery(sqlSessionId, "SHOW DATABASES");
+      return result.rows.map((r: any) => r.Database || r.database);
     } else {
       const result = await this.executeQuery(
         sqlSessionId,
-        `SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`
-      )
-      return result.rows.map((r: any) => r.datname)
+        `SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`,
+      );
+      return result.rows.map((r: any) => r.datname);
     }
   }
 
   async switchDatabase(sqlSessionId: string, database: string): Promise<void> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
-      await active.conn.changeUser({ database })
-      active.database = database
+    if (active.type === "mysql") {
+      await active.conn.changeUser({ database });
+      active.database = database;
     } else {
-      throw new Error('Postgres requires a new connection to switch databases')
+      throw new Error("Postgres requires a new connection to switch databases");
     }
   }
 
-  async getTables(
-    sqlSessionId: string
-  ): Promise<{ name: string; type: 'table' | 'view'; schema?: string; rowCount?: number }[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+  async getTables(sqlSessionId: string): Promise<
+    {
+      name: string;
+      type: "table" | "view";
+      schema?: string;
+      rowCount?: number;
+    }[]
+  > {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT TABLE_NAME as table_name, TABLE_TYPE as table_type, TABLE_ROWS as row_count
          FROM INFORMATION_SCHEMA.TABLES
          WHERE TABLE_SCHEMA = DATABASE()
-         ORDER BY TABLE_NAME`
-      )
+         ORDER BY TABLE_NAME`,
+      );
       return result.rows.map((r: any) => ({
         name: r.table_name,
-        type: r.table_type === 'VIEW' ? 'view' as const : 'table' as const,
-        rowCount: r.row_count != null ? Number(r.row_count) : undefined
-      }))
+        type: r.table_type === "VIEW" ? ("view" as const) : ("table" as const),
+        rowCount: r.row_count != null ? Number(r.row_count) : undefined,
+      }));
     } else {
       const result = await this.executeQuery(
         sqlSessionId,
@@ -507,25 +555,31 @@ export class SQLService extends EventEmitter {
          SELECT v.viewname as table_name, 'view' as table_type, v.schemaname as schema_name, 0 as row_count
          FROM pg_views v
          WHERE v.schemaname NOT IN ('pg_catalog', 'information_schema')
-         ORDER BY table_name`
-      )
+         ORDER BY table_name`,
+      );
       return result.rows.map((r: any) => ({
         name: r.table_name,
-        type: r.table_type as 'table' | 'view',
+        type: r.table_type as "table" | "view",
         schema: r.schema_name,
-        rowCount: r.row_count != null ? Number(r.row_count) : undefined
-      }))
+        rowCount: r.row_count != null ? Number(r.row_count) : undefined,
+      }));
     }
   }
 
-  async getAllColumns(sqlSessionId: string): Promise<{
-    tableName: string; name: string; type: string; nullable: boolean
-    isPrimaryKey: boolean; isAutoIncrement: boolean
-  }[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+  async getAllColumns(sqlSessionId: string): Promise<
+    {
+      tableName: string;
+      name: string;
+      type: string;
+      nullable: boolean;
+      isPrimaryKey: boolean;
+      isAutoIncrement: boolean;
+    }[]
+  > {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT TABLE_NAME as table_name, COLUMN_NAME as col_name,
@@ -533,16 +587,16 @@ export class SQLService extends EventEmitter {
                 COLUMN_KEY as col_key, EXTRA as extra
          FROM INFORMATION_SCHEMA.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()
-         ORDER BY TABLE_NAME, ORDINAL_POSITION`
-      )
+         ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+      );
       return result.rows.map((r: any) => ({
         tableName: r.table_name,
         name: r.col_name,
         type: r.col_type,
-        nullable: r.nullable === 'YES',
-        isPrimaryKey: r.col_key === 'PRI',
-        isAutoIncrement: (r.extra || '').includes('auto_increment'),
-      }))
+        nullable: r.nullable === "YES",
+        isPrimaryKey: r.col_key === "PRI",
+        isAutoIncrement: (r.extra || "").includes("auto_increment"),
+      }));
     } else {
       const result = await this.executeQuery(
         sqlSessionId,
@@ -559,34 +613,46 @@ export class SQLService extends EventEmitter {
            WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
          ) pk ON pk.column_name = c.column_name AND pk.table_name = c.table_name
          WHERE c.table_schema = 'public'
-         ORDER BY c.table_name, c.ordinal_position`
-      )
+         ORDER BY c.table_name, c.ordinal_position`,
+      );
       return result.rows.map((r: any) => ({
         tableName: r.table_name,
         name: r.col_name,
         type: r.col_type,
-        nullable: r.nullable === 'YES',
+        nullable: r.nullable === "YES",
         isPrimaryKey: Boolean(r.is_pk),
         isAutoIncrement: Boolean(r.is_auto),
-      }))
+      }));
     }
   }
 
   async getColumns(
     sqlSessionId: string,
     table: string,
-    schema?: string
-  ): Promise<{
-    name: string; type: string; nullable: boolean; defaultValue: string | null
-    isPrimaryKey: boolean; isAutoIncrement: boolean; extra?: string; comment?: string
-    ordinalPosition?: number; charset?: string | null; collation?: string | null
-    columnKey?: string; identityGeneration?: string | null
-    isGenerated?: boolean; generationExpression?: string | null
-  }[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+    schema?: string,
+  ): Promise<
+    {
+      name: string;
+      type: string;
+      nullable: boolean;
+      defaultValue: string | null;
+      isPrimaryKey: boolean;
+      isAutoIncrement: boolean;
+      extra?: string;
+      comment?: string;
+      ordinalPosition?: number;
+      charset?: string | null;
+      collation?: string | null;
+      columnKey?: string;
+      identityGeneration?: string | null;
+      isGenerated?: boolean;
+      generationExpression?: string | null;
+    }[]
+  > {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT c.ORDINAL_POSITION as ordinal_pos,
@@ -598,24 +664,28 @@ export class SQLService extends EventEmitter {
          FROM INFORMATION_SCHEMA.COLUMNS c
          WHERE c.TABLE_SCHEMA = DATABASE() AND c.TABLE_NAME = ?
          ORDER BY c.ORDINAL_POSITION`,
-        [table]
-      )
+        [table],
+      );
       return result.rows.map((r: any) => ({
-        name: r.col_name, type: r.col_type,
-        nullable: r.nullable === 'YES', defaultValue: r.default_val,
-        isPrimaryKey: r.col_key === 'PRI',
-        isAutoIncrement: (r.extra || '').includes('auto_increment'),
-        extra: r.extra || undefined, comment: r.comment || undefined,
+        name: r.col_name,
+        type: r.col_type,
+        nullable: r.nullable === "YES",
+        defaultValue: r.default_val,
+        isPrimaryKey: r.col_key === "PRI",
+        isAutoIncrement: (r.extra || "").includes("auto_increment"),
+        extra: r.extra || undefined,
+        comment: r.comment || undefined,
         ordinalPosition: Number(r.ordinal_pos),
         charset: r.charset || null,
         collation: r.collation || null,
-        columnKey: r.col_key || '',
+        columnKey: r.col_key || "",
         identityGeneration: null,
-        isGenerated: (r.extra || '').includes('GENERATED') || Boolean(r.gen_expr),
+        isGenerated:
+          (r.extra || "").includes("GENERATED") || Boolean(r.gen_expr),
         generationExpression: r.gen_expr || null,
-      }))
+      }));
     } else {
-      const schemaName = schema || 'public'
+      const schemaName = schema || "public";
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT c.ordinal_position as ordinal_pos,
@@ -656,61 +726,79 @@ export class SQLService extends EventEmitter {
          ) uq ON uq.column_name = c.column_name
          WHERE c.table_name = $1 AND c.table_schema = $2
          ORDER BY c.ordinal_position`,
-        [table, schemaName]
-      )
+        [table, schemaName],
+      );
       return result.rows.map((r: any) => {
-        const isPk = Boolean(r.is_pk)
-        const isSerial = (r.default_val || '').includes('nextval')
-        let columnKey = ''
-        if (isPk) columnKey = 'PRI'
-        else if (r.col_key_extra === 'UNI') columnKey = 'UNI'
+        const isPk = Boolean(r.is_pk);
+        const isSerial = (r.default_val || "").includes("nextval");
+        let columnKey = "";
+        if (isPk) columnKey = "PRI";
+        else if (r.col_key_extra === "UNI") columnKey = "UNI";
 
         return {
           name: r.col_name,
           type: r.col_type,
-          nullable: r.nullable === 'YES',
+          nullable: r.nullable === "YES",
           defaultValue: r.default_val,
           isPrimaryKey: isPk,
-          isAutoIncrement: isSerial || r.is_identity === 'YES',
-          extra: isSerial ? 'serial' : (r.identity_gen ? `identity(${r.identity_gen})` : undefined),
+          isAutoIncrement: isSerial || r.is_identity === "YES",
+          extra: isSerial
+            ? "serial"
+            : r.identity_gen
+              ? `identity(${r.identity_gen})`
+              : undefined,
           comment: r.comment || undefined,
           ordinalPosition: Number(r.ordinal_pos),
           charset: null,
           collation: r.collation || null,
           columnKey,
           identityGeneration: r.identity_gen || null,
-          isGenerated: r.is_generated === 'ALWAYS',
+          isGenerated: r.is_generated === "ALWAYS",
           generationExpression: r.gen_expr || null,
-        }
-      })
+        };
+      });
     }
   }
 
-  async getIndexes(sqlSessionId: string, table: string, schema?: string): Promise<{
-    name: string; columns: string[]; isUnique: boolean; isPrimary: boolean; type: string
-  }[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+  async getIndexes(
+    sqlSessionId: string,
+    table: string,
+    schema?: string,
+  ): Promise<
+    {
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+      isPrimary: boolean;
+      type: string;
+    }[]
+  > {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
-      const escaped = table.replace(/`/g, '``')
-      const result = await this.executeQuery(sqlSessionId, `SHOW INDEX FROM \`${escaped}\``)
-      const indexMap = new Map<string, any>()
+    if (active.type === "mysql") {
+      const escaped = table.replace(/`/g, "``");
+      const result = await this.executeQuery(
+        sqlSessionId,
+        `SHOW INDEX FROM \`${escaped}\``,
+      );
+      const indexMap = new Map<string, any>();
       for (const row of result.rows as any[]) {
-        const name = row.Key_name
+        const name = row.Key_name;
         if (!indexMap.has(name)) {
           indexMap.set(name, {
-            name, columns: [],
+            name,
+            columns: [],
             isUnique: Number(row.Non_unique) === 0,
-            isPrimary: name === 'PRIMARY',
-            type: row.Index_type || 'BTREE'
-          })
+            isPrimary: name === "PRIMARY",
+            type: row.Index_type || "BTREE",
+          });
         }
-        indexMap.get(name)!.columns.push(row.Column_name)
+        indexMap.get(name)!.columns.push(row.Column_name);
       }
-      return Array.from(indexMap.values())
+      return Array.from(indexMap.values());
     } else {
-      const schemaName = schema || 'public'
+      const schemaName = schema || "public";
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT i.relname as index_name,
@@ -726,24 +814,36 @@ export class SQLService extends EventEmitter {
          WHERE t.relname = $1 AND n.nspname = $2
          GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname
          ORDER BY i.relname`,
-        [table, schemaName]
-      )
+        [table, schemaName],
+      );
       return result.rows.map((r: any) => ({
-        name: r.index_name, columns: r.columns,
-        isUnique: Boolean(r.is_unique), isPrimary: Boolean(r.is_primary),
-        type: r.index_type || 'btree'
-      }))
+        name: r.index_name,
+        columns: r.columns,
+        isUnique: Boolean(r.is_unique),
+        isPrimary: Boolean(r.is_primary),
+        type: r.index_type || "btree",
+      }));
     }
   }
 
-  async getForeignKeys(sqlSessionId: string, table: string, schema?: string): Promise<{
-    name: string; columns: string[]; referencedTable: string
-    referencedColumns: string[]; onUpdate: string; onDelete: string
-  }[]> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+  async getForeignKeys(
+    sqlSessionId: string,
+    table: string,
+    schema?: string,
+  ): Promise<
+    {
+      name: string;
+      columns: string[];
+      referencedTable: string;
+      referencedColumns: string[];
+      onUpdate: string;
+      onDelete: string;
+    }[]
+  > {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT kcu.CONSTRAINT_NAME as fk_name, kcu.COLUMN_NAME as col_name,
@@ -755,23 +855,27 @@ export class SQLService extends EventEmitter {
          WHERE kcu.TABLE_SCHEMA = DATABASE() AND kcu.TABLE_NAME = ?
            AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
          ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`,
-        [table]
-      )
-      const fkMap = new Map<string, any>()
+        [table],
+      );
+      const fkMap = new Map<string, any>();
       for (const row of result.rows as any[]) {
-        const name = row.fk_name
+        const name = row.fk_name;
         if (!fkMap.has(name)) {
           fkMap.set(name, {
-            name, columns: [], referencedTable: row.ref_table,
-            referencedColumns: [], onUpdate: row.on_update, onDelete: row.on_delete
-          })
+            name,
+            columns: [],
+            referencedTable: row.ref_table,
+            referencedColumns: [],
+            onUpdate: row.on_update,
+            onDelete: row.on_delete,
+          });
         }
-        fkMap.get(name)!.columns.push(row.col_name)
-        fkMap.get(name)!.referencedColumns.push(row.ref_col)
+        fkMap.get(name)!.columns.push(row.col_name);
+        fkMap.get(name)!.referencedColumns.push(row.ref_col);
       }
-      return Array.from(fkMap.values())
+      return Array.from(fkMap.values());
     } else {
-      const schemaName = schema || 'public'
+      const schemaName = schema || "public";
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT tc.constraint_name as fk_name, kcu.column_name as col_name,
@@ -783,21 +887,25 @@ export class SQLService extends EventEmitter {
          JOIN information_schema.referential_constraints rc ON rc.constraint_name = tc.constraint_name
          WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = $1 AND tc.table_schema = $2
          ORDER BY tc.constraint_name`,
-        [table, schemaName]
-      )
-      const fkMap = new Map<string, any>()
+        [table, schemaName],
+      );
+      const fkMap = new Map<string, any>();
       for (const row of result.rows as any[]) {
-        const name = row.fk_name
+        const name = row.fk_name;
         if (!fkMap.has(name)) {
           fkMap.set(name, {
-            name, columns: [], referencedTable: row.ref_table,
-            referencedColumns: [], onUpdate: row.on_update, onDelete: row.on_delete
-          })
+            name,
+            columns: [],
+            referencedTable: row.ref_table,
+            referencedColumns: [],
+            onUpdate: row.on_update,
+            onDelete: row.on_delete,
+          });
         }
-        fkMap.get(name)!.columns.push(row.col_name)
-        fkMap.get(name)!.referencedColumns.push(row.ref_col)
+        fkMap.get(name)!.columns.push(row.col_name);
+        fkMap.get(name)!.referencedColumns.push(row.ref_col);
       }
-      return Array.from(fkMap.values())
+      return Array.from(fkMap.values());
     }
   }
 
@@ -811,12 +919,12 @@ export class SQLService extends EventEmitter {
   async getTableStructure(
     sqlSessionId: string,
     table: string,
-    schema?: string
+    schema?: string,
   ): Promise<{ columns: any[]; indexes: any[]; foreignKeys: any[] }> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT
@@ -854,66 +962,90 @@ export class SQLService extends EventEmitter {
             WHERE kcu.TABLE_SCHEMA = DATABASE() AND kcu.TABLE_NAME = ?
               AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
            ) as fks_json`,
-        [table, table, table]
-      )
+        [table, table, table],
+      );
 
-      const row = result.rows[0] as any
-      const rawCols = row?.columns_json ? (typeof row.columns_json === 'string' ? JSON.parse(row.columns_json) : row.columns_json) : []
-      const rawIdxs = row?.indexes_json ? (typeof row.indexes_json === 'string' ? JSON.parse(row.indexes_json) : row.indexes_json) : []
-      const rawFks = row?.fks_json ? (typeof row.fks_json === 'string' ? JSON.parse(row.fks_json) : row.fks_json) : []
+      const row = result.rows[0] as any;
+      const rawCols = row?.columns_json
+        ? typeof row.columns_json === "string"
+          ? JSON.parse(row.columns_json)
+          : row.columns_json
+        : [];
+      const rawIdxs = row?.indexes_json
+        ? typeof row.indexes_json === "string"
+          ? JSON.parse(row.indexes_json)
+          : row.indexes_json
+        : [];
+      const rawFks = row?.fks_json
+        ? typeof row.fks_json === "string"
+          ? JSON.parse(row.fks_json)
+          : row.fks_json
+        : [];
 
       // Transform columns
       const columns = (rawCols as any[])
         .sort((a: any, b: any) => a.ordinal_pos - b.ordinal_pos)
         .map((r: any) => ({
-          name: r.col_name, type: r.col_type,
-          nullable: r.nullable === 'YES', defaultValue: r.default_val,
-          isPrimaryKey: r.col_key === 'PRI',
-          isAutoIncrement: (r.extra || '').includes('auto_increment'),
-          extra: r.extra || undefined, comment: r.comment || undefined,
+          name: r.col_name,
+          type: r.col_type,
+          nullable: r.nullable === "YES",
+          defaultValue: r.default_val,
+          isPrimaryKey: r.col_key === "PRI",
+          isAutoIncrement: (r.extra || "").includes("auto_increment"),
+          extra: r.extra || undefined,
+          comment: r.comment || undefined,
           ordinalPosition: Number(r.ordinal_pos),
-          charset: r.charset || null, collation: r.collation || null,
-          columnKey: r.col_key || '', identityGeneration: null,
-          isGenerated: (r.extra || '').includes('GENERATED') || Boolean(r.gen_expr),
+          charset: r.charset || null,
+          collation: r.collation || null,
+          columnKey: r.col_key || "",
+          identityGeneration: null,
+          isGenerated:
+            (r.extra || "").includes("GENERATED") || Boolean(r.gen_expr),
           generationExpression: r.gen_expr || null,
-        }))
+        }));
 
       // Transform indexes — aggregate columns per index name
-      const indexMap = new Map<string, any>()
-      for (const r of (rawIdxs as any[]).sort((a: any, b: any) => a.seq - b.seq)) {
-        const name = r.index_name
+      const indexMap = new Map<string, any>();
+      for (const r of (rawIdxs as any[]).sort(
+        (a: any, b: any) => a.seq - b.seq,
+      )) {
+        const name = r.index_name;
         if (!indexMap.has(name)) {
           indexMap.set(name, {
-            name, columns: [],
+            name,
+            columns: [],
             isUnique: Number(r.non_unique) === 0,
-            isPrimary: name === 'PRIMARY',
-            type: r.index_type || 'BTREE'
-          })
+            isPrimary: name === "PRIMARY",
+            type: r.index_type || "BTREE",
+          });
         }
-        indexMap.get(name)!.columns.push(r.col_name)
+        indexMap.get(name)!.columns.push(r.col_name);
       }
-      const indexes = Array.from(indexMap.values())
+      const indexes = Array.from(indexMap.values());
 
       // Transform foreign keys — aggregate columns per FK name
-      const fkMap = new Map<string, any>()
+      const fkMap = new Map<string, any>();
       for (const r of rawFks as any[]) {
-        const name = r.fk_name
+        const name = r.fk_name;
         if (!fkMap.has(name)) {
           fkMap.set(name, {
-            name, columns: [], referencedTable: r.ref_table,
-            referencedColumns: [], onUpdate: r.on_update, onDelete: r.on_delete
-          })
+            name,
+            columns: [],
+            referencedTable: r.ref_table,
+            referencedColumns: [],
+            onUpdate: r.on_update,
+            onDelete: r.on_delete,
+          });
         }
-        fkMap.get(name)!.columns.push(r.col_name)
-        fkMap.get(name)!.referencedColumns.push(r.ref_col)
+        fkMap.get(name)!.columns.push(r.col_name);
+        fkMap.get(name)!.referencedColumns.push(r.ref_col);
       }
-      const foreignKeys = Array.from(fkMap.values())
+      const foreignKeys = Array.from(fkMap.values());
 
-      return { columns, indexes, foreignKeys }
-
+      return { columns, indexes, foreignKeys };
     } else {
       // PostgreSQL — use json_agg + json_build_object in subqueries
-      const schemaName = schema || 'public'
+      const schemaName = schema || "public";
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT
@@ -983,59 +1115,73 @@ export class SQLService extends EventEmitter {
              WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = $1 AND tc.table_schema = $2
              ORDER BY tc.constraint_name
            ) fk_q) as fks_json`,
-        [table, schemaName]
-      )
+        [table, schemaName],
+      );
 
-      const row = result.rows[0] as any
-      const rawCols = row?.columns_json ?? []
-      const rawIdxs = row?.indexes_json ?? []
-      const rawFks = row?.fks_json ?? []
+      const row = result.rows[0] as any;
+      const rawCols = row?.columns_json ?? [];
+      const rawIdxs = row?.indexes_json ?? [];
+      const rawFks = row?.fks_json ?? [];
 
       // Transform columns
       const columns = (rawCols as any[]).map((r: any) => {
-        const isPk = Boolean(r.is_pk)
-        const isSerial = (r.default_val || '').includes('nextval')
-        let columnKey = ''
-        if (isPk) columnKey = 'PRI'
-        else if (r.col_key_extra === 'UNI') columnKey = 'UNI'
+        const isPk = Boolean(r.is_pk);
+        const isSerial = (r.default_val || "").includes("nextval");
+        let columnKey = "";
+        if (isPk) columnKey = "PRI";
+        else if (r.col_key_extra === "UNI") columnKey = "UNI";
         return {
-          name: r.col_name, type: r.col_type,
-          nullable: r.nullable === 'YES', defaultValue: r.default_val,
+          name: r.col_name,
+          type: r.col_type,
+          nullable: r.nullable === "YES",
+          defaultValue: r.default_val,
           isPrimaryKey: isPk,
-          isAutoIncrement: isSerial || r.is_identity === 'YES',
-          extra: isSerial ? 'serial' : (r.identity_gen ? `identity(${r.identity_gen})` : undefined),
+          isAutoIncrement: isSerial || r.is_identity === "YES",
+          extra: isSerial
+            ? "serial"
+            : r.identity_gen
+              ? `identity(${r.identity_gen})`
+              : undefined,
           comment: r.comment || undefined,
           ordinalPosition: Number(r.ordinal_pos),
-          charset: null, collation: r.collation || null, columnKey,
+          charset: null,
+          collation: r.collation || null,
+          columnKey,
           identityGeneration: r.identity_gen || null,
-          isGenerated: r.is_generated === 'ALWAYS',
+          isGenerated: r.is_generated === "ALWAYS",
           generationExpression: r.gen_expr || null,
-        }
-      })
+        };
+      });
 
       // Transform indexes
       const indexes = (rawIdxs as any[]).map((r: any) => ({
-        name: r.index_name, columns: r.columns,
-        isUnique: Boolean(r.is_unique), isPrimary: Boolean(r.is_primary),
-        type: r.index_type || 'btree'
-      }))
+        name: r.index_name,
+        columns: r.columns,
+        isUnique: Boolean(r.is_unique),
+        isPrimary: Boolean(r.is_primary),
+        type: r.index_type || "btree",
+      }));
 
       // Transform foreign keys — aggregate columns per FK name
-      const fkMap = new Map<string, any>()
+      const fkMap = new Map<string, any>();
       for (const r of rawFks as any[]) {
-        const name = r.fk_name
+        const name = r.fk_name;
         if (!fkMap.has(name)) {
           fkMap.set(name, {
-            name, columns: [], referencedTable: r.ref_table,
-            referencedColumns: [], onUpdate: r.on_update, onDelete: r.on_delete
-          })
+            name,
+            columns: [],
+            referencedTable: r.ref_table,
+            referencedColumns: [],
+            onUpdate: r.on_update,
+            onDelete: r.on_delete,
+          });
         }
-        fkMap.get(name)!.columns.push(r.col_name)
-        fkMap.get(name)!.referencedColumns.push(r.ref_col)
+        fkMap.get(name)!.columns.push(r.col_name);
+        fkMap.get(name)!.referencedColumns.push(r.ref_col);
       }
-      const foreignKeys = Array.from(fkMap.values())
+      const foreignKeys = Array.from(fkMap.values());
 
-      return { columns, indexes, foreignKeys }
+      return { columns, indexes, foreignKeys };
     }
   }
 
@@ -1048,81 +1194,111 @@ export class SQLService extends EventEmitter {
    * PostgreSQL: uses pg-query-stream
    */
   async streamQuery(sqlSessionId: string, query: string): Promise<Readable> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected to database')
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected to database");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       // The promise wrapper stores the raw connection at .connection
       // The raw connection's .query() returns a Query object with .stream()
-      const rawConn = active.conn.connection
-      return rawConn.query(query).stream()
+      const rawConn = active.conn.connection;
+      return rawConn.query(query).stream();
     } else {
       // PostgreSQL: use pg-query-stream
-      const QueryStream = (await import('pg-query-stream')).default
-      const qs = new QueryStream(query, undefined, { batchSize: 500 })
-      const stream: Readable = active.conn.query(qs)
-      return stream
+      const QueryStream = (await import("pg-query-stream")).default;
+      const qs = new QueryStream(query, undefined, { batchSize: 500 });
+      const stream: Readable = active.conn.query(qs);
+      return stream;
     }
   }
 
   /**
    * Get the raw connection for a session (used by transfer service for streaming).
    */
-  getConnection(sqlSessionId: string): { type: DatabaseType; conn: any; database: string } | undefined {
-    return this.connections.get(sqlSessionId)
+  getConnection(
+    sqlSessionId: string,
+  ): { type: DatabaseType; conn: any; database: string } | undefined {
+    return this.connections.get(sqlSessionId);
   }
 
   // ── Utilities ──
 
-  async getTableRowCount(sqlSessionId: string, table: string, schema?: string): Promise<number> {
-    const active = this.connections.get(sqlSessionId)
-    if (!active) throw new Error('Not connected')
+  async getTableRowCount(
+    sqlSessionId: string,
+    table: string,
+    schema?: string,
+  ): Promise<number> {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) throw new Error("Not connected");
 
-    if (active.type === 'mysql') {
+    if (active.type === "mysql") {
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT TABLE_ROWS as cnt FROM INFORMATION_SCHEMA.TABLES
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-        [table]
-      )
-      return Number((result.rows[0] as any)?.cnt ?? 0)
+        [table],
+      );
+      return Number((result.rows[0] as any)?.cnt ?? 0);
     } else {
-      const schemaName = schema || 'public'
+      const schemaName = schema || "public";
       const result = await this.executeQuery(
         sqlSessionId,
         `SELECT reltuples::bigint as cnt FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE c.relname = $1 AND n.nspname = $2`,
-        [table, schemaName]
-      )
-      return Number((result.rows[0] as any)?.cnt ?? 0)
+        [table, schemaName],
+      );
+      return Number((result.rows[0] as any)?.cnt ?? 0);
     }
   }
 
-  async getPrimaryKeyColumns(sqlSessionId: string, table: string, schema?: string): Promise<string[]> {
-    const columns = await this.getColumns(sqlSessionId, table, schema)
-    return columns.filter((c) => c.isPrimaryKey).map((c) => c.name)
+  async getPrimaryKeyColumns(
+    sqlSessionId: string,
+    table: string,
+    schema?: string,
+  ): Promise<string[]> {
+    const columns = await this.getColumns(sqlSessionId, table, schema);
+    return columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
   }
 
   getCurrentDatabase(sqlSessionId: string): string | null {
-    return this.connections.get(sqlSessionId)?.database ?? null
+    return this.connections.get(sqlSessionId)?.database ?? null;
   }
 
   getConnectionType(sqlSessionId: string): DatabaseType | null {
-    return this.connections.get(sqlSessionId)?.type ?? null
+    return this.connections.get(sqlSessionId)?.type ?? null;
   }
 
   private mysqlFieldType(typeId: number): string {
     const types: Record<number, string> = {
-      0: 'DECIMAL', 1: 'TINYINT', 2: 'SMALLINT', 3: 'INT',
-      4: 'FLOAT', 5: 'DOUBLE', 6: 'NULL', 7: 'TIMESTAMP',
-      8: 'BIGINT', 9: 'MEDIUMINT', 10: 'DATE', 11: 'TIME',
-      12: 'DATETIME', 13: 'YEAR', 14: 'NEWDATE', 15: 'VARCHAR',
-      16: 'BIT', 245: 'JSON', 246: 'DECIMAL', 247: 'ENUM',
-      248: 'SET', 249: 'TINYBLOB', 250: 'MEDIUMBLOB',
-      251: 'LONGBLOB', 252: 'BLOB', 253: 'VARCHAR',
-      254: 'CHAR', 255: 'GEOMETRY'
-    }
-    return types[typeId] || `TYPE_${typeId}`
+      0: "DECIMAL",
+      1: "TINYINT",
+      2: "SMALLINT",
+      3: "INT",
+      4: "FLOAT",
+      5: "DOUBLE",
+      6: "NULL",
+      7: "TIMESTAMP",
+      8: "BIGINT",
+      9: "MEDIUMINT",
+      10: "DATE",
+      11: "TIME",
+      12: "DATETIME",
+      13: "YEAR",
+      14: "NEWDATE",
+      15: "VARCHAR",
+      16: "BIT",
+      245: "JSON",
+      246: "DECIMAL",
+      247: "ENUM",
+      248: "SET",
+      249: "TINYBLOB",
+      250: "MEDIUMBLOB",
+      251: "LONGBLOB",
+      252: "BLOB",
+      253: "VARCHAR",
+      254: "CHAR",
+      255: "GEOMETRY",
+    };
+    return types[typeId] || `TYPE_${typeId}`;
   }
 }

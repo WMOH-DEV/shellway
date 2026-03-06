@@ -1,77 +1,137 @@
-import type { SchemaTable, SchemaColumn } from '@/types/sql'
+import type { SchemaTable, SchemaColumn } from "@/types/sql";
 
-type Monaco = typeof import('monaco-editor')
-type CompletionItem = import('monaco-editor').languages.CompletionItem
+type Monaco = typeof import("monaco-editor");
+type CompletionItem = import("monaco-editor").languages.CompletionItem;
 
 interface SchemaInfo {
-  tables: SchemaTable[]
-  columns: SchemaColumn[]
-  databases: string[]
+  tables: SchemaTable[];
+  columns: SchemaColumn[];
+  databases: string[];
 }
 
 // ── SQL keywords ──
 
 const SQL_KEYWORDS = [
-  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
-  'OUTER JOIN', 'CROSS JOIN', 'ON', 'AND', 'OR', 'NOT', 'IN', 'BETWEEN',
-  'LIKE', 'IS NULL', 'IS NOT NULL', 'ORDER BY', 'GROUP BY', 'HAVING',
-  'LIMIT', 'OFFSET', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET',
-  'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
-  'DISTINCT', 'AS', 'UNION', 'UNION ALL', 'CASE', 'WHEN', 'THEN',
-  'ELSE', 'END', 'EXISTS', 'ALL', 'ANY', 'ASC', 'DESC', 'WITH',
-  'RETURNING', 'IF EXISTS', 'IF NOT EXISTS', 'USE', 'SHOW', 'DESCRIBE',
-  'EXPLAIN', 'CREATE INDEX', 'DROP INDEX', 'TRUNCATE', 'BEGIN',
-  'COMMIT', 'ROLLBACK', 'GRANT', 'REVOKE'
-]
+  "SELECT",
+  "FROM",
+  "WHERE",
+  "JOIN",
+  "LEFT JOIN",
+  "RIGHT JOIN",
+  "INNER JOIN",
+  "OUTER JOIN",
+  "CROSS JOIN",
+  "ON",
+  "AND",
+  "OR",
+  "NOT",
+  "IN",
+  "BETWEEN",
+  "LIKE",
+  "IS NULL",
+  "IS NOT NULL",
+  "ORDER BY",
+  "GROUP BY",
+  "HAVING",
+  "LIMIT",
+  "OFFSET",
+  "INSERT INTO",
+  "VALUES",
+  "UPDATE",
+  "SET",
+  "DELETE FROM",
+  "CREATE TABLE",
+  "ALTER TABLE",
+  "DROP TABLE",
+  "DISTINCT",
+  "AS",
+  "UNION",
+  "UNION ALL",
+  "CASE",
+  "WHEN",
+  "THEN",
+  "ELSE",
+  "END",
+  "EXISTS",
+  "ALL",
+  "ANY",
+  "ASC",
+  "DESC",
+  "WITH",
+  "RETURNING",
+  "IF EXISTS",
+  "IF NOT EXISTS",
+  "USE",
+  "SHOW",
+  "DESCRIBE",
+  "EXPLAIN",
+  "CREATE INDEX",
+  "DROP INDEX",
+  "TRUNCATE",
+  "BEGIN",
+  "COMMIT",
+  "ROLLBACK",
+  "GRANT",
+  "REVOKE",
+];
 
 // ── SQL functions ──
 
 const SQL_FUNCTIONS = [
-  { label: 'COUNT', detail: 'COUNT(expression)' },
-  { label: 'SUM', detail: 'SUM(expression)' },
-  { label: 'AVG', detail: 'AVG(expression)' },
-  { label: 'MIN', detail: 'MIN(expression)' },
-  { label: 'MAX', detail: 'MAX(expression)' },
-  { label: 'NOW', detail: 'NOW()' },
-  { label: 'CURDATE', detail: 'CURDATE()' },
-  { label: 'CONCAT', detail: 'CONCAT(str1, str2, ...)' },
-  { label: 'SUBSTRING', detail: 'SUBSTRING(str, pos, len)' },
-  { label: 'LENGTH', detail: 'LENGTH(str)' },
-  { label: 'TRIM', detail: 'TRIM(str)' },
-  { label: 'UPPER', detail: 'UPPER(str)' },
-  { label: 'LOWER', detail: 'LOWER(str)' },
-  { label: 'COALESCE', detail: 'COALESCE(val1, val2, ...)' },
-  { label: 'IFNULL', detail: 'IFNULL(expr, alt)' },
-  { label: 'NULLIF', detail: 'NULLIF(expr1, expr2)' },
-  { label: 'CAST', detail: 'CAST(expr AS type)' },
-  { label: 'CONVERT', detail: 'CONVERT(expr, type)' },
-  { label: 'DATE_FORMAT', detail: 'DATE_FORMAT(date, format)' },
-  { label: 'DATE_ADD', detail: 'DATE_ADD(date, INTERVAL expr unit)' },
-  { label: 'DATE_SUB', detail: 'DATE_SUB(date, INTERVAL expr unit)' }
-]
+  { label: "COUNT", detail: "COUNT(expression)" },
+  { label: "SUM", detail: "SUM(expression)" },
+  { label: "AVG", detail: "AVG(expression)" },
+  { label: "MIN", detail: "MIN(expression)" },
+  { label: "MAX", detail: "MAX(expression)" },
+  { label: "NOW", detail: "NOW()" },
+  { label: "CURDATE", detail: "CURDATE()" },
+  { label: "CONCAT", detail: "CONCAT(str1, str2, ...)" },
+  { label: "SUBSTRING", detail: "SUBSTRING(str, pos, len)" },
+  { label: "LENGTH", detail: "LENGTH(str)" },
+  { label: "TRIM", detail: "TRIM(str)" },
+  { label: "UPPER", detail: "UPPER(str)" },
+  { label: "LOWER", detail: "LOWER(str)" },
+  { label: "COALESCE", detail: "COALESCE(val1, val2, ...)" },
+  { label: "IFNULL", detail: "IFNULL(expr, alt)" },
+  { label: "NULLIF", detail: "NULLIF(expr1, expr2)" },
+  { label: "CAST", detail: "CAST(expr AS type)" },
+  { label: "CONVERT", detail: "CONVERT(expr, type)" },
+  { label: "DATE_FORMAT", detail: "DATE_FORMAT(date, format)" },
+  { label: "DATE_ADD", detail: "DATE_ADD(date, INTERVAL expr unit)" },
+  { label: "DATE_SUB", detail: "DATE_SUB(date, INTERVAL expr unit)" },
+];
 
 // Context keywords that trigger table suggestions
-const TABLE_CONTEXT_KEYWORDS = ['FROM', 'JOIN', 'INTO', 'UPDATE', 'TABLE']
+const TABLE_CONTEXT_KEYWORDS = ["FROM", "JOIN", "INTO", "UPDATE", "TABLE"];
 // Context keywords that trigger column suggestions
-const COLUMN_CONTEXT_KEYWORDS = ['SELECT', 'WHERE', 'ON', 'SET', 'ORDER BY', 'GROUP BY', 'HAVING']
+const COLUMN_CONTEXT_KEYWORDS = [
+  "SELECT",
+  "WHERE",
+  "ON",
+  "SET",
+  "ORDER BY",
+  "GROUP BY",
+  "HAVING",
+];
 // Context keywords that trigger database suggestions
-const DATABASE_CONTEXT_KEYWORDS = ['USE', 'DATABASE']
+const DATABASE_CONTEXT_KEYWORDS = ["USE", "DATABASE"];
 
 /**
  * Extracts table names referenced in FROM and JOIN clauses of the query so far.
  * Used to scope column suggestions to the relevant tables.
  */
 function extractReferencedTables(sql: string): Set<string> {
-  const tables = new Set<string>()
+  const tables = new Set<string>();
   // Match: FROM tablename [alias], JOIN tablename [alias]
-  const pattern = /\b(?:FROM|JOIN|UPDATE|INTO)\s+([`"\[]?\w+[`"\]]?)(?:\s+(?:AS\s+)?([`"\[]?\w+[`"\]]?))?/gi
-  let m: RegExpExecArray | null
+  const pattern =
+    /\b(?:FROM|JOIN|UPDATE|INTO)\s+([`"\[]?\w+[`"\]]?)(?:\s+(?:AS\s+)?([`"\[]?\w+[`"\]]?))?/gi;
+  let m: RegExpExecArray | null;
   while ((m = pattern.exec(sql)) !== null) {
-    const rawTable = m[1].replace(/[`"\[\]]/g, '')
-    tables.add(rawTable.toLowerCase())
-    if (m[2]) tables.add(m[2].replace(/[`"\[\]]/g, '').toLowerCase()) // also add alias
+    const rawTable = m[1].replace(/[`"\[\]]/g, "");
+    tables.add(rawTable.toLowerCase());
+    if (m[2]) tables.add(m[2].replace(/[`"\[\]]/g, "").toLowerCase()); // also add alias
   }
-  return tables
+  return tables;
 }
 
 /**
@@ -79,48 +139,62 @@ function extractReferencedTables(sql: string): Set<string> {
  * is likely trying to complete.
  */
 function getCompletionContext(textBeforeCursor: string): {
-  wantsTable: boolean
-  wantsColumn: boolean
-  wantsDatabase: boolean
-  tablePrefix: string | null // e.g. "users." → "users"
+  wantsTable: boolean;
+  wantsColumn: boolean;
+  wantsDatabase: boolean;
+  tablePrefix: string | null; // e.g. "users." → "users"
 } {
   // Normalise whitespace and uppercase for matching
-  const trimmed = textBeforeCursor.replace(/\s+/g, ' ').trimEnd().toUpperCase()
+  const trimmed = textBeforeCursor.replace(/\s+/g, " ").trimEnd().toUpperCase();
 
   // Check for "tablename." pattern → want column completion for that table
-  const dotMatch = textBeforeCursor.match(/(\w+)\.\s*$/)
+  const dotMatch = textBeforeCursor.match(/(\w+)\.\s*$/);
   if (dotMatch) {
-    return { wantsTable: false, wantsColumn: true, wantsDatabase: false, tablePrefix: dotMatch[1] }
+    return {
+      wantsTable: false,
+      wantsColumn: true,
+      wantsDatabase: false,
+      tablePrefix: dotMatch[1],
+    };
   }
 
   // Look for the last significant keyword
   const lastKeywordPattern = new RegExp(
-    '\\b(' +
-      [...TABLE_CONTEXT_KEYWORDS, ...COLUMN_CONTEXT_KEYWORDS, ...DATABASE_CONTEXT_KEYWORDS]
-        .map((k) => k.replace(/\s+/g, '\\s+'))
-        .join('|') +
-    ')\\b',
-    'gi'
-  )
+    "\\b(" +
+      [
+        ...TABLE_CONTEXT_KEYWORDS,
+        ...COLUMN_CONTEXT_KEYWORDS,
+        ...DATABASE_CONTEXT_KEYWORDS,
+      ]
+        .map((k) => k.replace(/\s+/g, "\\s+"))
+        .join("|") +
+      ")\\b",
+    "gi",
+  );
 
-  let lastMatch: RegExpExecArray | null = null
-  let match: RegExpExecArray | null
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
   while ((match = lastKeywordPattern.exec(trimmed)) !== null) {
-    lastMatch = match
+    lastMatch = match;
   }
 
   if (!lastMatch) {
-    return { wantsTable: false, wantsColumn: false, wantsDatabase: false, tablePrefix: null }
+    return {
+      wantsTable: false,
+      wantsColumn: false,
+      wantsDatabase: false,
+      tablePrefix: null,
+    };
   }
 
-  const keyword = lastMatch[1].replace(/\s+/g, ' ').toUpperCase()
+  const keyword = lastMatch[1].replace(/\s+/g, " ").toUpperCase();
 
   return {
     wantsTable: TABLE_CONTEXT_KEYWORDS.includes(keyword),
     wantsColumn: COLUMN_CONTEXT_KEYWORDS.includes(keyword),
     wantsDatabase: DATABASE_CONTEXT_KEYWORDS.includes(keyword),
-    tablePrefix: null
-  }
+    tablePrefix: null,
+  };
 }
 
 /**
@@ -129,79 +203,84 @@ function getCompletionContext(textBeforeCursor: string): {
  */
 export function registerSQLCompletionProvider(
   monaco: Monaco,
-  getSchema: () => SchemaInfo
-): import('monaco-editor').IDisposable {
-  return monaco.languages.registerCompletionItemProvider('sql', {
-    triggerCharacters: ['.', ' '],
+  getSchema: () => SchemaInfo,
+): import("monaco-editor").IDisposable {
+  return monaco.languages.registerCompletionItemProvider("sql", {
+    triggerCharacters: [".", " "],
     provideCompletionItems(model, position) {
       const textBeforeCursor = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,
         endLineNumber: position.lineNumber,
-        endColumn: position.column
-      })
+        endColumn: position.column,
+      });
 
-      const word = model.getWordUntilPosition(position)
+      const word = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
         startColumn: word.startColumn,
         endLineNumber: position.lineNumber,
-        endColumn: word.endColumn
-      }
+        endColumn: word.endColumn,
+      };
 
-      const ctx = getCompletionContext(textBeforeCursor)
-      const suggestions: CompletionItem[] = []
+      const ctx = getCompletionContext(textBeforeCursor);
+      const suggestions: CompletionItem[] = [];
 
-      const Kind = monaco.languages.CompletionItemKind
-      const schema = getSchema()
+      const Kind = monaco.languages.CompletionItemKind;
+      const schema = getSchema();
 
       // ── Table suggestions ──
       if (ctx.wantsTable) {
         for (const table of schema.tables) {
           suggestions.push({
             label: table.name,
-            kind: table.type === 'view' ? Kind.Interface : Kind.Struct,
-            detail: table.type === 'view' ? 'View' : 'Table',
+            kind: table.type === "view" ? Kind.Interface : Kind.Struct,
+            detail: table.type === "view" ? "View" : "Table",
             insertText: table.name,
-            range
-          } as CompletionItem)
+            range,
+          } as CompletionItem);
         }
       }
 
       // ── Column suggestions (after dot or after column-context keyword) ──
       if (ctx.wantsColumn) {
         // Parse the full query text to find tables referenced in FROM/JOIN
-        const fullText = model.getValue()
-        const referencedTables = extractReferencedTables(fullText)
+        const fullText = model.getValue();
+        const referencedTables = extractReferencedTables(fullText);
 
         // If we have tableName metadata on columns, prioritise columns from
         // referenced tables; fall back to showing all columns if no schema loaded yet.
-        const columnsToShow = schema.columns.length === 0
-          ? []
-          : (ctx.tablePrefix
-              // "table." prefix: filter to that specific table
-              ? schema.columns.filter(
-                  (c) => c.tableName?.toLowerCase() === ctx.tablePrefix!.toLowerCase()
+        const columnsToShow =
+          schema.columns.length === 0
+            ? []
+            : ctx.tablePrefix
+              ? // "table." prefix: filter to that specific table
+                schema.columns.filter(
+                  (c) =>
+                    c.tableName?.toLowerCase() ===
+                    ctx.tablePrefix!.toLowerCase(),
                 )
-              // Regular column context: prefer referenced tables; fall back to all
-              : referencedTables.size > 0 && schema.columns.some((c) => c.tableName)
+              : // Regular column context: prefer referenced tables; fall back to all
+                referencedTables.size > 0 &&
+                  schema.columns.some((c) => c.tableName)
                 ? schema.columns.filter(
-                    (c) => !c.tableName || referencedTables.has(c.tableName.toLowerCase())
+                    (c) =>
+                      !c.tableName ||
+                      referencedTables.has(c.tableName.toLowerCase()),
                   )
-                : schema.columns
-            )
+                : schema.columns;
 
         for (const col of columnsToShow) {
           suggestions.push({
             label: col.name,
             kind: Kind.Field,
             detail: col.tableName
-              ? `${col.tableName}.${col.name} — ${col.type}${col.nullable ? ' | NULL' : ''}`
-              : `${col.type}${col.nullable ? ' | NULL' : ''}`,
+              ? `${col.tableName}.${col.name} — ${col.type}${col.nullable ? " | NULL" : ""}`
+              : `${col.type}${col.nullable ? " | NULL" : ""}`,
             insertText: col.name,
             range,
-            sortText: '!' + col.name // Sort columns above keywords
-          } as CompletionItem)
+            sortText: "!" + col.name, // Sort columns above keywords
+          } as CompletionItem);
         }
       }
 
@@ -211,10 +290,10 @@ export function registerSQLCompletionProvider(
           suggestions.push({
             label: db,
             kind: Kind.Module,
-            detail: 'Database',
+            detail: "Database",
             insertText: db,
-            range
-          } as CompletionItem)
+            range,
+          } as CompletionItem);
         }
       }
 
@@ -226,8 +305,8 @@ export function registerSQLCompletionProvider(
             kind: Kind.Keyword,
             insertText: kw,
             range,
-            sortText: '~~' + kw // Push below table/column suggestions
-          } as CompletionItem)
+            sortText: "~~" + kw, // Push below table/column suggestions
+          } as CompletionItem);
         }
       }
 
@@ -238,15 +317,16 @@ export function registerSQLCompletionProvider(
             label: fn.label,
             kind: Kind.Function,
             detail: fn.detail,
-            insertText: fn.label + '($0)',
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            insertText: fn.label + "($0)",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
             range,
-            sortText: '~' + fn.label
-          } as CompletionItem)
+            sortText: "~" + fn.label,
+          } as CompletionItem);
         }
       }
 
-      return { suggestions }
-    }
-  })
+      return { suggestions };
+    },
+  });
 }
