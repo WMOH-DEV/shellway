@@ -104,6 +104,10 @@ export class HealthService {
     conn._client.exec('echo pong', (err: Error | undefined, stream: any) => {
       if (err) return
 
+      // Prevent unhandled 'error' events on the stream (e.g. during connection drop)
+      stream.on('error', () => {})
+      stream.stderr.on('error', () => {})
+
       stream.on('close', () => {
         const rtt = Date.now() - start
         state.latencyHistory.push(rtt)

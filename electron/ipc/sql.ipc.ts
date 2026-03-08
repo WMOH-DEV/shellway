@@ -64,6 +64,20 @@ sqlService.on("query-completed", (queryId: string, sqlSessionId: string) => {
   }
 });
 
+// Forward DB connection errors (from sleep/wake, network drops, etc.) to the renderer
+sqlService.on(
+  "connection-error",
+  (sqlSessionId: string, errorMessage: string) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(
+        "sql:connection-error",
+        sqlSessionId,
+        errorMessage,
+      );
+    }
+  },
+);
+
 /** Get the SQLConfigStore singleton (for use by other services) */
 export function getSQLConfigStore(): SQLConfigStore {
   return sqlConfigStore;

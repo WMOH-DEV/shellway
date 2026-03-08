@@ -184,6 +184,17 @@ export default function App() {
       setUpdateReady({ version: info?.version ?? '' })
     })
 
+    // System resume (after sleep/wake) — notify user, connections may be stale
+    const unsubSystemResume = window.novadeck.system.onResume(() => {
+      toast.info('System Resumed', 'Connections may need to be re-established.')
+    })
+
+    // SQL connection errors (DB connection dropped during sleep/network loss)
+    const unsubSQLConnError = window.novadeck.sql.onConnectionError((sqlSessionId, errorMessage) => {
+      console.warn(`[SQL] Connection error (${sqlSessionId}):`, errorMessage)
+      toast.error('Database Connection Lost', errorMessage)
+    })
+
     return () => {
       unsubStatus()
       unsubError()
@@ -198,6 +209,8 @@ export default function App() {
       unsubKBDI()
       unsubUpdateAvailable()
       unsubUpdateDownloaded()
+      unsubSystemResume()
+      unsubSQLConnError()
     }
   }, [updateTab, addEntry, setReconnectionState, addReconnectionEvent])
 

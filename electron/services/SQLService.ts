@@ -139,6 +139,13 @@ export class SQLService extends EventEmitter {
       }
     }
 
+    // Attach error handler to prevent unhandled 'error' events from crashing the process
+    // (e.g. connection reset after laptop sleep, server restart, network loss)
+    (conn as any).on?.("error", (err: Error) => {
+      console.warn(`[SQLService] MySQL connection error (${sqlSessionId}):`, err.message);
+      this.emit("connection-error", sqlSessionId, err.message);
+    });
+
     this.connections.set(sqlSessionId, {
       type: "mysql",
       conn,
@@ -183,6 +190,12 @@ export class SQLService extends EventEmitter {
         /* ignore */
       }
     }
+
+    // Attach error handler to prevent unhandled 'error' events from crashing the process
+    client.on("error", (err: Error) => {
+      console.warn(`[SQLService] PostgreSQL connection error (${sqlSessionId}):`, err.message);
+      this.emit("connection-error", sqlSessionId, err.message);
+    });
 
     this.connections.set(sqlSessionId, {
       type: "postgres",

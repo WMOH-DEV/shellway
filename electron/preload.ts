@@ -21,6 +21,16 @@ const api = {
     },
   },
 
+  // ── System events ──
+  system: {
+    /** Fired when the system resumes from sleep — connections may be stale */
+    onResume: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on("system:resume", handler);
+      return () => ipcRenderer.removeListener("system:resume", handler);
+    },
+  },
+
   // ── Platform info ──
   platform: {
     get: () => ipcRenderer.invoke("platform:get") as Promise<NodeJS.Platform>,
@@ -776,6 +786,20 @@ const api = {
       ) => callback(queryId, sqlSessionId);
       ipcRenderer.on("sql:query-completed", handler);
       return () => ipcRenderer.removeListener("sql:query-completed", handler);
+    },
+
+    /** DB connection error — connection dropped (sleep/wake, network loss, server restart) */
+    onConnectionError: (
+      callback: (sqlSessionId: string, errorMessage: string) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        sqlSessionId: string,
+        errorMessage: string,
+      ) => callback(sqlSessionId, errorMessage);
+      ipcRenderer.on("sql:connection-error", handler);
+      return () =>
+        ipcRenderer.removeListener("sql:connection-error", handler);
     },
   },
 

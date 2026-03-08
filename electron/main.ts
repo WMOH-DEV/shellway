@@ -8,6 +8,7 @@ import {
   Tray,
   Menu,
   nativeImage,
+  powerMonitor,
 } from "electron";
 import { join, basename, extname } from "path";
 import { readFile, writeFile, stat } from "fs/promises";
@@ -31,8 +32,64 @@ import { registerExportIPC } from "./ipc/export.ipc";
 import { registerMonitorIPC, getMonitorService } from "./ipc/monitor.ipc";
 import { registerServiceManagerIPC } from "./ipc/servicemanager.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
+import { getSSHService } from "./ipc/ssh.ipc";
+import { getSQLService } from "./ipc/sql.ipc";
 import { initNotificationService } from "./services/NotificationService";
 import { getLogService } from "./services/LogService";
+
+// ──── Global error handlers ────
+// Prevent unhandled errors from crashing the app with an ugly Electron dialog.
+// These catch errors from stale SSH connections (laptop sleep/wake, network loss, etc.)
+
+process.on("uncaughtException", (error) => {
+  const msg = error?.message ?? String(error);
+  // Suppress common network-related errors from ssh2 / database drivers
+  // that occur after sleep/wake or network drops — these are expected and non-fatal
+  const isNetworkError =
+    /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|EHOSTUNREACH|ENETUNREACH|ENOTCONN|ERR_UNHANDLED_ERROR/i.test(
+      msg,
+    );
+  if (isNetworkError) {
+    console.warn("[main] Suppressed network error:", msg);
+    try {
+      getLogService().log("__system__", "warning", "system", `Connection error suppressed: ${msg}`);
+    } catch {
+      /* LogService may not be initialized yet */
+    }
+    return;
+  }
+  // For non-network errors, log but don't crash
+  console.error("[main] Uncaught exception:", error);
+  try {
+    getLogService().log("__system__", "error", "system", `Uncaught exception: ${msg}`);
+  } catch {
+    /* LogService may not be initialized yet */
+  }
+});
+
+process.on("unhandledRejection", (reason) => {
+  const msg =
+    reason instanceof Error ? reason.message : String(reason ?? "unknown");
+  const isNetworkError =
+    /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|EHOSTUNREACH|ENETUNREACH|ENOTCONN/i.test(
+      msg,
+    );
+  if (isNetworkError) {
+    console.warn("[main] Suppressed unhandled rejection:", msg);
+    try {
+      getLogService().log("__system__", "warning", "system", `Rejected promise suppressed: ${msg}`);
+    } catch {
+      /* LogService may not be initialized yet */
+    }
+    return;
+  }
+  console.error("[main] Unhandled rejection:", reason);
+  try {
+    getLogService().log("__system__", "error", "system", `Unhandled rejection: ${msg}`);
+  } catch {
+    /* LogService may not be initialized yet */
+  }
+});
 
 /** Create the main application window */
 function createWindow(): BrowserWindow {
@@ -457,6 +514,24 @@ app.whenReady().then(() => {
   ipcMain.handle("updater:install-and-restart", () => {
     autoUpdater.quitAndInstall();
   });
+
+  // ──── System sleep/wake detection ────
+  // When the system resumes from sleep, SSH/DB connections are likely stale.
+  // Notify the renderer so it can handle reconnection gracefully.
+  powerMonitor.on("resume", () => {
+    console.log("[main] System resumed from sleep — notifying renderer");
+    try {
+      getLogService().log("__system__", "info", "system", "System resumed from sleep — checking connections");
+    } catch { /* ignore */ }
+    mainWindow.webContents.send("system:resume");
+  });
+
+  powerMonitor.on("suspend", () => {
+    console.log("[main] System going to sleep");
+    try {
+      getLogService().log("__system__", "info", "system", "System suspending — connections may become stale");
+    } catch { /* ignore */ }
+  });
 });
 
 app.on("window-all-closed", () => {
@@ -468,6 +543,18 @@ app.on("window-all-closed", () => {
 
   // Stop all monitor polling
   getMonitorService().stopAll();
+
+  // Disconnect all SSH and SQL sessions to prevent zombie connections
+  try {
+    getSSHService().disconnectAll();
+  } catch {
+    /* ignore — service may not be initialized */
+  }
+  try {
+    getSQLService().disconnectAll();
+  } catch {
+    /* ignore — service may not be initialized */
+  }
 
   if (process.platform !== "darwin") {
     app.quit();
