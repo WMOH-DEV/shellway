@@ -10,6 +10,7 @@ import {
   Table2,
   ListTree,
   Plus,
+  RefreshCcw,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
@@ -47,6 +48,8 @@ interface PaginationBarProps {
   onViewModeChange?: (mode: TableViewMode) => void
   /** Insert a new row — scoped to this tab */
   onInsertRow?: () => void
+  /** Refresh this table's data */
+  onRefreshTable?: () => void
 }
 
 const PAGE_SIZES = [50, 100, 200, 500, 1000]
@@ -68,6 +71,7 @@ export const PaginationBar = React.memo(function PaginationBar({
   viewMode = 'data',
   onViewModeChange,
   onInsertRow,
+  onRefreshTable,
 }: PaginationBarProps) {
   const { page, pageSize, totalRows, totalPages } = pagination
   const [pageInput, setPageInput] = useState(String(page))
@@ -370,7 +374,16 @@ export const PaginationBar = React.memo(function PaginationBar({
 
       <div className="flex-1" />
 
-      {/* ── Right: Column picker (only in data mode) ── */}
+      {/* ── Right: Refresh + Column picker (only in data mode) ── */}
+      {!isStructure && (
+        <button
+          onClick={onRefreshTable}
+          className="flex items-center justify-center w-5 h-5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors shrink-0 mr-1"
+          title="Refresh this table (F5)"
+        >
+          <RefreshCcw size={11} />
+        </button>
+      )}
       {!isStructure && fields && fields.length > 0 && (
         <div ref={pickerRef} className="relative flex items-center gap-1 shrink-0">
           {hiddenColumns.length > 0 && (

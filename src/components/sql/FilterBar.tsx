@@ -202,9 +202,15 @@ const FilterRow = React.memo(function FilterRow({
         onChange={(e) => {
           const newCol = e.target.value
           const newIsRaw = newCol === '__raw_sql__'
+          const newCategory = newIsRaw
+            ? 'raw_sql' as ColumnCategory
+            : categorizeColumn(columns.find((c) => c.name === newCol)?.type ?? 'varchar')
+          const newOps = OPERATORS_BY_CATEGORY[newCategory]
+          // Default to 'contains' for string columns, first operator for others
+          const defaultOp = newIsRaw ? 'raw_sql' : (newCategory === 'string' ? 'contains' : newOps[0])
           onUpdate(filter.id, {
             column: newCol,
-            operator: newIsRaw ? 'raw_sql' : operators[0],
+            operator: defaultOp,
             value: '',
             value2: undefined,
           })
@@ -311,11 +317,16 @@ function nextFilterId() {
 }
 
 function createEmptyFilter(columns: QueryField[]): TableFilter {
+  const col = columns[0]
+  const colName = col?.name ?? '__raw_sql__'
+  // Default to 'contains' for string columns, 'equals' for numbers/dates/booleans
+  const category = colName === '__raw_sql__' ? 'raw_sql' : categorizeColumn(col?.type ?? 'varchar')
+  const defaultOp: FilterOperator = category === 'string' ? 'contains' : 'equals'
   return {
     id: nextFilterId(),
     enabled: true,
-    column: columns[0]?.name ?? '__raw_sql__',
-    operator: 'equals',
+    column: colName,
+    operator: colName === '__raw_sql__' ? 'raw_sql' : defaultOp,
     value: '',
   }
 }

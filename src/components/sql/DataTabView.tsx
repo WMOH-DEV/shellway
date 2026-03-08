@@ -761,11 +761,22 @@ export const DataTabView = React.memo(function DataTabView({
   const handleFilterColumn = useCallback(
     (column: string) => {
       const id = crypto.randomUUID();
+      // Determine column type to pick smart default operator
+      const colField = columns.find((c) => c.name === column);
+      const colType = (colField?.type ?? "varchar").toLowerCase();
+      // Use 'contains' for string types, 'equals' for numbers/dates/booleans
+      const STRING_TYPES_SET = new Set([
+        "varchar", "text", "char", "character varying", "character",
+        "nvarchar", "ntext", "nchar", "longtext", "mediumtext", "tinytext",
+        "enum", "set", "uuid", "json", "jsonb",
+      ]);
+      const baseType = colType.replace(/\(.*\)/, "").trim();
+      const isStringCol = STRING_TYPES_SET.has(colType) || STRING_TYPES_SET.has(baseType);
       const newFilter: TableFilter = {
         id,
         enabled: true,
         column,
-        operator: "equals",
+        operator: isStringCol ? "contains" : "equals",
         value: "",
       };
       setFocusFilterId(id);
@@ -780,7 +791,7 @@ export const DataTabView = React.memo(function DataTabView({
         return updated;
       });
     },
-    [filtersKey],
+    [filtersKey, columns],
   );
 
   // Refs always hold latest values so callbacks never use stale closures
@@ -989,6 +1000,22 @@ export const DataTabView = React.memo(function DataTabView({
       upsertStagedChange(change);
     },
     [result?.fields, table, schema, columnMeta, upsertStagedChange],
+  );
+
+  // ── Set cell value handler (context menu → Set Value → NULL/DEFAULT/EMPTY) ──
+  const handleSetCellValue = useCallback(
+    (rowIndex: number, field: string, value: unknown) => {
+      // Lookup the current (original) value for this cell.
+      // For real rows, read from the query result. For inserted rows (beyond result.rows),
+      // pass undefined — handleCellEdit's insert-row path ignores oldValue.
+      const realRowCount = result?.rows?.length ?? 0;
+      const oldValue = rowIndex < realRowCount
+        ? (result?.rows[rowIndex] as Record<string, unknown> | undefined)?.[field]
+        : undefined;
+      // Delegate to the same cell edit path — treat it as if the user typed the value
+      handleCellEdit(rowIndex, field, oldValue, value);
+    },
+    [handleCellEdit, result],
   );
 
   // ── Delete row handler ──
@@ -1543,6 +1570,18 @@ export const DataTabView = React.memo(function DataTabView({
       window.removeEventListener("sql:toggle-view-mode", handleToggleViewMode);
   }, [connectionId, table]);
 
+  // ── Refresh this table's data ──
+  const handleRefreshTable = useCallback(() => {
+    cacheKeyRef.current = "";
+    executeQuery({
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      sort: sortColumn,
+      sortDir: sortDirection,
+      currentFilters: filters,
+    });
+  }, [executeQuery, pagination.page, pagination.pageSize, sortColumn, sortDirection, filters]);
+
   // ── View mode change handler for PaginationBar toggle ──
   const handleViewModeChange = useCallback((mode: TableViewMode) => {
     setViewMode(mode);
@@ -1700,6 +1739,7 @@ export const DataTabView = React.memo(function DataTabView({
           onInsertRow={handleInsertRow}
           onDuplicateRow={handleDuplicateRow}
           onDeleteRows={handleDeleteRows}
+          onSetCellValue={handleSetCellValue}
           tableName={buildFullTableName(table, schema, dbType)}
         />
       </div>
@@ -1749,6 +1789,7 @@ export const DataTabView = React.memo(function DataTabView({
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
         onInsertRow={handleInsertRow}
+        onRefreshTable={handleRefreshTable}
       />
     </div>
   );

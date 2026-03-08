@@ -904,6 +904,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     )
   }, [sqlSessionId, connectionId])
 
+  // ── Refresh ALL open data tabs (not just active) ──
+  const handleRefreshAllTables = useCallback(() => {
+    if (!sqlSessionId) return
+    const conn = getSQLConnectionState(connectionId)
+    const dataTabs = conn.tabs.filter((t) => t.type === 'data' && t.table)
+    // Stagger refresh events to avoid thundering-herd on shared DB connection
+    dataTabs.forEach((tab, i) => {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('sql:refresh-data', {
+            detail: { sqlSessionId, connectionId, table: tab.table },
+          })
+        )
+      }, i * 100) // 100ms between each refresh
+    })
+  }, [sqlSessionId, connectionId])
+
   // ── Open database picker ──
   const handleSwitchDatabase = useCallback(() => {
     if (!sqlSessionId) return
@@ -926,6 +943,15 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     )
   }, [connectionId])
 
+  // ── Undo a single staged change (from review popover) ──
+  const handleUndoChange = useCallback((changeId: string) => {
+    window.dispatchEvent(
+      new CustomEvent('sql:undo-change', {
+        detail: { connectionId, changeId },
+      })
+    )
+  }, [connectionId])
+
   // ── Status bar props ──
   const statusBarProps = useMemo(() => {
     return {
@@ -934,6 +960,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       table: activeTab?.table,
       filterCount: filters.length,
       changeCount: stagedChanges.length,
+      changes: stagedChanges,
     }
   }, [connectionConfig, currentDatabase, activeTab, filters, stagedChanges])
 
@@ -1185,8 +1212,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         {/* Right group: actions */}
         <ToolbarButton
           icon={<RefreshCw size={13} />}
-          title="Refresh current table (F5)"
-          onClick={handleRefreshActiveTable}
+          title="Refresh all open tables"
+          onClick={handleRefreshAllTables}
         />
         <ToolbarButton
           icon={<Plus size={14} />}
@@ -1292,7 +1319,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       )}
 
       {/* ── Status Bar ── */}
-      <SQLStatusBar {...statusBarProps} onSave={handleStatusBarSave} onDiscard={handleStatusBarDiscard} />
+      <SQLStatusBar {...statusBarProps} onSave={handleStatusBarSave} onDiscard={handleStatusBarDiscard} onUndoChange={handleUndoChange} />
 
       {/* Connect dialog (for reconnect / edit) */}
       <SQLConnectDialog

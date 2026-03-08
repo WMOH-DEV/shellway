@@ -34,6 +34,10 @@ import {
   Plus,
   Trash2,
   ChevronDown,
+  ChevronRight,
+  CircleOff,
+  Type,
+  DatabaseZap,
 } from "lucide-react";
 import { useUIStore } from "@/stores/uiStore";
 import type { QueryResult, SchemaColumn } from "@/types/sql";
@@ -201,6 +205,8 @@ interface DataGridProps {
   onDuplicateRow?: (rowData: Record<string, unknown>) => void;
   /** Called when user requests deleting rows by their indices */
   onDeleteRows?: (rowIndices: number[]) => void;
+  /** Called when user sets a cell value via context menu (Set Value → NULL/DEFAULT/EMPTY) */
+  onSetCellValue?: (rowIndex: number, field: string, value: unknown) => void;
   /** Actual table name used in generated SQL (e.g. `users` or `schema.users`). Falls back to 'table_name' if omitted. */
   tableName?: string;
 }
@@ -213,15 +219,25 @@ export interface DataGridHandle {
 
 // ── Context menu state (cell right-click) ──
 
+interface ContextMenuItem {
+  label: string;
+  icon: React.ReactNode;
+  action: () => void;
+  separator?: boolean;
+  /** Danger styling (red) */
+  danger?: boolean;
+  /** Sub-menu items — renders a submenu on hover */
+  submenu?: {
+    label: string;
+    icon?: React.ReactNode;
+    action: () => void;
+  }[];
+}
+
 interface ContextMenuState {
   x: number;
   y: number;
-  items: {
-    label: string;
-    icon: React.ReactNode;
-    action: () => void;
-    separator?: boolean;
-  }[];
+  items: ContextMenuItem[];
 }
 
 // ── Header context menu state ──
@@ -360,14 +376,86 @@ function CtxMenuItem({
   icon,
   label,
   onClick,
+  danger,
+  submenu,
+  onCloseMenu,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
+  danger?: boolean;
+  submenu?: { label: string; icon?: React.ReactNode; action: () => void }[];
+  onCloseMenu?: () => void;
 }) {
+  const [showSub, setShowSub] = useState(false);
+
+  if (submenu) {
+    const triggerRef = useRef<HTMLDivElement>(null);
+    // Determine if submenu should open to the left (when near right viewport edge)
+    const [openLeft, setOpenLeft] = useState(false);
+
+    const handleMouseEnter = useCallback(() => {
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        // If there's less than 140px to the right, flip to left side
+        setOpenLeft(rect.right + 140 > window.innerWidth);
+      }
+      setShowSub(true);
+    }, []);
+
+    return (
+      <div
+        ref={triggerRef}
+        className="relative"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setShowSub(false)}
+      >
+        <button
+          className={cn(
+            "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
+            danger
+              ? "text-nd-error hover:bg-nd-error/10"
+              : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
+          )}
+        >
+          {icon}
+          <span className="flex-1 text-left">{label}</span>
+          <ChevronRight size={11} className="ml-2 text-nd-text-muted" />
+        </button>
+        {showSub && (
+          <div
+            className={cn(
+              "absolute top-0 z-50 min-w-[120px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg",
+              openLeft ? "right-full -mr-1" : "left-full -ml-1",
+            )}
+          >
+            {submenu.map((sub) => (
+              <button
+                key={sub.label}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors"
+                onClick={() => {
+                  sub.action();
+                  onCloseMenu?.();
+                }}
+              >
+                {sub.icon}
+                {sub.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <button
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary transition-colors"
+      className={cn(
+        "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
+        danger
+          ? "text-nd-error hover:bg-nd-error/10"
+          : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
+      )}
       onClick={onClick}
     >
       {icon}
@@ -400,6 +488,7 @@ export const DataGrid = React.memo(
       onInsertRow,
       onDuplicateRow,
       onDeleteRows,
+      onSetCellValue,
       tableName,
     },
     ref,
@@ -617,14 +706,45 @@ export const DataGrid = React.memo(
       [],
     );
 
-    // Keyboard Delete/Backspace handler for selected rows
+    // Refs to track menu state for the keyboard handler (avoids stale closure)
+    const contextMenuRef = useRef(contextMenu);
+    contextMenuRef.current = contextMenu;
+    const headerContextMenuRef = useRef(headerContextMenu);
+    headerContextMenuRef.current = headerContextMenu;
+    const timestampDropdownRef = useRef(timestampDropdown);
+    timestampDropdownRef.current = timestampDropdown;
+
+    // Keyboard Delete/Backspace handler for selected rows + Esc to deselect
     useEffect(() => {
-      if (!onDeleteRows) return;
       const handleKeyDown = (e: KeyboardEvent) => {
-        // Only trigger when Delete or Backspace is pressed
+        const target = e.target as HTMLElement;
+
+        // Esc → close menus first, then deselect rows
+        if (e.key === "Escape") {
+          // Don't interfere with cell editing or input fields
+          if (
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable ||
+            target.closest(".ag-cell-edit-wrapper")
+          )
+            return;
+          if (!containerRef.current?.contains(target)) return;
+          // If a context menu or timestamp dropdown is open, close it first (don't deselect)
+          if (contextMenuRef.current || headerContextMenuRef.current || timestampDropdownRef.current) {
+            setContextMenu(null);
+            setHeaderContextMenu(null);
+            setTimestampDropdown(null);
+            return;
+          }
+          gridRef.current?.api?.deselectAll();
+          return;
+        }
+
+        // Delete/Backspace → delete selected rows
+        if (!onDeleteRows) return;
         if (e.key !== "Delete" && e.key !== "Backspace") return;
         // Don't trigger when editing a cell or inside an input/textarea
-        const target = e.target as HTMLElement;
         if (
           target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
@@ -862,59 +982,113 @@ export const DataGrid = React.memo(
         const nativeEvent = event.event as MouseEvent | undefined;
         nativeEvent?.preventDefault();
 
+        // Clear any text selection caused by the right-click
+        window.getSelection()?.removeAllRanges();
+
         const cellValue = event.value;
         const rowData = event.data;
+        const field = event.colDef?.field;
+        const rowIndex = rowData?.__rowIndex as number | undefined;
 
-        const items: ContextMenuState["items"] = [
-          {
-            label: "Copy Cell",
-            icon: <Copy size={13} />,
-            action: () => {
-              const text =
-                cellValue === null || cellValue === undefined
-                  ? ""
-                  : typeof cellValue === "object"
-                    ? JSON.stringify(cellValue)
-                    : String(cellValue);
-              navigator.clipboard.writeText(text);
-            },
-          },
-          {
-            label: "Copy Row as JSON",
-            icon: <FileJson size={13} />,
-            action: () => {
-              if (rowData) {
-                const { __rowIndex, ...clean } = rowData;
-                navigator.clipboard.writeText(JSON.stringify(clean, null, 2));
-              }
-            },
-          },
-          {
-            label: "Copy Row as INSERT",
-            icon: <ClipboardCopy size={13} />,
-            action: () => {
-              if (rowData) {
-                const { __rowIndex, ...clean } = rowData;
-                const cols = Object.keys(clean).join(", ");
-                const vals = Object.values(clean)
-                  .map((v) =>
-                    v === null || v === undefined
-                      ? "NULL"
-                      : typeof v === "number"
-                        ? String(v)
-                        : `'${String(v).replace(/'/g, "''")}'`,
-                  )
-                  .join(", ");
-                navigator.clipboard.writeText(
-                  `INSERT INTO ${tableName ?? "table_name"} (${cols}) VALUES (${vals});`,
-                );
-              }
-            },
-          },
-        ];
+        // Select the row on right-click if not already selected
+        if (event.node && !event.node.isSelected()) {
+          // If no modifier key, deselect others first (single row select)
+          const keepExisting = nativeEvent?.metaKey || nativeEvent?.ctrlKey || nativeEvent?.shiftKey;
+          event.node.setSelected(true, !keepExisting);
+        }
 
-        // Insert / Duplicate row actions
-        if (onInsertRow || onDuplicateRow) {
+        const selectedRows = gridRef.current?.api?.getSelectedRows() ?? [];
+        const multiSelected = selectedRows.length > 1;
+
+        const items: ContextMenuState["items"] = [];
+
+        // ── Copy section ──
+        items.push({
+          label: "Copy Cell",
+          icon: <Copy size={13} />,
+          action: () => {
+            const text =
+              cellValue === null || cellValue === undefined
+                ? ""
+                : typeof cellValue === "object"
+                  ? JSON.stringify(cellValue)
+                  : String(cellValue);
+            navigator.clipboard.writeText(text);
+          },
+        });
+        items.push({
+          label: "Copy Row as JSON",
+          icon: <FileJson size={13} />,
+          action: () => {
+            if (multiSelected) {
+              const rows = selectedRows.map((r: Record<string, unknown>) => {
+                const { __rowIndex, ...clean } = r;
+                return clean;
+              });
+              navigator.clipboard.writeText(JSON.stringify(rows, null, 2));
+            } else if (rowData) {
+              const { __rowIndex, ...clean } = rowData;
+              navigator.clipboard.writeText(JSON.stringify(clean, null, 2));
+            }
+          },
+        });
+        items.push({
+          label: "Copy Row as INSERT",
+          icon: <ClipboardCopy size={13} />,
+          action: () => {
+            const rowsToCopy = multiSelected ? selectedRows : rowData ? [rowData] : [];
+            const statements = rowsToCopy.map((r: Record<string, unknown>) => {
+              const { __rowIndex, ...clean } = r;
+              const cols = Object.keys(clean).join(", ");
+              const vals = Object.values(clean)
+                .map((v) =>
+                  v === null || v === undefined
+                    ? "NULL"
+                    : typeof v === "number"
+                      ? String(v)
+                      : `'${String(v).replace(/'/g, "''")}'`,
+                )
+                .join(", ");
+              return `INSERT INTO ${tableName ?? "table_name"} (${cols}) VALUES (${vals});`;
+            });
+            navigator.clipboard.writeText(statements.join("\n"));
+          },
+        });
+
+        // ── Set Value submenu (NULL, DEFAULT, EMPTY) ──
+        if (onSetCellValue && field && rowIndex !== undefined) {
+          items.push({
+            label: "",
+            icon: null,
+            action: () => {},
+            separator: true,
+          });
+          items.push({
+            label: "Set Value",
+            icon: <DatabaseZap size={13} />,
+            action: () => {},
+            submenu: [
+              {
+                label: "NULL",
+                icon: <CircleOff size={12} />,
+                action: () => onSetCellValue(rowIndex, field, null),
+              },
+              {
+                label: "DEFAULT",
+                icon: <DatabaseZap size={12} />,
+                action: () => onSetCellValue(rowIndex, field, `${SQL_EXPR_PREFIX}DEFAULT`),
+              },
+              {
+                label: "Empty String",
+                icon: <Type size={12} />,
+                action: () => onSetCellValue(rowIndex, field, ""),
+              },
+            ],
+          });
+        }
+
+        // ── Row operations ──
+        if (onInsertRow || onDuplicateRow || onDeleteRows) {
           items.push({
             label: "",
             icon: null,
@@ -939,33 +1113,24 @@ export const DataGrid = React.memo(
             });
           }
           if (onDeleteRows && rowData) {
-            const rowIndex = rowData.__rowIndex as number;
-            items.push({
-              label: "Delete Row",
-              icon: <Trash2 size={13} />,
-              action: () => onDeleteRows([rowIndex]),
-            });
-          }
-        }
-
-        // Delete selected rows (multi-select)
-        if (onDeleteRows) {
-          const selectedRows = gridRef.current?.api?.getSelectedRows() ?? [];
-          if (selectedRows.length > 1) {
-            const indices = selectedRows.map(
-              (r: Record<string, unknown>) => r.__rowIndex as number,
-            );
-            items.push({
-              label: "",
-              icon: null,
-              action: () => {},
-              separator: true,
-            });
-            items.push({
-              label: `Delete ${selectedRows.length} Selected Rows`,
-              icon: <Trash2 size={13} />,
-              action: () => onDeleteRows(indices),
-            });
+            if (multiSelected) {
+              const indices = selectedRows.map(
+                (r: Record<string, unknown>) => r.__rowIndex as number,
+              );
+              items.push({
+                label: `Delete ${selectedRows.length} Selected Rows`,
+                icon: <Trash2 size={13} />,
+                action: () => onDeleteRows(indices),
+                danger: true,
+              });
+            } else {
+              items.push({
+                label: "Delete Row",
+                icon: <Trash2 size={13} />,
+                action: () => onDeleteRows([rowData.__rowIndex as number]),
+                danger: true,
+              });
+            }
           }
         }
 
@@ -975,7 +1140,7 @@ export const DataGrid = React.memo(
           items,
         });
       },
-      [onInsertRow, onDuplicateRow, onDeleteRows],
+      [onInsertRow, onDuplicateRow, onDeleteRows, onSetCellValue, tableName],
     );
 
     // ── Header context menu actions ──
@@ -1200,7 +1365,6 @@ export const DataGrid = React.memo(
           // eliminates the lag. Acceptable for typical SQL tables (rarely 200+ columns).
           suppressColumnVirtualisation={true}
           rowSelection="multiple"
-          enableCellTextSelection
           suppressRowClickSelection={false}
           headerHeight={32}
           rowHeight={28}
@@ -1223,11 +1387,11 @@ export const DataGrid = React.memo(
         {/* Floating cell context menu */}
         {contextMenu && (
           <div
-            className="fixed z-50 min-w-[180px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
+            className="fixed z-50 min-w-[200px] rounded-md border border-nd-border bg-nd-bg-primary py-1 shadow-lg"
             style={clampMenuPosition(
               contextMenu.x,
               contextMenu.y,
-              200,
+              220,
               contextMenu.items.length * 30 + 8,
             )}
           >
@@ -1236,12 +1400,17 @@ export const DataGrid = React.memo(
                 <CtxSeparator key={`sep-${idx}`} />
               ) : (
                 <CtxMenuItem
-                  key={item.label}
+                  key={`${item.label}-${idx}`}
                   icon={item.icon}
                   label={item.label}
+                  danger={item.danger}
+                  submenu={item.submenu}
+                  onCloseMenu={() => setContextMenu(null)}
                   onClick={() => {
-                    item.action();
-                    setContextMenu(null);
+                    if (!item.submenu) {
+                      item.action();
+                      setContextMenu(null);
+                    }
                   }}
                 />
               ),
