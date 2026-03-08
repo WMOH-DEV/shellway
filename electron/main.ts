@@ -551,9 +551,12 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
-  // Renderer can trigger an install-and-restart
+  // Renderer can trigger an install-and-restart.
+  // On macOS, quitAndInstall can be blocked by close handlers (tray minimize, etc.)
+  // so we set isQuitting first and force-quit with isSilent=false, isForceRunAfter=true.
   ipcMain.handle("updater:install-and-restart", () => {
-    autoUpdater.quitAndInstall();
+    isQuitting = true;
+    autoUpdater.quitAndInstall(false, true);
   });
 
   // ──── System sleep/wake detection ────
