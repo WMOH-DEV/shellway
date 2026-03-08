@@ -20,7 +20,7 @@ import { useKeybindingStore } from '@/stores/keybindingStore'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
 import { useLogStore } from '@/stores/logStore'
 import { toast } from '@/components/ui/Toast'
-import { Download, RefreshCw, X } from 'lucide-react'
+import { useUpdateStore } from '@/stores/updateStore'
 
 // ── Types for IPC events ──
 
@@ -80,9 +80,8 @@ export default function App() {
   // ── KBDI state ──
   const [kbdiPrompt, setKBDIPrompt] = useState<KBDIPromptState | null>(null)
 
-  // ── Auto-update state ──
-  const [updateAvailable, setUpdateAvailable] = useState<{ version: string } | null>(null)
-  const [updateReady, setUpdateReady] = useState<{ version: string } | null>(null)
+  // ── Auto-update actions (from Zustand store) ──
+  const { setChecking, setAvailable, setDownloadProgress, setReady, setNotAvailable, setError } = useUpdateStore()
 
   // ── Listen for events from main process ──
   useEffect(() => {
@@ -175,13 +174,24 @@ export default function App() {
       setKBDIPrompt({ connectionId, ...prompt })
     })
 
-    // Auto-updater
+    // Auto-updater lifecycle events
+    const unsubCheckingForUpdate = window.novadeck.updater.onCheckingForUpdate(() => {
+      setChecking()
+    })
     const unsubUpdateAvailable = window.novadeck.updater.onUpdateAvailable((info: any) => {
-      setUpdateAvailable({ version: info?.version ?? '' })
+      setAvailable(info?.version ?? '')
+    })
+    const unsubUpdateNotAvailable = window.novadeck.updater.onUpdateNotAvailable(() => {
+      setNotAvailable()
+    })
+    const unsubDownloadProgress = window.novadeck.updater.onDownloadProgress((progress) => {
+      setDownloadProgress(progress)
     })
     const unsubUpdateDownloaded = window.novadeck.updater.onUpdateDownloaded((info: any) => {
-      setUpdateAvailable(null)
-      setUpdateReady({ version: info?.version ?? '' })
+      setReady(info?.version ?? '')
+    })
+    const unsubUpdateError = window.novadeck.updater.onError((message) => {
+      setError(message)
     })
 
     // System resume (after sleep/wake) — notify user, connections may be stale
@@ -207,8 +217,12 @@ export default function App() {
       unsubReconnExhausted()
       unsubHostKeyVerify()
       unsubKBDI()
+      unsubCheckingForUpdate()
       unsubUpdateAvailable()
+      unsubUpdateNotAvailable()
+      unsubDownloadProgress()
       unsubUpdateDownloaded()
+      unsubUpdateError()
       unsubSystemResume()
       unsubSQLConnError()
     }
@@ -341,43 +355,7 @@ export default function App() {
       {/* Global toast notifications */}
       <ToastContainer />
 
-      {/* ── Update banners ── */}
-      {updateAvailable && (
-        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 px-4 py-2.5 rounded-lg bg-nd-bg-secondary border border-nd-border shadow-xl text-sm">
-          <Download size={15} className="text-nd-accent shrink-0 animate-bounce" />
-          <span className="text-nd-text-secondary">
-            Downloading update
-            {updateAvailable.version ? ` v${updateAvailable.version}` : ''}…
-          </span>
-          <button
-            onClick={() => setUpdateAvailable(null)}
-            className="ml-1 p-0.5 rounded text-nd-text-muted hover:text-nd-text-primary transition-colors"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      )}
-
-      {updateReady && (
-        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 px-4 py-2.5 rounded-lg bg-nd-bg-secondary border border-nd-accent/40 shadow-xl text-sm">
-          <RefreshCw size={15} className="text-nd-accent shrink-0" />
-          <span className="text-nd-text-primary font-medium">
-            Update{updateReady.version ? ` v${updateReady.version}` : ''} ready
-          </span>
-          <button
-            onClick={() => window.novadeck.updater.installAndRestart()}
-            className="px-2.5 py-1 rounded bg-nd-accent text-white text-xs font-medium hover:bg-nd-accent/90 transition-colors"
-          >
-            Restart now
-          </button>
-          <button
-            onClick={() => setUpdateReady(null)}
-            className="p-0.5 rounded text-nd-text-muted hover:text-nd-text-primary transition-colors"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      )}
+      {/* Update UI is now rendered inside StatusBar */}
     </AppShell>
   )
 }

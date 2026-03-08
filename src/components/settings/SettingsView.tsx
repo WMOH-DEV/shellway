@@ -28,6 +28,7 @@ import { FontPicker } from '@/components/settings/FontPicker'
 import { KeybindingsSection } from '@/components/settings/KeybindingsSection'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
+import { useUpdateStore } from '@/stores/updateStore'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
@@ -54,6 +55,39 @@ const SECTIONS: TabItem[] = [
   { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={13} /> },
   { id: 'about', label: 'About', icon: <Info size={13} /> }
 ]
+
+/** Inline button to manually trigger an update check from settings */
+function CheckForUpdatesButton() {
+  const { status } = useUpdateStore()
+  const isBusy = status === 'checking' || status === 'downloading' || status === 'ready'
+
+  const handleCheck = async () => {
+    try {
+      await window.novadeck.updater.checkForUpdates()
+    } catch {
+      toast.error('Update Check Failed', 'Could not check for updates.')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 mt-1">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={handleCheck}
+        disabled={isBusy}
+      >
+        {status === 'checking' ? 'Checking…' : status === 'downloading' ? 'Downloading…' : 'Check for updates now'}
+      </Button>
+      {status === 'up-to-date' && (
+        <span className="text-xs text-nd-text-muted">You're up to date</span>
+      )}
+      {status === 'ready' && (
+        <span className="text-xs text-nd-success">Update ready — restart to apply</span>
+      )}
+    </div>
+  )
+}
 
 interface SettingsViewProps {
   open: boolean
@@ -151,6 +185,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   onChange={(v) => update('checkForUpdates', v)}
                   label="Check for updates automatically"
                 />
+                <CheckForUpdatesButton />
               </SettingsSection>
 
               <div className="mt-6">

@@ -494,21 +494,56 @@ app.whenReady().then(() => {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
+    /** Safely send IPC to renderer (window may be destroyed during async updater events) */
+    const sendUpdaterEvent = (channel: string, ...args: unknown[]) => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, ...args);
+      }
+    };
+
+    autoUpdater.on("checking-for-update", () => {
+      sendUpdaterEvent("updater:checking-for-update");
+    });
+
     autoUpdater.on("update-available", (info) => {
-      mainWindow.webContents.send("updater:update-available", info);
+      sendUpdaterEvent("updater:update-available", info);
+    });
+
+    autoUpdater.on("update-not-available", (info) => {
+      sendUpdaterEvent("updater:update-not-available", info);
+    });
+
+    autoUpdater.on("download-progress", (progress) => {
+      sendUpdaterEvent("updater:download-progress", {
+        percent: progress.percent,
+        bytesPerSecond: progress.bytesPerSecond,
+        transferred: progress.transferred,
+        total: progress.total,
+      });
     });
 
     autoUpdater.on("update-downloaded", (info) => {
-      mainWindow.webContents.send("updater:update-downloaded", info);
+      sendUpdaterEvent("updater:update-downloaded", info);
     });
 
     autoUpdater.on("error", (err) => {
       console.error("[auto-updater]", err.message);
+      sendUpdaterEvent("updater:error", err.message);
     });
 
-    // Check for updates 5 seconds after the window is ready (avoid blocking startup)
-    setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+    // Check for updates 5 seconds after the window is ready (if setting allows)
+    const initialCheckForUpdates = settingsStore.get("checkForUpdates");
+    if (initialCheckForUpdates !== false) {
+      setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+    }
   }
+
+  // Renderer can trigger a manual check for updates
+  ipcMain.handle("updater:check-for-updates", async () => {
+    if (is.dev) return { error: "Auto-update is not available in development mode" };
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  });
 
   // Renderer can trigger an install-and-restart
   ipcMain.handle("updater:install-and-restart", () => {

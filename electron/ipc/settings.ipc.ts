@@ -45,9 +45,9 @@ export function registerSettingsIPC(): void {
       if (setTray) setTray(!!updates.minimizeToTray)
     }
 
-    // checkForUpdates — placeholder: auto-update integration requires electron-updater
-    // setup which is out of scope. This setting is persisted but not yet wired to an
-    // actual update mechanism.
+    // checkForUpdates — setting is persisted and respected by auto-updater on startup.
+    // Runtime toggling doesn't retroactively start/stop the check cycle, but the next
+    // app launch will respect the persisted value.
 
     return result
   })

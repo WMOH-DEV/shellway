@@ -65,7 +65,8 @@ const config: Config = {
         'slide-in-right': 'slideInRight 200ms ease-out',
         'slide-in-left': 'slideInLeft 200ms ease-out',
         'slide-up': 'slideUp 200ms ease-out',
-        'scale-in': 'scaleIn 150ms ease-out'
+        'scale-in': 'scaleIn 150ms ease-out',
+        dots: 'dots 1.4s steps(4, end) infinite'
       },
       keyframes: {
         fadeIn: {
@@ -91,6 +92,12 @@ const config: Config = {
         scaleIn: {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' }
+        },
+        dots: {
+          '0%': { clipPath: 'inset(0 100% 0 0)' },
+          '33%': { clipPath: 'inset(0 66% 0 0)' },
+          '66%': { clipPath: 'inset(0 33% 0 0)' },
+          '100%': { clipPath: 'inset(0 0 0 0)' }
         }
       }
     }

@@ -943,12 +943,39 @@ const api = {
   },
 
   updater: {
+    onCheckingForUpdate: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on("updater:checking-for-update", handler);
+      return () =>
+        ipcRenderer.removeListener("updater:checking-for-update", handler);
+    },
     onUpdateAvailable: (callback: (info: unknown) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, info: unknown) =>
         callback(info);
       ipcRenderer.on("updater:update-available", handler);
       return () =>
         ipcRenderer.removeListener("updater:update-available", handler);
+    },
+    onUpdateNotAvailable: (callback: (info: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, info: unknown) =>
+        callback(info);
+      ipcRenderer.on("updater:update-not-available", handler);
+      return () =>
+        ipcRenderer.removeListener("updater:update-not-available", handler);
+    },
+    onDownloadProgress: (
+      callback: (progress: {
+        percent: number;
+        bytesPerSecond: number;
+        transferred: number;
+        total: number;
+      }) => void,
+    ) => {
+      const handler = (_e: Electron.IpcRendererEvent, progress: any) =>
+        callback(progress);
+      ipcRenderer.on("updater:download-progress", handler);
+      return () =>
+        ipcRenderer.removeListener("updater:download-progress", handler);
     },
     onUpdateDownloaded: (callback: (info: unknown) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, info: unknown) =>
@@ -957,6 +984,13 @@ const api = {
       return () =>
         ipcRenderer.removeListener("updater:update-downloaded", handler);
     },
+    onError: (callback: (message: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, message: string) =>
+        callback(message);
+      ipcRenderer.on("updater:error", handler);
+      return () => ipcRenderer.removeListener("updater:error", handler);
+    },
+    checkForUpdates: () => ipcRenderer.invoke("updater:check-for-updates"),
     installAndRestart: () => ipcRenderer.invoke("updater:install-and-restart"),
   },
 };
