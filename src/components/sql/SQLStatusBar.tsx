@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertTriangle, Filter, GitCommitHorizontal, Save, Undo2, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Badge } from '@/components/ui/Badge'
@@ -44,10 +45,13 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
   changes,
   onUndoChange,
   onClose,
+  anchorRect,
 }: {
   changes: StagedChange[]
   onUndoChange?: (changeId: string) => void
   onClose: () => void
+  /** Bounding rect of the trigger button — used to position the popover */
+  anchorRect: DOMRect | null
 }) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -76,10 +80,20 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
   const inserts = changes.filter((c) => c.type === 'insert')
   const deletes = changes.filter((c) => c.type === 'delete')
 
-  return (
+  if (!anchorRect) return null
+
+  // Position: align right edge to anchor right, sit above the anchor
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    bottom: window.innerHeight - anchorRect.top + 4,
+    right: window.innerWidth - anchorRect.right,
+  }
+
+  return createPortal(
     <div
       ref={popoverRef}
-      className="absolute bottom-8 right-0 z-30 w-[420px] max-h-[360px] rounded-lg border border-nd-border bg-nd-bg-primary shadow-xl flex flex-col overflow-hidden animate-fade-in"
+      className="z-50 w-[420px] max-h-[360px] rounded-lg border border-nd-border bg-nd-bg-primary shadow-xl flex flex-col overflow-hidden animate-fade-in"
+      style={style}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-nd-border shrink-0">
@@ -231,7 +245,8 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 })
 
@@ -254,6 +269,8 @@ export const SQLStatusBar = memo(function SQLStatusBar({
 }: SQLStatusBarProps) {
   const hasChanges = changeCount !== undefined && changeCount > 0
   const [showReview, setShowReview] = useState(false)
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   // Close review when changes are cleared (after save/discard)
   useEffect(() => {
@@ -261,7 +278,12 @@ export const SQLStatusBar = memo(function SQLStatusBar({
   }, [hasChanges])
 
   const handleToggleReview = useCallback(() => {
-    setShowReview((v) => !v)
+    setShowReview((v) => {
+      if (!v && triggerRef.current) {
+        setAnchorRect(triggerRef.current.getBoundingClientRect())
+      }
+      return !v
+    })
   }, [])
 
   const handleCloseReview = useCallback(() => {
@@ -333,6 +355,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
         <>
           <div className="w-px h-3 bg-nd-border mx-2" />
           <button
+            ref={triggerRef}
             onClick={handleToggleReview}
             className={cn(
               'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs transition-colors',
@@ -364,12 +387,13 @@ export const SQLStatusBar = memo(function SQLStatusBar({
           </button>
           <span className="text-[9px] text-nd-text-muted ml-1">Ctrl+S</span>
 
-          {/* Review popover */}
+          {/* Review popover (rendered via portal to escape overflow-hidden) */}
           {showReview && changes && changes.length > 0 && (
             <ChangesReviewPopover
               changes={changes}
               onUndoChange={onUndoChange}
               onClose={handleCloseReview}
+              anchorRect={anchorRect}
             />
           )}
         </>
