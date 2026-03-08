@@ -36,6 +36,10 @@ mac:
       arch:
         - x64
         - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
   icon: resources/icon.icns
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}

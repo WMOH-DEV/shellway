@@ -538,10 +538,16 @@ app.whenReady().then(() => {
     }
   }
 
-  // Renderer can trigger a manual check for updates
+  // Renderer can trigger a manual check for updates.
+  // Errors are reported via the 'updater:error' event, not the return value.
   ipcMain.handle("updater:check-for-updates", async () => {
-    if (is.dev) return { error: "Auto-update is not available in development mode" };
-    await autoUpdater.checkForUpdates();
+    if (is.dev) return { ok: false, dev: true };
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch (err: any) {
+      // Error will also fire via the 'error' event → renderer gets it via onError
+      console.error("[auto-updater] manual check failed:", err?.message);
+    }
     return { ok: true };
   });
 

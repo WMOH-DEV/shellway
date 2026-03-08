@@ -63,8 +63,14 @@ function CheckForUpdatesButton() {
 
   const handleCheck = async () => {
     try {
-      await window.novadeck.updater.checkForUpdates()
+      const result = await window.novadeck.updater.checkForUpdates()
+      // Dev mode — updater isn't available
+      if (result?.dev) {
+        toast.info('Not Available', 'Auto-update is only available in production builds.')
+      }
+      // Errors are reported via the status bar (updater:error event), no toast needed
     } catch {
+      // Shouldn't happen — the main process catches errors internally
       toast.error('Update Check Failed', 'Could not check for updates.')
     }
   }
