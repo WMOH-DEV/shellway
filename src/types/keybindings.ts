@@ -34,6 +34,10 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'global:toggleSplitView', label: 'Toggle Split View',      scope: 'global',   defaultCombo: 'CmdOrCtrl+Shift+B' },
   { id: 'global:focusTerminal',   label: 'Focus Terminal Pane',    scope: 'global',   defaultCombo: 'CmdOrCtrl+1' },
   { id: 'global:focusSFTP',       label: 'Focus SFTP Pane',        scope: 'global',   defaultCombo: 'CmdOrCtrl+2' },
+  { id: 'global:focusOtherPane',  label: 'Switch Pane Focus',      scope: 'global',   defaultCombo: 'Alt+\\' },
+  { id: 'global:splitRight',      label: 'Split Right',            scope: 'global',   defaultCombo: 'Ctrl+\\' },
+  { id: 'global:splitDown',       label: 'Split Down',             scope: 'global',   defaultCombo: 'Ctrl+Shift+\\' },
+  { id: 'global:closePane',       label: 'Close Pane',             scope: 'global',   defaultCombo: 'Ctrl+Shift+W' },
 
   // ── Terminal ──
   { id: 'terminal:search',          label: 'Search in Terminal',    scope: 'terminal', defaultCombo: 'Ctrl+F' },
