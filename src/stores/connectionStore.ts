@@ -144,7 +144,10 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   setActiveTab: (id) =>
     set((state) => {
       if (id === null) {
-        return { activeTabId: null }
+        const newPanes = state.panes.map(p =>
+          p.id === state.activePaneId ? { ...p, activeTabId: null } : p
+        )
+        return { activeTabId: null, panes: newPanes }
       }
       const pane = state.panes.find(p => p.tabIds.includes(id))
       if (!pane) return { activeTabId: id }

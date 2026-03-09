@@ -1,4 +1,3 @@
-import { useCallback } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -17,73 +16,67 @@ export function WorkspaceLayout() {
   const { panes, tabs, activePaneId, splitDirection, setActivePane, closePane } =
     useConnectionStore()
 
-  const renderPaneContent = useCallback(
-    (paneId: string, paneActiveTabId: string | null) => {
-      const pane = panes.find((p) => p.id === paneId)
-      if (!pane) return null
+  function renderPaneContent(paneId: string, paneActiveTabId: string | null) {
+    const pane = panes.find((p) => p.id === paneId)
+    if (!pane) return null
 
-      return (
-        <div className="flex-1 overflow-hidden relative">
-          {pane.tabIds.map((tabId) => {
-            const tab = tabs.find((t) => t.id === tabId)
-            if (!tab) return null
-            const isVisible = tab.id === paneActiveTabId
-            return (
-              <div key={tab.id} className={cn('h-full', !isVisible && 'hidden')}>
-                {tab.type === 'database' ? (
-                  <DatabaseView tab={tab} />
-                ) : (
-                  <ConnectionView tab={tab} />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )
-    },
-    [tabs, panes]
-  )
-
-  const renderPane = useCallback(
-    (paneId: string) => {
-      const pane = panes.find((p) => p.id === paneId)
-      if (!pane) return null
-      const isFocused = paneId === activePaneId
-      const isSplit = panes.length >= 2
-
-      return (
-        <div
-          className="flex flex-col h-full overflow-hidden"
-          onClick={() => setActivePane(paneId)}
-        >
-          <div className="relative flex items-center">
-            <div className="flex-1">
-              <PaneTabBar
-                pane={pane}
-                isFocused={isFocused}
-                onFocus={() => setActivePane(paneId)}
-              />
+    return (
+      <div className="flex-1 overflow-hidden relative">
+        {pane.tabIds.map((tabId) => {
+          const tab = tabs.find((t) => t.id === tabId)
+          if (!tab) return null
+          const isVisible = tab.id === paneActiveTabId
+          return (
+            <div key={tab.id} className={cn('h-full', !isVisible && 'hidden')}>
+              {tab.type === 'database' ? (
+                <DatabaseView tab={tab} />
+              ) : (
+                <ConnectionView tab={tab} />
+              )}
             </div>
-            {isSplit && (
-              <Tooltip content="Close Pane">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closePane(paneId)
-                  }}
-                  className="shrink-0 h-[36px] px-2 flex items-center text-nd-text-muted hover:text-nd-danger hover:bg-nd-surface/60 transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              </Tooltip>
-            )}
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderPane(paneId: string) {
+    const pane = panes.find((p) => p.id === paneId)
+    if (!pane) return null
+    const isFocused = paneId === activePaneId
+    const isSplit = panes.length >= 2
+
+    return (
+      <div
+        className="flex flex-col h-full overflow-hidden"
+        onClick={() => setActivePane(paneId)}
+      >
+        <div className="relative flex items-center">
+          <div className="flex-1">
+            <PaneTabBar
+              pane={pane}
+              isFocused={isFocused}
+              onFocus={() => setActivePane(paneId)}
+            />
           </div>
-          {renderPaneContent(paneId, pane.activeTabId)}
+          {isSplit && (
+            <Tooltip content="Close Pane">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closePane(paneId)
+                }}
+                className="shrink-0 h-[36px] px-2 flex items-center text-nd-text-muted hover:text-nd-danger hover:bg-nd-surface/60 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
+          )}
         </div>
-      )
-    },
-    [panes, activePaneId, setActivePane, closePane, renderPaneContent]
-  )
+        {renderPaneContent(paneId, pane.activeTabId)}
+      </div>
+    )
+  }
 
   if (panes.length === 1) {
     return <div className="h-full">{renderPane(panes[0].id)}</div>
