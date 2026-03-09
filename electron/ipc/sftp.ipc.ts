@@ -411,15 +411,45 @@ export function registerSFTPIPC(): void {
     }
   })
 
-  // ── Read file content ──
-  ipcMain.handle('sftp:readFile', async (_event, connectionId: string, remotePath: string) => {
+  // ── Read first N bytes of a file (instant partial preview) ──
+  ipcMain.handle('sftp:readFileHead', async (_event, connectionId: string, remotePath: string, bytes?: number) => {
     const sftp = sftpServices.get(connectionId)
     if (!sftp) return { success: false, error: 'SFTP not open' }
     try {
-      const content = await sftp.readFile(remotePath)
+      const result = await sftp.readFileHead(remotePath, bytes)
+      return { success: true, data: result.content, totalSize: result.totalSize }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'readFileHead failed' }
+    }
+  })
+
+  // ── Read file content (with progress reporting) ──
+  ipcMain.handle('sftp:readFile', async (_event, connectionId: string, remotePath: string, maxSize?: number, readId?: string) => {
+    const sftp = sftpServices.get(connectionId)
+    if (!sftp) return { success: false, error: 'SFTP not open' }
+
+    // Forward progress events to the renderer
+    let progressListener: ((id: string, transferred: number, total: number) => void) | null = null
+    if (readId) {
+      const win = BrowserWindow.getAllWindows()[0]
+      progressListener = (id: string, transferred: number, total: number) => {
+        if (id === readId) {
+          win?.webContents.send('sftp:readFile-progress', connectionId, readId, transferred, total)
+        }
+      }
+      sftp.on('readProgress', progressListener)
+    }
+
+    try {
+      const content = await sftp.readFile(remotePath, maxSize, readId)
       return { success: true, data: content }
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'readFile failed' }
+    } finally {
+      // Clean up progress listener
+      if (progressListener) {
+        sftp.removeListener('readProgress', progressListener)
+      }
     }
   })
 

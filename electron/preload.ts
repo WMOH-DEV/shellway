@@ -394,14 +394,38 @@ const api = {
       mode: number,
       recursive: boolean,
     ) => ipcRenderer.invoke("sftp:chmod", connectionId, path, mode, recursive),
-    readFile: (connectionId: string, path: string) =>
-      ipcRenderer.invoke("sftp:readFile", connectionId, path) as Promise<{
+    readFileHead: (connectionId: string, path: string, bytes?: number) =>
+      ipcRenderer.invoke("sftp:readFileHead", connectionId, path, bytes) as Promise<{
+        success: boolean;
+        data?: string;
+        totalSize?: number;
+        error?: string;
+      }>,
+    readFile: (connectionId: string, path: string, maxSize?: number, readId?: string) =>
+      ipcRenderer.invoke("sftp:readFile", connectionId, path, maxSize, readId) as Promise<{
         success: boolean;
         data?: string;
         error?: string;
       }>,
+    onReadFileProgress: (
+      callback: (connectionId: string, readId: string, transferred: number, total: number) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        connId: string,
+        readId: string,
+        transferred: number,
+        total: number,
+      ) => callback(connId, readId, transferred, total);
+      ipcRenderer.on("sftp:readFile-progress", handler);
+      return () =>
+        ipcRenderer.removeListener("sftp:readFile-progress", handler);
+    },
     writeFile: (connectionId: string, path: string, content: string) =>
-      ipcRenderer.invoke("sftp:writeFile", connectionId, path, content),
+      ipcRenderer.invoke("sftp:writeFile", connectionId, path, content) as Promise<{
+        success: boolean;
+        error?: string;
+      }>,
     symlink: (connectionId: string, target: string, link: string) =>
       ipcRenderer.invoke("sftp:symlink", connectionId, target, link),
     download: (

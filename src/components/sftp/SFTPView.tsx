@@ -52,6 +52,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
 
   // File preview state
   const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
+  const [previewEditable, setPreviewEditable] = useState(false)
 
   // "Set as Default App" prompt state
   const [defaultAppPrompt, setDefaultAppPrompt] = useState<{
@@ -185,6 +186,12 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
   }, [contextMenu])
 
   const handlePreview = useCallback((entry: FileEntry) => {
+    setPreviewEditable(false)
+    setPreviewEntry(entry)
+  }, [])
+
+  const handleEdit = useCallback((entry: FileEntry) => {
+    setPreviewEditable(true)
     setPreviewEntry(entry)
   }, [])
 
@@ -288,6 +295,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
           onWatchTempFile={watchTempFile}
           onPermissions={handlePermissions}
           onPreview={handlePreview}
+          onEdit={handleEdit}
           onOpenWithComplete={handleOpenWithComplete}
         />
       )}
@@ -325,6 +333,8 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
         filePath={previewEntry?.path || ''}
         fileName={previewEntry?.name || ''}
         fileSize={previewEntry?.size || 0}
+        editable={previewEditable}
+        onSave={() => remotePanelRef.current?.refresh()}
       />
 
       {/* "Set as Default App" confirmation prompt */}

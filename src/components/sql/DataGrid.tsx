@@ -1366,6 +1366,10 @@ export const DataGrid = React.memo(
           suppressColumnVirtualisation={true}
           rowSelection="multiple"
           suppressRowClickSelection={false}
+          // Allow native text selection in all cells (including non-editable like auto-increment IDs)
+          // so users can select and Cmd+C to copy cell values directly.
+          enableCellTextSelection={true}
+          ensureDomOrder={true}
           headerHeight={32}
           rowHeight={28}
           tooltipShowDelay={300}
