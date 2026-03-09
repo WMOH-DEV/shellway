@@ -302,8 +302,8 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   return (
     <div className="flex flex-col h-full relative">
       {/* Sub-tab navigation */}
-      <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border flex items-center">
-        <div className="flex-1">
+      <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border flex items-center overflow-hidden">
+        <div className="flex-1 min-w-0 overflow-hidden">
           <Tabs
             tabs={subTabsWithState}
             activeTab={tab.activeSubTab}
