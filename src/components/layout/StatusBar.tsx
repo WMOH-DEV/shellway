@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, Check, AlertCircle, Columns } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, Check, AlertCircle, Columns, ExternalLink } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUpdateStore } from '@/stores/updateStore'
@@ -14,6 +14,12 @@ export function StatusBar() {
   const isSplit = panes.length >= 2
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const { status, version, progress, errorMessage, dismiss } = useUpdateStore()
+
+  // Check if auto-update is supported (app is code-signed on macOS)
+  const [autoUpdateSupported, setAutoUpdateSupported] = useState(true)
+  useEffect(() => {
+    window.novadeck.updater.isAutoUpdateSupported().then(setAutoUpdateSupported).catch(() => {})
+  }, [])
 
   // Auto-dismiss transient states after a delay
   useEffect(() => {
@@ -83,12 +89,22 @@ export function StatusBar() {
             <span className="text-2xs text-nd-text-secondary">
               {version ? `v${version} ready` : 'Update ready'}
             </span>
-            <button
-              onClick={() => window.novadeck.updater.installAndRestart()}
-              className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent text-white hover:bg-nd-accent-hover transition-colors"
-            >
-              Restart to update
-            </button>
+            {autoUpdateSupported ? (
+              <button
+                onClick={() => window.novadeck.updater.installAndRestart(version)}
+                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent text-white hover:bg-nd-accent-hover transition-colors"
+              >
+                Restart to update
+              </button>
+            ) : (
+              <button
+                onClick={() => window.novadeck.updater.installAndRestart(version)}
+                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent text-white hover:bg-nd-accent-hover transition-colors flex items-center gap-1"
+              >
+                <ExternalLink size={10} />
+                Download update
+              </button>
+            )}
             <button
               onClick={dismiss}
               className="text-nd-text-muted hover:text-nd-text-secondary transition-colors text-2xs px-0.5"

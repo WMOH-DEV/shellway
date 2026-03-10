@@ -1015,7 +1015,10 @@ const api = {
       return () => ipcRenderer.removeListener("updater:error", handler);
     },
     checkForUpdates: () => ipcRenderer.invoke("updater:check-for-updates"),
-    installAndRestart: () => ipcRenderer.invoke("updater:install-and-restart"),
+    installAndRestart: (version?: string) =>
+      ipcRenderer.invoke("updater:install-and-restart", version) as Promise<{ action: string; url?: string }>,
+    isAutoUpdateSupported: () =>
+      ipcRenderer.invoke("updater:is-auto-update-supported") as Promise<boolean>,
   },
 };
 

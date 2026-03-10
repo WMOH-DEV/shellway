@@ -13,9 +13,30 @@ import {
 import { join, basename, extname } from "path";
 import { readFile, writeFile, stat } from "fs/promises";
 import { watch, type FSWatcher } from "fs";
-import { spawn } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { autoUpdater } from "electron-updater";
+
+/**
+ * Check if the running macOS app bundle is code-signed.
+ * Returns true if signed (auto-update will work), false if unsigned.
+ * Always returns true on non-macOS (Windows NSIS doesn't require signing for updates).
+ */
+function isAppCodeSigned(): boolean {
+  if (process.platform !== "darwin") return true;
+  try {
+    // codesign --verify exits 0 if signed, non-zero if unsigned
+    execFileSync("codesign", ["--verify", "--deep", "--strict", app.getAppPath()], {
+      stdio: "pipe",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cached result — checked once at startup */
+let appIsSigned: boolean | null = null;
 import { registerSessionIPC } from "./ipc/session.ipc";
 import { registerSettingsIPC } from "./ipc/settings.ipc";
 import { registerSSHIPC } from "./ipc/ssh.ipc";
@@ -493,6 +514,12 @@ app.whenReady().then(() => {
   if (!is.dev) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.logger = {
+      info: (msg: unknown) => console.log("[auto-updater]", msg),
+      warn: (msg: unknown) => console.warn("[auto-updater]", msg),
+      error: (msg: unknown) => console.error("[auto-updater]", msg),
+      debug: (msg: unknown) => console.log("[auto-updater:debug]", msg),
+    };
 
     /** Safely send IPC to renderer (window may be destroyed during async updater events) */
     const sendUpdaterEvent = (channel: string, ...args: unknown[]) => {
@@ -551,12 +578,38 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
-  // Renderer can trigger an install-and-restart.
-  // On macOS, quitAndInstall can be blocked by close handlers (tray minimize, etc.)
-  // so we set isQuitting first and force-quit with isSilent=false, isForceRunAfter=true.
-  ipcMain.handle("updater:install-and-restart", () => {
+  // Check code signing status once (cached for the session).
+  appIsSigned = isAppCodeSigned();
+  console.log(`[auto-updater] App code signed: ${appIsSigned}`);
+
+  // Expose signing status so renderer can show "Download" vs "Restart" button.
+  ipcMain.handle("updater:is-auto-update-supported", () => appIsSigned);
+
+  // Renderer can trigger an install-and-restart (signed) or open release page (unsigned).
+  // On macOS, auto-update requires code signing. Without it, quitAndInstall silently
+  // fails. For unsigned builds we open the GitHub release page in the default browser.
+  ipcMain.handle("updater:install-and-restart", (_event, version?: string) => {
+    if (!appIsSigned) {
+      // Unsigned macOS → open release page for manual download
+      const tag = version ? `v${version}` : "latest";
+      const url = `https://github.com/WMOH-DEV/shellway/releases/${tag === "latest" ? "latest" : `tag/${tag}`}`;
+      console.log(`[auto-updater] Unsigned app — opening release page: ${url}`);
+      shell.openExternal(url);
+      return { action: "opened-release-page", url };
+    }
+
+    // Signed app → proceed with auto-update
     isQuitting = true;
-    autoUpdater.quitAndInstall(false, true);
+    setImmediate(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (err) {
+        console.error("[auto-updater] quitAndInstall failed:", err);
+        app.relaunch();
+        app.exit(0);
+      }
+    });
+    return { action: "quit-and-install" };
   });
 
   // ──── System sleep/wake detection ────
