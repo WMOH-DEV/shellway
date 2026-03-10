@@ -13,6 +13,8 @@ import {
   RotateCcw,
   Search,
   X,
+  Save,
+  Pencil,
 } from 'lucide-react'
 import Editor, { loader, type OnMount } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
@@ -195,7 +197,7 @@ const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', '
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB (matches SFTPService limit)
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB — in-app editing limit (matches SFTPService default)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,6 +210,10 @@ interface FilePreviewProps {
   filePath: string
   fileName: string
   fileSize: number
+  /** When true, the editor is editable and supports saving (Cmd+S) back to the remote file */
+  editable?: boolean
+  /** Called after a successful save — use to refresh the file list */
+  onSave?: () => void
 }
 
 function getExtension(name: string): string {
@@ -248,6 +254,52 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1_048_576).toFixed(2)} MB`
+}
+
+// ---------------------------------------------------------------------------
+// Circular progress indicator
+// ---------------------------------------------------------------------------
+
+function CircularProgress({ percent, size = 64 }: { percent: number; size?: number }) {
+  const strokeWidth = 4
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (percent / 100) * circumference
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-nd-border"
+        />
+        {/* Progress arc */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="text-nd-accent transition-[stroke-dashoffset] duration-200"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-xs font-medium text-nd-text-secondary tabular-nums">
+          {Math.round(percent)}%
+        </span>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -384,13 +436,33 @@ export function FilePreview({
   filePath,
   fileName: name,
   fileSize,
+  editable = false,
+  onSave,
 }: FilePreviewProps) {
   const [loading, setLoading] = useState(false)
+  const [loadProgress, setLoadProgress] = useState(0) // 0-100 percent
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [wordWrap, setWordWrap] = useState(true)
   const [showMinimap, setShowMinimap] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // Track whether partial content is showing (full file still loading in background)
+  const [isPartial, setIsPartial] = useState(false)
+
+  // ── Editable mode state ──
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  /** Holds the current editor content when in editable mode */
+  const editorContentRef = useRef<string | null>(null)
+  /** Monaco editor instance ref for editable mode */
+  const monacoEditorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null)
+  /** Stable ref to the latest handleSave — avoids stale closures in Monaco's addCommand */
+  const handleSaveRef = useRef<() => void>(() => {})
+  /** Ref-based saving guard — prevents double-fire from rapid Cmd+S via the ref indirection */
+  const savingRef = useRef(false)
 
   // MutationObserver ref — strips native tooltips from find widget buttons
   const tooltipObserverRef = useRef<MutationObserver | null>(null)
@@ -412,12 +484,61 @@ export function FilePreview({
     return content.split('\n').length
   }, [content, isImage, isBinary])
 
-  // Fetch file content when the modal opens
+  // ── Save handler (editable mode) ──
+  const handleSave = useCallback(async () => {
+    // editorContentRef.current can be "" (empty file) — only skip if null (not loaded yet)
+    if (!editable || isPartial || editorContentRef.current === null || saving || savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+    try {
+      const result = await window.novadeck.sftp.writeFile(connectionId, filePath, editorContentRef.current)
+      if (result?.success === false) {
+        setSaveError(result.error ?? 'Save failed')
+      } else {
+        setDirty(false)
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 2000)
+        onSave?.()
+      }
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+      savingRef.current = false
+    }
+  }, [editable, isPartial, connectionId, filePath, saving])
+
+  // Keep the ref in sync so Monaco's addCommand always calls the latest version
+  useEffect(() => {
+    handleSaveRef.current = handleSave
+  }, [handleSave])
+
+  // Guarded close — confirm if unsaved changes exist
+  const handleClose = useCallback(() => {
+    if (editable && dirty) {
+      // eslint-disable-next-line no-restricted-globals
+      if (!confirm('You have unsaved changes. Close anyway?')) return
+    }
+    onClose()
+  }, [editable, dirty, onClose])
+
+  // Fetch file content when the modal opens — two-phase partial loading:
+  // Phase 1: If file > 100KB, load first 100KB instantly → show immediately
+  // Phase 2: Load full file in background with progress → replace content when done
   useEffect(() => {
     if (!open) {
       setContent(null)
       setError(null)
       setLoading(false)
+      setLoadProgress(0)
+      setIsPartial(false)
+      setDirty(false)
+      setSaveError(null)
+      setSaveSuccess(false)
+      editorContentRef.current = null
+      monacoEditorRef.current = null
       tooltipObserverRef.current?.disconnect()
       tooltipObserverRef.current = null
       return
@@ -425,32 +546,104 @@ export function FilePreview({
 
     if (tooLarge) return
 
+    const PARTIAL_THRESHOLD = 100 * 1024 // 100 KB
+    // Partial loading works for both read-only and editable mode.
+    // In editable mode the editor stays read-only while partial content is shown,
+    // then switches to editable once the full file arrives.
+    const usePartialLoading = !isImage && fileSize > PARTIAL_THRESHOLD
+
     let cancelled = false
     setLoading(true)
+    setLoadProgress(0)
+    setIsPartial(false)
     setError(null)
     setContent(null)
 
-    window.novadeck.sftp
-      .readFile(connectionId, filePath)
-      .then((result) => {
-        if (cancelled) return
-        if (result.success && result.data !== undefined) {
-          setContent(result.data)
-        } else {
-          setError(result.error ?? 'Failed to read file')
+    const readId = crypto.randomUUID()
+
+    // Subscribe to progress events (for the full read in phase 2)
+    const unsub = window.novadeck.sftp.onReadFileProgress((_connId, rId, transferred, total) => {
+      if (cancelled || rId !== readId) return
+      const pct = total > 0 ? Math.min(100, Math.round((transferred / total) * 100)) : 0
+      setLoadProgress(pct)
+    })
+
+    if (usePartialLoading) {
+      let hasPartial = false
+
+      // ── Phase 1: instant partial content (first 100KB) ──
+      // ── Phase 2: full content in background (starts simultaneously) ──
+      // Both requests fire in parallel — phase 1 resolves much faster.
+
+      const headPromise = window.novadeck.sftp
+        .readFileHead(connectionId, filePath, PARTIAL_THRESHOLD)
+        .then((headResult) => {
+          if (cancelled) return
+          if (headResult.success && headResult.data !== undefined) {
+            hasPartial = true
+            setContent(headResult.data)
+            setIsPartial(true)
+            setLoading(false) // Editor becomes interactive immediately
+          }
+        })
+        .catch(() => { /* Phase 2 handles errors */ })
+
+      const fullPromise = window.novadeck.sftp
+        .readFile(connectionId, filePath, undefined, readId)
+        .then((result) => {
+          if (cancelled) return
+          setLoadProgress(100)
+          if (result.success && result.data !== undefined) {
+            setContent(result.data)
+            setIsPartial(false)
+            // In editable mode, sync editorContentRef so save has full content.
+            // The editor was read-only during partial loading, so no user edits to lose.
+            if (editable) {
+              editorContentRef.current = result.data
+            }
+          } else if (!hasPartial) {
+            setError(result.error ?? 'Failed to read file')
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled && !hasPartial) setError(String(err))
+        })
+
+      Promise.allSettled([headPromise, fullPromise]).finally(() => {
+        if (!cancelled) {
+          setLoading(false)
+          setIsPartial(false)
         }
+        unsub()
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    } else {
+      // ── Small file or image: load everything at once ──
+      window.novadeck.sftp
+        .readFile(connectionId, filePath, undefined, readId)
+        .then((result) => {
+          if (cancelled) return
+          setLoadProgress(100)
+          if (result.success && result.data !== undefined) {
+            setContent(result.data)
+          } else {
+            setError(result.error ?? 'Failed to read file')
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setError(String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+          unsub()
+        })
+    }
 
     return () => {
       cancelled = true
+      unsub()
     }
-  }, [open, connectionId, filePath, tooLarge])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- editable is stable per mount, not a trigger
+  }, [open, connectionId, filePath, tooLarge, isImage, fileSize, editable])
 
   // Build the data URL for images
   const imageDataUrl = useMemo(() => {
@@ -500,12 +693,12 @@ export function FilePreview({
       }
 
       e.stopPropagation()
-      onClose()
+      handleClose()
     }
 
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [open, onClose])
+  }, [open, handleClose])
 
   // Monaco editor mount
   const handleEditorMount: OnMount = useCallback(
@@ -513,11 +706,46 @@ export function FilePreview({
       ensureViewerTheme(monacoInstance)
       monacoInstance.editor.setTheme('shellway-viewer')
 
-      // Strip native `title` tooltips from find widget buttons.
-      // They cause flicker inside the modal because the browser tooltip
-      // fights with the button hover state in the constrained space.
+      // Store editor ref for save operations
+      monacoEditorRef.current = editor
+
+      // Initialize editorContentRef with current content so save works
+      // even before the user makes any edits
+      if (editable) {
+        editorContentRef.current = editor.getValue()
+      }
+
+      // Register Cmd+S / Ctrl+S for save in editable mode.
+      // Uses handleSaveRef to avoid stale closure — addCommand captures the callback
+      // at mount time, but handleSave is recreated when deps change (e.g. saving state).
+      if (editable) {
+        editor.addCommand(
+          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
+          () => { handleSaveRef.current() }
+        )
+      }
+
       const editorDom = editor.getDomNode()
       if (editorDom) {
+        // ── BiDi fix: force LTR line direction ──
+        // Without this, lines containing Arabic/Hebrew text get their entire layout
+        // reversed by the Unicode BiDi algorithm (timestamps end up on the right side).
+        // `direction: ltr` keeps the overall line LTR while `unicode-bidi: embed`
+        // creates a new embedding level — Arabic text segments within the line still
+        // render right-to-left for readability, but the line structure stays correct.
+        const bidiStyle = document.createElement('style')
+        bidiStyle.textContent = `
+          .view-lines .view-line,
+          .view-lines .view-line span {
+            direction: ltr !important;
+            unicode-bidi: embed !important;
+          }
+        `
+        editorDom.appendChild(bidiStyle)
+
+        // Strip native `title` tooltips from find widget buttons.
+        // They cause flicker inside the modal because the browser tooltip
+        // fights with the button hover state in the constrained space.
         const stripFindWidgetTooltips = () => {
           // Temporarily disconnect to avoid self-triggering on attribute removal
           observer.disconnect()
@@ -543,16 +771,20 @@ export function FilePreview({
         tooltipObserverRef.current = observer
       }
     },
-    []
+    // handleSave is NOT in deps — we use handleSaveRef to avoid stale closures
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editable]
   )
 
   // Monaco editor options
   const editorOptions = useMemo(
     (): MonacoEditor.editor.IStandaloneEditorConstructionOptions => ({
-      readOnly: true,
-      domReadOnly: true,
+      readOnly: !editable || isPartial,
+      domReadOnly: !editable || isPartial,
       fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      // Include system Arabic/RTL-capable fonts in fallback chain for proper BiDi rendering.
+      // macOS: 'Geeza Pro' (Arabic), 'SF Mono'; Windows: 'Cascadia Code' has decent Unicode coverage.
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Geeza Pro', 'Segoe UI', 'SF Mono', monospace",
       fontLigatures: true,
       lineNumbers: 'on',
       tabSize: 2,
@@ -578,6 +810,13 @@ export function FilePreview({
       overviewRulerLanes: 0,
       hideCursorInOverviewRuler: true,
       renderWhitespace: 'none',
+      // Disable unicode highlighting for non-Latin scripts (Arabic, CJK, etc.)
+      // Without this, Monaco boxes/highlights Arabic characters as "unusual unicode"
+      unicodeHighlight: {
+        ambiguousCharacters: false,
+        invisibleCharacters: false,
+        nonBasicASCII: false,
+      },
       guides: {
         indentation: true,
         bracketPairs: true,
@@ -598,7 +837,7 @@ export function FilePreview({
       links: true,
       colorDecorators: true,
     }),
-    [wordWrap, showMinimap]
+    [wordWrap, showMinimap, editable, isPartial]
   )
 
   // Determine what to display in the language badge
@@ -630,23 +869,27 @@ export function FilePreview({
       return (
         <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-text-muted">
           <AlertTriangle size={36} className="text-nd-error/70" />
-          <p className="text-sm font-medium">File too large to preview</p>
+          <p className="text-sm font-medium">File too large to edit in-app</p>
           <p className="text-xs text-nd-text-muted">
             {formatFileSize(fileSize)} exceeds the {formatFileSize(MAX_FILE_SIZE)} limit
           </p>
           <p className="text-xs text-nd-text-muted mt-1">
-            Use <span className="font-mono text-nd-text-secondary">View / Edit</span> to open in an external editor
+            Use <span className="font-mono text-nd-text-secondary">Open With...</span> to open in an external editor
           </p>
         </div>
       )
     }
 
-    // Loading
+    // Loading — circular progress with percentage
     if (loading) {
       return (
         <div className="flex flex-col items-center justify-center gap-3 h-full">
-          <Spinner size="lg" />
-          <p className="text-xs text-nd-text-muted">Loading file...</p>
+          <CircularProgress percent={loadProgress} size={72} />
+          <p className="text-xs text-nd-text-muted">
+            {loadProgress > 0 && loadProgress < 100
+              ? `Loading... ${formatFileSize(Math.round(fileSize * loadProgress / 100))} / ${formatFileSize(fileSize)}`
+              : 'Loading file...'}
+          </p>
         </div>
       )
     }
@@ -692,6 +935,10 @@ export function FilePreview({
         value={content}
         options={editorOptions}
         onMount={handleEditorMount}
+        onChange={editable ? (value) => {
+          editorContentRef.current = value ?? ''
+          if (!dirty) setDirty(true)
+        } : undefined}
         loading={
           <div className="flex items-center justify-center h-full text-nd-text-muted text-sm">
             <Spinner size="md" />
@@ -700,14 +947,14 @@ export function FilePreview({
       />
     )
   }, [
-    tooLarge, loading, error, content, isBinary, isImage, imageDataUrl,
-    name, language, editorOptions, handleEditorMount, fileSize,
+    tooLarge, loading, loadProgress, error, content, isBinary, isImage, imageDataUrl,
+    name, language, editorOptions, handleEditorMount, fileSize, editable, dirty,
   ])
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title=""
       maxWidth="max-w-[92vw]"
       className="!max-h-[92vh]"
@@ -719,12 +966,28 @@ export function FilePreview({
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {isImage ? (
             <ImageIcon size={15} className="text-nd-accent shrink-0" />
+          ) : editable ? (
+            <Pencil size={15} className="text-nd-accent shrink-0" />
           ) : (
             <Code size={15} className="text-nd-accent shrink-0" />
           )}
           <span className="text-sm font-medium text-nd-text-primary truncate" title={name}>
             {name}
           </span>
+          {editable && dirty && (
+            <span className="text-xs text-nd-warning shrink-0">● Modified</span>
+          )}
+          {editable && saving && (
+            <span className="text-xs text-nd-text-muted shrink-0">Saving...</span>
+          )}
+          {editable && saveSuccess && !saving && (
+            <span className="text-xs text-nd-success shrink-0">Saved</span>
+          )}
+          {saveError && (
+            <span className="text-xs text-nd-error shrink-0 truncate max-w-[200px]" title={saveError}>
+              {saveError}
+            </span>
+          )}
         </div>
 
         {/* File size */}
@@ -734,7 +997,7 @@ export function FilePreview({
 
         {/* Close button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="shrink-0 rounded-md p-1 text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
           title="Close"
         >
@@ -751,9 +1014,18 @@ export function FilePreview({
           </span>
 
           {/* Line count */}
-          <span className="text-2xs text-nd-text-muted tabular-nums mr-auto">
+          <span className="text-2xs text-nd-text-muted tabular-nums">
             {lineCount.toLocaleString()} {lineCount === 1 ? 'line' : 'lines'}
           </span>
+
+          {/* Partial loading indicator — shown while full content streams in background */}
+          {isPartial && (
+            <span className="flex items-center gap-1.5 text-2xs text-nd-accent mr-auto animate-pulse">
+              <Spinner size="sm" />
+              Loading full file... {loadProgress > 0 ? `${loadProgress}%` : ''}
+            </span>
+          )}
+          {!isPartial && <span className="mr-auto" />}
 
           {/* Word wrap toggle */}
           <button
@@ -790,6 +1062,26 @@ export function FilePreview({
             <Search size={11} />
             <span className="font-mono">{navigator.platform?.includes('Mac') ? '⌘F' : 'Ctrl+F'}</span>
           </div>
+
+          {/* Save button (editable mode only) */}
+          {editable && (
+            <button
+              onClick={handleSave}
+              disabled={saving || !dirty || isPartial}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
+                saving
+                  ? 'text-nd-text-muted cursor-wait'
+                  : dirty
+                    ? 'bg-nd-accent/15 text-nd-accent hover:bg-nd-accent/25'
+                    : 'text-nd-text-muted opacity-50 cursor-default'
+              )}
+              title={`Save (${navigator.platform?.includes('Mac') ? '⌘S' : 'Ctrl+S'})`}
+            >
+              <Save size={13} />
+              <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save'}</span>
+            </button>
+          )}
 
           {/* Copy button */}
           <button

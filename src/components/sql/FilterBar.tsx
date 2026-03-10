@@ -124,7 +124,7 @@ interface FilterRowProps {
   columns: QueryField[]
   onUpdate: (id: string, changes: Partial<TableFilter>) => void
   onRemove: (id: string) => void
-  onAdd: () => void
+  onAdd: (sourceFilter?: TableFilter) => void
   onApply: () => void
   /** When true, auto-focus the value input on mount */
   autoFocusValue?: boolean
@@ -289,9 +289,9 @@ const FilterRow = React.memo(function FilterRow({
         Apply
       </Button>
 
-      {/* Add another filter */}
+      {/* Add another filter — duplicates this row's column + operator with empty value */}
       <button
-        onClick={onAdd}
+        onClick={() => onAdd(filter)}
         className="shrink-0 flex items-center justify-center h-5 w-5 rounded text-nd-text-muted hover:text-nd-success hover:bg-nd-surface transition-colors"
         title="Add filter"
       >
@@ -316,7 +316,17 @@ function nextFilterId() {
   return crypto.randomUUID()
 }
 
-function createEmptyFilter(columns: QueryField[]): TableFilter {
+function createEmptyFilter(columns: QueryField[], sourceFilter?: TableFilter): TableFilter {
+  // When duplicating from an existing filter row, keep the same column + operator
+  if (sourceFilter) {
+    return {
+      id: nextFilterId(),
+      enabled: true,
+      column: sourceFilter.column,
+      operator: sourceFilter.operator,
+      value: '',
+    }
+  }
   const col = columns[0]
   const colName = col?.name ?? '__raw_sql__'
   // Default to 'contains' for string columns, 'equals' for numbers/dates/booleans
@@ -361,8 +371,8 @@ export const FilterBar = React.memo(function FilterBar({
     }
   }, [autoFocusFilterId])
 
-  const handleAdd = useCallback(() => {
-    const newFilter = createEmptyFilter(columns)
+  const handleAdd = useCallback((sourceFilter?: TableFilter) => {
+    const newFilter = createEmptyFilter(columns, sourceFilter)
     setAutoFocusFilterId(newFilter.id)
     onFiltersChange([...filters, newFilter])
   }, [filters, columns, onFiltersChange])
@@ -426,7 +436,7 @@ export const FilterBar = React.memo(function FilterBar({
           variant="ghost"
           size="sm"
           className="h-5 gap-1 text-xs"
-          onClick={handleAdd}
+          onClick={() => handleAdd()}
         >
           <Filter size={11} />
           Add Filter

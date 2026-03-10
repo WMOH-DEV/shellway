@@ -93,17 +93,17 @@ export function DatabasesPanel({
     );
   }, [openDBTabs, q]);
 
-  // Filter saved-but-not-open by name / host / db / type
+  // Filter saved-but-not-open by display label (connectionName or fallback)
+  // Only match against the visible label — searching by host/database/type caused
+  // false positives (e.g. all connections to a host matching the query would appear)
   const filteredSavedDBs = useMemo(() => {
     if (!q) return savedDBsNotOpen;
     return savedDBsNotOpen.filter((db) => {
-      const label = (db.connectionName || "").toLowerCase();
-      return (
-        label.includes(q) ||
-        db.host.toLowerCase().includes(q) ||
-        (db.database || "").toLowerCase().includes(q) ||
-        db.type.toLowerCase().includes(q)
-      );
+      const label = (
+        db.connectionName ||
+        `${db.type.toUpperCase()} · ${db.database || db.host}`
+      ).toLowerCase();
+      return label.includes(q);
     });
   }, [savedDBsNotOpen, q]);
 

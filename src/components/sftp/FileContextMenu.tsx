@@ -41,6 +41,8 @@ interface FileContextMenuProps {
   onPermissions?: (entry: FileEntry) => void
   /** Open the file preview modal for the entry */
   onPreview?: (entry: FileEntry) => void
+  /** Open the file in the in-app editable editor */
+  onEdit?: (entry: FileEntry) => void
   /** Called after user picks an app via "Open With" — parent shows "set as default" prompt */
   onOpenWithComplete?: (ext: string, appPath: string, appName: string) => void
 }
@@ -92,6 +94,7 @@ export function FileContextMenu({
   onWatchTempFile,
   onPermissions,
   onPreview,
+  onEdit,
   onOpenWithComplete
 }: FileContextMenuProps) {
   const isRemote = panelType === 'remote'
@@ -157,48 +160,10 @@ export function FileContextMenu({
             break
           }
 
-          // ── View / Edit: download to temp, open with stored default app (or system default), watch for changes ──
+          // ── View / Edit: open in-app editable editor (fast, no download-to-temp) ──
           case 'view': {
-            if (!entry.isDirectory && isRemote) {
-              const name = fileName(entry.path)
-              toast.info('Opening...', `Downloading ${name} for editing`)
-              const tempDir = await window.novadeck.fs.getTempDir()
-              const tempPath = joinPath(tempDir, `shellway-${Date.now()}-${name}`)
-
-              const result = await window.novadeck.sftp.readFile(connectionId, entry.path)
-              if (result.success && result.data !== undefined) {
-                await window.novadeck.fs.writeFile(tempPath, result.data)
-
-                // Check if user has a stored default app for this file extension
-                const ext = name.includes('.') ? '.' + name.split('.').pop()!.toLowerCase() : ''
-                let opened = false
-                if (ext) {
-                  const settings = await window.novadeck.settings.getAll() as any
-                  const defaultApps: Record<string, string> = settings?.sftpDefaultApps ?? {}
-                  const defaultApp = defaultApps[ext]
-                  if (defaultApp) {
-                    const openResult = await window.novadeck.shell.openFileWithApp(tempPath, defaultApp)
-                    if (openResult.success) {
-                      opened = true
-                    } else {
-                      // Stored app failed (may have been moved/deleted) — fall back to system default
-                      toast.error('Default app not found', `Falling back to system default for ${ext}`)
-                    }
-                  }
-                }
-
-                if (!opened) {
-                  await window.novadeck.shell.openPath(tempPath)
-                }
-
-                // Start watching for edits → auto-upload back to server
-                if (onWatchTempFile) {
-                  await onWatchTempFile(tempPath, entry.path)
-                  toast.info('Watching for changes', `Edits to ${name} will auto-upload to server`)
-                }
-              } else {
-                toast.error('Failed to read file', result.error || 'Unknown error')
-              }
+            if (!entry.isDirectory && onEdit) {
+              onEdit(entry)
             } else if (!entry.isDirectory && !isRemote) {
               // Local file — just open directly
               const err = await window.novadeck.shell.openPath(entry.path)
@@ -393,7 +358,7 @@ export function FileContextMenu({
         toast.error('Action failed', String(err))
       }
     },
-    [entry, isRemote, connectionId, panelType, localPath, remotePath, onRefresh, onRename, onNavigate, onWatchTempFile, onPermissions, onPreview, onOpenWithComplete]
+    [entry, isRemote, connectionId, panelType, localPath, remotePath, onRefresh, onRename, onNavigate, onWatchTempFile, onPermissions, onPreview, onEdit, onOpenWithComplete]
   )
 
   // Wrap handleAction to close the menu first, then execute async work

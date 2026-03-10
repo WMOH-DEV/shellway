@@ -376,17 +376,61 @@ export class SFTPService extends EventEmitter {
     }
   }
 
-  /** Read a text file */
-  async readFile(remotePath: string, maxSize: number = 5 * 1024 * 1024): Promise<string> {
+  /**
+   * Read the first N bytes of a text file (for instant preview).
+   * Uses ssh2's createReadStream with start/end range — no full download needed.
+   */
+  async readFileHead(remotePath: string, bytes: number = 100 * 1024): Promise<{ content: string; totalSize: number }> {
+    const stats = await this.stat(remotePath)
+    const readBytes = Math.min(bytes, stats.size)
+
+    // Guard against empty files — end:-1 is invalid for createReadStream
+    if (readBytes <= 0) {
+      return { content: '', totalSize: stats.size }
+    }
+
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      const stream = this.sftp.createReadStream(remotePath, {
+        start: 0,
+        end: readBytes - 1,
+      })
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+      stream.on('error', reject)
+      stream.on('end', () => {
+        resolve({
+          content: Buffer.concat(chunks).toString('utf-8'),
+          totalSize: stats.size,
+        })
+      })
+    })
+  }
+
+  /**
+   * Read a text file with progress reporting.
+   * Emits 'readProgress' events: (readId, transferred, total)
+   * Default max 50 MB for in-app editing.
+   */
+  async readFile(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<string> {
     const stats = await this.stat(remotePath)
     if (stats.size > maxSize) {
       throw new Error(`File too large: ${stats.size} bytes (max: ${maxSize})`)
     }
 
+    const totalBytes = stats.size
+
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
+      let transferred = 0
       const stream = this.sftp.createReadStream(remotePath)
-      stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+
+      stream.on('data', (chunk: Buffer) => {
+        chunks.push(chunk)
+        transferred += chunk.length
+        if (readId) {
+          this.emit('readProgress', readId, transferred, totalBytes)
+        }
+      })
       stream.on('error', reject)
       stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
     })
@@ -394,11 +438,50 @@ export class SFTPService extends EventEmitter {
 
   /** Write content to a file */
   async writeFile(remotePath: string, content: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const stream = this.sftp.createWriteStream(remotePath)
-      stream.on('error', reject)
-      stream.on('finish', resolve)
-      stream.end(content, 'utf-8')
+    // Use low-level open → write → close to avoid both:
+    // 1. createWriteStream — broken on Node ≥ 22 (finish event never fires)
+    // 2. sftp.writeFile wrapper — hangs on some servers/configurations
+    // Direct protocol calls with a 30s timeout guarantee we never hang forever.
+    const TIMEOUT_MS = 30_000
+    const buf = Buffer.from(content, 'utf8')
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          reject(new Error(`writeFile timed out after ${TIMEOUT_MS / 1000}s`))
+        }
+      }, TIMEOUT_MS)
+
+      const done = (err?: Error | null) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (err) reject(err)
+        else resolve()
+      }
+
+      this.sftp.open(remotePath, 'w', (openErr, handle) => {
+        if (openErr) return done(openErr)
+
+        const writeChunks = (offset: number) => {
+          if (offset >= buf.length) {
+            this.sftp.close(handle, (closeErr) => done(closeErr))
+            return
+          }
+          const chunkSize = Math.min(32768, buf.length - offset)
+          this.sftp.write(handle, buf, offset, chunkSize, offset, (writeErr: Error | null | undefined) => {
+            if (writeErr) {
+              this.sftp.close(handle, () => done(writeErr))
+              return
+            }
+            writeChunks(offset + chunkSize)
+          })
+        }
+
+        writeChunks(0)
+      })
     })
   }
 
