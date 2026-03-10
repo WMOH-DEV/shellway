@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, Check, AlertCircle } from 'lucide-react'
+import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, Check, AlertCircle, Columns } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUpdateStore } from '@/stores/updateStore'
@@ -10,7 +10,8 @@ import { formatSpeed } from '@/utils/fileSize'
  * and auto-update progress inline.
  */
 export function StatusBar() {
-  const { tabs, activeTabId } = useConnectionStore()
+  const { tabs, activeTabId, panes } = useConnectionStore()
+  const isSplit = panes.length >= 2
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const { status, version, progress, errorMessage, dismiss } = useUpdateStore()
 
@@ -169,6 +170,17 @@ export function StatusBar() {
         <Upload size={11} className="text-nd-text-muted" />
         <span className="text-2xs text-nd-text-muted">No transfers</span>
       </div>
+
+      {/* Split view indicator */}
+      {isSplit && (
+        <>
+          <div className="w-px h-3 bg-nd-border" />
+          <div className="flex items-center gap-1.5 text-nd-text-muted text-2xs">
+            <Columns size={12} />
+            <span>Split View</span>
+          </div>
+        </>
+      )}
 
       <div className="flex-1" />
 

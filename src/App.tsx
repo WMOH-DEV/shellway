@@ -4,8 +4,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { AppShell } from '@/components/layout/AppShell'
 import { ToastContainer } from '@/components/ui/Toast'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
-import { ConnectionView } from '@/components/ConnectionView'
-import { DatabaseView } from '@/components/DatabaseView'
+import { WorkspaceLayout } from '@/components/layout/WorkspaceLayout'
 import { cn } from '@/utils/cn'
 import { SettingsView } from '@/components/settings/SettingsView'
 import { HostKeyManager } from '@/components/keys/HostKeyManager'
@@ -301,19 +300,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Render ALL connection tabs — hide inactive via CSS to preserve state */}
-      {tabs.map((tab) => (
-        <div
-          key={tab.id}
-          className={cn('h-full', tab.id !== activeTabId && 'hidden')}
-        >
-          {tab.type === 'database' ? (
-            <DatabaseView tab={tab} />
-          ) : (
-            <ConnectionView tab={tab} />
-          )}
-        </div>
-      ))}
+      {/* Workspace: renders all connection tabs via pane layout */}
+      {tabs.length > 0 && <WorkspaceLayout />}
 
       {/* Settings modal */}
       <SettingsView open={settingsOpen} onClose={toggleSettings} />

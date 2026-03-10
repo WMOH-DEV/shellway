@@ -82,6 +82,40 @@ export function useKeyboardShortcuts() {
         window.dispatchEvent(new CustomEvent('novadeck:focus-pane', { detail: { pane: 'sftp' } }))
         return
       }
+
+      // ── Toggle pane focus ──
+      if (matchesBinding(e, 'global:focusOtherPane')) {
+        e.preventDefault()
+        const { panes, activePaneId, setActivePane } = useConnectionStore.getState()
+        if (panes.length < 2) return
+        const otherPane = panes.find(p => p.id !== activePaneId)
+        if (otherPane) setActivePane(otherPane.id)
+        return
+      }
+
+      // ── Split right ──
+      if (matchesBinding(e, 'global:splitRight')) {
+        e.preventDefault()
+        const { activeTabId, splitPane } = useConnectionStore.getState()
+        if (activeTabId) splitPane(activeTabId, 'horizontal')
+        return
+      }
+
+      // ── Split down ──
+      if (matchesBinding(e, 'global:splitDown')) {
+        e.preventDefault()
+        const { activeTabId, splitPane } = useConnectionStore.getState()
+        if (activeTabId) splitPane(activeTabId, 'vertical')
+        return
+      }
+
+      // ── Close pane ──
+      if (matchesBinding(e, 'global:closePane')) {
+        e.preventDefault()
+        const { panes, activePaneId, closePane } = useConnectionStore.getState()
+        if (panes.length >= 2) closePane(activePaneId)
+        return
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)

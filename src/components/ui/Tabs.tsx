@@ -24,7 +24,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 border-b border-nd-border',
+        'flex items-center gap-0.5 border-b border-nd-border overflow-x-auto scrollbar-none',
         className
       )}
     >
@@ -38,7 +38,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
             onClick={() => !tab.disabled && onTabChange(tab.id)}
             disabled={tab.disabled}
             className={cn(
-              'group relative inline-flex items-center gap-1.5 px-3 font-medium transition-colors duration-150',
+              'group relative inline-flex items-center gap-1.5 px-3 font-medium transition-colors duration-150 whitespace-nowrap shrink-0',
               'border-b-2 -mb-px',
               size === 'sm' ? 'py-1.5 text-xs' : 'py-2 text-sm',
               isActive

@@ -156,7 +156,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       {/* Unified shell tab bar + tools */}
       <div className="flex items-center h-9 bg-nd-bg-secondary border-b border-nd-border shrink-0">
         {/* Shell tabs */}
-        <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+        <div className="flex items-center overflow-x-auto scrollbar-none flex-1 min-w-0">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId
             return (
@@ -220,7 +220,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
                 }}
                 placeholder="Find..."
                 autoFocus
-                className="h-5.5 w-32 px-2 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
+                className="h-5.5 w-24 min-w-[60px] px-2 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
               />
               <button onClick={() => handleSearch(searchQuery, 'prev')} className="p-0.5 text-nd-text-muted hover:text-nd-text-primary transition-colors">
                 <ChevronUp size={12} />

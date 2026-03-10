@@ -57,9 +57,9 @@ export function LogToolbar({ sessionId }: LogToolbarProps) {
   }, [sessionId])
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-nd-border bg-nd-bg-secondary shrink-0">
+    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-nd-border bg-nd-bg-secondary shrink-0 overflow-x-auto scrollbar-none">
       {/* Level filters */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5 shrink-0">
         {levelButtons.map(({ level, icon: Icon, label, activeColor }) => {
           const isActive = filters.levels.has(level)
           return (
@@ -82,10 +82,10 @@ export function LogToolbar({ sessionId }: LogToolbarProps) {
       </div>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-nd-border" />
+      <div className="w-px h-4 bg-nd-border shrink-0" />
 
       {/* Source filters */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5 shrink-0">
         {sourceButtons.map(({ source, icon: Icon, label }) => {
           const isActive = filters.sources.has(source)
           return (
@@ -108,10 +108,10 @@ export function LogToolbar({ sessionId }: LogToolbarProps) {
       </div>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-nd-border" />
+      <div className="w-px h-4 bg-nd-border shrink-0" />
 
       {/* Search */}
-      <div className="relative flex-1 max-w-[200px]">
+      <div className="relative shrink-0 w-[140px]">
         <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-nd-text-muted" />
         <input
           type="text"
@@ -131,7 +131,7 @@ export function LogToolbar({ sessionId }: LogToolbarProps) {
       <div className="flex-1" />
 
       {/* Actions */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5 shrink-0">
         <Tooltip content="Export log" side="bottom">
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleExport}>
             <Download size={12} />
