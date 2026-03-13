@@ -215,6 +215,8 @@ interface DataGridProps {
 export interface DataGridHandle {
   toggleColumn: (colId: string, show: boolean) => void;
   showAllColumns: () => void;
+  /** Scroll to the last row and select it (used after insert/duplicate) */
+  scrollToLastRow: () => void;
 }
 
 // ── Context menu state (cell right-click) ──
@@ -1312,13 +1314,26 @@ export const DataGrid = React.memo(
     );
 
     // Expose column visibility controls to parent via ref
+    const handleScrollToLastRow = useCallback(() => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const lastIdx = api.getDisplayedRowCount() - 1;
+      if (lastIdx < 0) return;
+      api.ensureIndexVisible(lastIdx, "bottom");
+      // Select the last row so it's highlighted
+      api.deselectAll();
+      const rowNode = api.getDisplayedRowAtIndex(lastIdx);
+      if (rowNode) rowNode.setSelected(true);
+    }, []);
+
     useImperativeHandle(
       ref,
       () => ({
         toggleColumn: handleToggleColumn,
         showAllColumns: handleShowAllColumns,
+        scrollToLastRow: handleScrollToLastRow,
       }),
-      [handleToggleColumn, handleShowAllColumns],
+      [handleToggleColumn, handleShowAllColumns, handleScrollToLastRow],
     );
 
     // Column width restore is no longer done via a post-render useEffect.

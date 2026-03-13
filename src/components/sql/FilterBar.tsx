@@ -106,7 +106,9 @@ interface FilterBarProps {
   filters: TableFilter[]
   columns: QueryField[]
   onFiltersChange: (filters: TableFilter[]) => void
-  onApply: () => void
+  /** Apply filters. When `singleFilterId` is provided (Enter / per-row Apply),
+   *  only that filter is applied. When omitted (Apply All), all enabled filters apply. */
+  onApply: (singleFilterId?: string) => void
   /** ID of a filter whose value input should be auto-focused (e.g. added externally via column right-click) */
   externalFocusFilterId?: string | null
   /** Whether the currently displayed data was fetched with active filters.
@@ -125,7 +127,7 @@ interface FilterRowProps {
   onUpdate: (id: string, changes: Partial<TableFilter>) => void
   onRemove: (id: string) => void
   onAdd: (sourceFilter?: TableFilter) => void
-  onApply: () => void
+  onApply: (singleFilterId?: string) => void
   /** When true, auto-focus the value input on mount */
   autoFocusValue?: boolean
 }
@@ -244,7 +246,7 @@ const FilterRow = React.memo(function FilterRow({
             ref={valueInputRef}
             value={filter.value}
             onChange={(e) => onUpdate(filter.id, { value: e.target.value })}
-            onKeyDown={(e) => { if (e.key === 'Enter') onApply() }}
+            onKeyDown={(e) => { if (e.key === 'Enter') onApply(filter.id) }}
             placeholder={isRawSql ? 'e.g. id > 100 AND status = 1' : 'Value...'}
             className="h-6 w-full text-xs"
           />
@@ -258,7 +260,7 @@ const FilterRow = React.memo(function FilterRow({
             <Input
               value={filter.value}
               onChange={(e) => onUpdate(filter.id, { value: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter') onApply() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') onApply(filter.id) }}
               placeholder="From..."
               className="h-6 w-full text-xs"
             />
@@ -268,7 +270,7 @@ const FilterRow = React.memo(function FilterRow({
             <Input
               value={filter.value2 ?? ''}
               onChange={(e) => onUpdate(filter.id, { value2: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter') onApply() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') onApply(filter.id) }}
               placeholder="To..."
               className="h-6 w-full text-xs"
             />
@@ -284,7 +286,7 @@ const FilterRow = React.memo(function FilterRow({
         variant="ghost"
         size="sm"
         className="h-5 shrink-0 px-2 text-xs text-nd-accent hover:text-nd-accent-hover"
-        onClick={onApply}
+        onClick={() => onApply(filter.id)}
       >
         Apply
       </Button>
@@ -329,14 +331,13 @@ function createEmptyFilter(columns: QueryField[], sourceFilter?: TableFilter): T
   }
   const col = columns[0]
   const colName = col?.name ?? '__raw_sql__'
-  // Default to 'contains' for string columns, 'equals' for numbers/dates/booleans
-  const category = colName === '__raw_sql__' ? 'raw_sql' : categorizeColumn(col?.type ?? 'varchar')
-  const defaultOp: FilterOperator = category === 'string' ? 'contains' : 'equals'
+  // Default to 'contains' for all column types — consistent with TablePlus behaviour.
+  // Users can switch to a different operator via the dropdown.
   return {
     id: nextFilterId(),
     enabled: true,
     column: colName,
-    operator: colName === '__raw_sql__' ? 'raw_sql' : defaultOp,
+    operator: colName === '__raw_sql__' ? 'raw_sql' : 'contains',
     value: '',
   }
 }
@@ -466,7 +467,7 @@ export const FilterBar = React.memo(function FilterBar({
               variant="primary"
               size="sm"
               className="h-5 text-xs"
-              onClick={onApply}
+              onClick={() => onApply()}
             >
               Apply All
             </Button>

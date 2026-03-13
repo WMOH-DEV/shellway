@@ -97,7 +97,31 @@ export function generateSQL(change: StagedChange, dbType: DatabaseType): string 
 export function generateTransaction(changes: StagedChange[], dbType: DatabaseType): string {
   if (changes.length === 0) return ''
 
-  const statements = changes
+  // Merge UPDATE changes by row — multiple cell edits on the same row should
+  // produce a single UPDATE statement with all changed columns in the SET clause.
+  const mergedUpdates = new Map<string, StagedChange>()
+  const nonUpdates: StagedChange[] = []
+
+  for (const change of changes) {
+    if (change.type === 'update' && change.primaryKey && change.changes) {
+      const pkKey = JSON.stringify(change.primaryKey)
+      const existing = mergedUpdates.get(pkKey)
+      if (existing && existing.changes) {
+        // Merge changes into existing entry
+        mergedUpdates.set(pkKey, {
+          ...existing,
+          changes: { ...existing.changes, ...change.changes },
+        })
+      } else {
+        mergedUpdates.set(pkKey, { ...change, changes: { ...change.changes } })
+      }
+    } else {
+      nonUpdates.push(change)
+    }
+  }
+
+  const mergedChanges = [...mergedUpdates.values(), ...nonUpdates]
+  const statements = mergedChanges
     .map((c) => generateSQL(c, dbType))
     .filter(Boolean)
 

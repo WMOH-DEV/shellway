@@ -430,56 +430,16 @@ export const DataTabView = React.memo(function DataTabView({
         const countQid = crypto.randomUUID();
         countQueryIdRef.current = countQid;
         try {
-          // Step 1: Fast estimated count from DB statistics.
-          // Use sql:query directly (instead of the opaque getRowCount IPC) so
-          // we can pass our own queryId for cancellation.
-          let estimatedRows = 0;
-          if (dbType === "mysql") {
-            const estRes = await (window as any).novadeck.sql.query(
-              sqlSessionId,
-              "SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-              [table],
-              countQid,
-            );
-            if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
-              return;
-            if (estRes.success) {
-              estimatedRows = Math.max(
-                0,
-                Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
-              );
-            }
-          } else {
-            const estRes = await (window as any).novadeck.sql.query(
-              sqlSessionId,
-              "SELECT reltuples::bigint as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2",
-              [table, schema || "public"],
-              countQid,
-            );
-            if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
-              return;
-            if (estRes.success) {
-              estimatedRows = Math.max(
-                0,
-                Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
-              );
-            }
-          }
-
-          // Step 2: Only auto-count when the table is small enough that
-          // COUNT(*) is fast (under ~500k rows).  For multi-million-row tables,
-          // use the estimate and let the user request an exact count.
-          const EXACT_COUNT_THRESHOLD = 500_000;
-
-          if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
-            // Small table — exact COUNT(*) is cheap, run it now.
+          if (hasFilters) {
+            // ── Filtered query: always run exact COUNT(*) with filters ──
+            // Filtered results are typically small, so COUNT(*) WITH WHERE is fast.
+            // Using the unfiltered table estimate here would show wrong totals.
             const { query: countQuery, params: countParams } = buildCountQuery(
               table,
               schema,
               dbType,
               currentFilters,
             );
-            // New query ID so the server can track/cancel this separately
             const exactCountQid = crypto.randomUUID();
             countQueryIdRef.current = exactCountQid;
             const countResponse = await (window as any).novadeck.sql.query(
@@ -506,7 +466,113 @@ export const DataTabView = React.memo(function DataTabView({
                 isEstimatedCount: false,
               });
             } else {
-              // Fallback to estimate if exact count fails
+              // Fallback: show 0 if count fails with filters
+              setPagination({
+                page,
+                pageSize,
+                totalRows: 0,
+                totalPages: 1,
+                isEstimatedCount: false,
+              });
+            }
+          } else {
+            // ── Unfiltered query: use fast estimated count, optionally exact ──
+            // Step 1: Fast estimated count from DB statistics.
+            let estimatedRows = 0;
+            if (dbType === "mysql") {
+              const estRes = await (window as any).novadeck.sql.query(
+                sqlSessionId,
+                "SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+                [table],
+                countQid,
+              );
+              if (
+                controller.signal.aborted ||
+                thisQueryId !== queryIdRef.current
+              )
+                return;
+              if (estRes.success) {
+                estimatedRows = Math.max(
+                  0,
+                  Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
+                );
+              }
+            } else {
+              const estRes = await (window as any).novadeck.sql.query(
+                sqlSessionId,
+                "SELECT reltuples::bigint as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2",
+                [table, schema || "public"],
+                countQid,
+              );
+              if (
+                controller.signal.aborted ||
+                thisQueryId !== queryIdRef.current
+              )
+                return;
+              if (estRes.success) {
+                estimatedRows = Math.max(
+                  0,
+                  Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
+                );
+              }
+            }
+
+            // Step 2: Only auto-count when the table is small enough that
+            // COUNT(*) is fast (under ~500k rows).  For multi-million-row tables,
+            // use the estimate and let the user request an exact count.
+            const EXACT_COUNT_THRESHOLD = 500_000;
+
+            if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
+              // Small table — exact COUNT(*) is cheap, run it now.
+              const { query: countQuery, params: countParams } =
+                buildCountQuery(table, schema, dbType, currentFilters);
+              const exactCountQid = crypto.randomUUID();
+              countQueryIdRef.current = exactCountQid;
+              const countResponse = await (window as any).novadeck.sql.query(
+                sqlSessionId,
+                countQuery,
+                countParams,
+                exactCountQid,
+              );
+
+              if (
+                controller.signal.aborted ||
+                thisQueryId !== queryIdRef.current
+              )
+                return;
+
+              if (countResponse.success) {
+                const exactRows = Number(
+                  ((countResponse.data as QueryResult).rows[0] as any)
+                    ?.count ?? 0,
+                );
+                const totalPages = Math.max(
+                  1,
+                  Math.ceil(exactRows / pageSize),
+                );
+                setPagination({
+                  page,
+                  pageSize,
+                  totalRows: exactRows,
+                  totalPages,
+                  isEstimatedCount: false,
+                });
+              } else {
+                // Fallback to estimate if exact count fails
+                const totalPages = Math.max(
+                  1,
+                  Math.ceil(estimatedRows / pageSize),
+                );
+                setPagination({
+                  page,
+                  pageSize,
+                  totalRows: estimatedRows,
+                  totalPages,
+                  isEstimatedCount: true,
+                });
+              }
+            } else {
+              // Large table — use estimated count, user can click "Count" for exact
               const totalPages = Math.max(
                 1,
                 Math.ceil(estimatedRows / pageSize),
@@ -519,16 +585,6 @@ export const DataTabView = React.memo(function DataTabView({
                 isEstimatedCount: true,
               });
             }
-          } else {
-            // Large table — use estimated count, user can click "Count" for exact
-            const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize));
-            setPagination({
-              page,
-              pageSize,
-              totalRows: estimatedRows,
-              totalPages,
-              isEstimatedCount: true,
-            });
           }
         } catch {
           // Count query failure is non-critical — keep existing pagination
@@ -820,26 +876,55 @@ export const DataTabView = React.memo(function DataTabView({
     [filtersKey],
   );
 
-  const handleFiltersApply = useCallback(() => {
-    // Execute immediately — the user explicitly clicked "Apply" / "Apply All"
-    // or pressed Enter, so there is no reason to delay.
-    // Reads filtersRef to avoid stale closures.
-    discardPendingChanges();
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    executeQuery({
-      page: 1,
-      pageSize: pagination.pageSize,
-      sort: sortColumn,
-      sortDir: sortDirection,
-      currentFilters: filtersRef.current,
-    });
-  }, [
-    executeQuery,
-    pagination.pageSize,
-    sortColumn,
-    sortDirection,
-    discardPendingChanges,
-  ]);
+  const handleFiltersApply = useCallback(
+    (singleFilterId?: string) => {
+      // Execute immediately — the user explicitly clicked "Apply" / "Apply All"
+      // or pressed Enter, so there is no reason to delay.
+      // Reads filtersRef to avoid stale closures.
+      discardPendingChanges();
+      setPagination((prev) => ({ ...prev, page: 1 }));
+
+      let filtersToApply: TableFilter[];
+      if (singleFilterId) {
+        // Single-filter apply (Enter or per-row Apply button):
+        // Enable only the targeted filter and disable others, matching TablePlus behaviour.
+        const updated = filtersRef.current.map((f) => ({
+          ...f,
+          enabled: f.id === singleFilterId,
+        }));
+        filtersRef.current = updated;
+        setFilters(updated);
+        // Persist to localStorage
+        if (filtersKey) {
+          try {
+            localStorage.setItem(filtersKey, JSON.stringify(updated));
+          } catch {
+            /* non-critical */
+          }
+        }
+        filtersToApply = updated;
+      } else {
+        // Apply All / Clear / Remove — use all currently enabled filters
+        filtersToApply = filtersRef.current;
+      }
+
+      executeQuery({
+        page: 1,
+        pageSize: pagination.pageSize,
+        sort: sortColumn,
+        sortDir: sortDirection,
+        currentFilters: filtersToApply,
+      });
+    },
+    [
+      executeQuery,
+      pagination.pageSize,
+      sortColumn,
+      sortDirection,
+      discardPendingChanges,
+      filtersKey,
+    ],
+  );
 
   // ── Staged insert rows (computed early — used by handleCellEdit) ──
 
@@ -962,6 +1047,16 @@ export const DataTabView = React.memo(function DataTabView({
 
   // ── Insert / Duplicate row handlers ──
 
+  /** Scroll the grid to the last row after the next render (used after insert/duplicate) */
+  const scrollToLastRowAfterRender = useCallback(() => {
+    // Wait two frames: one for React to commit state, one for ag-grid to render
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        dataGridRef.current?.scrollToLastRow();
+      });
+    });
+  }, []);
+
   const handleInsertRow = useCallback(() => {
     if (!result?.fields) return;
     const newRow: Record<string, unknown> = {};
@@ -976,18 +1071,28 @@ export const DataTabView = React.memo(function DataTabView({
       newRow,
     };
     upsertStagedChange(change);
-  }, [result?.fields, table, schema, upsertStagedChange]);
+    scrollToLastRowAfterRender();
+  }, [result?.fields, table, schema, upsertStagedChange, scrollToLastRowAfterRender]);
 
   const handleDuplicateRow = useCallback(
     (rowData: Record<string, unknown>) => {
       if (!result?.fields) return;
       const newRow: Record<string, unknown> = { ...rowData };
-      // Null out auto-increment columns so the DB assigns new values
+      // Set primary key columns to DEFAULT so the DB assigns new values.
+      // Uses the SQL expression sentinel so the grid displays "DEFAULT"
+      // and the INSERT omits these columns (or injects DEFAULT keyword).
+      const defaultSentinel = `${SQL_EXPR_PREFIX}DEFAULT`;
+      const pkSet = new Set(primaryKeyColumns);
       if (columnMeta) {
         for (const col of columnMeta) {
-          if (col.isAutoIncrement) {
-            newRow[col.name] = null;
+          if (col.isAutoIncrement || pkSet.has(col.name)) {
+            newRow[col.name] = defaultSentinel;
           }
+        }
+      } else if (pkSet.size > 0) {
+        // Fallback when columnMeta not yet loaded — still DEFAULT out PKs
+        for (const pk of pkSet) {
+          newRow[pk] = defaultSentinel;
         }
       }
       const change: StagedChange = {
@@ -998,8 +1103,9 @@ export const DataTabView = React.memo(function DataTabView({
         newRow,
       };
       upsertStagedChange(change);
+      scrollToLastRowAfterRender();
     },
-    [result?.fields, table, schema, columnMeta, upsertStagedChange],
+    [result?.fields, table, schema, columnMeta, primaryKeyColumns, upsertStagedChange, scrollToLastRowAfterRender],
   );
 
   // ── Set cell value handler (context menu → Set Value → NULL/DEFAULT/EMPTY) ──
@@ -1155,16 +1261,45 @@ export const DataTabView = React.memo(function DataTabView({
 
       const updateSQLs: string[] = [];
 
+      // ── Merge UPDATE changes by row ──
+      // Multiple cell edits on the same row produce separate StagedChange entries.
+      // Merge them into a single UPDATE per row so only one query is sent.
+      const mergedUpdates = new Map<
+        string,
+        {
+          primaryKey: Record<string, unknown>;
+          changes: Record<string, { old: unknown; new: unknown }>;
+          table: string;
+          schema?: string;
+        }
+      >();
+
       for (const change of tableChanges) {
         if (change.type !== "update" || !change.primaryKey || !change.changes)
           continue;
 
+        const pkKey = JSON.stringify(change.primaryKey);
+        const existing = mergedUpdates.get(pkKey);
+        if (existing) {
+          // Merge SET clauses — later edits override earlier ones for the same column
+          Object.assign(existing.changes, change.changes);
+        } else {
+          mergedUpdates.set(pkKey, {
+            primaryKey: change.primaryKey,
+            changes: { ...change.changes },
+            table: change.table,
+            schema: change.schema,
+          });
+        }
+      }
+
+      for (const merged of mergedUpdates.values()) {
         // Build UPDATE SQL
         const setClauses: string[] = [];
         const params: unknown[] = [];
         let paramIdx = 1;
 
-        for (const [col, { new: newVal }] of Object.entries(change.changes)) {
+        for (const [col, { new: newVal }] of Object.entries(merged.changes)) {
           const quotedCol = quoteIdentifier(col, dbType);
           // Handle SQL expression sentinels (NOW(), DEFAULT) — inject whitelisted raw SQL, no parameter
           if (
@@ -1184,7 +1319,7 @@ export const DataTabView = React.memo(function DataTabView({
 
         // Build WHERE clause from primary key
         const whereParts: string[] = [];
-        for (const [col, val] of Object.entries(change.primaryKey)) {
+        for (const [col, val] of Object.entries(merged.primaryKey)) {
           const quotedCol = quoteIdentifier(col, dbType);
           if (val === null || val === undefined) {
             whereParts.push(`${quotedCol} IS NULL`);
@@ -1199,8 +1334,8 @@ export const DataTabView = React.memo(function DataTabView({
         }
 
         const fullTable = buildFullTableName(
-          change.table,
-          change.schema,
+          merged.table,
+          merged.schema,
           dbType,
         );
         const limitClause = dbType === "mysql" ? " LIMIT 1" : "";
@@ -1209,7 +1344,7 @@ export const DataTabView = React.memo(function DataTabView({
         const res = await queryApi.query(sqlSessionId, sql, params);
 
         if (!res.success) {
-          throw new Error(`${change.column ?? "update"}: ${res.error}`);
+          throw new Error(`update: ${res.error}`);
         }
 
         updateSQLs.push(sql);

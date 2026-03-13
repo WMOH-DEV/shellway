@@ -109,6 +109,8 @@ export function AppShell({ children }: AppShellProps) {
 
       addTab(tab)
       useUIStore.getState().setSelectedSessionId(null)
+      // Auto-collapse sidebar when connecting to a session
+      useUIStore.getState().setSidebarOpen(false)
       toast.info('Connecting...', `Establishing connection to ${session.host}`)
 
       // Establish SSH connection via IPC
@@ -165,6 +167,8 @@ export function AppShell({ children }: AppShellProps) {
     }
 
     addTab(tab)
+    // Auto-collapse sidebar when opening a database connection tab
+    useUIStore.getState().setSidebarOpen(false)
   }, [addTab])
 
   /** Reopen a saved standalone database connection by its sessionId */
@@ -189,6 +193,8 @@ export function AppShell({ children }: AppShellProps) {
       }
 
       addTab(tab)
+      // Auto-collapse sidebar when opening a saved database connection
+      useUIStore.getState().setSidebarOpen(false)
     },
     [addTab]
   )

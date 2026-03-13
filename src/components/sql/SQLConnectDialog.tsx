@@ -262,6 +262,9 @@ export function SQLConnectDialog({
     const dbTrimmed = database.trim()
     const isProduction = tag === 'production'
 
+    // Auto-save config before connecting — user shouldn't need to click "Save" first
+    window.novadeck.sql.configSave(buildSavePayload()).catch(() => {})
+
     try {
       const result = await window.novadeck.sql.connect(
         sqlSessionId,
@@ -293,9 +296,6 @@ export function SQLConnectDialog({
         setSqlSessionId(sqlSessionId)
         setTunnelPort(result.tunnelPort ?? null)
         setConnectionError(null)
-
-        // Persist SQL config for next time
-        window.novadeck.sql.configSave(buildSavePayload()).catch(() => {})
 
         // Update tab name for standalone database tabs
         if (isStandalone) {

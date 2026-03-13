@@ -11,6 +11,7 @@ interface UIState {
   sidebarOpen: boolean;
   sidebarWidth: number;
   toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
 
   // ── Sidebar active panel ──
@@ -110,6 +111,7 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: true,
   sidebarWidth: 260,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
 
   // ── Sidebar active panel ──
