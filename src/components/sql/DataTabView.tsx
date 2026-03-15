@@ -412,73 +412,43 @@ export const DataTabView = React.memo(function DataTabView({
         // without blocking the entire grid.
         setIsLoading(false);
 
-        // Fetch row count — always start with the fast estimated count from
-        // DB statistics (INFORMATION_SCHEMA / pg_class).  Only auto-run an exact
-        // COUNT(*) when the table is small (≤ 500k estimated rows).  For large
-        // tables the user can trigger an exact count manually via the "Count"
-        // button in the pagination bar — same behaviour for both filtered and
-        // unfiltered queries.
+        // ── Row count logic ──
+        // If the data query returned fewer rows than pageSize, we already know
+        // the exact total without any COUNT(*) query.  This avoids expensive
+        // full-table scans on the shared DB connection.
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
           return;
 
         const hasFilters = currentFilters.some((f) => f.enabled);
         setIsDataFiltered(hasFilters);
 
-        setIsCountLoading(true);
-        // Track the count query so it can be killed server-side if the user
-        // triggers a new data query while it's still in-flight.
-        const countQid = crypto.randomUUID();
-        countQueryIdRef.current = countQid;
-        try {
-          if (hasFilters) {
-            // ── Filtered query: always run exact COUNT(*) with filters ──
-            // Filtered results are typically small, so COUNT(*) WITH WHERE is fast.
-            // Using the unfiltered table estimate here would show wrong totals.
-            const { query: countQuery, params: countParams } = buildCountQuery(
-              table,
-              schema,
-              dbType,
-              currentFilters,
-            );
-            const exactCountQid = crypto.randomUUID();
-            countQueryIdRef.current = exactCountQid;
-            const countResponse = await (window as any).novadeck.sql.query(
-              sqlSessionId,
-              countQuery,
-              countParams,
-              exactCountQid,
-            );
-
-            if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
-              return;
-
-            if (countResponse.success) {
-              const exactRows = Number(
-                ((countResponse.data as QueryResult).rows[0] as any)?.count ??
-                  0,
-              );
-              const totalPages = Math.max(1, Math.ceil(exactRows / pageSize));
-              setPagination({
-                page,
-                pageSize,
-                totalRows: exactRows,
-                totalPages,
-                isEstimatedCount: false,
-              });
-            } else {
-              // Fallback: show 0 if count fails with filters
-              setPagination({
-                page,
-                pageSize,
-                totalRows: 0,
-                totalPages: 1,
-                isEstimatedCount: false,
-              });
-            }
-          } else {
-            // ── Unfiltered query: use fast estimated count, optionally exact ──
-            // Step 1: Fast estimated count from DB statistics.
+        const returnedRows = queryResult.rowCount;
+        if (returnedRows < pageSize) {
+          // Last page (or only page) — exact count is known.
+          const exactTotal = (page - 1) * pageSize + returnedRows;
+          const totalPages = Math.max(1, Math.ceil(exactTotal / pageSize));
+          setPagination({
+            page,
+            pageSize,
+            totalRows: exactTotal,
+            totalPages,
+            isEstimatedCount: false,
+          });
+          // No COUNT query needed — done.
+        } else {
+          // Full page returned — we need a row count for pagination.
+          // Use the same estimated-first + threshold approach for BOTH filtered
+          // and unfiltered queries.  The old code ran exact COUNT(*) unconditionally
+          // for filtered queries, assuming filtered results are small.  But filters
+          // like "column IS NULL" on a multi-million-row table produce enormous
+          // result sets and the COUNT(*) blocks the shared connection for minutes.
+          setIsCountLoading(true);
+          const countQid = crypto.randomUUID();
+          countQueryIdRef.current = countQid;
+          try {
+            // Step 1: Fast estimated count from DB statistics (whole table).
             let estimatedRows = 0;
+            let estimateSucceeded = false;
             if (dbType === "mysql") {
               const estRes = await (window as any).novadeck.sql.query(
                 sqlSessionId,
@@ -496,6 +466,7 @@ export const DataTabView = React.memo(function DataTabView({
                   0,
                   Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
                 );
+                estimateSucceeded = true;
               }
             } else {
               const estRes = await (window as any).novadeck.sql.query(
@@ -514,15 +485,23 @@ export const DataTabView = React.memo(function DataTabView({
                   0,
                   Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
                 );
+                estimateSucceeded = true;
               }
             }
 
-            // Step 2: Only auto-count when the table is small enough that
-            // COUNT(*) is fast (under ~500k rows).  For multi-million-row tables,
-            // use the estimate and let the user request an exact count.
+            // Step 2: Only auto-run exact COUNT(*) when the table is small enough
+            // that it'll be fast (≤ 500k estimated rows).  For multi-million-row
+            // tables, use the estimate and let the user request an exact count
+            // via the "Count" button in the pagination bar.
+            // This applies to BOTH filtered and unfiltered queries — a filter on
+            // a huge table can still produce millions of matching rows.
+            //
+            // If the estimate query failed, do NOT fall back to exact COUNT —
+            // a failed estimate likely means connection issues, and firing a
+            // potentially huge COUNT(*) would make things worse.
             const EXACT_COUNT_THRESHOLD = 500_000;
 
-            if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
+            if (estimateSucceeded && estimatedRows <= EXACT_COUNT_THRESHOLD) {
               // Small table — exact COUNT(*) is cheap, run it now.
               const { query: countQuery, params: countParams } =
                 buildCountQuery(table, schema, dbType, currentFilters);
@@ -572,29 +551,37 @@ export const DataTabView = React.memo(function DataTabView({
                 });
               }
             } else {
-              // Large table — use estimated count, user can click "Count" for exact
+              // Large table — skip exact COUNT to avoid blocking the connection.
+              // For filtered queries, the whole-table estimate is meaningless
+              // (e.g., showing "~11M" when the filter matches 300 rows).
+              // Instead, show only what we know: at least one full page exists.
+              // The pagination bar will show "~N rows (estimated)" with a
+              // manual "Count" button for exact results.
+              const displayRows = hasFilters
+                ? returnedRows // Show only what we actually fetched (e.g., 200)
+                : estimatedRows; // Whole-table estimate is useful when unfiltered
               const totalPages = Math.max(
                 1,
-                Math.ceil(estimatedRows / pageSize),
+                Math.ceil(displayRows / pageSize),
               );
               setPagination({
                 page,
                 pageSize,
-                totalRows: estimatedRows,
+                totalRows: displayRows,
                 totalPages,
                 isEstimatedCount: true,
               });
             }
-          }
-        } catch {
-          // Count query failure is non-critical — keep existing pagination
-        } finally {
-          if (
-            !controller.signal.aborted &&
-            thisQueryId === queryIdRef.current
-          ) {
-            setIsCountLoading(false);
-            countQueryIdRef.current = null;
+          } catch {
+            // Count query failure is non-critical — keep existing pagination
+          } finally {
+            if (
+              !controller.signal.aborted &&
+              thisQueryId === queryIdRef.current
+            ) {
+              setIsCountLoading(false);
+              countQueryIdRef.current = null;
+            }
           }
         }
       } catch (err: any) {

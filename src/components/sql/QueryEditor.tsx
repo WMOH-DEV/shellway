@@ -33,6 +33,7 @@ import { Splitter } from "@/components/ui/Splitter";
 import { DataGrid } from "@/components/sql/DataGrid";
 import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete";
 import { useSQLConnection } from "@/stores/sqlStore";
+import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
 import type { QueryResult, QueryError, DatabaseType } from "@/types/sql";
 
 // ── Props ──
@@ -41,6 +42,10 @@ interface QueryEditorProps {
   connectionId: string;
   sqlSessionId: string;
   dbType: DatabaseType;
+  /** Pre-loaded query content from the saved queries stack */
+  initialQuery?: string;
+  /** Index into the saved-queries stack for persistence (-1 = new/unassigned) */
+  savedQueryIndex?: number;
 }
 
 // ── Shellway dark theme definition ──
@@ -218,6 +223,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   connectionId,
   sqlSessionId,
   dbType,
+  initialQuery,
+  savedQueryIndex,
 }: QueryEditorProps) {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(
     null,
@@ -245,9 +252,25 @@ export const QueryEditor = React.memo(function QueryEditor({
     addRunningQuery,
   } = useSQLConnection(connectionId);
 
+  // Track the saved-query index for this tab (may be assigned on mount or created later)
+  const savedIndexRef = useRef(savedQueryIndex ?? -1);
+
   // Debounced store sync — avoid updating store on every keystroke
   const debouncedSetQuery = useDebouncedCallback(
-    (value: string) => setCurrentQuery(value),
+    (value: string) => {
+      setCurrentQuery(value);
+      // Persist to saved-queries stack in localStorage
+      const trimmed = value.trim();
+      if (trimmed) {
+        if (savedIndexRef.current >= 0) {
+          // Update existing slot
+          saveQueryAtIndex(connectionId, savedIndexRef.current, trimmed);
+        } else {
+          // First meaningful content in a new tab — append to stack
+          savedIndexRef.current = appendSavedQuery(connectionId, trimmed);
+        }
+      }
+    },
     300,
   );
 
@@ -297,6 +320,7 @@ export const QueryEditor = React.memo(function QueryEditor({
           trimmed,
           undefined,
           thisIpcQueryId,
+          "user",
         );
 
         // Race guard — a newer query may have started while we were awaiting
@@ -504,6 +528,7 @@ export const QueryEditor = React.memo(function QueryEditor({
       <div className="flex-1 min-h-0">
         <Editor
           defaultLanguage="sql"
+          defaultValue={initialQuery}
           theme="shellway-dark"
           options={EDITOR_OPTIONS}
           onMount={handleEditorMount}

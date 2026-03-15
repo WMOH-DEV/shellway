@@ -34,12 +34,19 @@ export interface DBQueryResult {
 interface ActiveConnection {
   type: DatabaseType;
   conn: any; // mysql2 Connection or pg Client
+  /** Secondary connection for user queries (QueryEditor) — runs in parallel with main conn */
+  userConn: any | null;
+  /** MySQL thread ID or PostgreSQL backend PID for the user connection */
+  userConnectionPid: number | null;
   database: string;
   /** Preserved config for creating management connections (used by cancel) */
   config: DBConfig;
   /** MySQL thread ID or PostgreSQL backend PID — set after connect */
   connectionPid: number | null;
 }
+
+/** Query source hint — used to route queries to the appropriate connection */
+export type QuerySource = "user" | "data" | "internal";
 
 /** Tracked in-flight query */
 export interface TrackedQuery {
@@ -48,6 +55,8 @@ export interface TrackedQuery {
   query: string;
   startedAt: number;
   cancelled: boolean;
+  /** Which connection PID this query runs on (for server-side KILL) */
+  connectionPid: number | null;
 }
 
 /**
@@ -146,9 +155,38 @@ export class SQLService extends EventEmitter {
       this.emit("connection-error", sqlSessionId, err.message);
     });
 
+    // Create a second connection for user queries (QueryEditor).
+    // This prevents user-initiated queries from being serialized behind
+    // slow data-tab queries (SELECT *, COUNT(*), structure) on the main connection.
+    let userConn: any = null;
+    let userConnectionPid: number | null = null;
+    try {
+      userConn = await mysql.createConnection({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: dbName,
+        ssl: this.resolveSSL(config),
+        connectTimeout: 10000,
+        supportBigNumbers: true,
+        bigNumberStrings: true,
+        dateStrings: true,
+      });
+      userConnectionPid = userConn.threadId ?? null;
+      (userConn as any).on?.("error", (err: Error) => {
+        console.warn(`[SQLService] MySQL user-connection error (${sqlSessionId}):`, err.message);
+      });
+    } catch {
+      // Non-critical — fall back to single connection
+      userConn = null;
+    }
+
     this.connections.set(sqlSessionId, {
       type: "mysql",
       conn,
+      userConn,
+      userConnectionPid,
       database: currentDb,
       config,
       connectionPid: conn.threadId ?? null,
@@ -197,9 +235,39 @@ export class SQLService extends EventEmitter {
       this.emit("connection-error", sqlSessionId, err.message);
     });
 
+    // Create a second connection for user queries (QueryEditor).
+    let userConn: any = null;
+    let userConnectionPid: number | null = null;
+    try {
+      const userClient = new Client({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: dbName,
+        ssl: sslOpts
+          ? sslOpts.rejectUnauthorized !== undefined
+            ? sslOpts
+            : { rejectUnauthorized: false }
+          : undefined,
+        connectionTimeoutMillis: 10000,
+      });
+      await userClient.connect();
+      userClient.on("error", (err: Error) => {
+        console.warn(`[SQLService] PostgreSQL user-connection error (${sqlSessionId}):`, err.message);
+      });
+      userConn = userClient;
+      userConnectionPid = (userClient as any).processID ?? null;
+    } catch {
+      // Non-critical — fall back to single connection
+      userConn = null;
+    }
+
     this.connections.set(sqlSessionId, {
       type: "postgres",
       conn: client,
+      userConn,
+      userConnectionPid,
       database: currentDb,
       config,
       connectionPid: (client as any).processID ?? null,
@@ -225,20 +293,24 @@ export class SQLService extends EventEmitter {
 
     const DISCONNECT_TIMEOUT_MS = 3000;
 
-    try {
-      const endPromise =
-        active.type === "mysql" ? active.conn.end() : active.conn.end();
-      await Promise.race([
-        endPromise,
+    const endWithTimeout = (conn: any) =>
+      Promise.race([
+        conn.end(),
         new Promise<void>((_, reject) =>
           setTimeout(
             () => reject(new Error("Disconnect timed out")),
             DISCONNECT_TIMEOUT_MS,
           ),
         ),
-      ]);
-    } catch {
-      // Ignore disconnect errors (including timeout)
+      ]).catch(() => {});
+
+    try {
+      // Close both main and user connections in parallel
+      const promises = [endWithTimeout(active.conn)];
+      if (active.userConn) {
+        promises.push(endWithTimeout(active.userConn));
+      }
+      await Promise.allSettled(promises);
     } finally {
       this.connections.delete(sqlSessionId);
     }
@@ -260,34 +332,49 @@ export class SQLService extends EventEmitter {
     query: string,
     params?: unknown[],
     queryId?: string,
+    source?: QuerySource,
   ): Promise<DBQueryResult> {
     const active = this.connections.get(sqlSessionId);
     if (!active) throw new Error("Not connected to database");
 
     // Track this query
     const qid = queryId || randomUUID();
+    // Route "user" queries (from QueryEditor) to the dedicated user connection
+    // so they don't get serialized behind slow data-tab queries (COUNT(*), etc.).
+    const useUserConn = source === "user" && active.userConn;
+    const effectivePid = useUserConn ? active.userConnectionPid : active.connectionPid;
+
     const tracked: TrackedQuery = {
       queryId: qid,
       sqlSessionId,
       query,
       startedAt: Date.now(),
       cancelled: false,
+      connectionPid: effectivePid,
     };
     this.runningQueries.set(qid, tracked);
     this.emit("query-started", qid, sqlSessionId, query);
 
     const start = performance.now();
 
+    // Use the connection already determined above (user vs main)
+    const connForQuery = useUserConn ? active.userConn : active.conn;
+
+    // Guard against emitting query-executed twice (e.g. cancel check emits,
+    // then the thrown error lands in catch which would emit again).
+    let emitted = false;
+
     try {
       let result: DBQueryResult;
       if (active.type === "mysql") {
-        result = await this.executeMySQLQuery(active, query, params, start);
+        result = await this.executeMySQLQuery(active, query, params, start, connForQuery);
       } else {
-        result = await this.executePostgresQuery(active, query, params, start);
+        result = await this.executePostgresQuery(active, query, params, start, connForQuery);
       }
 
       // Check if cancelled while awaiting
       if (this.runningQueries.get(qid)?.cancelled) {
+        emitted = true;
         this.emit("query-executed", sqlSessionId, {
           query,
           params,
@@ -297,6 +384,7 @@ export class SQLService extends EventEmitter {
         throw new Error("Query cancelled");
       }
 
+      emitted = true;
       this.emit("query-executed", sqlSessionId, {
         query,
         params,
@@ -305,17 +393,23 @@ export class SQLService extends EventEmitter {
       });
       return result;
     } catch (err: any) {
-      const elapsed = Math.round(performance.now() - start);
+      if (!emitted) {
+        const elapsed = Math.round(performance.now() - start);
+        const isCancelled = this.runningQueries.get(qid)?.cancelled;
+        const errorMsg = isCancelled
+          ? "Query cancelled"
+          : err.message || String(err);
+        this.emit("query-executed", sqlSessionId, {
+          query,
+          params,
+          executionTimeMs: elapsed,
+          error: errorMsg,
+        });
+      }
       const isCancelled = this.runningQueries.get(qid)?.cancelled;
       const errorMsg = isCancelled
         ? "Query cancelled"
         : err.message || String(err);
-      this.emit("query-executed", sqlSessionId, {
-        query,
-        params,
-        executionTimeMs: elapsed,
-        error: errorMsg,
-      });
       throw new Error(errorMsg);
     } finally {
       this.runningQueries.delete(qid);
@@ -328,13 +422,14 @@ export class SQLService extends EventEmitter {
     query: string,
     params: unknown[] | undefined,
     start: number,
+    conn?: any,
   ): Promise<DBQueryResult> {
     // Use text protocol (.query()) instead of binary prepared statements (.execute()).
     // The binary protocol (COM_STMT_PREPARE/COM_STMT_EXECUTE) has known compatibility
     // issues with certain column types (JSON, GEOMETRY, BIT, generated columns) and
     // can fail with "Incorrect arguments to mysqld_stmt_execute" on valid tables.
     // The text protocol works universally and mysql2 handles param escaping safely.
-    const [rows, fields] = await active.conn.query(query, params);
+    const [rows, fields] = await (conn ?? active.conn).query(query, params);
     const elapsed = Math.round(performance.now() - start);
 
     // Handle non-SELECT queries (INSERT, UPDATE, DELETE)
@@ -367,8 +462,9 @@ export class SQLService extends EventEmitter {
     query: string,
     params: unknown[] | undefined,
     start: number,
+    conn?: any,
   ): Promise<DBQueryResult> {
-    const result = await active.conn.query(query, params);
+    const result = await (conn ?? active.conn).query(query, params);
     const elapsed = Math.round(performance.now() - start);
 
     return {
@@ -404,12 +500,14 @@ export class SQLService extends EventEmitter {
     tracked.cancelled = true;
 
     const active = this.connections.get(tracked.sqlSessionId);
-    if (!active || !active.connectionPid) {
+    // Use the PID tracked on the query (may be main or user connection)
+    const trackedPid = tracked.connectionPid ?? active?.connectionPid;
+    if (!active || !trackedPid) {
       return { success: true }; // Marked as cancelled, but can't send server kill
     }
 
     // Validate PID is a safe positive integer before use in SQL
-    const pid = active.connectionPid;
+    const pid = trackedPid;
     if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
       return { success: true };
     }
@@ -451,9 +549,7 @@ export class SQLService extends EventEmitter {
         });
         await mgmt.connect();
         try {
-          await mgmt.query("SELECT pg_cancel_backend($1)", [
-            active.connectionPid,
-          ]);
+          await mgmt.query("SELECT pg_cancel_backend($1)", [pid]);
         } finally {
           await mgmt.end().catch(() => {});
         }
@@ -524,7 +620,21 @@ export class SQLService extends EventEmitter {
     if (!active) throw new Error("Not connected");
 
     if (active.type === "mysql") {
+      // Switch both main and user connections to the new database
       await active.conn.changeUser({ database });
+      if (active.userConn) {
+        try {
+          await active.userConn.changeUser({ database });
+        } catch {
+          // User connection failed to switch — destroy it to prevent queries
+          // silently running against the wrong database. Subsequent user queries
+          // will fall back to the main connection.
+          console.warn(`[SQLService] Failed to switch user connection to database: ${database} — falling back to main connection`);
+          try { active.userConn.end().catch(() => {}); } catch { /* ignore */ }
+          active.userConn = null;
+          active.userConnectionPid = null;
+        }
+      }
       active.database = database;
     } else {
       throw new Error("Postgres requires a new connection to switch databases");

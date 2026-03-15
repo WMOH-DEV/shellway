@@ -264,6 +264,7 @@ export function registerSQLIPC(): void {
       query: string,
       params?: unknown[],
       queryId?: string,
+      source?: string,
     ) => {
       try {
         const result = await sqlService.executeQuery(
@@ -271,6 +272,7 @@ export function registerSQLIPC(): void {
           query,
           params,
           queryId,
+          (source as any) ?? undefined,
         );
         return { success: true, data: result };
       } catch (err: any) {

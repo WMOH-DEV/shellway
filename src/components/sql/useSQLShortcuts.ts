@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
 import { matchesBinding } from '@/stores/keybindingStore'
+import { getSavedQueries } from '@/utils/savedQueries'
 import type { SQLTab } from '@/types/sql'
 
 /**
@@ -33,10 +34,17 @@ export function useSQLShortcuts(
     const conn = getSQLConnectionState(connectionIdRef.current)
     const store = useSQLStore.getState()
     const queryCount = conn.tabs.filter((t) => t.type === 'query').length + 1
+    const openQueryTabs = conn.tabs.filter((t) => t.type === 'query')
+    const savedQueries = getSavedQueries(connectionIdRef.current)
+    const assignIndex = savedQueries.length - 1 - openQueryTabs.length
+    const savedContent = assignIndex >= 0 ? savedQueries[assignIndex]?.content : undefined
+
     const newTab: SQLTab = {
       id: crypto.randomUUID(),
       type: 'query',
       label: `Query ${queryCount}`,
+      query: savedContent || undefined,
+      savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
     }
     store.addTab(connectionIdRef.current, newTab)
   }, [])

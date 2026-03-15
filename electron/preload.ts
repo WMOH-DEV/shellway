@@ -619,7 +619,8 @@ const api = {
       query: string,
       params?: unknown[],
       queryId?: string,
-    ) => ipcRenderer.invoke("sql:query", sqlSessionId, query, params, queryId),
+      source?: string,
+    ) => ipcRenderer.invoke("sql:query", sqlSessionId, query, params, queryId, source),
     cancelQuery: (queryId: string) =>
       ipcRenderer.invoke("sql:cancelQuery", queryId) as Promise<{
         success: boolean;

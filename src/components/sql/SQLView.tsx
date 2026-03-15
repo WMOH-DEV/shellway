@@ -40,6 +40,8 @@ const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
 // QueryHistoryPanel is still used by QueryEditor for its own history panel
 
+import { getSavedQueries } from '@/utils/savedQueries'
+
 // ── Loading fallback ──
 function PanelSpinner() {
   return (
@@ -701,13 +703,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   const handleNewQuery = useCallback(() => {
     const queryCount = tabs.filter((t) => t.type === 'query').length + 1
+    const openQueryTabs = tabs.filter((t) => t.type === 'query')
+    const savedQueries = getSavedQueries(connectionId)
+
+    // Assign the next unseen saved query (LIFO: most recent first).
+    // Tab 0 (first opened) gets savedQueries[last], tab 1 gets [last-1], etc.
+    const assignIndex = savedQueries.length - 1 - openQueryTabs.length
+    const savedContent = assignIndex >= 0 ? savedQueries[assignIndex]?.content : undefined
+
     const newTab: SQLTab = {
       id: crypto.randomUUID(),
       type: 'query',
       label: `Query ${queryCount}`,
+      query: savedContent || undefined,
+      savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
     }
     addTab(newTab)
-  }, [tabs, addTab])
+  }, [tabs, addTab, connectionId])
 
   const handleOpenStructure = useCallback(
     (tableName: string) => {
@@ -1159,6 +1171,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       connectionId={connectionId}
                       sqlSessionId={sqlSessionId}
                       dbType={dbType}
+                      initialQuery={tab.query}
+                      savedQueryIndex={tab.savedQueryIndex}
                     />
                   ) : tab.type === 'structure' && tab.table ? (
                     <LazyStructureTabView

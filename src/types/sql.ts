@@ -252,6 +252,9 @@ export interface SQLTab {
   schema?: string;
   query?: string;
   isDirty?: boolean;
+  /** Index into the saved-queries stack (for query tabs). Used to persist
+   *  and restore editor content across app restarts.  -1 = not yet assigned. */
+  savedQueryIndex?: number;
 }
 
 // ── Running Queries ──
