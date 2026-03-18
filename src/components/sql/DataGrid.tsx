@@ -187,6 +187,8 @@ interface DataGridProps {
   editedRows?: Set<number>;
   /** Set of "rowIndex-field" keys for cells with pending changes (for cell-level highlighting) */
   editedCells?: Set<string>;
+  /** Set of row indices that are staged for deletion (for red row highlighting) */
+  deletedRows?: Set<number>;
   /** Unique key for persisting column widths (e.g. "sql-colw:mysql:host:3306:mydb:users") */
   columnWidthsKey?: string;
   /** FK column map for navigation arrows */
@@ -217,6 +219,21 @@ export interface DataGridHandle {
   showAllColumns: () => void;
   /** Scroll to the last row and select it (used after insert/duplicate) */
   scrollToLastRow: () => void;
+  /**
+   * If a cell is being edited, commit it and return the edit info so the caller
+   * can stage the change synchronously. Returns null if no cell was being edited.
+   * This bypasses ag-grid's batched onCellValueChanged event entirely.
+   */
+  flushEditingCell: () => {
+    rowIndex: number;
+    field: string;
+    oldValue: unknown;
+    newValue: unknown;
+  } | null;
+  /** Select a row by its __rowIndex, deselecting all others */
+  selectRow: (rowIndex: number) => void;
+  /** Get the first selected row's data (without __rowIndex), or null */
+  getSelectedRowData: () => Record<string, unknown> | null;
 }
 
 // ── Context menu state (cell right-click) ──
@@ -483,6 +500,7 @@ export const DataGrid = React.memo(
       onFilterColumn,
       editedRows,
       editedCells,
+      deletedRows,
       columnWidthsKey,
       foreignKeys,
       onNavigateFK,
@@ -900,11 +918,14 @@ export const DataGrid = React.memo(
     // Row class rules — highlight rows with staged changes
     const getRowClass = useCallback(
       (params: { data?: Record<string, unknown> }) => {
-        if (!editedRows || !params.data) return "";
+        if (!params.data) return "";
         const idx = params.data.__rowIndex as number;
-        return editedRows.has(idx) ? "ag-row-edited" : "";
+        // Deleted rows get red styling (takes priority over edited)
+        if (deletedRows?.has(idx)) return "ag-row-deleted";
+        if (editedRows?.has(idx)) return "ag-row-edited";
+        return "";
       },
-      [editedRows],
+      [editedRows, deletedRows],
     );
 
     // Force ag-grid to re-evaluate row/cell classes when edited sets change
@@ -912,7 +933,7 @@ export const DataGrid = React.memo(
       if (!gridRef.current?.api) return;
       // redrawRows re-evaluates getRowClass and cellClassRules for all visible rows
       gridRef.current.api.redrawRows();
-    }, [editedRows, editedCells]);
+    }, [editedRows, editedCells, deletedRows]);
 
     // Stable row IDs
     const getRowId = useCallback(
@@ -938,6 +959,17 @@ export const DataGrid = React.memo(
         // AllCommunityModule detects Date objects / date strings and auto-assigns
         // a date-picker cell editor — preventing free-text typing in timestamp cells.
         cellDataType: false,
+        // Prevent Delete/Backspace from clearing cell values when not in edit mode.
+        // Row deletion is handled by a separate window keydown handler that calls onDeleteRows.
+        suppressKeyboardEvent: (params) => {
+          if (
+            (params.event.key === "Delete" || params.event.key === "Backspace") &&
+            !params.editing
+          ) {
+            return true; // suppress — let the window handler deal with row deletion
+          }
+          return false;
+        },
       }),
       [],
     );
@@ -1332,6 +1364,47 @@ export const DataGrid = React.memo(
         toggleColumn: handleToggleColumn,
         showAllColumns: handleShowAllColumns,
         scrollToLastRow: handleScrollToLastRow,
+        flushEditingCell: () => {
+          const api = gridRef.current?.api;
+          if (!api) return null;
+          const editingCells = api.getEditingCells();
+          if (editingCells.length === 0) return null;
+
+          const cell = editingCells[0];
+          const { rowIndex, column } = cell;
+          if (rowIndex === null || rowIndex === undefined || !column)
+            return null;
+          const field = column.getColId();
+          const rowNode = api.getRowNode(String(rowIndex));
+          if (!rowNode) return null;
+
+          // Capture old value BEFORE commit (row data isn't updated during editing)
+          const oldValue = rowNode.data[field];
+
+          // Commit — updates rowNode.data synchronously
+          api.stopEditing();
+
+          // Read new value from the now-updated row data
+          const newValue = rowNode.data[field];
+
+          return { rowIndex, field, oldValue, newValue };
+        },
+        selectRow: (rowIndex: number) => {
+          const api = gridRef.current?.api;
+          if (!api) return;
+          api.deselectAll();
+          const node = api.getRowNode(String(rowIndex));
+          if (node) {
+            node.setSelected(true);
+            api.ensureNodeVisible(node);
+          }
+        },
+        getSelectedRowData: () => {
+          const rows = gridRef.current?.api?.getSelectedRows() ?? [];
+          if (rows.length === 0) return null;
+          const { __rowIndex, ...clean } = rows[0] as Record<string, unknown>;
+          return clean;
+        },
       }),
       [handleToggleColumn, handleShowAllColumns, handleScrollToLastRow],
     );

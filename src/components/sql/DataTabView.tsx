@@ -20,7 +20,7 @@ import {
 } from "@/components/sql/PaginationBar";
 import { FilterBar } from "@/components/sql/FilterBar";
 import { buildWhereClause } from "@/utils/sqlFilterBuilder";
-import { useSQLConnection } from "@/stores/sqlStore";
+import { useSQLConnection, useSQLStore } from "@/stores/sqlStore";
 import {
   SQL_EXPR_PREFIX,
   resolveSQLExpr,
@@ -1166,6 +1166,24 @@ export const DataTabView = React.memo(function DataTabView({
         };
         upsertStagedChange(change);
       }
+
+      // Auto-select the next row after deletion (like TablePlus behavior)
+      if (rowIndices.length > 0) {
+        const maxDeletedIndex = Math.max(...rowIndices);
+        const totalRows =
+          realRowCount +
+          currentInserts.length -
+          rowIndices.filter((i) => i >= realRowCount).length;
+        // Select the next row, or the previous one if we deleted the last row
+        const nextIndex =
+          maxDeletedIndex + 1 < totalRows
+            ? maxDeletedIndex + 1
+            : Math.max(0, Math.min(...rowIndices) - 1);
+        // Use requestAnimationFrame so the grid has time to process staged changes
+        requestAnimationFrame(() => {
+          dataGridRef.current?.selectRow(nextIndex);
+        });
+      }
     },
     [
       result,
@@ -1232,7 +1250,30 @@ export const DataTabView = React.memo(function DataTabView({
   );
 
   const handleSaveChanges = useCallback(async () => {
-    if (tableChanges.length === 0 || savingRef.current) return;
+    if (savingRef.current) return;
+
+    // If a cell is being edited, commit it and stage the change synchronously.
+    // We read the value directly from ag-grid's row data (bypassing its batched
+    // onCellValueChanged event) so the staged change exists immediately.
+    const editInfo = dataGridRef.current?.flushEditingCell();
+    if (editInfo) {
+      handleCellEdit(
+        editInfo.rowIndex,
+        editInfo.field,
+        editInfo.oldValue,
+        editInfo.newValue,
+      );
+    }
+
+    // Read changes from the Zustand store (updated synchronously by handleCellEdit above)
+    const freshStagedChanges =
+      useSQLStore.getState().connections[connectionId]?.stagedChanges ?? [];
+    const currentTableChanges = freshStagedChanges.filter(
+      (c) =>
+        c.table === table &&
+        (c.schema ?? undefined) === (schema ?? undefined),
+    );
+    if (currentTableChanges.length === 0) return;
     savingRef.current = true;
     setIsSaving(true);
     setError(null);
@@ -1261,7 +1302,7 @@ export const DataTabView = React.memo(function DataTabView({
         }
       >();
 
-      for (const change of tableChanges) {
+      for (const change of currentTableChanges) {
         if (change.type !== "update" || !change.primaryKey || !change.changes)
           continue;
 
@@ -1342,7 +1383,7 @@ export const DataTabView = React.memo(function DataTabView({
         columnMeta?.filter((c) => c.isAutoIncrement).map((c) => c.name) ?? [],
       );
 
-      for (const change of tableChanges) {
+      for (const change of currentTableChanges) {
         if (change.type !== "insert" || !change.newRow) continue;
 
         // Filter out auto-increment columns with null values — let DB assign them
@@ -1392,7 +1433,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // ── Process DELETE changes ──
-      for (const change of tableChanges) {
+      for (const change of currentTableChanges) {
         if (change.type !== "delete" || !change.primaryKey) continue;
 
         const whereParts: string[] = [];
@@ -1435,7 +1476,7 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // All changes saved — clear them
-      for (const change of tableChanges) {
+      for (const change of currentTableChanges) {
         removeStagedChange(change.id);
         originalValuesRef.current.delete(change.id);
       }
@@ -1461,9 +1502,12 @@ export const DataTabView = React.memo(function DataTabView({
       savingRef.current = false;
     }
   }, [
-    tableChanges,
+    connectionId,
+    table,
+    schema,
     dbType,
     sqlSessionId,
+    handleCellEdit,
     removeStagedChange,
     executeQuery,
     pagination,
@@ -1514,6 +1558,20 @@ export const DataTabView = React.memo(function DataTabView({
     return () =>
       window.removeEventListener("sql:insert-row", handleInsertRowEvent);
   }, [handleInsertRow, connectionId, table]);
+
+  // ── Listen for duplicate-row event from shortcuts ──
+  useEffect(() => {
+    const handleDuplicateRowEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.connectionId && detail.connectionId !== connectionId) return;
+      if (detail?.table && detail.table !== table) return;
+      const rowData = dataGridRef.current?.getSelectedRowData();
+      if (rowData) handleDuplicateRow(rowData);
+    };
+    window.addEventListener("sql:duplicate-row", handleDuplicateRowEvent);
+    return () =>
+      window.removeEventListener("sql:duplicate-row", handleDuplicateRowEvent);
+  }, [handleDuplicateRow, connectionId, table]);
 
   // ── Listen for save/discard events from shortcuts + status bar ──
   useEffect(() => {
@@ -1854,6 +1912,7 @@ export const DataTabView = React.memo(function DataTabView({
           onFilterColumn={handleFilterColumn}
           editedRows={editedRows}
           editedCells={editedCells}
+          deletedRows={deletedRows}
           columnWidthsKey={columnWidthsKey}
           foreignKeys={foreignKeyMap}
           onNavigateFK={handleNavigateFK}

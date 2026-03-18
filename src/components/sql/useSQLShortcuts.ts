@@ -184,6 +184,19 @@ export function useSQLShortcuts(
         return
       }
 
+      // ── Duplicate selected row (default CmdOrCtrl+D) ──
+      if (matchesBinding(e, 'sql:duplicateRow')) {
+        const target = e.target as HTMLElement
+        if (target?.closest('.monaco-editor')) return // let Monaco handle its own Cmd+D
+        e.preventDefault()
+        const conn = getSQLConnectionState(connectionIdRef.current)
+        const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
+        window.dispatchEvent(new CustomEvent('sql:duplicate-row', {
+          detail: { connectionId: connectionIdRef.current, table: activeTab?.table },
+        }))
+        return
+      }
+
       // ── Undo last staged change (default CmdOrCtrl+Z) ──
       // Only intercept when NOT inside a cell editor, input, textarea, or Monaco editor
       if (matchesBinding(e, 'sql:undoChange')) {

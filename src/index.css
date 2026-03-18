@@ -153,6 +153,24 @@
   border-left: 2px solid rgba(245, 158, 11, 0.6) !important;
 }
 
+/* Deleted row — red highlight like TablePlus */
+.ag-row-deleted {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+
+.ag-row-deleted.ag-row-odd {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+
+.ag-row-deleted:hover {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+}
+
+.ag-row-deleted .ag-cell {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 /* ── Light theme overrides ── */
 .light {
   --nd-bg-primary: 248 250 252;
