@@ -8,6 +8,8 @@ import {
   Plus,
   Database,
   Server,
+  Download,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useUIStore } from "@/stores/uiStore";
@@ -19,6 +21,8 @@ import {
   type SessionFormData,
 } from "@/components/sessions/SessionForm";
 import { DatabasesPanel } from "@/components/layout/DatabasesPanel";
+import { ExportDialog } from "@/components/sessions/ExportDialog";
+import { ImportDialog } from "@/components/sessions/ImportDialog";
 import { useSession } from "@/hooks/useSession";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { toast } from "@/components/ui/Toast";
@@ -117,8 +121,18 @@ export function Sidebar({
 
   // ── Saved DB configs — only needed for collapsed-view avatars ──
   // DatabasesPanel owns its own copy for the expanded view.
+  const SAVED_DBS_CACHE_KEY = "sql-saved-dbs";
   const [savedDBsCollapsed, setSavedDBsCollapsed] = useState<SavedDBConfig[]>(
-    [],
+    () => {
+      try {
+        const cached = localStorage.getItem(SAVED_DBS_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {}
+      return [];
+    },
   );
 
   const dbTabCount = useMemo(
@@ -148,8 +162,12 @@ export function Sidebar({
     return savedDBsCollapsed.filter((db) => !openIds.has(db.sessionId));
   }, [savedDBsCollapsed, tabs]);
 
+  // ── Import / Export dialogs (shared across both panels) ──
+  const { createSession, reload: reloadSessions } = useSession();
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
   // ── Session form for collapsed sidebar "+" button ──
-  const { createSession } = useSession();
   const [collapsedFormOpen, setCollapsedFormOpen] = useState(false);
   const { sessionFormRequested, clearSessionFormRequest } = useUIStore();
 
@@ -290,6 +308,23 @@ export function Sidebar({
                 className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
               >
                 <Shield size={15} />
+              </button>
+            </Tooltip>
+            <div className="flex-1" />
+            <Tooltip content="Import Data" side="top">
+              <button
+                onClick={() => setImportDialogOpen(true)}
+                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Download size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Export Data" side="top">
+              <button
+                onClick={() => setExportDialogOpen(true)}
+                className="p-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+              >
+                <Upload size={15} />
               </button>
             </Tooltip>
           </div>
@@ -495,6 +530,21 @@ export function Sidebar({
           onSave={handleCollapsedFormSave}
         />
       )}
+
+      {/* Import / Export dialogs */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+      />
+      <ImportDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onComplete={() => {
+          reloadSessions();
+          // Invalidate saved-DBs cache so DatabasesPanel picks up imported standalone DB configs
+          localStorage.removeItem("sql-saved-dbs");
+        }}
+      />
     </aside>
   );
 }

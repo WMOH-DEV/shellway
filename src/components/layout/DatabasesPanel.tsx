@@ -39,7 +39,19 @@ export function DatabasesPanel({
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore();
 
   // ── Saved standalone DB configs ──
-  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>([]);
+  // Initialize from localStorage cache so the list renders instantly on panel switch,
+  // then refresh from IPC in the background.
+  const SAVED_DBS_CACHE_KEY = "sql-saved-dbs";
+  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>(() => {
+    try {
+      const cached = localStorage.getItem(SAVED_DBS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch { /* corrupt cache — start empty */ }
+    return [];
+  });
 
   // Refresh saved configs only when the count of open DB tabs changes
   // (new connection saved / tab closed)
@@ -53,6 +65,7 @@ export function DatabasesPanel({
       const result = await window.novadeck.sql.configGetStandalone();
       if (result?.success && Array.isArray(result.data)) {
         setSavedDBs(result.data as SavedDBConfig[]);
+        try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(result.data)); } catch {}
       }
     } catch {
       /* ignore */
@@ -63,9 +76,12 @@ export function DatabasesPanel({
     loadSavedDBs();
   }, [loadSavedDBs, dbTabCount]);
 
-  // ── Search ──
+  // ── Search (hidden by default, toggle via icon — matches Sessions panel) ──
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchForced, setSearchForced] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const fewDBs = (dbTabCount + savedDBs.length) < 5;
+  const searchVisible = !fewDBs || searchForced || !!searchQuery;
   const q = searchQuery.toLowerCase();
 
   // ── Derived data ──
@@ -131,7 +147,11 @@ export function DatabasesPanel({
       window.novadeck.sql
         .configDelete(sessionId)
         .then(() =>
-          setSavedDBs((prev) => prev.filter((d) => d.sessionId !== sessionId)),
+          setSavedDBs((prev) => {
+            const updated = prev.filter((d) => d.sessionId !== sessionId);
+            try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(updated)); } catch {}
+            return updated;
+          }),
         )
         .catch(() => {});
     },
@@ -155,39 +175,51 @@ export function DatabasesPanel({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() =>
-              requestAnimationFrame(() => searchInputRef.current?.focus())
-            }
-            className={searchQuery ? "text-nd-accent" : ""}
+            onClick={() => {
+              if (searchVisible && fewDBs) {
+                setSearchQuery("");
+                setSearchForced(false);
+              } else {
+                setSearchForced(true);
+                requestAnimationFrame(() => searchInputRef.current?.focus());
+              }
+            }}
+            className={searchVisible ? "text-nd-accent" : ""}
           >
             <Search size={14} />
           </Button>
         </Tooltip>
       </div>
 
-      {/* ── Search input ── */}
-      <div className="px-3 pb-2 shrink-0">
-        <div className="relative">
-          <Search
-            size={13}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-nd-text-muted pointer-events-none"
-          />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setSearchQuery("");
-                searchInputRef.current?.blur();
-              }
-            }}
-            placeholder="Search databases..."
-            className="w-full h-7 pl-8 pr-3 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
-          />
+      {/* ── Search input — appears below buttons when visible ── */}
+      {searchVisible && (
+        <div className="px-3 pb-2 shrink-0">
+          <div className="relative">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-nd-text-muted pointer-events-none"
+            />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (fewDBs && !searchForced) setSearchForced(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setSearchQuery("");
+                  setSearchForced(false);
+                  searchInputRef.current?.blur();
+                }
+              }}
+              placeholder="Search databases..."
+              className="w-full h-7 pl-8 pr-3 rounded bg-nd-surface border border-nd-border text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none focus:border-nd-accent transition-colors"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Connection list ── */}
       <div className="flex-1 overflow-y-auto px-2">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Plus, Download, Upload, Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -10,8 +10,6 @@ import { SessionForm, type SessionFormData } from './SessionForm'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
-import { ExportDialog } from './ExportDialog'
-import { ImportDialog } from './ImportDialog'
 import type { Session } from '@/types/session'
 
 interface SessionManagerProps {
@@ -45,8 +43,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null)
 
   // Export/Import dialogs
-  const [exportDialogOpen, setExportDialogOpen] = useState(false)
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   // Groups
   const [groups, setGroups] = useState<string[]>([])
@@ -311,13 +307,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
     [duplicateSession]
   )
 
-  const handleExport = useCallback(() => {
-    setExportDialogOpen(true)
-  }, [])
-
-  const handleImport = useCallback(() => {
-    setImportDialogOpen(true)
-  }, [])
 
 
 
@@ -400,12 +389,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
           className={searchVisible ? 'text-nd-accent' : ''}
         >
           <Search size={14} />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={handleImport} title="Import sessions">
-          <Download size={14} />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={handleExport} title="Export sessions">
-          <Upload size={14} />
         </Button>
       </div>
 
@@ -545,18 +528,6 @@ export function SessionManager({ onConnect }: SessionManagerProps) {
         </div>
       </Modal>
 
-      {/* Export dialog */}
-      <ExportDialog
-        open={exportDialogOpen}
-        onClose={() => setExportDialogOpen(false)}
-      />
-
-      {/* Import dialog */}
-      <ImportDialog
-        open={importDialogOpen}
-        onClose={() => setImportDialogOpen(false)}
-        onComplete={reloadSessions}
-      />
     </>
   )
 }

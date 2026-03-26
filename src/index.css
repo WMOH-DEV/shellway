@@ -135,6 +135,34 @@
   will-change: scroll-position;
 }
 
+/* ── ag-Grid row selection — clean whole-row highlight (like TablePlus) ── */
+/* Suppress per-cell column borders within selected rows for a seamless row highlight */
+.ag-row-selected .ag-cell {
+  border-right-color: transparent !important;
+}
+
+/* Filler column — no borders in normal state */
+.ag-cell[col-id="__filler"] {
+  border: none !important;
+}
+.ag-header-cell[col-id="__filler"] {
+  border: none !important;
+}
+
+/* Kill browser native text selection inside ag-grid entirely —
+   shift+click was producing per-cell "select-all" highlights.
+   Users copy via right-click → "Copy Cell" / "Copy Row" context menu instead. */
+.ag-body-viewport {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+/* Re-enable text selection only when a cell is being edited (input/textarea) */
+.ag-cell-edit-wrapper,
+.ag-cell-edit-wrapper * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
 /* ── ag-Grid edited row/cell highlighting ── */
 .ag-row-edited {
   background-color: rgba(245, 158, 11, 0.08) !important;

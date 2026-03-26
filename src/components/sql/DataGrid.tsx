@@ -809,7 +809,7 @@ export const DataGrid = React.memo(
         e.stopPropagation();
 
         const colId = headerCell.getAttribute("col-id");
-        if (!colId) return;
+        if (!colId || colId === "__filler") return;
 
         setHeaderContextMenu({ x: e.clientX, y: e.clientY, column: colId });
         // Dismiss cell context menu if open
@@ -847,7 +847,7 @@ export const DataGrid = React.memo(
       // Read current widths from ref (initialized from localStorage, updated on resize)
       const savedWidths = columnWidthsRef.current;
 
-      return result.fields.map((field) => {
+      const cols: ColDef[] = result.fields.map((field) => {
         const col: ColDef = {
           headerName: field.name,
           field: field.name,
@@ -904,6 +904,24 @@ export const DataGrid = React.memo(
 
         return col;
       });
+
+      // Filler column — fills remaining horizontal space after the last data column.
+      // Clicking this area selects the row (like TablePlus). Not editable, sortable, or resizable.
+      cols.push({
+        colId: "__filler",
+        headerName: "",
+        flex: 1,
+        minWidth: 0,
+        resizable: false,
+        sortable: false,
+        editable: false,
+        suppressMovable: true,
+        suppressNavigable: true,
+        suppressHeaderMenuButton: true,
+        valueGetter: () => "",
+      });
+
+      return cols;
     }, [
       result?.fields,
       onCellEdit,
@@ -1000,11 +1018,20 @@ export const DataGrid = React.memo(
         newValue: unknown;
       }) => {
         if (!onCellEdit || event.rowIndex === null) return;
+        // Detect SQL expressions typed directly into cells (e.g. "now()", "default")
+        // and convert to sentinel format so they're emitted as raw SQL in the UPDATE.
+        let value = event.newValue;
+        if (typeof value === "string") {
+          const upper = value.trim().toUpperCase();
+          if (upper === "NOW()" || upper === "DEFAULT") {
+            value = `${SQL_EXPR_PREFIX}${upper}`;
+          }
+        }
         onCellEdit(
           event.rowIndex,
           event.colDef.field ?? "",
           event.oldValue,
-          event.newValue,
+          value,
         );
       },
       [onCellEdit],
@@ -1015,6 +1042,15 @@ export const DataGrid = React.memo(
       (event: CellContextMenuEvent) => {
         const nativeEvent = event.event as MouseEvent | undefined;
         nativeEvent?.preventDefault();
+
+        // Filler column — select the row but don't show context menu
+        if (event.colDef?.colId === "__filler") {
+          if (event.node && !event.node.isSelected()) {
+            const keepExisting = nativeEvent?.metaKey || nativeEvent?.ctrlKey || nativeEvent?.shiftKey;
+            event.node.setSelected(true, !keepExisting);
+          }
+          return;
+        }
 
         // Clear any text selection caused by the right-click
         window.getSelection()?.removeAllRanges();
@@ -1265,7 +1301,7 @@ export const DataGrid = React.memo(
           const state = gridRef.current.api.getColumnState();
           const widths: Record<string, number> = {};
           for (const col of state) {
-            if (col.colId && col.width) {
+            if (col.colId && col.width && col.colId !== "__filler") {
               widths[col.colId] = col.width;
             }
           }
@@ -1454,10 +1490,6 @@ export const DataGrid = React.memo(
           suppressColumnVirtualisation={true}
           rowSelection="multiple"
           suppressRowClickSelection={false}
-          // Allow native text selection in all cells (including non-editable like auto-increment IDs)
-          // so users can select and Cmd+C to copy cell values directly.
-          enableCellTextSelection={true}
-          ensureDomOrder={true}
           headerHeight={32}
           rowHeight={28}
           tooltipShowDelay={300}
