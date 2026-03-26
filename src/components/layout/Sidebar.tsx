@@ -147,6 +147,8 @@ export function Sidebar({
       .then((result) => {
         if (!cancelled && result?.success && Array.isArray(result.data)) {
           setSavedDBsCollapsed(result.data as SavedDBConfig[]);
+          // Warm the cache so DatabasesPanel renders instantly on first open
+          try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(result.data)); } catch {}
         }
       })
       .catch(() => {});

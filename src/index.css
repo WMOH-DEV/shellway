@@ -135,13 +135,7 @@
   will-change: scroll-position;
 }
 
-/* ── ag-Grid row selection — clean whole-row highlight (like TablePlus) ── */
-/* Suppress per-cell column borders within selected rows for a seamless row highlight */
-.ag-row-selected .ag-cell {
-  border-right-color: transparent !important;
-}
-
-/* Filler column — no borders in normal state */
+/* ── ag-Grid filler column — no borders, seamless with row background ── */
 .ag-cell[col-id="__filler"] {
   border: none !important;
 }
