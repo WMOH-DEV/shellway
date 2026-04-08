@@ -13,6 +13,7 @@ import { HostKeyVerifyDialog } from '@/components/keys/HostKeyVerifyDialog'
 import { KBDIDialog } from '@/components/sessions/KBDIDialog'
 import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { useSQLStore } from '@/stores/sqlStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
@@ -199,9 +200,29 @@ export default function App() {
     })
 
     // SQL connection errors (DB connection dropped during sleep/network loss)
+    // Note: auto-reconnect is attempted server-side; these events are for logging only
     const unsubSQLConnError = window.novadeck.sql.onConnectionError((sqlSessionId, errorMessage) => {
       console.warn(`[SQL] Connection error (${sqlSessionId}):`, errorMessage)
-      toast.error('Database Connection Lost', errorMessage)
+    })
+
+    // SQL connection successfully restored after a drop
+    const unsubSQLReconnected = window.novadeck.sql.onConnectionReconnected((sqlSessionId) => {
+      console.log(`[SQL] Connection reconnected (${sqlSessionId})`)
+      toast.success('Connection Restored', 'Database connection was re-established automatically.')
+    })
+
+    // SQL connection lost and auto-reconnect failed
+    const unsubSQLConnLost = window.novadeck.sql.onConnectionLost((sqlSessionId, errorMessage) => {
+      console.warn(`[SQL] Connection lost (${sqlSessionId}):`, errorMessage)
+      // Find the connectionId that owns this sqlSessionId and update its status
+      const state = useSQLStore.getState()
+      for (const [connId, slice] of Object.entries(state.connections) as [string, any][]) {
+        if (slice.sqlSessionId === sqlSessionId) {
+          state.setConnectionStatus(connId, 'error')
+          state.setConnectionError(connId, 'Connection lost. Click Reconnect to re-establish.')
+          break
+        }
+      }
     })
 
     return () => {
@@ -224,6 +245,8 @@ export default function App() {
       unsubUpdateError()
       unsubSystemResume()
       unsubSQLConnError()
+      unsubSQLReconnected()
+      unsubSQLConnLost()
     }
   }, [updateTab, addEntry, setReconnectionState, addReconnectionEvent])
 

@@ -148,11 +148,13 @@ export class SQLService extends EventEmitter {
       }
     }
 
-    // Attach error handler to prevent unhandled 'error' events from crashing the process
+    // Attach error handler — attempt auto-reconnect on connection loss
     // (e.g. connection reset after laptop sleep, server restart, network loss)
     (conn as any).on?.("error", (err: Error) => {
       console.warn(`[SQLService] MySQL connection error (${sqlSessionId}):`, err.message);
       this.emit("connection-error", sqlSessionId, err.message);
+      // Attempt auto-reconnect in the background
+      this.reconnect(sqlSessionId).catch(() => {});
     });
 
     // Create a second connection for user queries (QueryEditor).
@@ -229,10 +231,12 @@ export class SQLService extends EventEmitter {
       }
     }
 
-    // Attach error handler to prevent unhandled 'error' events from crashing the process
+    // Attach error handler — attempt auto-reconnect on connection loss
     client.on("error", (err: Error) => {
       console.warn(`[SQLService] PostgreSQL connection error (${sqlSessionId}):`, err.message);
       this.emit("connection-error", sqlSessionId, err.message);
+      // Attempt auto-reconnect in the background
+      this.reconnect(sqlSessionId).catch(() => {});
     });
 
     // Create a second connection for user queries (QueryEditor).
@@ -325,6 +329,74 @@ export class SQLService extends EventEmitter {
     return this.connections.has(sqlSessionId);
   }
 
+  /** Expose active session IDs for system-resume health checks */
+  getActiveSessionIds(): string[] {
+    return Array.from(this.connections.keys());
+  }
+
+  // ── Ping / Reconnect ──
+
+  /** Lightweight health check — runs SELECT 1 with a 3-second timeout */
+  async ping(sqlSessionId: string): Promise<boolean> {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) return false;
+
+    try {
+      if (active.type === "mysql") {
+        await Promise.race([
+          active.conn.query("SELECT 1"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Ping timeout")), 3000)),
+        ]);
+      } else {
+        await Promise.race([
+          active.conn.query("SELECT 1"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Ping timeout")), 3000)),
+        ]);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Reconnect a stale session using its stored config.
+   * Closes old connections silently, creates new ones, and updates the ActiveConnection in-place.
+   */
+  async reconnect(sqlSessionId: string): Promise<{ success: boolean; error?: string }> {
+    const active = this.connections.get(sqlSessionId);
+    if (!active) return { success: false, error: "No connection found for session" };
+
+    const { config, type } = active;
+
+    // Silently close old connections (they may already be dead)
+    try { active.conn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
+    try { active.userConn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
+
+    // Remove old entry before reconnecting (connectMySQL/connectPostgres will set it)
+    this.connections.delete(sqlSessionId);
+
+    try {
+      let result: { success: boolean; error?: string };
+      if (type === "mysql") {
+        result = await this.connectMySQL(sqlSessionId, config);
+      } else {
+        result = await this.connectPostgres(sqlSessionId, config);
+      }
+
+      if (result.success) {
+        this.emit("connection-reconnected", sqlSessionId);
+      } else {
+        this.emit("connection-lost", sqlSessionId, result.error || "Reconnection failed");
+      }
+      return result;
+    } catch (err: any) {
+      const msg = err.message || String(err);
+      this.emit("connection-lost", sqlSessionId, msg);
+      return { success: false, error: msg };
+    }
+  }
+
   // ── Execute Query ──
 
   async executeQuery(
@@ -393,12 +465,44 @@ export class SQLService extends EventEmitter {
       });
       return result;
     } catch (err: any) {
+      const isCancelled = this.runningQueries.get(qid)?.cancelled;
+      const errMsg = err.message || String(err);
+
+      // Detect connection-closed errors and attempt transparent reconnect + retry
+      if (!isCancelled && this.isConnectionError(errMsg)) {
+        console.warn(`[SQLService] Connection error during query, attempting reconnect (${sqlSessionId})`);
+        const reconnResult = await this.reconnect(sqlSessionId).catch(() => ({ success: false }));
+        if (reconnResult.success) {
+          // Retry the query on the fresh connection
+          try {
+            const retryActive = this.connections.get(sqlSessionId);
+            if (retryActive) {
+              const retryConn = (source === "user" && retryActive.userConn) ? retryActive.userConn : retryActive.conn;
+              let retryResult: DBQueryResult;
+              if (retryActive.type === "mysql") {
+                retryResult = await this.executeMySQLQuery(retryActive, query, params, start, retryConn);
+              } else {
+                retryResult = await this.executePostgresQuery(retryActive, query, params, start, retryConn);
+              }
+              emitted = true;
+              this.emit("query-executed", sqlSessionId, {
+                query,
+                params,
+                executionTimeMs: retryResult.executionTimeMs,
+                rowCount: retryResult.rowCount,
+              });
+              return retryResult;
+            }
+          } catch (retryErr: any) {
+            // Retry also failed — fall through to normal error handling
+            console.warn(`[SQLService] Retry after reconnect also failed:`, retryErr.message);
+          }
+        }
+      }
+
       if (!emitted) {
         const elapsed = Math.round(performance.now() - start);
-        const isCancelled = this.runningQueries.get(qid)?.cancelled;
-        const errorMsg = isCancelled
-          ? "Query cancelled"
-          : err.message || String(err);
+        const errorMsg = isCancelled ? "Query cancelled" : errMsg;
         this.emit("query-executed", sqlSessionId, {
           query,
           params,
@@ -406,15 +510,30 @@ export class SQLService extends EventEmitter {
           error: errorMsg,
         });
       }
-      const isCancelled = this.runningQueries.get(qid)?.cancelled;
-      const errorMsg = isCancelled
-        ? "Query cancelled"
-        : err.message || String(err);
+      const errorMsg = isCancelled ? "Query cancelled" : errMsg;
       throw new Error(errorMsg);
     } finally {
       this.runningQueries.delete(qid);
       this.emit("query-completed", qid, sqlSessionId);
     }
+  }
+
+  /** Check if an error message indicates a closed/lost connection */
+  private isConnectionError(msg: string): boolean {
+    const patterns = [
+      "closed state",
+      "PROTOCOL_CONNECTION_LOST",
+      "Connection lost",
+      "Client has encountered a connection error",
+      "terminating connection",
+      "connection reset",
+      "ECONNRESET",
+      "EPIPE",
+      "read ECONNRESET",
+      "Connection terminated unexpectedly",
+    ];
+    const lower = msg.toLowerCase();
+    return patterns.some((p) => lower.includes(p.toLowerCase()));
   }
 
   private async executeMySQLQuery(

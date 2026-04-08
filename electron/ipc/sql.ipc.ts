@@ -1,6 +1,6 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain, BrowserWindow } from "electron";
+import { ipcMain, BrowserWindow, powerMonitor } from "electron";
 import { Client as SSHClient } from "ssh2";
 import { readFileSync } from "fs";
 import { access, constants as fsConstants } from "fs/promises";
@@ -74,6 +74,23 @@ sqlService.on(
         sqlSessionId,
         errorMessage,
       );
+    }
+  },
+);
+
+// Forward successful reconnections to the renderer
+sqlService.on("connection-reconnected", (sqlSessionId: string) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("sql:connection-reconnected", sqlSessionId);
+  }
+});
+
+// Forward connection-lost (reconnect failed) to the renderer
+sqlService.on(
+  "connection-lost",
+  (sqlSessionId: string, errorMessage: string) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("sql:connection-lost", sqlSessionId, errorMessage);
     }
   },
 );
@@ -254,6 +271,33 @@ export function registerSQLIPC(): void {
     await cleanupTunnel(sqlSessionId);
     cleanupEphemeralSSH(sqlSessionId);
     return { success: true };
+  });
+
+  // ── Reconnect a stale session (manual trigger from renderer) ──
+  ipcMain.handle(
+    "sql:reconnect",
+    async (_event, sqlSessionId: string) => {
+      try {
+        return await sqlService.reconnect(sqlSessionId);
+      } catch (err: any) {
+        return { success: false, error: err.message || String(err) };
+      }
+    },
+  );
+
+  // ── System resume: proactively check SQL connections ──
+  powerMonitor.on("resume", () => {
+    // Small delay to let the network stack come back online after wake
+    setTimeout(async () => {
+      const sessionIds = sqlService.getActiveSessionIds();
+      for (const sid of sessionIds) {
+        const alive = await sqlService.ping(sid);
+        if (!alive) {
+          console.warn(`[SQL] Connection ${sid} is stale after resume, reconnecting...`);
+          await sqlService.reconnect(sid).catch(() => {});
+        }
+      }
+    }, 2000);
   });
 
   ipcMain.handle(

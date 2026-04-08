@@ -826,6 +826,40 @@ const api = {
       return () =>
         ipcRenderer.removeListener("sql:connection-error", handler);
     },
+
+    /** Connection was successfully reconnected after a drop */
+    onConnectionReconnected: (
+      callback: (sqlSessionId: string) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        sqlSessionId: string,
+      ) => callback(sqlSessionId);
+      ipcRenderer.on("sql:connection-reconnected", handler);
+      return () =>
+        ipcRenderer.removeListener("sql:connection-reconnected", handler);
+    },
+
+    /** Connection was lost and auto-reconnect failed */
+    onConnectionLost: (
+      callback: (sqlSessionId: string, errorMessage: string) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        sqlSessionId: string,
+        errorMessage: string,
+      ) => callback(sqlSessionId, errorMessage);
+      ipcRenderer.on("sql:connection-lost", handler);
+      return () =>
+        ipcRenderer.removeListener("sql:connection-lost", handler);
+    },
+
+    /** Manually trigger a reconnect for a stale session */
+    reconnect: (sqlSessionId: string) =>
+      ipcRenderer.invoke("sql:reconnect", sqlSessionId) as Promise<{
+        success: boolean;
+        error?: string;
+      }>,
   },
 
   // ── Health ──

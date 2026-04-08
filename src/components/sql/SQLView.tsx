@@ -469,6 +469,30 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     setShowConnectDialog(true)
   }, [setConnectionStatus, setConnectionError])
 
+  /** Reconnect a lost connection using the existing session config */
+  const handleReconnect = useCallback(async () => {
+    if (!sqlSessionId) {
+      // No session to reconnect — fall back to full retry
+      handleRetry()
+      return
+    }
+    setConnectionStatus('connecting')
+    setConnectionError(null)
+    try {
+      const result = await window.novadeck.sql.reconnect(sqlSessionId)
+      if (result.success) {
+        setConnectionStatus('connected')
+        setConnectionError(null)
+      } else {
+        setConnectionStatus('error')
+        setConnectionError(result.error || 'Reconnection failed')
+      }
+    } catch (err: any) {
+      setConnectionStatus('error')
+      setConnectionError(err.message || 'Reconnection failed')
+    }
+  }, [sqlSessionId, handleRetry, setConnectionStatus, setConnectionError])
+
   // ── Quick connect from saved config ──
   const handleQuickConnect = useCallback(async () => {
     if (!savedConfig || quickConnectRef.current) return
@@ -1108,22 +1132,33 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── Error state ──
   if (connectionStatus === 'error') {
+    // If we have an active sqlSessionId, this is a connection-lost scenario (not initial connect failure)
+    const isConnectionLost = !!sqlSessionId
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <div className="flex flex-col items-center gap-2">
           <AlertCircle size={32} className="text-nd-error" />
-          <p className="text-sm text-nd-text-primary">Connection failed</p>
+          <p className="text-sm text-nd-text-primary">
+            {isConnectionLost ? 'Connection lost' : 'Connection failed'}
+          </p>
           {connectionError && (
             <p className="text-xs text-nd-text-muted max-w-sm text-center">{connectionError}</p>
           )}
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={handleDisconnect}>
-            Dismiss
+            Disconnect
           </Button>
-          <Button variant="primary" onClick={handleRetry}>
-            Retry
-          </Button>
+          {isConnectionLost ? (
+            <Button variant="primary" onClick={handleReconnect}>
+              <RefreshCw size={14} />
+              Reconnect
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={handleRetry}>
+              Retry
+            </Button>
+          )}
         </div>
       </div>
     )
