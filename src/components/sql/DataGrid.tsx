@@ -761,6 +761,37 @@ export const DataGrid = React.memo(
           return;
         }
 
+        // Cmd/Ctrl+C → copy focused cell value to clipboard.
+        // Only fires when the user has NOT highlighted any text manually
+        // (so native browser copy of selected text still wins when applicable).
+        if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) {
+          if (
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable
+          )
+            return;
+          if (!containerRef.current?.contains(target)) return;
+          // Respect any active text selection — let the browser handle it
+          const sel = window.getSelection()?.toString() ?? "";
+          if (sel.length > 0) return;
+          const focused = gridRef.current?.api?.getFocusedCell();
+          if (!focused) return;
+          const rowNode = gridRef.current.api.getDisplayedRowAtIndex(focused.rowIndex);
+          const field = focused.column.getColDef().field;
+          if (!rowNode || !field) return;
+          const value = (rowNode.data as Record<string, unknown> | undefined)?.[field];
+          const text =
+            value === null || value === undefined
+              ? ""
+              : typeof value === "object"
+                ? JSON.stringify(value)
+                : String(value);
+          navigator.clipboard.writeText(text).catch(() => {});
+          e.preventDefault();
+          return;
+        }
+
         // Delete/Backspace → delete selected rows
         if (!onDeleteRows) return;
         if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -1490,6 +1521,11 @@ export const DataGrid = React.memo(
           suppressColumnVirtualisation={true}
           rowSelection="multiple"
           suppressRowClickSelection={false}
+          // Allow native text selection inside cells so users can highlight + Cmd+C copy
+          // values from any cell, including non-editable ones like auto-increment IDs.
+          // (Re-added after the filler-column row-selection refactor accidentally dropped it.)
+          enableCellTextSelection={true}
+          ensureDomOrder={true}
           headerHeight={32}
           rowHeight={28}
           tooltipShowDelay={300}
