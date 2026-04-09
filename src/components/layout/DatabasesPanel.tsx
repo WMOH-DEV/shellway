@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Database, Plus, Search, X } from "lucide-react";
+import { Database, Plus, Search, X, ExternalLink } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { getSQLConnectionState, useSQLStore } from "@/stores/sqlStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { toast } from "@/components/ui/Toast";
 
 /** Minimal shape returned by SQLConfigStore for standalone DB configs */
 interface SavedDBConfig {
@@ -154,6 +155,30 @@ export function DatabasesPanel({
           }),
         )
         .catch(() => {});
+    },
+    [],
+  );
+
+  /**
+   * Launch a saved database directly in a standalone window, skipping the
+   * main window's tab bar entirely. If a standalone window already exists
+   * for this session, focus it instead.
+   */
+  const handleOpenInNewWindow = useCallback(
+    async (sessionId: string, name: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        await window.novadeck.window.openStandalone({
+          mode: 'sql',
+          sessionId,
+          name,
+        });
+      } catch (err) {
+        toast.error(
+          'Failed to open window',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     },
     [],
   );
@@ -314,6 +339,14 @@ export function DatabasesPanel({
                         className="text-nd-text-muted opacity-50 shrink-0"
                       />
                       <span className="truncate flex-1 text-left">{label}</span>
+                      <span
+                        role="button"
+                        onClick={(e) => handleOpenInNewWindow(db.sessionId, label, e)}
+                        className="p-0.5 rounded text-nd-text-muted hover:text-nd-accent transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                        title="Open in new window"
+                      >
+                        <ExternalLink size={12} />
+                      </span>
                       <span
                         role="button"
                         onClick={(e) => handleDeleteSaved(db.sessionId, e)}

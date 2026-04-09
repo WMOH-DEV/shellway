@@ -1,5 +1,5 @@
-import type { BrowserWindow } from 'electron'
 import type { SSHConnection } from './SSHService'
+import { windowManager } from './WindowManager'
 import type {
   MonitorRawData,
   MonitorSnapshot,
@@ -159,7 +159,6 @@ interface MonitorState {
   previousDiskCounters: Map<string, { reads: number; writes: number }> | null
   previousTimestamp: number | null
   history: MonitorSnapshot[]
-  win: BrowserWindow | null
   status: MonitorStatus
   probed: boolean
   /** Cached extended data from the last successful full poll */
@@ -189,14 +188,81 @@ export class MonitorService {
   private states = new Map<string, MonitorState>()
 
   /**
+   * Tracks which windows are currently showing the monitor view for each
+   * connection. Polling should only be stopped when the last viewer leaves —
+   * without this refcount a second window's unmount would silently kill polling
+   * for all other windows watching the same connection.
+   */
+  private viewers = new Map<string, Set<string>>()
+
+  /**
+   * Register a window as a viewer for the given connection.
+   * Returns the new viewer count.
+   */
+  addViewer(connectionId: string, windowId: string): number {
+    let set = this.viewers.get(connectionId)
+    if (!set) {
+      set = new Set<string>()
+      this.viewers.set(connectionId, set)
+    }
+    set.add(windowId)
+    return set.size
+  }
+
+  /**
+   * Deregister a window as a viewer for the given connection.
+   * Returns `true` iff this was the last viewer (the set is now empty and
+   * has been removed), meaning the caller should stop polling.
+   */
+  removeViewer(connectionId: string, windowId: string): boolean {
+    const set = this.viewers.get(connectionId)
+    if (!set) return true
+    set.delete(windowId)
+    if (set.size === 0) {
+      this.viewers.delete(connectionId)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Returns the number of windows currently viewing the given connection.
+   */
+  viewerCount(connectionId: string): number {
+    return this.viewers.get(connectionId)?.size ?? 0
+  }
+
+  /**
+   * Remove a window from every viewer set (called on window-close).
+   * Returns the list of connectionIds whose viewer set became empty as a
+   * result — the caller should stop polling for each of those connections.
+   */
+  removeViewerFromAll(windowId: string): string[] {
+    const emptied: string[] = []
+    for (const [connectionId, set] of this.viewers) {
+      set.delete(windowId)
+      if (set.size === 0) {
+        this.viewers.delete(connectionId)
+        emptied.push(connectionId)
+      }
+    }
+    return emptied
+  }
+
+  /**
    * Start monitoring a connection.
    * First runs a probe command to verify the server supports monitoring.
+   *
+   * Multi-window aware: the `conn.id` acts as the subscription key via
+   * WindowManager. Every window that displays the monitor view for this
+   * connection should subscribe via `window:subscribe(conn.id)` — poll
+   * events reach all subscribers.
    */
-  startMonitoring(conn: SSHConnection, win: BrowserWindow): void {
-    // If already monitoring this connection, just update the window reference
+  startMonitoring(conn: SSHConnection): void {
+    // If already monitoring this connection, just restart polling if stopped.
+    // The caller (renderer) is responsible for subscribing via WindowManager.
     const existing = this.states.get(conn.id)
     if (existing) {
-      existing.win = win
       if (existing.status === 'stopped') {
         existing.status = 'active'
         this.sendStatus(conn.id)
@@ -219,7 +285,6 @@ export class MonitorService {
       previousDiskCounters: null,
       previousTimestamp: null,
       history: [],
-      win,
       status: 'active',
       probed: false,
       lastFullSnapshot: null
@@ -256,6 +321,7 @@ export class MonitorService {
       if (state.timer) clearInterval(state.timer)
       this.states.delete(connectionId)
     }
+    this.viewers.delete(connectionId)
   }
 
   /**
@@ -740,10 +806,8 @@ export class MonitorService {
       state.history.shift()
     }
 
-    // Send to renderer
-    if (state.win && !state.win.isDestroyed()) {
-      state.win.webContents.send('monitor:data', connectionId, snapshot)
-    }
+    // Broadcast to every window watching this connection
+    windowManager.broadcastToConnection(connectionId, 'monitor:data', connectionId, snapshot)
 
     // Update status
     state.status = 'active'
@@ -752,13 +816,12 @@ export class MonitorService {
 
   private sendStatus(connectionId: string): void {
     const state = this.states.get(connectionId)
-    if (!state?.win || state.win.isDestroyed()) return
-    state.win.webContents.send('monitor:status', connectionId, state.status)
+    if (!state) return
+    windowManager.broadcastToConnection(connectionId, 'monitor:status', connectionId, state.status)
   }
 
   private sendError(connectionId: string, message: string): void {
-    const state = this.states.get(connectionId)
-    if (!state?.win || state.win.isDestroyed()) return
-    state.win.webContents.send('monitor:error', connectionId, message)
+    if (!this.states.has(connectionId)) return
+    windowManager.broadcastToConnection(connectionId, 'monitor:error', connectionId, message)
   }
 }

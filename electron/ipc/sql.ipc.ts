@@ -1,6 +1,6 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain, BrowserWindow, powerMonitor } from "electron";
+import { ipcMain, powerMonitor } from "electron";
 import { Client as SSHClient } from "ssh2";
 import { readFileSync } from "fs";
 import { access, constants as fsConstants } from "fs/promises";
@@ -16,19 +16,38 @@ import {
   RestoreOptions,
 } from "../services/SQLDataTransferService";
 import { getSSHService } from "./ssh.ipc";
+import { windowManager } from "../services/WindowManager";
 
 const sqlService = new SQLService();
 const sqlConfigStore = new SQLConfigStore();
 const transferService = new SQLDataTransferService(sqlService);
 
-// Forward progress events from the transfer service to all renderer windows
+/**
+ * SQL events are emitted by SQLService keyed by `sqlSessionId`, but
+ * WindowManager subscriptions are keyed by `connectionId` (the renderer-side
+ * tab id). We maintain a reverse map here so the broadcast layer can translate.
+ *
+ * The map is populated on `sql:connect` and cleaned up on `sql:disconnect`.
+ */
+const sqlSessionToConnection = new Map<string, string>();
+
+/**
+ * Route a SQL event to all windows subscribed to the owning connectionId.
+ * Falls back to a no-op if the sqlSessionId is unknown (shouldn't happen in
+ * practice; defensive coding for edge cases like mid-disconnect events).
+ */
+function broadcastSQL(sqlSessionId: string, channel: string, ...args: unknown[]): void {
+  const connectionId = sqlSessionToConnection.get(sqlSessionId);
+  if (!connectionId) return;
+  windowManager.broadcastToConnection(connectionId, channel, ...args);
+}
+
+// Forward progress events from the transfer service
 transferService.on("progress", (sqlSessionId: string, progress: unknown) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:transfer:progress", sqlSessionId, progress);
-  }
+  broadcastSQL(sqlSessionId, "sql:transfer:progress", sqlSessionId, progress);
 });
 
-// Forward query-executed events from SQLService to all renderer windows
+// Forward query-executed events from SQLService
 // This captures ALL queries: direct sql:query, getColumns, getIndexes, getForeignKeys, etc.
 sqlService.on(
   "query-executed",
@@ -42,9 +61,7 @@ sqlService.on(
       error?: string;
     },
   ) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:query-executed", sqlSessionId, info);
-    }
+    broadcastSQL(sqlSessionId, "sql:query-executed", sqlSessionId, info);
   },
 );
 
@@ -52,46 +69,32 @@ sqlService.on(
 sqlService.on(
   "query-started",
   (queryId: string, sqlSessionId: string, query: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:query-started", queryId, sqlSessionId, query);
-    }
+    broadcastSQL(sqlSessionId, "sql:query-started", queryId, sqlSessionId, query);
   },
 );
 
 sqlService.on("query-completed", (queryId: string, sqlSessionId: string) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:query-completed", queryId, sqlSessionId);
-  }
+  broadcastSQL(sqlSessionId, "sql:query-completed", queryId, sqlSessionId);
 });
 
-// Forward DB connection errors (from sleep/wake, network drops, etc.) to the renderer
+// Forward DB connection errors (from sleep/wake, network drops, etc.)
 sqlService.on(
   "connection-error",
   (sqlSessionId: string, errorMessage: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(
-        "sql:connection-error",
-        sqlSessionId,
-        errorMessage,
-      );
-    }
+    broadcastSQL(sqlSessionId, "sql:connection-error", sqlSessionId, errorMessage);
   },
 );
 
-// Forward successful reconnections to the renderer
+// Forward successful reconnections
 sqlService.on("connection-reconnected", (sqlSessionId: string) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:connection-reconnected", sqlSessionId);
-  }
+  broadcastSQL(sqlSessionId, "sql:connection-reconnected", sqlSessionId);
 });
 
-// Forward connection-lost (reconnect failed) to the renderer
+// Forward connection-lost (reconnect failed)
 sqlService.on(
   "connection-lost",
   (sqlSessionId: string, errorMessage: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:connection-lost", sqlSessionId, errorMessage);
-    }
+    broadcastSQL(sqlSessionId, "sql:connection-lost", sqlSessionId, errorMessage);
   },
 );
 
@@ -132,7 +135,7 @@ export function registerSQLIPC(): void {
   ipcMain.handle(
     "sql:connect",
     async (
-      _event,
+      event,
       sqlSessionId: string,
       connectionId: string,
       config: {
@@ -148,6 +151,16 @@ export function registerSQLIPC(): void {
         sshConfig?: SSHTunnelConfig;
       },
     ) => {
+      // Auto-subscribe the initiating window and map sqlSessionId → connectionId
+      // so downstream SQLService events can be routed to the right window(s).
+      if (connectionId) {
+        sqlSessionToConnection.set(sqlSessionId, connectionId);
+        const windowId = windowManager.getWindowIdForWebContents(event.sender);
+        if (windowId) {
+          windowManager.subscribe(windowId, connectionId);
+        }
+      }
+
       // ── Input validation ──
       if (!sqlSessionId || typeof sqlSessionId !== "string") {
         return { success: false, error: "Invalid session ID" };
@@ -270,6 +283,7 @@ export function registerSQLIPC(): void {
     await sqlService.disconnect(sqlSessionId);
     await cleanupTunnel(sqlSessionId);
     cleanupEphemeralSSH(sqlSessionId);
+    sqlSessionToConnection.delete(sqlSessionId);
     return { success: true };
   });
 
@@ -1239,6 +1253,46 @@ export function getSQLService(): SQLService {
 /** Get the transfer service singleton (for use by other modules) */
 export function getTransferService(): SQLDataTransferService {
   return transferService;
+}
+
+/**
+ * Disconnect every SQL session associated with the given `connectionId`.
+ * Called by `main.ts` when the last window watching a connection has closed
+ * (via WindowManager's `connections-orphaned` event).
+ *
+ * SQLService keys sessions by `sqlSessionId`, so we walk the reverse map
+ * maintained at the IPC layer to find which sessions belong to this
+ * connection. In practice there is at most one per connectionId, but we
+ * iterate defensively.
+ */
+export async function disconnectSQLByConnectionId(
+  connectionId: string,
+): Promise<void> {
+  const matching: string[] = [];
+  for (const [sqlSessionId, connId] of sqlSessionToConnection) {
+    if (connId === connectionId) matching.push(sqlSessionId);
+  }
+
+  await Promise.allSettled(
+    matching.map(async (sqlSessionId) => {
+      try {
+        await sqlService.disconnect(sqlSessionId);
+      } catch {
+        /* ignore — service may have already cleaned up */
+      }
+      try {
+        await cleanupTunnel(sqlSessionId);
+      } catch {
+        /* ignore */
+      }
+      try {
+        cleanupEphemeralSSH(sqlSessionId);
+      } catch {
+        /* ignore */
+      }
+      sqlSessionToConnection.delete(sqlSessionId);
+    }),
+  );
 }
 
 /**

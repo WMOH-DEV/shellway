@@ -20,6 +20,7 @@ import {
 import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { isHandoffInFlight } from '@/utils/handoff'
 import { SchemaSidebar, type TableContextAction, type DatabaseContextAction } from './SchemaSidebar'
 import { SQLConnectDialog } from './SQLConnectDialog'
 import { DatabasePickerDialog } from './DatabasePickerDialog'
@@ -407,8 +408,17 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [connectionId, tabs, setActiveTab, addTab, setSelectedTable])
 
   // ── Cleanup on unmount — disconnect SQL session ──
+  // Exception: if this connection is in the middle of being popped out to a
+  // new window, skip the disconnect. The new window has already subscribed to
+  // the connection in the main process, so the refcount stays >= 1 and the
+  // underlying SQLService session must stay alive for the new window to use.
   useEffect(() => {
     return () => {
+      if (isHandoffInFlight(connectionId)) {
+        // Leave the session alive and the store slice intact — the new window
+        // will adopt them via its own handoff bootstrap.
+        return
+      }
       const sid = getSQLConnectionState(connectionId).sqlSessionId
       if (sid) {
         window.novadeck.sql.disconnect(sid).catch(() => {})

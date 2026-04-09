@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { promises as fsp } from 'fs'
 import { join, basename, parse as parsePath, posix } from 'path'
 import { homedir } from 'os'
@@ -9,6 +9,7 @@ import { SFTPService, type FileEntry } from '../services/SFTPService'
 import { TransferQueue, type TransferItem } from '../services/TransferQueue'
 import { getLogService, LogService } from '../services/LogService'
 import { getNotificationService } from '../services/NotificationService'
+import { windowManager } from '../services/WindowManager'
 import type { SFTPConflictResolution } from '../../src/types/settings'
 
 // ── Conflict resolution helpers ──
@@ -238,6 +239,15 @@ export function registerSFTPIPC(): void {
   // ── Open SFTP session ──
   ipcMain.handle('sftp:open', async (event, connectionId: string) => {
     try {
+      // Auto-subscribe the initiating window so transfer events reach it.
+      // Done BEFORE the idempotent early-return below so a second window
+      // opening an already-alive SFTP session also gets subscribed and
+      // receives broadcast events.
+      const windowId = windowManager.getWindowIdForWebContents(event.sender)
+      if (windowId) {
+        windowManager.subscribe(windowId, connectionId)
+      }
+
       // Idempotent: if already open and usable, return success.
       // Probe liveness to catch stale sessions (e.g., server closed the channel).
       if (sftpServices.has(connectionId)) {
@@ -273,19 +283,18 @@ export function registerSFTPIPC(): void {
       queue.setSFTPService(sftpService)
       transferQueues.set(connectionId, queue)
 
-      const win = BrowserWindow.fromWebContents(event.sender)
       const sessionId = conn.sessionId
 
-      // Forward transfer updates to renderer + log transfers
+      // Forward transfer updates to every window subscribed to this connection
       queue.on('update', (item: TransferItem) => {
-        win?.webContents.send('sftp:transfer-update', connectionId, item)
+        windowManager.broadcastToConnection(connectionId, 'sftp:transfer-update', connectionId, item)
 
         if (item.status === 'active' && item.transferredBytes === 0) {
           LogService.transferStarted(logService, sessionId, item.fileName, item.direction)
         }
       })
       queue.on('complete', (item: TransferItem) => {
-        win?.webContents.send('sftp:transfer-complete', connectionId, item)
+        windowManager.broadcastToConnection(connectionId, 'sftp:transfer-complete', connectionId, item)
         LogService.transferCompleted(logService, sessionId, item.fileName)
         getNotificationService()?.notifyTransferComplete(item.fileName)
       })
@@ -428,13 +437,21 @@ export function registerSFTPIPC(): void {
     const sftp = sftpServices.get(connectionId)
     if (!sftp) return { success: false, error: 'SFTP not open' }
 
-    // Forward progress events to the renderer
+    // Forward progress events to every window subscribed to this connection.
+    // This fixes a pre-existing bug where progress only went to the first
+    // window in getAllWindows() regardless of which one initiated the read.
     let progressListener: ((id: string, transferred: number, total: number) => void) | null = null
     if (readId) {
-      const win = BrowserWindow.getAllWindows()[0]
       progressListener = (id: string, transferred: number, total: number) => {
         if (id === readId) {
-          win?.webContents.send('sftp:readFile-progress', connectionId, readId, transferred, total)
+          windowManager.broadcastToConnection(
+            connectionId,
+            'sftp:readFile-progress',
+            connectionId,
+            readId,
+            transferred,
+            total,
+          )
         }
       }
       sftp.on('readProgress', progressListener)

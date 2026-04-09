@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -22,6 +22,8 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useMonitorStore } from '@/stores/monitorStore'
 import { useServiceManagerStore } from '@/stores/serviceManagerStore'
+import { serializeConnectionSlice } from '@/stores/sqlStore'
+import { markHandoffInFlight, clearHandoffInFlight } from '@/utils/handoff'
 import type { ConnectionTab } from '@/types/session'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
@@ -283,6 +285,92 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     window.novadeck.ssh.disconnect?.(tab.id)
   }, [tab.id])
 
+  /**
+   * Non-destructive monitor pop-out: opens the monitor in a standalone window while
+   * keeping the Monitor sub-tab alive in the main window. Both the existing tab and
+   * the new window subscribe to the same polling stream via WindowManager's
+   * viewer-refcount, so polling continues as long as either viewer is present.
+   */
+  const handlePopOutMonitor = useCallback(async () => {
+    try {
+      const result = await window.novadeck.window.openStandalone({
+        mode: 'monitor',
+        sessionId: tab.sessionId,
+        name: tab.sessionName,
+        sessionColor: tab.sessionColor,
+        connectionId: tab.id
+      })
+      if (result.focusedExisting) return
+    } catch (err) {
+      toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
+
+  /**
+   * Non-destructive SQL sub-tab pop-out: opens the SQL client in a standalone
+   * window while keeping the SQL sub-tab alive in the main SSH connection. The
+   * SSH connection stays alive because the new window pre-subscribes to the
+   * parent connectionId via `viaSSHConnectionId`. The full sqlStore slice
+   * (tabs, staged changes, history, query editor state) is handed off so the
+   * new window rehydrates without losing in-flight work.
+   *
+   * Handoff guard: mark the connectionId as "handoff in flight" before opening
+   * the new window. If the user shuts down this window's SQL sub-tab while the
+   * new window is still bootstrapping, SQLView's unmount cleanup would
+   * otherwise call sql.disconnect and kill the session the new window is about
+   * to adopt. The flag is renderer-local with a 5s safety-net timeout and is
+   * cleared explicitly on the error path.
+   */
+  const handlePopOutSQL = useCallback(async () => {
+    const slice = serializeConnectionSlice(tab.id)
+    const sqlSessionId = slice?.sqlSessionId ?? null
+
+    markHandoffInFlight(tab.id)
+
+    try {
+      const result = await window.novadeck.window.openStandalone({
+        mode: 'sql',
+        sessionId: tab.sessionId,
+        name: tab.sessionName,
+        sessionColor: tab.sessionColor,
+        connectionId: tab.id,
+        sqlSessionId,
+        sqlSlice: slice ?? undefined,
+        viaSSHConnectionId: tab.id,
+      })
+      if (result.focusedExisting) {
+        clearHandoffInFlight(tab.id)
+        return
+      }
+    } catch (err) {
+      clearHandoffInFlight(tab.id)
+      toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
+
+  /**
+   * Non-destructive SFTP sub-tab pop-out: opens SFTP in a standalone window while
+   * keeping the SFTP sub-tab alive in the main SSH connection. The SSH session
+   * stays alive because both windows hold subscriptions to the same connectionId
+   * via WindowManager's refcount. The SFTP main-process session is shared —
+   * SFTPView.tsx deliberately skips sftp.close() on unmount so both windows see
+   * the same transfer queue and directory state.
+   */
+  const handlePopOutSFTP = useCallback(async () => {
+    try {
+      const result = await window.novadeck.window.openStandalone({
+        mode: 'sftp',
+        sessionId: tab.sessionId,
+        name: tab.sessionName,
+        sessionColor: tab.sessionColor,
+        connectionId: tab.id,
+      })
+      if (result.focusedExisting) return
+    } catch (err) {
+      toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
+
   // ── Disconnected / Error → show offline view ──
   if (isOffline) {
     const session = useSessionStore.getState().sessions.find((s) => s.id === tab.sessionId)
@@ -330,6 +418,36 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           >
             {tab.splitView ? <X size={12} /> : <Columns size={12} />}
             <span>{tab.splitView ? 'Exit Split' : 'Split'}</span>
+          </button>
+        )}
+        {tab.activeSubTab === 'monitor' && (
+          <button
+            onClick={handlePopOutMonitor}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+            title="Open Monitor in new window"
+          >
+            <ExternalLink size={12} />
+            <span>Pop out</span>
+          </button>
+        )}
+        {tab.activeSubTab === 'sql' && runningSubTabs.has('sql') && (
+          <button
+            onClick={handlePopOutSQL}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+            title="Open SQL in new window"
+          >
+            <ExternalLink size={12} />
+            <span>Pop out</span>
+          </button>
+        )}
+        {tab.activeSubTab === 'sftp' && runningSubTabs.has('sftp') && (
+          <button
+            onClick={handlePopOutSFTP}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+            title="Open SFTP in new window"
+          >
+            <ExternalLink size={12} />
+            <span>Pop out</span>
           </button>
         )}
       </div>

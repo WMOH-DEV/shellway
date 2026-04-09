@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { SSHService, type SSHConnectionConfig } from '../services/SSHService'
 import { getLogService, LogService } from '../services/LogService'
 import { getClientKeyStore } from './clientkey.ipc'
@@ -7,6 +7,7 @@ import { getHealthService } from './health.ipc'
 import { getMonitorService } from './monitor.ipc'
 import { getSettingsStore } from './settings.ipc'
 import { cleanupSFTP, cleanupAllSFTP } from './sftp.ipc'
+import { windowManager } from '../services/WindowManager'
 
 const sshService = new SSHService()
 
@@ -152,7 +153,14 @@ export function registerSSHIPC(): void {
     'ssh:connect',
     async (event, connectionId: string, rawConfig: unknown) => {
       try {
-        const win = BrowserWindow.fromWebContents(event.sender)
+        // Auto-subscribe the initiating window to this connection's event stream.
+        // This preserves single-window behavior: the window that called
+        // ssh:connect will receive all events without any extra renderer code.
+        // Additional windows can subscribe later via window:subscribe.
+        const windowId = windowManager.getWindowIdForWebContents(event.sender)
+        if (windowId) {
+          windowManager.subscribe(windowId, connectionId)
+        }
 
         // Map the renderer's session-shaped config to the flat SSHConnectionConfig
         const config = mapToConnectionConfig(rawConfig)
@@ -162,9 +170,9 @@ export function registerSSHIPC(): void {
         // EventEmitter errors if connect fails and ssh2 emits follow-up events.
         const conn = sshService.create(connectionId, config)
 
-        // Forward status changes to renderer
+        // Forward status changes to every window subscribed to this connection
         conn.on('status', (status) => {
-          win?.webContents.send('ssh:status-change', connectionId, status)
+          windowManager.broadcastToConnection(connectionId, 'ssh:status-change', connectionId, status)
 
           // Notify on unexpected disconnect
           if (status === 'disconnected') {
@@ -173,49 +181,49 @@ export function registerSSHIPC(): void {
           }
         })
         conn.on('error', (error) => {
-          win?.webContents.send('ssh:error', connectionId, error)
+          windowManager.broadcastToConnection(connectionId, 'ssh:error', connectionId, error)
         })
         conn.on('banner', (message) => {
-          win?.webContents.send('ssh:banner', connectionId, message)
+          windowManager.broadcastToConnection(connectionId, 'ssh:banner', connectionId, message)
         })
 
-        // Forward reconnection events to renderer
+        // Forward reconnection events
         conn.on('reconnect-attempt', (connId: string, attempt: number, maxAttempts: number) => {
-          win?.webContents.send('ssh:reconnect-attempt', connId, attempt, maxAttempts)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-attempt', connId, attempt, maxAttempts)
         })
         conn.on('reconnect-waiting', (connId: string, delayMs: number, nextAttempt: number, nextRetryAt: number) => {
-          win?.webContents.send('ssh:reconnect-waiting', connId, delayMs, nextAttempt, nextRetryAt)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-waiting', connId, delayMs, nextAttempt, nextRetryAt)
         })
         conn.on('reconnect-success', (connId: string, attempt: number) => {
           // Reconnection creates a new SSH client, invalidating the old SFTP wrapper.
           // Clean up stale SFTP so the next sftp:open creates a fresh session.
           cleanupSFTP(connId)
-          win?.webContents.send('ssh:reconnect-success', connId, attempt)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-success', connId, attempt)
         })
         conn.on('reconnect-failed', (connId: string, attempt: number, error: string) => {
-          win?.webContents.send('ssh:reconnect-failed', connId, attempt, error)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-failed', connId, attempt, error)
         })
         conn.on('reconnect-exhausted', (connId: string, totalAttempts: number) => {
-          win?.webContents.send('ssh:reconnect-exhausted', connId, totalAttempts)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-exhausted', connId, totalAttempts)
         })
         conn.on('reconnect-paused', (connId: string) => {
-          win?.webContents.send('ssh:reconnect-paused', connId)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-paused', connId)
         })
         conn.on('reconnect-resumed', (connId: string) => {
-          win?.webContents.send('ssh:reconnect-resumed', connId)
+          windowManager.broadcastToConnection(connId, 'ssh:reconnect-resumed', connId)
         })
 
-        // Forward KBDI prompts to renderer
+        // Forward KBDI prompts — only to subscribers. The response handler is
+        // registered globally on ipcMain since the renderer sends a one-shot
+        // reply on a dedicated channel and any subscriber could be the one answering.
         conn.on('kbdi-prompt', (connId: string, prompt: unknown, respond: (responses: string[]) => void) => {
-          if (!win) return
-
           const responseChannel = `ssh:kbdi-response:${connId}`
           const handler = (_e: Electron.IpcMainEvent, responses: string[]) => {
             ipcMain.removeListener(responseChannel, handler)
             respond(responses)
           }
           ipcMain.on(responseChannel, handler)
-          win.webContents.send('ssh:kbdi-prompt', connId, prompt)
+          windowManager.broadcastToConnection(connId, 'ssh:kbdi-prompt', connId, prompt)
         })
 
         // Now attempt the connection

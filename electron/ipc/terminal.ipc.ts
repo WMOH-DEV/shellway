@@ -1,10 +1,13 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { getSSHService } from './ssh.ipc'
 import { getLogService, LogService } from '../services/LogService'
+import { windowManager } from '../services/WindowManager'
 import type { ClientChannel } from 'ssh2'
 
 /** Active shell channels by shellId */
 const activeShells = new Map<string, ClientChannel>()
+/** Shell ownership: shellId → connectionId (for event routing via WindowManager) */
+const shellToConnection = new Map<string, string>()
 
 /**
  * Register terminal IPC handlers.
@@ -25,7 +28,7 @@ export function registerTerminalIPC(): void {
   ipcMain.handle(
     'terminal:open',
     async (
-      event,
+      _event,
       connectionId: string,
       shellId: string,
       options?: { cols?: number; rows?: number }
@@ -45,14 +48,15 @@ export function registerTerminalIPC(): void {
         })
 
         activeShells.set(shellId, shell)
+        shellToConnection.set(shellId, connectionId)
         LogService.shellOpened(logService, conn.sessionId, shellId)
 
-        const win = BrowserWindow.fromWebContents(event.sender)
-
-        // Forward shell output to renderer — batch rapid data chunks into a single
-        // IPC message per tick. High-throughput output (e.g. `cat largefile.txt`)
-        // fires many tiny data events; without batching, each one triggers a separate
-        // IPC serialization + deserialization cycle that congests the main thread.
+        // Forward shell output via WindowManager — every window subscribed to
+        // this connectionId receives the event. Batch rapid data chunks into a
+        // single IPC message per tick: high-throughput output (e.g. `cat
+        // largefile.txt`) fires many tiny data events; without batching, each
+        // one triggers a separate IPC serialization + deserialization cycle
+        // that congests the main thread.
         let pendingData = ''
         let flushScheduled = false
         shell.on('data', (data: Buffer) => {
@@ -60,8 +64,8 @@ export function registerTerminalIPC(): void {
           if (!flushScheduled) {
             flushScheduled = true
             process.nextTick(() => {
-              if (pendingData && win && !win.isDestroyed()) {
-                win.webContents.send('terminal:data', shellId, pendingData)
+              if (pendingData) {
+                windowManager.broadcastToConnection(connectionId, 'terminal:data', shellId, pendingData)
               }
               pendingData = ''
               flushScheduled = false
@@ -75,15 +79,17 @@ export function registerTerminalIPC(): void {
         shell.on('close', () => {
           if (!activeShells.has(shellId)) return
           activeShells.delete(shellId)
+          shellToConnection.delete(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
-          win?.webContents.send('terminal:exit', shellId, 0)
+          windowManager.broadcastToConnection(connectionId, 'terminal:exit', shellId, 0)
         })
 
         shell.on('exit', (code: number) => {
           if (!activeShells.has(shellId)) return
           activeShells.delete(shellId)
+          shellToConnection.delete(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
-          win?.webContents.send('terminal:exit', shellId, code)
+          windowManager.broadcastToConnection(connectionId, 'terminal:exit', shellId, code)
         })
 
         return { success: true }
@@ -119,6 +125,7 @@ export function registerTerminalIPC(): void {
     if (shell) {
       shell.end()
       activeShells.delete(shellId)
+      shellToConnection.delete(shellId)
     }
   })
 }

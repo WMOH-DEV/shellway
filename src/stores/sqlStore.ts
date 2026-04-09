@@ -456,6 +456,61 @@ export function getSQLConnectionState(connectionId: string): SQLConnectionSlice 
   return getConn(useSQLStore.getState().connections, connectionId)
 }
 
+// ── Window-handoff helpers (multi-window tab tear-off) ──
+
+/**
+ * Capture a JSON-safe snapshot of a connection's slice so it can be passed to
+ * another renderer (e.g. a new standalone window during tab tear-off).
+ *
+ * Returns `null` if the connection doesn't exist in this store. The returned
+ * object is a structured-cloneable copy — all fields are plain data, no
+ * functions or class instances.
+ *
+ * Transient fields that cannot survive a window handoff are cleared:
+ *   - `isQueryLoading` and `schemaLoading` (the new window will re-render loaders if needed)
+ *   - `runningQueries` (the new window can't cancel queries it didn't start; the
+ *     main process still tracks them and emits query-completed events)
+ */
+export function serializeConnectionSlice(connectionId: string): SQLConnectionSlice | null {
+  const conn = useSQLStore.getState().connections[connectionId]
+  if (!conn) return null
+
+  return {
+    ...conn,
+    pagination: { ...conn.pagination },
+    sort: conn.sort ? { ...conn.sort } : null,
+    filters: conn.filters.map((f) => ({ ...f })),
+    stagedChanges: conn.stagedChanges.map((c) => ({ ...c })),
+    history: conn.history.map((h) => ({ ...h })),
+    tabs: conn.tabs.map((t) => ({ ...t })),
+    databases: conn.databases.map((d) => ({ ...d })),
+    tables: conn.tables.map((t) => ({ ...t })),
+    columns: conn.columns.map((c) => ({ ...c })),
+    // Reset transient flags — the new window starts with a clean loading state
+    isQueryLoading: false,
+    schemaLoading: false,
+    runningQueries: [],
+    activeTransfer: null,
+  }
+}
+
+/**
+ * Hydrate a connection slice from a previously serialized snapshot. Overwrites
+ * any existing slice for the given connectionId — the caller is expected to
+ * check for conflicts before calling.
+ */
+export function hydrateConnectionSlice(connectionId: string, slice: SQLConnectionSlice): void {
+  useSQLStore.setState((s) => ({
+    connections: {
+      ...s.connections,
+      [connectionId]: {
+        ...slice,
+        pagination: { ...slice.pagination },
+      },
+    },
+  }))
+}
+
 // ── Convenience hook — provides per-connection state + bound actions ──
 
 export function useSQLConnection(connectionId: string) {

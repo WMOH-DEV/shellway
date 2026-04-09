@@ -19,6 +19,80 @@ const api = {
       return () =>
         ipcRenderer.removeListener("window:maximized-change", handler);
     },
+    /**
+     * Open a new standalone window for a specific feature. The new window runs
+     * the same renderer bundle but detects `?standalone=<mode>` in the URL and
+     * renders just the feature view without the sidebar/workspace chrome.
+     *
+     * If a standalone window already exists for the same `(mode, sessionId)`,
+     * it is focused instead of spawning a duplicate. Pass `allowDuplicate: true`
+     * to force a new window.
+     *
+     * Tab tear-off: pass `connectionId` (+ optional `viaSSHConnectionId` and
+     * `sqlSlice`) to hand off an existing connection to the new window. The
+     * main process pre-subscribes the new window before returning, so the
+     * caller can immediately `removeTab` in the source window without risking
+     * a race with refcounted orphan cleanup.
+     */
+    openStandalone: (opts: {
+      mode: "sql" | "terminal" | "monitor" | "sftp";
+      sessionId: string;
+      name?: string;
+      sessionColor?: string;
+      allowDuplicate?: boolean;
+      connectionId?: string;
+      sqlSessionId?: string | null;
+      viaSSHConnectionId?: string;
+      sqlSlice?: unknown;
+    }) =>
+      ipcRenderer.invoke("window:openStandalone", opts) as Promise<{
+        ok: boolean;
+        focusedExisting?: boolean;
+        windowId?: string;
+      }>,
+
+    /**
+     * Drain this window's pending handoff state (if any). Called by the
+     * standalone app bootstrap before mounting the feature view. Returns
+     * `null` if the window was not opened with a handoff payload.
+     */
+    getHandoff: () =>
+      ipcRenderer.invoke("window:getHandoff") as Promise<{
+        connectionId: string;
+        sessionId: string;
+        sqlSessionId?: string | null;
+        viaSSHConnectionId?: string;
+        sqlSlice?: unknown;
+        name?: string;
+        sessionColor?: string;
+      } | null>,
+
+    /**
+     * Subscribe this window to a connection's event stream. Every renderer
+     * that displays a connection (SSH, SQL, monitor, etc.) MUST call this
+     * before the first IPC event arrives, otherwise it will not receive the
+     * events for that connection.
+     *
+     * Safe to call multiple times — the main-process WindowManager dedupes.
+     */
+    subscribe: (connectionId: string) =>
+      ipcRenderer.invoke("window:subscribe", connectionId) as Promise<{
+        ok: boolean;
+        windowId?: string;
+        refcount?: number;
+        error?: string;
+      }>,
+
+    /**
+     * Unsubscribe from a connection. If this was the last window watching the
+     * connection, the main process disconnects the underlying resource.
+     */
+    unsubscribe: (connectionId: string) =>
+      ipcRenderer.invoke("window:unsubscribe", connectionId) as Promise<{
+        ok: boolean;
+        wasLast?: boolean;
+        error?: string;
+      }>,
   },
 
   // ── System events ──

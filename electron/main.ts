@@ -41,14 +41,14 @@ import { registerSessionIPC } from "./ipc/session.ipc";
 import { registerSettingsIPC } from "./ipc/settings.ipc";
 import { registerSSHIPC } from "./ipc/ssh.ipc";
 import { registerTerminalIPC } from "./ipc/terminal.ipc";
-import { registerSFTPIPC } from "./ipc/sftp.ipc";
+import { registerSFTPIPC, cleanupSFTP } from "./ipc/sftp.ipc";
 import { registerLogIPC } from "./ipc/log.ipc";
 import { registerHostKeyIPC } from "./ipc/hostkey.ipc";
 import { registerClientKeyIPC } from "./ipc/clientkey.ipc";
 import { registerSnippetIPC } from "./ipc/snippet.ipc";
 import { registerPortForwardIPC } from "./ipc/portforward.ipc";
 import { registerHealthIPC } from "./ipc/health.ipc";
-import { registerSQLIPC } from "./ipc/sql.ipc";
+import { registerSQLIPC, disconnectSQLByConnectionId } from "./ipc/sql.ipc";
 import { registerExportIPC } from "./ipc/export.ipc";
 import { registerMonitorIPC, getMonitorService } from "./ipc/monitor.ipc";
 import { registerServiceManagerIPC } from "./ipc/servicemanager.ipc";
@@ -57,6 +57,7 @@ import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
 import { initNotificationService } from "./services/NotificationService";
 import { getLogService } from "./services/LogService";
+import { windowManager, type StandaloneMode } from "./services/WindowManager";
 
 // ──── Global error handlers ────
 // Prevent unhandled errors from crashing the app with an ugly Electron dialog.
@@ -132,6 +133,8 @@ function createWindow(): BrowserWindow {
     },
   });
 
+  windowManager.register(mainWindow, "main");
+
   mainWindow.on("ready-to-show", () => {
     mainWindow.show();
   });
@@ -150,6 +153,197 @@ function createWindow(): BrowserWindow {
 
   return mainWindow;
 }
+
+/**
+ * Create a standalone child window that renders a single feature (SQL, terminal,
+ * monitor, or SFTP). The renderer detects `?standalone=<mode>` in the URL and
+ * skips the normal sidebar/workspace chrome.
+ *
+ * The new window is registered with WindowManager on creation so it participates
+ * in the subscription/refcount system for connection event routing. Each
+ * standalone window holds its own Zustand stores; connections are shared through
+ * the main-process singleton services, reference-counted per connectionId.
+ */
+interface OpenStandaloneOptions {
+  mode: StandaloneMode;
+  sessionId: string;
+  name?: string;
+  sessionColor?: string;
+}
+
+function createStandaloneWindow(opts: OpenStandaloneOptions): {
+  window: BrowserWindow;
+  windowId: string;
+} {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 800,
+    minHeight: 500,
+    show: false,
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#0f1117",
+    icon: join(__dirname, "../../resources/icon.png"),
+    title: opts.name || "Shellway",
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.js"),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const windowId = windowManager.register(win, "standalone", opts.mode);
+
+  win.on("ready-to-show", () => win.show());
+
+  win.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url);
+    return { action: "deny" };
+  });
+
+  const params = new URLSearchParams({
+    standalone: opts.mode,
+    sessionId: opts.sessionId,
+  });
+  if (opts.name) params.set("name", opts.name);
+  if (opts.sessionColor) params.set("sessionColor", opts.sessionColor);
+
+  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+    win.loadURL(`${process.env["ELECTRON_RENDERER_URL"]}?${params.toString()}`);
+  } else {
+    win.loadFile(join(__dirname, "../renderer/index.html"), {
+      search: params.toString(),
+    });
+  }
+
+  // Broadcast maximize/unmaximize events to the renderer so the custom
+  // title bar stays in sync with actual window state.
+  win.on("maximize", () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("window:maximized-change", true);
+    }
+  });
+  win.on("unmaximize", () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("window:maximized-change", false);
+    }
+  });
+
+  return { window: win, windowId };
+}
+
+/**
+ * Shut down the main-process resources for a connection that no window is
+ * watching anymore. Each service no-ops if it doesn't own the given id, so
+ * we can fire all of them without worrying about which one is the "real" owner.
+ *
+ * Called on window close (via the `connections-orphaned` event emitted by
+ * WindowManager) and on explicit `window:unsubscribe` when the refcount hits 0.
+ */
+function cleanupOrphanedConnection(connectionId: string): void {
+  try {
+    getSSHService().disconnect(connectionId);
+  } catch (err) {
+    console.warn(
+      `[main] SSH cleanup failed for orphaned connection ${connectionId}:`,
+      err,
+    );
+  }
+  try {
+    getMonitorService().removeMonitoring(connectionId);
+  } catch (err) {
+    console.warn(
+      `[main] Monitor cleanup failed for orphaned connection ${connectionId}:`,
+      err,
+    );
+  }
+  // SFTPService wraps an SFTPWrapper tied to the SSH client lifecycle, so the
+  // ssh.disconnect above already tears down the underlying channel. But the
+  // `sftpServices` Map in sftp.ipc.ts must also be cleared to avoid leaking a
+  // stale SFTPService reference.
+  try {
+    cleanupSFTP(connectionId);
+  } catch (err) {
+    console.warn(
+      `[main] SFTP cleanup failed for orphaned connection ${connectionId}:`,
+      err,
+    );
+  }
+  // SQL connections are keyed by sqlSessionId, not connectionId. The SQL IPC
+  // layer maintains a reverse map and exposes a helper to disconnect by
+  // connectionId. Fire-and-forget — cleanup is best-effort.
+  disconnectSQLByConnectionId(connectionId).catch((err) => {
+    console.warn(
+      `[main] SQL cleanup failed for orphaned connection ${connectionId}:`,
+      err,
+    );
+  });
+}
+
+// Register the orphaned-connection listener once, at module load.
+windowManager.on("connections-orphaned", (...args: unknown[]) => {
+  const orphaned = args[0] as string[];
+  for (const connectionId of orphaned) {
+    cleanupOrphanedConnection(connectionId);
+  }
+});
+
+/**
+ * Transient handoff state passed from a source window (e.g. the main window
+ * popping out a tab) to a newly-created standalone window. The source window
+ * writes the state via `window:openStandalone`; the new window drains it via
+ * `window:getHandoff` during its bootstrap.
+ *
+ * Stored keyed by windowId (the new window's id). Entries are deleted after
+ * the first successful `getHandoff` call — the handoff is single-use.
+ */
+interface StandaloneHandoffState {
+  connectionId: string;
+  sessionId: string;
+  sqlSessionId?: string | null;
+  /**
+   * When the database is tunneled through an existing SSH connection, the new
+   * window subscribes to BOTH the SQL connectionId and the SSH connectionId so
+   * the tunnel stays alive if the original SSH tab in the main window closes.
+   */
+  viaSSHConnectionId?: string;
+  /** Full serialized sqlStore slice — tabs, history, staged changes, etc. */
+  sqlSlice?: unknown;
+  name?: string;
+  sessionColor?: string;
+}
+
+const pendingHandoff = new Map<string, StandaloneHandoffState>();
+
+/**
+ * Clean up stale handoff entries when their window closes without ever
+ * draining the handoff (edge case: crash during bootstrap).
+ */
+windowManager.on("window-closed", (...args: unknown[]) => {
+  const windowId = args[0] as string;
+  pendingHandoff.delete(windowId);
+});
+
+// When a window hosting a monitor view closes without properly unmounting its
+// MonitorView component, its viewer registration would otherwise leak and keep
+// polling running forever. This listener catches that case and stops polling
+// for any connection whose last viewer was the closing window.
+windowManager.on("window-closed", (...args: unknown[]) => {
+  const windowId = args[0] as string;
+  const emptiedConnections = getMonitorService().removeViewerFromAll(windowId);
+  for (const connectionId of emptiedConnections) {
+    try {
+      getMonitorService().stopMonitoring(connectionId);
+    } catch (err) {
+      console.warn(
+        `[main] Monitor stop failed for connection ${connectionId} on window-closed:`,
+        err,
+      );
+    }
+  }
+});
 
 // ──── Window control IPC handlers ────
 ipcMain.handle("window:minimize", (event) => {
@@ -174,6 +368,133 @@ ipcMain.handle("window:close", (event) => {
 ipcMain.handle("window:isMaximized", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   return win?.isMaximized() ?? false;
+});
+
+/**
+ * Open a new standalone BrowserWindow for a specific feature.
+ *
+ * If a standalone window for the same (mode, sessionId) already exists, focus
+ * it instead of creating a duplicate — the caller can pass `allowDuplicate: true`
+ * to override (e.g. "Open in New Window" from a context menu).
+ *
+ * If `connectionId` is supplied the new window is **pre-subscribed** to that
+ * connection in the main process before the handler returns. This is the key
+ * invariant for tab tear-off: the source window can then `removeTab` without
+ * calling `sql.disconnect`, because the connection's refcount never drops to
+ * zero during the handoff (new window holds a subscription the instant the
+ * old one lets go).
+ *
+ * If `sqlSlice` is supplied it is stashed in a per-window handoff map; the new
+ * window drains it via `window:getHandoff` during its bootstrap so tabs,
+ * history, staged changes, etc. carry over seamlessly.
+ */
+ipcMain.handle(
+  "window:openStandalone",
+  (
+    _event,
+    opts: OpenStandaloneOptions & {
+      allowDuplicate?: boolean;
+      connectionId?: string;
+      sqlSessionId?: string | null;
+      viaSSHConnectionId?: string;
+      sqlSlice?: unknown;
+    },
+  ) => {
+    if (!opts || !opts.mode || !opts.sessionId) {
+      throw new Error(
+        "window:openStandalone requires { mode, sessionId }",
+      );
+    }
+
+    if (!opts.allowDuplicate) {
+      const existing = windowManager.findStandaloneFor(opts.mode, opts.sessionId);
+      if (existing) {
+        if (existing.isMinimized()) existing.restore();
+        existing.focus();
+        return { ok: true, focusedExisting: true };
+      }
+    }
+
+    const { windowId } = createStandaloneWindow(opts);
+
+    // Pre-subscribe the new window to the connection(s) it will observe.
+    // This MUST happen before the handler returns so the source window can
+    // safely remove its own tab without racing the orphan-cleanup path.
+    if (opts.connectionId) {
+      windowManager.subscribe(windowId, opts.connectionId);
+    }
+    if (opts.viaSSHConnectionId) {
+      windowManager.subscribe(windowId, opts.viaSSHConnectionId);
+    }
+
+    // Stash the handoff state keyed by windowId. The new window drains it
+    // via `window:getHandoff` once the renderer has booted.
+    if (
+      opts.connectionId ||
+      opts.sqlSessionId ||
+      opts.viaSSHConnectionId ||
+      opts.sqlSlice
+    ) {
+      pendingHandoff.set(windowId, {
+        connectionId: opts.connectionId || "",
+        sessionId: opts.sessionId,
+        sqlSessionId: opts.sqlSessionId ?? null,
+        viaSSHConnectionId: opts.viaSSHConnectionId,
+        sqlSlice: opts.sqlSlice,
+        name: opts.name,
+        sessionColor: opts.sessionColor,
+      });
+    }
+
+    return { ok: true, windowId };
+  },
+);
+
+/**
+ * Drain the pending handoff state for the calling window (if any). Called by
+ * StandaloneDatabaseApp (and future StandaloneTerminalApp / MonitorApp / etc.)
+ * during bootstrap before the feature view mounts. Returns `null` if this
+ * window was opened without a handoff (direct sidebar launch or non-tear-off
+ * flow).
+ *
+ * Single-use: the entry is deleted on first successful call.
+ */
+ipcMain.handle("window:getHandoff", (event) => {
+  const windowId = windowManager.getWindowIdForWebContents(event.sender);
+  if (!windowId) return null;
+  const state = pendingHandoff.get(windowId) ?? null;
+  if (state) pendingHandoff.delete(windowId);
+  return state;
+});
+
+/**
+ * Subscribe the calling window to a connection's event stream.
+ * Idempotent — calling multiple times with the same connectionId is safe.
+ *
+ * Services publish events via `windowManager.broadcastToConnection(connectionId, ...)`,
+ * which only reaches subscribers. A window that displays a connection MUST
+ * subscribe before the service fires any events, otherwise it will miss them.
+ */
+ipcMain.handle("window:subscribe", (event, connectionId: string) => {
+  const windowId = windowManager.getWindowIdForWebContents(event.sender);
+  if (!windowId) return { ok: false, error: "unknown window" };
+  windowManager.subscribe(windowId, connectionId);
+  return { ok: true, windowId, refcount: windowManager.refcount(connectionId) };
+});
+
+/**
+ * Unsubscribe the calling window. If this was the last subscriber the
+ * `connections-orphaned` event fires and the IPC layer can shut down the
+ * underlying service resource (SSH shell, DB pool, monitor poller, etc.).
+ */
+ipcMain.handle("window:unsubscribe", (event, connectionId: string) => {
+  const windowId = windowManager.getWindowIdForWebContents(event.sender);
+  if (!windowId) return { ok: false, error: "unknown window" };
+  const wasLast = windowManager.unsubscribe(windowId, connectionId);
+  if (wasLast) {
+    cleanupOrphanedConnection(connectionId);
+  }
+  return { ok: true, wasLast };
 });
 
 ipcMain.handle("platform:get", () => {
@@ -632,26 +953,31 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  // Clean up all file watchers
+  // Per-window orphaned-connection cleanup already ran via WindowManager's
+  // `connections-orphaned` event as each window closed. Anything still alive
+  // in the services at this point is a safety net for edge cases (crashes,
+  // missed unsubscribe calls, etc.).
+  //
+  // We still close file watchers here because they're not tied to
+  // WindowManager's subscription model — they're bound to IPC senders that
+  // may already be destroyed.
   for (const [, watcher] of activeWatchers) {
     watcher.close();
   }
   activeWatchers.clear();
 
-  // Stop all monitor polling
-  getMonitorService().stopAll();
-
-  // Disconnect all SSH and SQL sessions to prevent zombie connections
+  // Safety net: force-clean any services that still hold connections.
+  // In the normal path these are already no-ops because every connection
+  // was orphan-cleaned as its last window closed.
+  try {
+    getMonitorService().stopAll();
+  } catch { /* ignore */ }
   try {
     getSSHService().disconnectAll();
-  } catch {
-    /* ignore — service may not be initialized */
-  }
+  } catch { /* ignore — service may not be initialized */ }
   try {
     getSQLService().disconnectAll();
-  } catch {
-    /* ignore — service may not be initialized */
-  }
+  } catch { /* ignore — service may not be initialized */ }
 
   if (process.platform !== "darwin") {
     app.quit();
