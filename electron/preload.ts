@@ -44,6 +44,8 @@ const api = {
       sqlSessionId?: string | null;
       viaSSHConnectionId?: string;
       sqlSlice?: unknown;
+      shellId?: string;
+      bufferSnapshot?: string;
     }) =>
       ipcRenderer.invoke("window:openStandalone", opts) as Promise<{
         ok: boolean;
@@ -63,6 +65,8 @@ const api = {
         sqlSessionId?: string | null;
         viaSSHConnectionId?: string;
         sqlSlice?: unknown;
+        shellId?: string;
+        bufferSnapshot?: string;
         name?: string;
         sessionColor?: string;
       } | null>,
@@ -411,6 +415,14 @@ const api = {
     resize: (shellId: string, cols: number, rows: number) =>
       ipcRenderer.send("terminal:resize", shellId, cols, rows),
     close: (shellId: string) => ipcRenderer.invoke("terminal:close", shellId),
+    /**
+     * Drain the pop-out replay buffer for a shell. Called by the standalone
+     * TerminalView right after its xterm listener is registered to flush any
+     * output that arrived during the window-creation gap. Returns an empty
+     * string if no buffer is pending.
+     */
+    attach: (shellId: string) =>
+      ipcRenderer.invoke("terminal:attach", shellId) as Promise<string>,
     onData: (callback: (shellId: string, data: string) => void) => {
       const handler = (
         _e: Electron.IpcRendererEvent,

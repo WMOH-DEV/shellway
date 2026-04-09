@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import '@xterm/xterm/css/xterm.css'
 import { cn } from '@/utils/cn'
 import { TERMINAL_THEMES } from '@/data/terminalThemes'
@@ -34,6 +35,24 @@ interface TerminalViewProps {
   onFocusHandler?: (focusFn: () => void) => void
   /** Register a paste function so parent can insert text through xterm's onData flow */
   onPasteHandler?: (pasteFn: (text: string) => void) => void
+  /**
+   * Register a serialize function that returns an ANSI-encoded snapshot of
+   * the current xterm buffer. Used by the terminal pop-out flow to capture
+   * scrollback + cursor state before tearing off to a new window.
+   */
+  onSerializeHandler?: (serializeFn: () => string) => void
+  /**
+   * When true, the shell is assumed to already exist in the main process
+   * (e.g. after a pop-out tear-off) — skip the `terminal:open` IPC call and
+   * just attach event listeners. Used by StandaloneTerminalApp.
+   */
+  attachToExistingShell?: boolean
+  /**
+   * ANSI-encoded scrollback snapshot to write into xterm immediately after
+   * mount, before any live data arrives. Used to restore the visible buffer
+   * on pop-out.
+   */
+  initialBufferSnapshot?: string
   className?: string
 }
 
@@ -66,6 +85,9 @@ export function TerminalView({
   onSnippetPaletteRequest,
   onFocusHandler,
   onPasteHandler,
+  onSerializeHandler,
+  attachToExistingShell,
+  initialBufferSnapshot,
   className
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -113,12 +135,21 @@ export function TerminalView({
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon()
     const searchAddon = new SearchAddon()
+    const serializeAddon = new SerializeAddon()
 
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)
     terminal.loadAddon(searchAddon)
+    terminal.loadAddon(serializeAddon)
 
     terminal.open(containerRef.current)
+
+    // Replay the handed-off scrollback snapshot (if any) BEFORE any live data
+    // arrives. The snapshot is ANSI-encoded and already includes cursor/mode
+    // state, so xterm renders it exactly as it looked in the source window.
+    if (initialBufferSnapshot) {
+      terminal.write(initialBufferSnapshot)
+    }
 
     // Use WebGL renderer for significantly better performance.
     // Falls back to the default DOM renderer if WebGL is unavailable.
@@ -158,6 +189,14 @@ export function TerminalView({
       onPasteHandler((text: string) => {
         terminal.paste(text)
       })
+    }
+
+    if (onSerializeHandler) {
+      // Cap scrollback to 500 lines (per plan) so pop-out handoffs stay
+      // reasonably sized even when the user has a long history.
+      // SerializeAddon includes the viewport automatically regardless of the
+      // scrollback cap.
+      onSerializeHandler(() => serializeAddon.serialize({ scrollback: 500 }))
     }
 
     // Buffer to track the current word for snippet expansion
@@ -356,6 +395,32 @@ export function TerminalView({
     if (connectionStatus !== 'connected' || !terminalRef.current || isReady) return
 
     const terminal = terminalRef.current
+
+    // Tear-off mode: shell already exists in the main process. Skip the open
+    // IPC, drain the pop-out replay buffer, and resize the PTY to this
+    // window's current xterm dimensions. The static bufferSnapshot has
+    // already been replayed in the init effect above; the attach call here
+    // flushes any output that streamed in during the gap between the main
+    // process starting the pendingAttach buffer and this listener being
+    // registered. Order: snapshot → replay delta → live data.
+    if (attachToExistingShell) {
+      const attachAndResize = async () => {
+        try {
+          const replayDelta = await window.novadeck.terminal.attach(shellId)
+          if (replayDelta) {
+            terminal.write(replayDelta)
+          }
+        } catch (err) {
+          console.warn('[terminal attach] failed to drain replay buffer:', err)
+        }
+        const { cols, rows } = terminal
+        window.novadeck.terminal.resize(shellId, cols, rows)
+        setIsReady(true)
+      }
+      attachAndResize()
+      return
+    }
+
     const openShell = async () => {
       const { cols, rows } = terminal
       const result = await window.novadeck.terminal.open(connectionId, shellId, { cols, rows })
@@ -365,7 +430,7 @@ export function TerminalView({
       setIsReady(true)
     }
     openShell()
-  }, [connectionStatus, connectionId, shellId, isReady])
+  }, [connectionStatus, connectionId, shellId, isReady, attachToExistingShell])
 
   // Re-fit when becoming active — wait for the container to be visible before fitting
   useEffect(() => {

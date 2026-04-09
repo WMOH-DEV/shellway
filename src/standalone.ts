@@ -9,7 +9,7 @@
  * a single entrypoint.
  */
 
-export type StandaloneMode = 'sql' | 'monitor' | 'sftp'
+export type StandaloneMode = 'sql' | 'monitor' | 'sftp' | 'terminal'
 
 export interface StandaloneConfig {
   mode: StandaloneMode
@@ -25,12 +25,16 @@ export interface StandaloneConfig {
 export function getStandaloneConfig(): StandaloneConfig | null {
   const params = new URLSearchParams(window.location.search)
   const mode = params.get('standalone')
-  if (mode !== 'sql' && mode !== 'monitor' && mode !== 'sftp') return null
+  if (mode !== 'sql' && mode !== 'monitor' && mode !== 'sftp' && mode !== 'terminal') return null
 
   const sessionId = params.get('sessionId')
   if (!sessionId) return null
 
-  const defaultName = mode === 'monitor' ? 'Monitor' : mode === 'sftp' ? 'SFTP' : 'Database'
+  const defaultName =
+    mode === 'monitor' ? 'Monitor'
+    : mode === 'sftp' ? 'SFTP'
+    : mode === 'terminal' ? 'Terminal'
+    : 'Database'
 
   return {
     mode,

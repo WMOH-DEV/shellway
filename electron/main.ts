@@ -40,7 +40,7 @@ let appIsSigned: boolean | null = null;
 import { registerSessionIPC } from "./ipc/session.ipc";
 import { registerSettingsIPC } from "./ipc/settings.ipc";
 import { registerSSHIPC } from "./ipc/ssh.ipc";
-import { registerTerminalIPC } from "./ipc/terminal.ipc";
+import { registerTerminalIPC, startPendingAttach } from "./ipc/terminal.ipc";
 import { registerSFTPIPC, cleanupSFTP } from "./ipc/sftp.ipc";
 import { registerLogIPC } from "./ipc/log.ipc";
 import { registerHostKeyIPC } from "./ipc/hostkey.ipc";
@@ -311,6 +311,13 @@ interface StandaloneHandoffState {
   viaSSHConnectionId?: string;
   /** Full serialized sqlStore slice — tabs, history, staged changes, etc. */
   sqlSlice?: unknown;
+  /**
+   * Terminal pop-out: the shellId being handed off and an ANSI-serialized
+   * snapshot of the xterm buffer so the new window can replay the visible
+   * scrollback + cursor state before attaching to the live shell.
+   */
+  shellId?: string;
+  bufferSnapshot?: string;
   name?: string;
   sessionColor?: string;
 }
@@ -398,6 +405,8 @@ ipcMain.handle(
       sqlSessionId?: string | null;
       viaSSHConnectionId?: string;
       sqlSlice?: unknown;
+      shellId?: string;
+      bufferSnapshot?: string;
     },
   ) => {
     if (!opts || !opts.mode || !opts.sessionId) {
@@ -427,13 +436,23 @@ ipcMain.handle(
       windowManager.subscribe(windowId, opts.viaSSHConnectionId);
     }
 
+    // Terminal pop-out: start buffering shell output immediately so nothing
+    // is lost in the gap between createStandaloneWindow and the new
+    // BrowserWindow's TerminalView registering its ipcRenderer listener.
+    // The new window drains the buffer via `terminal:attach` once ready.
+    if (opts.shellId) {
+      startPendingAttach(opts.shellId);
+    }
+
     // Stash the handoff state keyed by windowId. The new window drains it
     // via `window:getHandoff` once the renderer has booted.
     if (
       opts.connectionId ||
       opts.sqlSessionId ||
       opts.viaSSHConnectionId ||
-      opts.sqlSlice
+      opts.sqlSlice ||
+      opts.shellId ||
+      opts.bufferSnapshot
     ) {
       pendingHandoff.set(windowId, {
         connectionId: opts.connectionId || "",
@@ -441,6 +460,8 @@ ipcMain.handle(
         sqlSessionId: opts.sqlSessionId ?? null,
         viaSSHConnectionId: opts.viaSSHConnectionId,
         sqlSlice: opts.sqlSlice,
+        shellId: opts.shellId,
+        bufferSnapshot: opts.bufferSnapshot,
         name: opts.name,
         sessionColor: opts.sessionColor,
       });

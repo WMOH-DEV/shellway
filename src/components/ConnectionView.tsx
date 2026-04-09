@@ -8,7 +8,7 @@ const SQLView = lazy(() => import('@/components/sql/SQLView').then(m => ({ defau
 import { cn } from '@/utils/cn'
 import { toast } from '@/components/ui/Toast'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
-import { TerminalTabs } from '@/components/terminal/TerminalTabs'
+import { TerminalTabs, type TerminalTabsHandle } from '@/components/terminal/TerminalTabs'
 import { SFTPView } from '@/components/sftp/SFTPView'
 import { SplitView } from '@/components/SplitView'
 import { PortForwardingView } from '@/components/port-forwarding/PortForwardingView'
@@ -57,6 +57,11 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     bottomPanelTab, setBottomPanelTab, transferQueueOpen, toggleTransferQueue,
     splitViewLayout, splitViewRatio, setSplitView
   } = useUIStore()
+
+  // Imperative handle for TerminalTabs — used by the Terminal pop-out button
+  // to trigger buffer serialization + standalone-window creation from outside
+  // the TerminalTabs component.
+  const terminalTabsRef = useRef<TerminalTabsHandle>(null)
 
   // Split view applies when enabled AND both terminal + sftp are running
   const showSplitView = !!tab.splitView
@@ -349,6 +354,31 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
 
   /**
+   * Single-owner Terminal pop-out: transfers the active shell to a standalone
+   * window. Unlike Monitor/SFTP/SQL (dual-view), terminals cannot be displayed
+   * in two xterm instances at once because the PTY has a single owner of its
+   * cols/rows dimensions. The flow:
+   *   1. TerminalTabs.popOutActive serializes the active xterm buffer via
+   *      SerializeAddon, calls openStandalone with shellId + bufferSnapshot,
+   *      then removes the shell from its own local tabs state (disposes the
+   *      main window's xterm instance, but the underlying shell stays alive
+   *      in the main-process SSHService).
+   *   2. The new window's StandaloneTerminalApp hydrates the snapshot and
+   *      attaches to the existing shell via attachToExistingShell=true.
+   *   3. If the main window's TerminalTabs was left empty, it auto-creates a
+   *      fresh blank shell to preserve the ≥1-tab invariant.
+   */
+  const handlePopOutTerminal = useCallback(() => {
+    if (!terminalTabsRef.current) {
+      toast.error('Pop out unavailable', 'Terminal is not mounted in this view')
+      return
+    }
+    terminalTabsRef.current.popOutActive().catch((err) => {
+      toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
+    })
+  }, [])
+
+  /**
    * Non-destructive SFTP sub-tab pop-out: opens SFTP in a standalone window while
    * keeping the SFTP sub-tab alive in the main SSH connection. The SSH session
    * stays alive because both windows hold subscriptions to the same connectionId
@@ -450,6 +480,23 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             <span>Pop out</span>
           </button>
         )}
+        {/*
+          Terminal pop-out is hidden in split view because the in-split
+          TerminalTabs instance has no ref forwarded to it (it lives inside
+          SplitView), so `terminalTabsRef.current` would be null and the
+          button would silently no-op. Users can exit split view first to
+          pop out the terminal.
+        */}
+        {tab.activeSubTab === 'terminal' && runningSubTabs.has('terminal') && !showSplitView && (
+          <button
+            onClick={handlePopOutTerminal}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+            title="Pop out active shell into a new window"
+          >
+            <ExternalLink size={12} />
+            <span>Pop out</span>
+          </button>
+        )}
       </div>
 
       {/* Main content area */}
@@ -481,7 +528,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
               'absolute inset-0',
               tab.activeSubTab !== 'terminal' && 'hidden'
             )}>
-              <TerminalTabs connectionId={tab.id} connectionStatus={tab.status} />
+              <TerminalTabs ref={terminalTabsRef} connectionId={tab.id} connectionStatus={tab.status} />
             </div>
           )}
 

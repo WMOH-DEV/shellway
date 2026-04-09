@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import {
   Plus, X, Terminal as TerminalIcon, Search,
   ChevronUp, ChevronDown, Trash2, Code2
@@ -9,6 +9,7 @@ import { SnippetPalette } from './SnippetPalette'
 import { SnippetManager } from '@/components/snippets/SnippetManager'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Button } from '@/components/ui/Button'
+import { toast } from '@/components/ui/Toast'
 import { v4 as uuid } from 'uuid'
 import type { SearchAddon } from '@xterm/addon-search'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -23,6 +24,17 @@ interface TerminalTabsProps {
   connectionStatus?: string
 }
 
+/** Imperative handle exposed by TerminalTabs for parent-driven actions. */
+export interface TerminalTabsHandle {
+  /**
+   * Pop the currently-active shell out into a standalone BrowserWindow.
+   * The shell itself stays alive in the main process and is adopted by the
+   * new window; main-window UI creates a fresh replacement shell if this
+   * was the only open tab.
+   */
+  popOutActive(): Promise<void>
+}
+
 interface TerminalTab {
   id: string
   name: string
@@ -32,7 +44,10 @@ interface TerminalTab {
  * Multiple terminal sub-tabs per connection.
  * Single unified bar: shell tabs on left, search + tools on right.
  */
-export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsProps) {
+export const TerminalTabs = forwardRef<TerminalTabsHandle, TerminalTabsProps>(function TerminalTabs(
+  { connectionId, connectionStatus },
+  ref
+) {
   // ── Resolve terminal settings: global + session overrides ──
   const [resolvedSettings, setResolvedSettings] = useState<ResolvedTerminalSettings | undefined>()
 
@@ -61,6 +76,12 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
   const clearHandlersRef = useRef(new Map<string, () => void>())
   const focusHandlersRef = useRef(new Map<string, () => void>())
   const pasteHandlersRef = useRef(new Map<string, (text: string) => void>())
+  const serializeHandlersRef = useRef(new Map<string, () => string>())
+  // Guard against concurrent pop-outs of the same shell (e.g. rapid double
+  // clicks). Without this, two openStandalone calls would serialize the same
+  // buffer twice — currently safe due to sessionId dedupe in main.ts, but
+  // trivially exploitable if that dedupe is ever relaxed.
+  const poppingRef = useRef(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
@@ -87,6 +108,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       clearHandlersRef.current.delete(id)
       focusHandlersRef.current.delete(id)
       pasteHandlersRef.current.delete(id)
+      serializeHandlersRef.current.delete(id)
 
       setTabs((prev) => prev.filter((t) => t.id !== id))
       if (activeTabId === id) {
@@ -97,6 +119,91 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
     },
     [tabs, activeTabId]
   )
+
+  // ── Pop out the active shell into a standalone BrowserWindow ──
+  //
+  // Single-owner semantics: the shellId and its underlying main-process
+  // ClientChannel are transferred to the new window. We do NOT call
+  // terminal.close on the shellId (that would kill the shell). We only
+  // remove the shell tab from this window's local UI state and dispose the
+  // xterm instance via its unmount cleanup. If this was the only tab open,
+  // auto-create a fresh blank shell to keep the invariant "main window always
+  // has ≥1 terminal tab".
+  const popOutActive = useCallback(async () => {
+    if (poppingRef.current) return
+    poppingRef.current = true
+
+    const activeShellId = activeTabId
+    const serializeFn = serializeHandlersRef.current.get(activeShellId)
+    if (!serializeFn) {
+      poppingRef.current = false
+      toast.error('Pop out failed', 'Terminal is not ready yet')
+      return
+    }
+
+    let snapshot = ''
+    try {
+      snapshot = serializeFn()
+    } catch (err) {
+      console.warn('[terminal pop-out] serialize failed:', err)
+    }
+
+    const sourceTab = useConnectionStore.getState().tabs.find(t => t.id === connectionId)
+    if (!sourceTab) {
+      poppingRef.current = false
+      toast.error('Pop out failed', 'Source tab not found')
+      return
+    }
+
+    try {
+      const result = await window.novadeck.window.openStandalone({
+        mode: 'terminal',
+        sessionId: sourceTab.sessionId,
+        name: sourceTab.sessionName,
+        sessionColor: sourceTab.sessionColor,
+        connectionId,
+        viaSSHConnectionId: connectionId,
+        shellId: activeShellId,
+        bufferSnapshot: snapshot,
+      })
+
+      if (result.focusedExisting) {
+        poppingRef.current = false
+        return
+      }
+
+      // Remove the popped shell from local UI state WITHOUT calling
+      // terminal.close (the new window owns the shell now). Clean up the
+      // handler maps to release xterm references.
+      searchAddonsRef.current.delete(activeShellId)
+      clearHandlersRef.current.delete(activeShellId)
+      focusHandlersRef.current.delete(activeShellId)
+      pasteHandlersRef.current.delete(activeShellId)
+      serializeHandlersRef.current.delete(activeShellId)
+
+      setTabs((prev) => {
+        const remaining = prev.filter((t) => t.id !== activeShellId)
+        if (remaining.length === 0) {
+          // Maintain the ≥1-tab invariant — create a fresh blank shell so the
+          // user isn't left with an empty Terminal sub-tab.
+          const replacement: TerminalTab = { id: uuid(), name: 'Shell 1' }
+          setActiveTabId(replacement.id)
+          return [replacement]
+        }
+        // Activate the next remaining tab
+        const idx = prev.findIndex(t => t.id === activeShellId)
+        const newActive = remaining[Math.min(idx, remaining.length - 1)]
+        setActiveTabId(newActive.id)
+        return remaining
+      })
+    } catch (err) {
+      toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
+    } finally {
+      poppingRef.current = false
+    }
+  }, [activeTabId, connectionId])
+
+  useImperativeHandle(ref, () => ({ popOutActive }), [popOutActive])
 
   const handleSearch = useCallback(
     (query: string, direction: 'next' | 'prev') => {
@@ -125,6 +232,10 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
 
   const registerPasteHandler = useCallback((shellId: string, pasteFn: (text: string) => void) => {
     pasteHandlersRef.current.set(shellId, pasteFn)
+  }, [])
+
+  const registerSerializeHandler = useCallback((shellId: string, serializeFn: () => string) => {
+    serializeHandlersRef.current.set(shellId, serializeFn)
   }, [])
 
   const handleClear = useCallback(() => {
@@ -288,6 +399,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
               onClearHandler={(clearFn) => registerClearHandler(tab.id, clearFn)}
               onFocusHandler={(focusFn) => registerFocusHandler(tab.id, focusFn)}
               onPasteHandler={(pasteFn) => registerPasteHandler(tab.id, pasteFn)}
+              onSerializeHandler={(fn) => registerSerializeHandler(tab.id, fn)}
               onSnippetPaletteRequest={() => setSnippetPaletteOpen(true)}
             />
           </div>
@@ -323,4 +435,4 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
       />
     </div>
   )
-}
+})
