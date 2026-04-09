@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeftToLine } from 'lucide-react'
 import { useTheme } from '@/hooks/useTheme'
 import { useConnectionSubscription } from '@/hooks/useConnectionSubscription'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -141,9 +142,50 @@ export function StandaloneSFTPApp({ config }: StandaloneSFTPAppProps) {
     [tabs, connectionId]
   )
 
+  /**
+   * Merge this standalone SFTP window back into the main window.
+   *
+   * The main-process SFTP session persists for the SSH connection's
+   * lifetime (SFTPView.tsx deliberately skips sftp.close on unmount), so
+   * merge-back just tells the main window to activate its SFTP sub-tab for
+   * the same connectionId and then closes this window. The main window's
+   * SSH tab must still exist; if the user closed it, App.tsx's merge
+   * handler surfaces an error toast and this window stays open.
+   */
+  const handleMergeBack = useCallback(async () => {
+    if (!connectionId) return
+    try {
+      const result = await window.novadeck.window.mergeBack({
+        mode: 'sftp',
+        connectionId,
+        sessionId: handoff?.sessionId ?? config.sessionId,
+        name: handoff?.name ?? config.name,
+        sessionColor: handoff?.sessionColor ?? config.sessionColor,
+      })
+      if (!result.ok) {
+        toast.error('Merge failed', result.reason || 'Main window not available')
+        return
+      }
+      window.novadeck.window.close()
+    } catch (err) {
+      toast.error('Merge failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [connectionId, handoff, config])
+
+  const titleBarActions = connectionId ? (
+    <button
+      onClick={handleMergeBack}
+      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+      title="Merge this window back into the main Shellway window"
+    >
+      <ArrowLeftToLine size={12} />
+      <span>Merge to main</span>
+    </button>
+  ) : null
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
-      <TitleBar />
+      <TitleBar actions={titleBarActions} />
 
       <main className="flex-1 overflow-hidden">
         {!handoffResolved ? (

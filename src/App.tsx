@@ -14,6 +14,7 @@ import { KBDIDialog } from '@/components/sessions/KBDIDialog'
 import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useSQLStore, hydrateConnectionSlice, type SQLConnectionSlice } from '@/stores/sqlStore'
+import type { ConnectionTab } from '@/types/session'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
@@ -81,9 +82,13 @@ export default function App() {
   // The main process forwards the payload here; we reconstruct the tab
   // and focus it, then the standalone window closes itself.
   //
-  // Current scope (MVP): SQL-mode merge-back creates a fresh top-level
-  // database tab in main with the hydrated slice. Monitor/SFTP/Terminal
-  // merge-back is deferred (see memory: project_multi_window_phase_2_deferred).
+  // Supported modes:
+  //   - `sql`: creates a fresh top-level database tab with hydrated slice
+  //   - `monitor` / `sftp`: finds the existing SSH tab by connectionId,
+  //     activates the matching sub-tab, re-adds it to runningSubTabs if
+  //     shut down. Fails with an error toast if the source SSH tab was
+  //     closed in the meantime.
+  //   - `terminal`: deferred (see memory: project_multi_window_phase_2_deferred)
   useEffect(() => {
     const unsub = window.novadeck.window.onMergeRequest((payload) => {
       if (payload.mode === 'sql') {
@@ -115,19 +120,59 @@ export default function App() {
           activeSubTab: 'sql',
         })
         toast.success('Merged', `"${payload.name || 'Database'}" is now in the main window`)
-      } else {
-        // Monitor / SFTP / Terminal merge-back is not yet implemented.
-        // The standalone window will still close itself (per its own
-        // post-mergeBack logic), but the user loses access to the view.
-        // Give them a heads-up.
-        toast.info(
-          'Merge pending',
-          `${payload.mode.toUpperCase()} merge-back isn't supported yet — re-open from the SSH tab.`
-        )
+        return
       }
+
+      if (payload.mode === 'monitor' || payload.mode === 'sftp') {
+        // Monitor and SFTP live as sub-tabs of an existing SSH tab in main.
+        // The standalone window's connectionId matches the main SSH tab's
+        // id — find it and navigate to the right sub-tab. If the user
+        // closed the source SSH tab since popping out, there's no home to
+        // return to; we fail loudly instead of silently dropping the view.
+        const sshTab = useConnectionStore.getState().tabs.find(
+          t => t.id === payload.connectionId && (t.type === 'ssh' || t.type === undefined)
+        )
+        if (!sshTab) {
+          toast.error(
+            'Merge failed',
+            'The source SSH connection is no longer open in the main window. Re-open it and try again.'
+          )
+          return
+        }
+
+        // Ensure the target sub-tab is running. If it was shut down via
+        // handleShutdownSubTab, re-add it to runningSubTabs so the view
+        // remounts. Default to the SUB_TABS ordering when undefined.
+        const DEFAULT_SUBS: ConnectionTab['activeSubTab'][] = [
+          'terminal', 'sftp', 'sql', 'monitor', 'services', 'port-forwarding', 'info', 'log'
+        ]
+        const currentRunning = new Set<ConnectionTab['activeSubTab']>(
+          sshTab.runningSubTabs ?? DEFAULT_SUBS
+        )
+        currentRunning.add(payload.mode)
+
+        updateTab(sshTab.id, {
+          activeSubTab: payload.mode,
+          runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][],
+        })
+        setActiveTab(sshTab.id)
+
+        const label = payload.mode === 'monitor' ? 'Monitor' : 'SFTP'
+        toast.success('Merged', `${label} is back in the main window`)
+        return
+      }
+
+      // Terminal merge-back — handler stubs exist in main.ts (including
+      // startPendingAttach(shellId) to buffer shell output during the
+      // handoff gap), but the renderer-side adoption into TerminalTabs is
+      // not wired yet. See memory: project_multi_window_phase_2_deferred.
+      toast.info(
+        'Merge pending',
+        `${payload.mode.toUpperCase()} merge-back isn't wired yet — close the window and re-open from the SSH tab.`
+      )
     })
     return unsub
-  }, [addTab, setActiveTab])
+  }, [addTab, setActiveTab, updateTab])
 
   // ── Host Key Verification state ──
   const [hostKeyVerify, setHostKeyVerify] = useState<HostKeyVerifyRequest | null>(null)
