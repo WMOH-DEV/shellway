@@ -143,18 +143,23 @@
   border: none !important;
 }
 
-/* Kill browser native text selection inside ag-grid entirely —
-   shift+click was producing per-cell "select-all" highlights.
-   Users copy via right-click → "Copy Cell" / "Copy Row" context menu instead. */
-.ag-body-viewport {
-  -webkit-user-select: none !important;
-  user-select: none !important;
-}
-/* Re-enable text selection only when a cell is being edited (input/textarea) */
+/* Allow mouse-drag text selection inside ag-grid cells so users can highlight
+   and copy values from non-editable cells (auto-increment IDs, read-only PKs,
+   computed columns). Pairs with enableCellTextSelection={true} on AgGridReact.
+   Ag-grid's row-selection mousedown uses preventDefault, so shift+click range
+   selection will not spill browser text highlights across cells. */
+.ag-cell,
+.ag-cell-value,
 .ag-cell-edit-wrapper,
 .ag-cell-edit-wrapper * {
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+/* But keep row headers / filler column un-selectable so clicking them cleanly
+   selects the row (TablePlus-style) without stray text highlights. */
+.ag-cell[col-id="__filler"] {
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 /* ── ag-Grid edited row/cell highlighting ── */

@@ -11,6 +11,7 @@ import type {
   ColDef,
   GetRowIdParams,
   CellContextMenuEvent,
+  CellDoubleClickedEvent,
   GridReadyEvent,
 } from "ag-grid-community";
 import {
@@ -856,6 +857,58 @@ export const DataGrid = React.memo(
         );
     }, [hasGrid]);
 
+    // Clamp browser text selection to a single ag-cell.
+    //
+    // Context: we enable `enableCellTextSelection` + `user-select: text` on
+    // cells so users can mouse-drag-highlight a value (e.g. an auto-increment
+    // ID) and Cmd+C it. The downside is that shift+click row-range selection
+    // and plain mouse drags across rows also trigger the browser's native
+    // text selection, which spans multiple cells and looks like a bug
+    // (every cell in the range gets a blue highlight).
+    //
+    // Fix: listen to `selectionchange` globally, and if the active range
+    // starts in one ag-cell and ends in another (both inside this grid),
+    // clear it. Single-cell drags are preserved; cross-cell highlights are
+    // killed before the user sees them persist.
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      let clearing = false;
+      const findCell = (node: Node | null): Element | null => {
+        if (!node) return null;
+        const el =
+          node.nodeType === Node.ELEMENT_NODE
+            ? (node as Element)
+            : node.parentElement;
+        return el?.closest?.(".ag-cell") ?? null;
+      };
+
+      const onSelectionChange = () => {
+        if (clearing) return;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+        const range = sel.getRangeAt(0);
+        const startCell = findCell(range.startContainer);
+        const endCell = findCell(range.endContainer);
+        // Only act on selections inside this grid
+        if (!startCell || !container.contains(startCell)) return;
+        if (!endCell || !container.contains(endCell)) return;
+        if (startCell === endCell) return;
+        // Spans multiple cells — this is the cross-cell highlight bug. Clear.
+        clearing = true;
+        sel.removeAllRanges();
+        // Re-allow handling on the next tick
+        queueMicrotask(() => {
+          clearing = false;
+        });
+      };
+
+      document.addEventListener("selectionchange", onSelectionChange);
+      return () =>
+        document.removeEventListener("selectionchange", onSelectionChange);
+    }, [hasGrid]);
+
     // Build a set of non-editable column names (auto-increment PKs, computed columns)
     const nonEditableColumns = useMemo(() => {
       if (!columnMeta) return new Set<string>();
@@ -1244,6 +1297,47 @@ export const DataGrid = React.memo(
       [onInsertRow, onDuplicateRow, onDeleteRows, onSetCellValue, tableName],
     );
 
+    // Double-click on a non-editable cell selects the whole cell value as a
+    // text range (instead of the browser's default "select the word you
+    // clicked on"). Ag-grid's built-in behavior for editable cells —
+    // double-click to enter edit mode — is untouched because we bail out
+    // early when the column is editable.
+    const onCellDoubleClicked = useCallback(
+      (event: CellDoubleClickedEvent) => {
+        // Let editable cells follow ag-grid's default: enter edit mode.
+        if (event.colDef?.editable) return;
+        // Skip the filler column and any non-data cell.
+        if (event.colDef?.colId === "__filler") return;
+
+        const nativeEvent = event.event as MouseEvent | undefined;
+        const target = nativeEvent?.target as Element | null;
+        const cellEl = target?.closest?.(".ag-cell") as HTMLElement | null;
+        if (!cellEl) return;
+
+        // The value itself lives in .ag-cell-value when a renderer is used,
+        // otherwise it's a direct text node inside .ag-cell.
+        const valueEl =
+          (cellEl.querySelector(".ag-cell-value") as HTMLElement | null) ??
+          cellEl;
+
+        // Build a Range that covers the full contents of the cell's value
+        // wrapper and apply it as the current Selection. The clamping
+        // selectionchange listener will leave this alone because the range
+        // starts and ends inside the same .ag-cell.
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(valueEl);
+          const sel = window.getSelection();
+          if (!sel) return;
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } catch {
+          // Ignore — worst case the user gets the default browser behavior.
+        }
+      },
+      [],
+    );
+
     // ── Header context menu actions ──
 
     const handleHeaderCopyName = useCallback((column: string) => {
@@ -1532,6 +1626,7 @@ export const DataGrid = React.memo(
           onSortChanged={onSortChanged}
           onCellValueChanged={onCellValueChanged}
           onCellContextMenu={onCellContextMenu}
+          onCellDoubleClicked={onCellDoubleClicked}
           onGridReady={onGridReady}
           onColumnResized={onColumnResized}
           onColumnVisible={onColumnVisible}
