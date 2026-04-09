@@ -158,6 +158,13 @@ export interface PaginationState {
   totalPages: number;
   /** When true, totalRows is an estimate from DB statistics (not an exact COUNT(*)) */
   isEstimatedCount?: boolean;
+  /**
+   * When true, the total row count is unknown — no COUNT(*) has been run and
+   * totalRows is only a lower-bound sentinel used to keep the Next button
+   * enabled. UI should render range-only ("1-200 rows") instead of a totals
+   * ("1-200 of ~X rows") and hide the "of Y pages" suffix.
+   */
+  isUnknownTotal?: boolean;
 }
 
 // ── Filters (TablePlus-style) ──

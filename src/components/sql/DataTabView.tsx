@@ -331,11 +331,13 @@ export const DataTabView = React.memo(function DataTabView({
         abortRef.current.abort();
       }
 
-      // Cancel any in-flight COUNT / estimated-count query server-side.
-      // Unlike the data query, we actively kill this one because it may be
-      // holding the single MySQL connection busy, blocking the new data query
-      // from starting.  The count query is non-critical — pagination will just
-      // keep its previous values if the kill succeeds before it completes.
+      // Cancel any in-flight manual COUNT(*) query server-side. The only
+      // caller that can have a count in flight is the opt-in "Count" button
+      // (handleExactCount) — there is no auto-count path anymore. We kill it
+      // because it may be holding the single MySQL connection busy, blocking
+      // the new data query from starting. The count result is non-critical —
+      // pagination will just keep its previous values if the kill lands
+      // before the COUNT completes.
       if (countQueryIdRef.current) {
         (window as any).novadeck.sql
           .cancelQuery(countQueryIdRef.current)
@@ -406,16 +408,14 @@ export const DataTabView = React.memo(function DataTabView({
           setColumns(queryResult.fields);
         }
 
-        // Data is ready — clear loading overlay immediately so the grid is interactive.
-        // The row count query below may take much longer on large tables; it uses
-        // its own `isCountLoading` state so the PaginationBar can show a spinner
-        // without blocking the entire grid.
+        // Data is ready — clear loading overlay immediately so the grid is
+        // interactive.
         setIsLoading(false);
 
         // ── Row count logic ──
-        // If the data query returned fewer rows than pageSize, we already know
-        // the exact total without any COUNT(*) query.  This avoids expensive
-        // full-table scans on the shared DB connection.
+        // No automatic COUNT(*) is ever issued here. We either derive the
+        // exact total for free (partial page) or mark the total as unknown
+        // (full page — the user can opt-in via the "Count" button).
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
           return;
 
@@ -424,7 +424,9 @@ export const DataTabView = React.memo(function DataTabView({
 
         const returnedRows = queryResult.rowCount;
         if (returnedRows < pageSize) {
-          // Last page (or only page) — exact count is known.
+          // Last page (or only page) — exact count is known without any
+          // extra query. Clear both "estimate" and "unknown" flags since we
+          // now have the real total.
           const exactTotal = (page - 1) * pageSize + returnedRows;
           const totalPages = Math.max(1, Math.ceil(exactTotal / pageSize));
           setPagination({
@@ -433,156 +435,36 @@ export const DataTabView = React.memo(function DataTabView({
             totalRows: exactTotal,
             totalPages,
             isEstimatedCount: false,
+            isUnknownTotal: false,
           });
           // No COUNT query needed — done.
         } else {
-          // Full page returned — we need a row count for pagination.
-          // Use the same estimated-first + threshold approach for BOTH filtered
-          // and unfiltered queries.  The old code ran exact COUNT(*) unconditionally
-          // for filtered queries, assuming filtered results are small.  But filters
-          // like "column IS NULL" on a multi-million-row table produce enormous
-          // result sets and the COUNT(*) blocks the shared connection for minutes.
-          setIsCountLoading(true);
-          const countQid = crypto.randomUUID();
-          countQueryIdRef.current = countQid;
-          try {
-            // Step 1: Fast estimated count from DB statistics (whole table).
-            let estimatedRows = 0;
-            let estimateSucceeded = false;
-            if (dbType === "mysql") {
-              const estRes = await (window as any).novadeck.sql.query(
-                sqlSessionId,
-                "SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                [table],
-                countQid,
-              );
-              if (
-                controller.signal.aborted ||
-                thisQueryId !== queryIdRef.current
-              )
-                return;
-              if (estRes.success) {
-                estimatedRows = Math.max(
-                  0,
-                  Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
-                );
-                estimateSucceeded = true;
-              }
-            } else {
-              const estRes = await (window as any).novadeck.sql.query(
-                sqlSessionId,
-                "SELECT reltuples::bigint as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2",
-                [table, schema || "public"],
-                countQid,
-              );
-              if (
-                controller.signal.aborted ||
-                thisQueryId !== queryIdRef.current
-              )
-                return;
-              if (estRes.success) {
-                estimatedRows = Math.max(
-                  0,
-                  Number((estRes.data as QueryResult).rows[0]?.count ?? 0),
-                );
-                estimateSucceeded = true;
-              }
-            }
-
-            // Step 2: Only auto-run exact COUNT(*) when the table is small enough
-            // that it'll be fast (≤ 500k estimated rows).  For multi-million-row
-            // tables, use the estimate and let the user request an exact count
-            // via the "Count" button in the pagination bar.
-            // This applies to BOTH filtered and unfiltered queries — a filter on
-            // a huge table can still produce millions of matching rows.
-            //
-            // If the estimate query failed, do NOT fall back to exact COUNT —
-            // a failed estimate likely means connection issues, and firing a
-            // potentially huge COUNT(*) would make things worse.
-            const EXACT_COUNT_THRESHOLD = 500_000;
-
-            if (estimateSucceeded && estimatedRows <= EXACT_COUNT_THRESHOLD) {
-              // Small table — exact COUNT(*) is cheap, run it now.
-              const { query: countQuery, params: countParams } =
-                buildCountQuery(table, schema, dbType, currentFilters);
-              const exactCountQid = crypto.randomUUID();
-              countQueryIdRef.current = exactCountQid;
-              const countResponse = await (window as any).novadeck.sql.query(
-                sqlSessionId,
-                countQuery,
-                countParams,
-                exactCountQid,
-              );
-
-              if (
-                controller.signal.aborted ||
-                thisQueryId !== queryIdRef.current
-              )
-                return;
-
-              if (countResponse.success) {
-                const exactRows = Number(
-                  ((countResponse.data as QueryResult).rows[0] as any)
-                    ?.count ?? 0,
-                );
-                const totalPages = Math.max(
-                  1,
-                  Math.ceil(exactRows / pageSize),
-                );
-                setPagination({
-                  page,
-                  pageSize,
-                  totalRows: exactRows,
-                  totalPages,
-                  isEstimatedCount: false,
-                });
-              } else {
-                // Fallback to estimate if exact count fails
-                const totalPages = Math.max(
-                  1,
-                  Math.ceil(estimatedRows / pageSize),
-                );
-                setPagination({
-                  page,
-                  pageSize,
-                  totalRows: estimatedRows,
-                  totalPages,
-                  isEstimatedCount: true,
-                });
-              }
-            } else {
-              // Large table — skip exact COUNT to avoid blocking the connection.
-              // For filtered queries, the whole-table estimate is meaningless
-              // (e.g., showing "~11M" when the filter matches 300 rows).
-              // Instead, show only what we know: at least one full page exists.
-              // The pagination bar will show "~N rows (estimated)" with a
-              // manual "Count" button for exact results.
-              const displayRows = hasFilters
-                ? returnedRows // Show only what we actually fetched (e.g., 200)
-                : estimatedRows; // Whole-table estimate is useful when unfiltered
-              const totalPages = Math.max(
-                1,
-                Math.ceil(displayRows / pageSize),
-              );
-              setPagination({
-                page,
-                pageSize,
-                totalRows: displayRows,
-                totalPages,
-                isEstimatedCount: true,
-              });
-            }
-          } catch {
-            // Count query failure is non-critical — keep existing pagination
-          } finally {
-            if (
-              !controller.signal.aborted &&
-              thisQueryId === queryIdRef.current
-            ) {
-              setIsCountLoading(false);
-              countQueryIdRef.current = null;
-            }
-          }
+          // Full page returned — more rows may exist. We deliberately do NOT
+          // run COUNT(*) automatically here. This matches the behaviour of
+          // TablePlus, DBeaver, and JetBrains DataGrip: the user asked for
+          // data, not for a total. Running a count query on every page load
+          // is pure overhead and a foot-gun on large or badly-indexed tables
+          // (COUNT(*) with an unindexed WHERE can take minutes and block the
+          // shared data connection).
+          //
+          // Instead we mark the total as unknown. totalRows is set to a
+          // lower-bound sentinel (page * pageSize + 1) so the Next button
+          // stays enabled and the user can keep paging. Once they reach a
+          // partial page, returnedRows < pageSize kicks in above and we get
+          // the exact total for free. If they want the total up-front, the
+          // "Count" button in the pagination bar runs the exact COUNT(*) on
+          // demand via handleExactCount. The isUnknownTotal flag tells the
+          // PaginationBar to render a range-only display ("1-200 rows")
+          // instead of pretending the sentinel is a real total.
+          const lowerBound = page * pageSize + 1;
+          setPagination({
+            page,
+            pageSize,
+            totalRows: lowerBound,
+            totalPages: Math.max(page + 1, Math.ceil(lowerBound / pageSize)),
+            isEstimatedCount: false,
+            isUnknownTotal: true,
+          });
         }
       } catch (err: any) {
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current)
@@ -756,11 +638,21 @@ export const DataTabView = React.memo(function DataTabView({
   const handlePageSizeChange = useCallback(
     (pageSize: number) => {
       discardPendingChanges();
+      // Reset pagination to a neutral "unknown" state. We must NOT recompute
+      // totalPages from prev.totalRows when the previous state was an unknown
+      // -total sentinel (prev.totalRows = prev.page * prev.pageSize + 1),
+      // because the sentinel encodes the old page size and produces a
+      // meaningless intermediate totalPages. executeQuery will resolve the
+      // real pagination state from the new query's result set immediately
+      // after this, so any values we put here are placeholders.
       setPagination((prev) => ({
         ...prev,
         pageSize,
         page: 1,
-        totalPages: Math.max(1, Math.ceil(prev.totalRows / pageSize)),
+        totalRows: 0,
+        totalPages: 1,
+        isEstimatedCount: false,
+        isUnknownTotal: false,
       }));
       executeQuery({
         page: 1,
@@ -1814,6 +1706,7 @@ export const DataTabView = React.memo(function DataTabView({
           totalRows,
           totalPages,
           isEstimatedCount: false,
+          isUnknownTotal: false,
         }));
       }
     } catch {

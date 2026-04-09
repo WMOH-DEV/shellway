@@ -82,12 +82,21 @@ export const PaginationBar = React.memo(function PaginationBar({
 
   const isStructure = viewMode === 'structure'
 
-  // Derived range
-  const rangeStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1
-  const rangeEnd = Math.min(page * pageSize, totalRows)
+  const isUnknownTotal = pagination.isUnknownTotal === true
+
+  // Derived range. When total is unknown the current page is by definition
+  // full (that's exactly why the total is unknown), so rangeEnd is simply
+  // page * pageSize. When we have a real or estimated total, clamp to it.
+  const rangeStart = isUnknownTotal || totalRows > 0 ? (page - 1) * pageSize + 1 : 0
+  const rangeEnd = isUnknownTotal
+    ? page * pageSize
+    : Math.min(page * pageSize, totalRows)
 
   const isFirstPage = page <= 1
-  const isLastPage = page >= totalPages
+  // Next is enabled while the total is unknown (we know at least one more page
+  // could exist because the current page was full). The Last-page jump is
+  // disabled entirely for unknown totals — it has no meaningful target.
+  const isLastPage = isUnknownTotal ? false : page >= totalPages
 
   const handlePageInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,11 +113,16 @@ export const PaginationBar = React.memo(function PaginationBar({
         setPageInput(String(page))
         return
       }
-      const clamped = Math.min(Math.max(1, num), totalPages || 1)
+      // When total is unknown we can't safely clamp to totalPages (which is a
+      // lower-bound sentinel). Accept any positive page and let the data
+      // query resolve — an empty page simply means the user went too far.
+      const clamped = isUnknownTotal
+        ? Math.max(1, num)
+        : Math.min(Math.max(1, num), totalPages || 1)
       setPageInput(String(clamped))
       onPageChange(clamped)
     },
-    [pageInput, page, totalPages, onPageChange]
+    [pageInput, page, totalPages, onPageChange, isUnknownTotal]
   )
 
   // Sync input when page prop changes externally
@@ -140,10 +154,13 @@ export const PaginationBar = React.memo(function PaginationBar({
     return () => document.removeEventListener('mousedown', handler)
   }, [showCountPopover])
 
-  // Close count popover when count completes (exact count loaded)
+  // Close count popover when an exact count lands (neither estimated nor
+  // unknown anymore).
   useEffect(() => {
-    if (!pagination.isEstimatedCount) setShowCountPopover(false)
-  }, [pagination.isEstimatedCount])
+    if (!pagination.isEstimatedCount && !pagination.isUnknownTotal) {
+      setShowCountPopover(false)
+    }
+  }, [pagination.isEstimatedCount, pagination.isUnknownTotal])
 
   // Close column picker when table changes (fields change)
   useEffect(() => {
@@ -273,7 +290,7 @@ export const PaginationBar = React.memo(function PaginationBar({
               'focus:border-nd-accent focus:outline-none focus:ring-1 focus:ring-nd-accent'
             )}
           />
-          <span>of {totalPages.toLocaleString()}</span>
+          {!isUnknownTotal && <span>of {totalPages.toLocaleString()}</span>}
 
           <Button
             variant="ghost"
@@ -289,9 +306,11 @@ export const PaginationBar = React.memo(function PaginationBar({
             variant="ghost"
             size="sm"
             className="h-5 w-5 p-0"
-            disabled={isLastPage}
+            // Last-page jump is disabled when total is unknown — there is no
+            // meaningful target to jump to without running a COUNT(*).
+            disabled={isLastPage || isUnknownTotal}
             onClick={() => onPageChange(totalPages)}
-            title="Last page"
+            title={isUnknownTotal ? 'Last page (run Count first)' : 'Last page'}
           >
             <ChevronsRight size={14} />
           </Button>
@@ -321,9 +340,25 @@ export const PaginationBar = React.memo(function PaginationBar({
           {/* Divider */}
           <div className="mx-1.5 h-3 w-px bg-nd-border" />
 
-          {/* Row range info — clickable when estimated to show count popover */}
+          {/* Row range info — clickable to reveal the opt-in Count popover
+              whenever the total is not exact (either a DB-statistics estimate
+              or an entirely unknown total from a filtered query). */}
           <div ref={countPopoverRef} className="relative">
-            {pagination.isEstimatedCount && onExactCount ? (
+            {isUnknownTotal && onExactCount ? (
+              // Unknown total — show only the current range, no misleading
+              // "of N" suffix. Matches TablePlus/DBeaver/DataGrip behaviour.
+              <button
+                onClick={() => setShowCountPopover((v) => !v)}
+                className={cn(
+                  'text-nd-text-muted hover:text-nd-text-secondary transition-colors',
+                  'border-b border-dashed border-nd-text-muted/40 hover:border-nd-text-secondary/60',
+                  isCountLoading && 'animate-pulse'
+                )}
+                title="Click to run COUNT(*) and see the exact total"
+              >
+                {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} rows
+              </button>
+            ) : pagination.isEstimatedCount && onExactCount ? (
               <button
                 onClick={() => setShowCountPopover((v) => !v)}
                 className={cn(
@@ -341,11 +376,15 @@ export const PaginationBar = React.memo(function PaginationBar({
               </span>
             )}
 
-            {/* Count confirmation popover */}
-            {showCountPopover && pagination.isEstimatedCount && (
+            {/* Count confirmation popover — shared between estimated and
+                unknown states; both represent "click Count for the exact
+                value" from the user's point of view. */}
+            {showCountPopover && (pagination.isEstimatedCount || isUnknownTotal) && (
               <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 w-64 rounded-md border border-nd-border bg-nd-bg-primary p-3 shadow-lg">
                 <p className="text-xs text-nd-text-secondary mb-2.5 leading-relaxed">
-                  This is an estimated value. Retrieving the exact count may affect server performance on large tables.
+                  {isUnknownTotal
+                    ? 'The total row count has not been computed. Running COUNT(*) may be slow on large or unindexed result sets.'
+                    : 'This is an estimated value. Retrieving the exact count may affect server performance on large tables.'}
                 </p>
                 <button
                   onClick={() => { onExactCount?.(); setShowCountPopover(false) }}

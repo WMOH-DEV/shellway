@@ -15,6 +15,25 @@ function placeholder(dbType: DatabaseType, index: number): string {
   return `$${index}`
 }
 
+/** One successfully-built SQL fragment paired with the column it filters. */
+interface BuiltClause {
+  column: string
+  sql: string
+}
+
+/**
+ * Parse a comma-separated list for `IN` / `NOT IN`, trimming whitespace and
+ * dropping empty entries. Returns an empty array when no valid values remain,
+ * in which case the caller must skip the filter entirely rather than emitting
+ * a `WHERE col IN ('')` that silently matches empty-string rows.
+ */
+function parseInValues(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
+}
+
 export function buildWhereClause(
   filters: TableFilter[],
   dbType: DatabaseType
@@ -25,22 +44,27 @@ export function buildWhereClause(
     return { where: '', params: [] }
   }
 
-  const clauses: string[] = []
+  // Keep (column, sql) pairs together so that filters which get skipped
+  // (e.g. a raw_sql with a forbidden keyword, or an `IN` with no valid
+  // values) don't desync a parallel clauses[]/enabledFilters[] index map
+  // downstream. The grouping step at the bottom reads from built[] directly.
+  const built: BuiltClause[] = []
   const params: unknown[] = []
   let paramIndex = 1
 
   for (const filter of enabledFilters) {
     const col = quoteColumn(filter.column, dbType)
+    const push = (sql: string) => built.push({ column: filter.column, sql })
 
     switch (filter.operator) {
       case 'equals': {
-        clauses.push(`${col} = ${placeholder(dbType, paramIndex)}`)
+        push(`${col} = ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
       }
       case 'not_equals': {
-        clauses.push(`${col} != ${placeholder(dbType, paramIndex)}`)
+        push(`${col} != ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
@@ -49,7 +73,7 @@ export function buildWhereClause(
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
         // Cast to text for PostgreSQL so LIKE works on non-string columns (e.g. int, date)
         const containsCol = dbType === 'postgres' ? `${col}::text` : col
-        clauses.push(`${containsCol} ${op} ${placeholder(dbType, paramIndex)}`)
+        push(`${containsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}%`)
         paramIndex++
         break
@@ -57,7 +81,7 @@ export function buildWhereClause(
       case 'not_contains': {
         const op = dbType === 'postgres' ? 'NOT ILIKE' : 'NOT LIKE'
         const notContainsCol = dbType === 'postgres' ? `${col}::text` : col
-        clauses.push(`${notContainsCol} ${op} ${placeholder(dbType, paramIndex)}`)
+        push(`${notContainsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}%`)
         paramIndex++
         break
@@ -65,7 +89,7 @@ export function buildWhereClause(
       case 'starts_with': {
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
         const startsCol = dbType === 'postgres' ? `${col}::text` : col
-        clauses.push(`${startsCol} ${op} ${placeholder(dbType, paramIndex)}`)
+        push(`${startsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`${filter.value}%`)
         paramIndex++
         break
@@ -73,47 +97,50 @@ export function buildWhereClause(
       case 'ends_with': {
         const op = dbType === 'postgres' ? 'ILIKE' : 'LIKE'
         const endsCol = dbType === 'postgres' ? `${col}::text` : col
-        clauses.push(`${endsCol} ${op} ${placeholder(dbType, paramIndex)}`)
+        push(`${endsCol} ${op} ${placeholder(dbType, paramIndex)}`)
         params.push(`%${filter.value}`)
         paramIndex++
         break
       }
       case 'greater_than': {
-        clauses.push(`${col} > ${placeholder(dbType, paramIndex)}`)
+        push(`${col} > ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
       }
       case 'less_than': {
-        clauses.push(`${col} < ${placeholder(dbType, paramIndex)}`)
+        push(`${col} < ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
       }
       case 'greater_or_equal': {
-        clauses.push(`${col} >= ${placeholder(dbType, paramIndex)}`)
+        push(`${col} >= ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
       }
       case 'less_or_equal': {
-        clauses.push(`${col} <= ${placeholder(dbType, paramIndex)}`)
+        push(`${col} <= ${placeholder(dbType, paramIndex)}`)
         params.push(filter.value)
         paramIndex++
         break
       }
       case 'is_null': {
-        clauses.push(`${col} IS NULL`)
+        push(`${col} IS NULL`)
         break
       }
       case 'is_not_null': {
-        clauses.push(`${col} IS NOT NULL`)
+        push(`${col} IS NOT NULL`)
         break
       }
       case 'in': {
-        const values = filter.value.split(',').map((v) => v.trim())
+        const values = parseInValues(filter.value)
+        // No valid values → skip the filter entirely rather than emitting
+        // `col IN ('')` which silently matches empty-string rows.
+        if (values.length === 0) break
         if (dbType === 'postgres') {
-          clauses.push(`${col} = ANY(${placeholder(dbType, paramIndex)}::text[])`)
+          push(`${col} = ANY(${placeholder(dbType, paramIndex)}::text[])`)
           params.push(values)
           paramIndex++
         } else {
@@ -122,15 +149,17 @@ export function buildWhereClause(
             paramIndex++
             return p
           })
-          clauses.push(`${col} IN (${placeholders.join(', ')})`)
+          push(`${col} IN (${placeholders.join(', ')})`)
           params.push(...values)
         }
         break
       }
       case 'not_in': {
-        const values = filter.value.split(',').map((v) => v.trim())
+        const values = parseInValues(filter.value)
+        // No valid values → skip entirely (same reasoning as `in`).
+        if (values.length === 0) break
         if (dbType === 'postgres') {
-          clauses.push(`${col} != ALL(${placeholder(dbType, paramIndex)}::text[])`)
+          push(`${col} != ALL(${placeholder(dbType, paramIndex)}::text[])`)
           params.push(values)
           paramIndex++
         } else {
@@ -139,7 +168,7 @@ export function buildWhereClause(
             paramIndex++
             return p
           })
-          clauses.push(`${col} NOT IN (${placeholders.join(', ')})`)
+          push(`${col} NOT IN (${placeholders.join(', ')})`)
           params.push(...values)
         }
         break
@@ -149,7 +178,7 @@ export function buildWhereClause(
         paramIndex++
         const p2 = placeholder(dbType, paramIndex)
         paramIndex++
-        clauses.push(`${col} BETWEEN ${p1} AND ${p2}`)
+        push(`${col} BETWEEN ${p1} AND ${p2}`)
         params.push(filter.value)
         params.push(filter.value2 ?? '')
         break
@@ -162,26 +191,30 @@ export function buildWhereClause(
           if (rawValue.includes(';')) break
           const forbidden = /\b(DROP|TRUNCATE|DELETE|UPDATE|INSERT|ALTER|GRANT|REVOKE|CREATE|EXEC)\b/i
           if (forbidden.test(rawValue)) break
-          clauses.push(`(${rawValue})`)
+          push(`(${rawValue})`)
         }
         break
       }
     }
   }
 
-  if (clauses.length === 0) {
+  if (built.length === 0) {
     return { where: '', params: [] }
   }
 
-  // Group clauses by column — same-column filters are OR'd, different columns are AND'd.
-  // This makes "id = 1, id = 2" produce "WHERE (id = 1 OR id = 2)" instead of "WHERE id = 1 AND id = 2".
-  const clausesByColumn: Map<string, string[]> = new Map()
-  for (let i = 0; i < enabledFilters.length; i++) {
-    const col = enabledFilters[i].column
-    if (!clausesByColumn.has(col)) {
-      clausesByColumn.set(col, [])
+  // Group clauses by column — same-column filters are OR'd, different columns
+  // are AND'd. This makes "id = 1, id = 2" produce "WHERE (id = 1 OR id = 2)"
+  // instead of "WHERE id = 1 AND id = 2". Iteration order of the built[]
+  // array is preserved in the Map, which preserves the original filter order
+  // across different columns for deterministic SQL output.
+  const clausesByColumn = new Map<string, string[]>()
+  for (const { column, sql } of built) {
+    const existing = clausesByColumn.get(column)
+    if (existing) {
+      existing.push(sql)
+    } else {
+      clausesByColumn.set(column, [sql])
     }
-    clausesByColumn.get(col)!.push(clauses[i])
   }
 
   const grouped = [...clausesByColumn.values()].map((group) =>
