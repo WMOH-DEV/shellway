@@ -97,6 +97,51 @@ const api = {
         wasLast?: boolean;
         error?: string;
       }>,
+
+    /**
+     * Merge a standalone window back into the main window. The main window
+     * reconstructs the tab and focuses it; the caller (standalone window)
+     * should close itself after this resolves.
+     */
+    mergeBack: (payload: {
+      mode: "sql" | "monitor" | "sftp" | "terminal";
+      connectionId: string;
+      sessionId: string;
+      name?: string;
+      sessionColor?: string;
+      sqlSlice?: unknown;
+      viaSSHConnectionId?: string;
+      shellId?: string;
+      bufferSnapshot?: string;
+    }) =>
+      ipcRenderer.invoke("window:mergeBack", payload) as Promise<{
+        ok: boolean;
+        reason?: string;
+      }>,
+
+    /**
+     * Subscribe to merge-back requests from standalone windows. The main
+     * window uses this to reconstruct a tab when a standalone window is
+     * being merged in. Returns an unsubscribe function.
+     */
+    onMergeRequest: (
+      callback: (payload: {
+        mode: "sql" | "monitor" | "sftp" | "terminal";
+        connectionId: string;
+        sessionId: string;
+        name?: string;
+        sessionColor?: string;
+        sqlSlice?: unknown;
+        viaSSHConnectionId?: string;
+        shellId?: string;
+        bufferSnapshot?: string;
+      }) => void,
+    ) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: unknown) =>
+        callback(payload as Parameters<typeof callback>[0]);
+      ipcRenderer.on("window:mergeRequest", handler);
+      return () => ipcRenderer.removeListener("window:mergeRequest", handler);
+    },
   },
 
   // ── System events ──

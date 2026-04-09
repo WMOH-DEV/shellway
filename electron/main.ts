@@ -489,6 +489,69 @@ ipcMain.handle("window:getHandoff", (event) => {
 });
 
 /**
+ * Merge-back payload sent by a standalone window when the user clicks
+ * "Merge into main window". The main window receives this payload on the
+ * `window:mergeRequest` channel and reconstructs the tab/view.
+ *
+ * The IPC is fire-and-ack from the standalone window's perspective: as soon
+ * as this handler returns `{ ok: true }`, the standalone window closes
+ * itself. WindowManager's refcounted subscription model ensures the
+ * underlying connection stays alive during the handoff: main is subscribed
+ * before the standalone window closes (we subscribe main here explicitly).
+ */
+interface MergeBackPayload {
+  mode: StandaloneMode;
+  connectionId: string;
+  sessionId: string;
+  name?: string;
+  sessionColor?: string;
+  /** SQL: full serialized sqlStore slice to re-hydrate in main */
+  sqlSlice?: unknown;
+  /** SQL: SSH tunnel connectionId (if the DB runs over SSH) */
+  viaSSHConnectionId?: string;
+  /** Terminal: shellId + buffer snapshot to re-adopt in main's TerminalTabs */
+  shellId?: string;
+  bufferSnapshot?: string;
+}
+
+ipcMain.handle("window:mergeBack", (_event, payload: MergeBackPayload) => {
+  const mainWin = windowManager.getMainWindow();
+  if (!mainWin || mainWin.isDestroyed()) {
+    return { ok: false, reason: "no main window" };
+  }
+
+  // Subscribe the main window to the connection BEFORE the standalone
+  // window closes, so the refcount never drops to zero during the handoff.
+  const mainWindowId = windowManager.getWindowIdForWebContents(
+    mainWin.webContents,
+  );
+  if (mainWindowId) {
+    windowManager.subscribe(mainWindowId, payload.connectionId);
+    if (payload.viaSSHConnectionId) {
+      windowManager.subscribe(mainWindowId, payload.viaSSHConnectionId);
+    }
+  }
+
+  // Terminal merge-back: start a pendingAttach buffer so the main window's
+  // newly-mounted TerminalView doesn't lose shell output during the gap
+  // between merge-back and the listener re-registering. Symmetric to the
+  // pop-out path.
+  if (payload.mode === "terminal" && payload.shellId) {
+    startPendingAttach(payload.shellId);
+  }
+
+  // Forward the payload to the main window's renderer, which will
+  // reconstruct the tab in its Zustand stores and focus it.
+  mainWin.webContents.send("window:mergeRequest", payload);
+
+  // Surface the main window to the user.
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.focus();
+
+  return { ok: true };
+});
+
+/**
  * Subscribe the calling window to a connection's event stream.
  * Idempotent — calling multiple times with the same connectionId is safe.
  *

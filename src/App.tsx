@@ -13,7 +13,7 @@ import { HostKeyVerifyDialog } from '@/components/keys/HostKeyVerifyDialog'
 import { KBDIDialog } from '@/components/sessions/KBDIDialog'
 import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { useSQLStore } from '@/stores/sqlStore'
+import { useSQLStore, hydrateConnectionSlice, type SQLConnectionSlice } from '@/stores/sqlStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
@@ -46,7 +46,7 @@ export default function App() {
   useTheme()
   useKeyboardShortcuts()
 
-  const { tabs, activeTabId, updateTab, setReconnectionState, addReconnectionEvent } =
+  const { tabs, activeTabId, addTab, setActiveTab, updateTab, setReconnectionState, addReconnectionEvent } =
     useConnectionStore()
   const { sessions } = useSessionStore()
   const { settingsOpen, toggleSettings, hostKeyManagerOpen, toggleHostKeyManager, clientKeyManagerOpen, toggleClientKeyManager, setTheme, selectedSessionId, setSelectedSessionId, requestConnectSession } = useUIStore()
@@ -73,6 +73,61 @@ export default function App() {
       console.warn('Failed to load keybindings on startup:', err)
     })
   }, [setTheme])
+
+  // ── Merge-back requests from standalone windows ──
+  //
+  // A standalone window (SQL / Monitor / SFTP / Terminal) can call
+  // `window:mergeBack` to consolidate itself back into this main window.
+  // The main process forwards the payload here; we reconstruct the tab
+  // and focus it, then the standalone window closes itself.
+  //
+  // Current scope (MVP): SQL-mode merge-back creates a fresh top-level
+  // database tab in main with the hydrated slice. Monitor/SFTP/Terminal
+  // merge-back is deferred (see memory: project_multi_window_phase_2_deferred).
+  useEffect(() => {
+    const unsub = window.novadeck.window.onMergeRequest((payload) => {
+      if (payload.mode === 'sql') {
+        // Hydrate the SQL store slice BEFORE creating the tab so SQLView
+        // reads the connected slice on first render (avoids a brief flash
+        // of the "disconnected" Connect card).
+        if (payload.sqlSlice) {
+          hydrateConnectionSlice(payload.connectionId, payload.sqlSlice as SQLConnectionSlice)
+        }
+
+        // If a tab with this connectionId already exists (rare: the user
+        // opened the standalone window from the sidebar while a matching
+        // tab was already in main), just focus the existing tab instead
+        // of duplicating it.
+        const existing = useConnectionStore.getState().tabs.find(t => t.id === payload.connectionId)
+        if (existing) {
+          setActiveTab(payload.connectionId)
+          toast.info('Merged', `"${payload.name || 'Database'}" is now in the main window`)
+          return
+        }
+
+        addTab({
+          id: payload.connectionId,
+          sessionId: payload.sessionId,
+          sessionName: payload.name || 'Database',
+          sessionColor: payload.sessionColor,
+          type: 'database',
+          status: 'connected',
+          activeSubTab: 'sql',
+        })
+        toast.success('Merged', `"${payload.name || 'Database'}" is now in the main window`)
+      } else {
+        // Monitor / SFTP / Terminal merge-back is not yet implemented.
+        // The standalone window will still close itself (per its own
+        // post-mergeBack logic), but the user loses access to the view.
+        // Give them a heads-up.
+        toast.info(
+          'Merge pending',
+          `${payload.mode.toUpperCase()} merge-back isn't supported yet — re-open from the SSH tab.`
+        )
+      }
+    })
+    return unsub
+  }, [addTab, setActiveTab])
 
   // ── Host Key Verification state ──
   const [hostKeyVerify, setHostKeyVerify] = useState<HostKeyVerifyRequest | null>(null)

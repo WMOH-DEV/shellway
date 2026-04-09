@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { v4 as uuid } from 'uuid'
+import { ArrowLeftToLine } from 'lucide-react'
 import { useTheme } from '@/hooks/useTheme'
 import { useConnectionSubscription } from '@/hooks/useConnectionSubscription'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -9,6 +10,7 @@ import { useUIStore } from '@/stores/uiStore'
 import {
   useSQLStore,
   hydrateConnectionSlice,
+  serializeConnectionSlice,
   type SQLConnectionSlice,
 } from '@/stores/sqlStore'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
@@ -210,9 +212,60 @@ export function StandaloneDatabaseApp({ config }: StandaloneDatabaseAppProps) {
     [tabs, connectionId]
   )
 
+  /**
+   * Merge this standalone window back into the main window.
+   *
+   * Captures the current sqlStore slice (tabs, query editor state, history,
+   * staged changes) from this window, sends it to main via the mergeBack
+   * IPC. Main reconstructs a top-level database tab with the hydrated slice
+   * and focuses it. Main subscribes to the connection BEFORE this window
+   * closes so the refcount never drops to zero during the handoff — same
+   * invariant as pop-out but in reverse.
+   *
+   * After the IPC resolves, this window closes itself. WindowManager's
+   * orphaned-connection cleanup does NOT fire because main is now holding
+   * the subscription.
+   */
+  const handleMergeBack = useCallback(async () => {
+    if (!connectionId) return
+    const slice = serializeConnectionSlice(connectionId)
+
+    try {
+      const result = await window.novadeck.window.mergeBack({
+        mode: 'sql',
+        connectionId,
+        sessionId: handoff?.sessionId ?? config.sessionId,
+        name: handoff?.name ?? config.name,
+        sessionColor: handoff?.sessionColor ?? config.sessionColor,
+        sqlSlice: slice ?? undefined,
+        viaSSHConnectionId: handoff?.viaSSHConnectionId,
+      })
+      if (!result.ok) {
+        toast.error('Merge failed', result.reason || 'Main window not available')
+        return
+      }
+      // Close this window. Main process has already subscribed itself and
+      // reconstructed the tab; the refcount holds at ≥1 throughout.
+      window.novadeck.window.close()
+    } catch (err) {
+      toast.error('Merge failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [connectionId, handoff, config])
+
+  const titleBarActions = connectionId ? (
+    <button
+      onClick={handleMergeBack}
+      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+      title="Merge this window back into the main Shellway window"
+    >
+      <ArrowLeftToLine size={12} />
+      <span>Merge to main</span>
+    </button>
+  ) : null
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
-      <TitleBar />
+      <TitleBar actions={titleBarActions} />
 
       <main className="flex-1 overflow-hidden">
         {tab ? (

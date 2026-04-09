@@ -1,13 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { Minus, Square, X, Copy } from 'lucide-react'
 import { cn } from '@/utils/cn'
+
+interface TitleBarProps {
+  /**
+   * Optional custom content rendered in the title bar's center slot (between
+   * the app logo and the Windows window controls). Used by standalone
+   * windows to host a "Merge into main window" button without touching the
+   * main window's title bar layout.
+   */
+  actions?: ReactNode
+}
 
 /**
  * Custom frameless title bar component.
  * - macOS: traffic lights on the left (handled by OS), app title centered
  * - Windows: custom minimize/maximize/close buttons on the right
  */
-export function TitleBar() {
+export function TitleBar({ actions }: TitleBarProps = {}) {
   const [platform, setPlatform] = useState<NodeJS.Platform>('win32')
   const [maximized, setMaximized] = useState(false)
 
@@ -53,8 +63,10 @@ export function TitleBar() {
         </span>
       </div>
 
-      {/* Center — current tab name (placeholder) */}
-      <div className="flex-1" />
+      {/* Center — custom actions slot (used by standalone windows) */}
+      <div className="flex-1 flex items-center justify-end pr-2">
+        {actions && <div className="no-drag flex items-center gap-1">{actions}</div>}
+      </div>
 
       {/* Windows controls */}
       {!isMac && (
