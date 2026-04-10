@@ -142,6 +142,21 @@ const api = {
       ipcRenderer.on("window:mergeRequest", handler);
       return () => ipcRenderer.removeListener("window:mergeRequest", handler);
     },
+
+    /**
+     * Subscribe to standalone window close events. Fired when a Monitor or SFTP
+     * standalone window is closed, so the main window can clear poppedOutSubTabs
+     * and restore the placeholder → real content transition.
+     */
+    onStandaloneClosed: (
+      callback: (payload: { mode: string; connectionId: string }) => void,
+    ) => {
+      const handler = (_e: Electron.IpcRendererEvent, payload: unknown) =>
+        callback(payload as Parameters<typeof callback>[0]);
+      ipcRenderer.on("window:standaloneClosed", handler);
+      return () =>
+        ipcRenderer.removeListener("window:standaloneClosed", handler);
+    },
   },
 
   // ── System events ──

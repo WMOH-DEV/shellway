@@ -252,6 +252,18 @@ export function StandaloneDatabaseApp({ config }: StandaloneDatabaseAppProps) {
     }
   }, [connectionId, handoff, config])
 
+  // ── Cmd+Shift+M → merge back ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'M') {
+        e.preventDefault()
+        handleMergeBack()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleMergeBack])
+
   const titleBarActions = connectionId ? (
     <button
       onClick={handleMergeBack}
@@ -265,6 +277,9 @@ export function StandaloneDatabaseApp({ config }: StandaloneDatabaseAppProps) {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
+      {(handoff?.sessionColor || config.sessionColor) && (
+        <div className="h-0.5 shrink-0" style={{ backgroundColor: handoff?.sessionColor || config.sessionColor }} />
+      )}
       <TitleBar actions={titleBarActions} />
 
       <main className="flex-1 overflow-hidden">

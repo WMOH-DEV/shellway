@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeftToLine } from 'lucide-react'
 import { useTheme } from '@/hooks/useTheme'
 import { useConnectionSubscription } from '@/hooks/useConnectionSubscription'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -11,7 +12,7 @@ import { TitleBar } from '@/components/layout/TitleBar'
 import { ToastContainer, toast } from '@/components/ui/Toast'
 import { resolveTerminalSettings, type ResolvedTerminalSettings } from '@/utils/resolveSettings'
 import { getStandaloneHandoffOnce, type StandaloneConfig } from '@/standalone'
-import type { ConnectionTab } from '@/types/session'
+import type { ConnectionTab, ConnectionStatus } from '@/types/session'
 import type { AppSettings } from '@/types/settings'
 
 interface StandaloneTerminalAppProps {
@@ -56,7 +57,7 @@ interface TerminalHandoffState {
 export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
   useTheme()
 
-  const { tabs, addTab } = useConnectionStore()
+  const { tabs, addTab, updateTab } = useConnectionStore()
   const { setTheme } = useUIStore()
 
   const [handoffResolved, setHandoffResolved] = useState(false)
@@ -67,6 +68,12 @@ export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
   const [shellId, setShellId] = useState<string | null>(null)
   const [bufferSnapshot, setBufferSnapshot] = useState<string | undefined>(undefined)
   const [resolvedSettings, setResolvedSettings] = useState<ResolvedTerminalSettings | undefined>()
+  // Set to true before calling mergeBack so the beforeunload handler knows NOT
+  // to kill the shell — the main window is taking ownership.
+  const mergingRef = useRef(false)
+  // True when the remote session ends (shell:close / exit event) so we can show
+  // a "session ended" overlay without relying on xterm's printed message alone.
+  const [shellExited, setShellExited] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -158,6 +165,17 @@ export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
     }
   }, [])
 
+  // ── Keep connection status badge in sync with SSH status changes ──
+  useEffect(() => {
+    if (!connectionId) return
+    const unsub = window.novadeck.ssh.onStatusChange?.((changedConnId: string, status: string) => {
+      if (changedConnId === connectionId) {
+        updateTab(connectionId, { status: status as ConnectionStatus })
+      }
+    })
+    return () => { unsub?.() }
+  }, [connectionId, updateTab])
+
   // ── Close the main-process shell when the window is actually closing ──
   //
   // `beforeunload` fires exactly once when the BrowserWindow is destroyed —
@@ -173,6 +191,9 @@ export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
   useEffect(() => {
     if (!shellId) return
     const handler = () => {
+      // During merge-back the main window takes ownership of the shell —
+      // do NOT close it here or the adopted shell will be killed on close.
+      if (mergingRef.current) return
       try {
         window.novadeck.terminal.close(shellId)
       } catch {
@@ -183,16 +204,79 @@ export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
     return () => window.removeEventListener('beforeunload', handler)
   }, [shellId])
 
+  // ── Detect shell exit so we can show the "Session ended" overlay ──
+  useEffect(() => {
+    if (!shellId) return
+    const unsub = window.novadeck.terminal.onExit((exitedShellId: string, _code: number) => {
+      if (exitedShellId === shellId) {
+        setShellExited(true)
+      }
+    })
+    return () => { unsub() }
+  }, [shellId])
+
+  // ── Merge this standalone terminal window back into the main window ──
+  const handleMergeBack = useCallback(async () => {
+    if (!connectionId || !shellId) return
+    try {
+      mergingRef.current = true
+      const result = await window.novadeck.window.mergeBack({
+        mode: 'terminal',
+        connectionId,
+        sessionId: handoff?.sessionId ?? config.sessionId,
+        name: handoff?.name ?? config.name,
+        sessionColor: handoff?.sessionColor ?? config.sessionColor,
+        shellId,
+        bufferSnapshot: bufferSnapshot,
+      })
+      if (!result.ok) {
+        mergingRef.current = false
+        toast.error('Merge failed', result.reason || 'Main window not available')
+        return
+      }
+      window.novadeck.window.close()
+    } catch (err) {
+      mergingRef.current = false
+      toast.error('Merge failed', err instanceof Error ? err.message : String(err))
+    }
+  }, [connectionId, shellId, handoff, config, bufferSnapshot])
+
   const tab = useMemo(
     () => (connectionId ? tabs.find(t => t.id === connectionId) : undefined),
     [tabs, connectionId]
   )
 
+  // ── Cmd+Shift+M → merge back ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'M') {
+        e.preventDefault()
+        handleMergeBack()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleMergeBack])
+
+  const titleBarActions = connectionId ? (
+    <button
+      onClick={handleMergeBack}
+      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
+      title="Merge this terminal back into the main Shellway window"
+    >
+      <ArrowLeftToLine size={12} />
+      <span>Merge to main</span>
+    </button>
+  ) : null
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
-      <TitleBar />
+      {(handoff?.sessionColor || config.sessionColor) && (
+        <div className="h-0.5 shrink-0" style={{ backgroundColor: handoff?.sessionColor || config.sessionColor }} />
+      )}
+      <TitleBar actions={titleBarActions} />
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden relative">
         {!handoffResolved ? (
           <div className="flex items-center justify-center h-full text-nd-text-muted text-sm">
             Fetching window state…
@@ -214,6 +298,21 @@ export function StandaloneTerminalApp({ config }: StandaloneTerminalAppProps) {
         ) : (
           <div className="flex items-center justify-center h-full text-nd-text-muted text-sm">
             Loading…
+          </div>
+        )}
+
+        {/* Session-ended overlay — shown when the remote shell exits */}
+        {shellExited && (
+          <div className="absolute inset-0 flex items-center justify-center bg-nd-bg-primary/80 z-10">
+            <div className="text-center space-y-3">
+              <p className="text-nd-text-secondary text-sm">Session ended</p>
+              <button
+                onClick={() => window.novadeck.window.close()}
+                className="px-3 py-1.5 rounded text-xs bg-nd-surface hover:bg-nd-accent/20 text-nd-text-secondary hover:text-nd-accent transition-colors"
+              >
+                Close window
+              </button>
+            </div>
           </div>
         )}
       </main>

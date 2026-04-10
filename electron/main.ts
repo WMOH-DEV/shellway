@@ -185,7 +185,15 @@ function createStandaloneWindow(opts: OpenStandaloneOptions): {
     titleBarStyle: "hidden",
     backgroundColor: "#0f1117",
     icon: join(__dirname, "../../resources/icon.png"),
-    title: opts.name || "Shellway",
+    title: (() => {
+      const modeLabel: Record<string, string> = {
+        sql: 'SQL',
+        terminal: 'Terminal',
+        monitor: 'Monitor',
+        sftp: 'SFTP',
+      }
+      return `${modeLabel[opts.mode] || opts.mode} — ${opts.name || 'Untitled'} — Shellway`
+    })(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: true,
@@ -434,6 +442,25 @@ ipcMain.handle(
     }
     if (opts.viaSSHConnectionId) {
       windowManager.subscribe(windowId, opts.viaSSHConnectionId);
+    }
+
+    // Notify the main window renderer when a standalone window closes so it can
+    // clear poppedOutSubTabs and restore the placeholder → real content transition.
+    if (opts.connectionId && (opts.mode === "monitor" || opts.mode === "sftp")) {
+      const capturedMode = opts.mode;
+      const capturedConnectionId = opts.connectionId;
+      const standaloneWin = windowManager.getWindow(windowId);
+      if (standaloneWin) {
+        standaloneWin.on("closed", () => {
+          const mainWin = windowManager.getMainWindow();
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send("window:standaloneClosed", {
+              mode: capturedMode,
+              connectionId: capturedConnectionId,
+            });
+          }
+        });
+      }
     }
 
     // Terminal pop-out: start buffering shell output immediately so nothing

@@ -151,9 +151,14 @@ export default function App() {
         )
         currentRunning.add(payload.mode)
 
+        // Clear the popped-out flag so the main window renders the real content
+        const poppedOut = new Set(sshTab.poppedOutSubTabs ?? [])
+        poppedOut.delete(payload.mode)
+
         updateTab(sshTab.id, {
           activeSubTab: payload.mode,
           runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][],
+          poppedOutSubTabs: poppedOut.size > 0 ? [...poppedOut] as ConnectionTab['activeSubTab'][] : undefined,
         })
         setActiveTab(sshTab.id)
 
@@ -162,17 +167,64 @@ export default function App() {
         return
       }
 
-      // Terminal merge-back — handler stubs exist in main.ts (including
-      // startPendingAttach(shellId) to buffer shell output during the
-      // handoff gap), but the renderer-side adoption into TerminalTabs is
-      // not wired yet. See memory: project_multi_window_phase_2_deferred.
-      toast.info(
-        'Merge pending',
-        `${payload.mode.toUpperCase()} merge-back isn't wired yet — close the window and re-open from the SSH tab.`
-      )
+      if (payload.mode === 'terminal') {
+        const sshTab = useConnectionStore.getState().tabs.find(
+          t => t.id === payload.connectionId && (t.type === 'ssh' || t.type === undefined)
+        )
+        if (!sshTab) {
+          toast.error('Merge failed', 'The source SSH connection is no longer open in the main window.')
+          return
+        }
+
+        const DEFAULT_SUBS: ConnectionTab['activeSubTab'][] = [
+          'terminal', 'sftp', 'sql', 'monitor', 'services', 'port-forwarding', 'info', 'log'
+        ]
+        const currentRunning = new Set<ConnectionTab['activeSubTab']>(
+          sshTab.runningSubTabs ?? DEFAULT_SUBS
+        )
+        currentRunning.add('terminal')
+
+        updateTab(sshTab.id, {
+          activeSubTab: 'terminal',
+          runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][],
+        })
+        setActiveTab(sshTab.id)
+
+        // Dispatch a custom event for TerminalTabs to pick up
+        window.dispatchEvent(new CustomEvent('shellway:adopt-shell', {
+          detail: {
+            connectionId: payload.connectionId,
+            shellId: payload.shellId,
+            bufferSnapshot: payload.bufferSnapshot,
+          }
+        }))
+
+        toast.success('Merged', 'Terminal is back in the main window')
+        return
+      }
     })
     return unsub
   }, [addTab, setActiveTab, updateTab])
+
+  // ── Standalone window close events ──
+  //
+  // When a Monitor or SFTP standalone window is closed (by the user pressing the
+  // window close button, or crashing), clear the corresponding poppedOutSubTabs
+  // entry so the main window transitions from placeholder back to real content.
+  useEffect(() => {
+    const unsub = window.novadeck.window.onStandaloneClosed?.((payload: { mode: string; connectionId: string }) => {
+      if (!payload.connectionId) return
+      const t = useConnectionStore.getState().tabs.find(tab => tab.id === payload.connectionId)
+      if (!t || !t.poppedOutSubTabs) return
+      const poppedOut = new Set(t.poppedOutSubTabs)
+      if (payload.mode === 'monitor') poppedOut.delete('monitor')
+      if (payload.mode === 'sftp') poppedOut.delete('sftp')
+      updateTab(t.id, {
+        poppedOutSubTabs: poppedOut.size > 0 ? [...poppedOut] as ConnectionTab['activeSubTab'][] : undefined
+      })
+    })
+    return () => { unsub?.() }
+  }, [updateTab])
 
   // ── Host Key Verification state ──
   const [hostKeyVerify, setHostKeyVerify] = useState<HostKeyVerifyRequest | null>(null)

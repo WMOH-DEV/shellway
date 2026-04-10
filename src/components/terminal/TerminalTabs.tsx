@@ -33,6 +33,12 @@ export interface TerminalTabsHandle {
    * was the only open tab.
    */
   popOutActive(): Promise<void>
+  /**
+   * Adopt an existing shell from a standalone window that is merging back
+   * into this main window. Creates a new tab for the shell and replays the
+   * buffer snapshot so the session history is preserved.
+   */
+  adoptShell(shellId: string, bufferSnapshot?: string): void
 }
 
 interface TerminalTab {
@@ -82,6 +88,10 @@ export const TerminalTabs = forwardRef<TerminalTabsHandle, TerminalTabsProps>(fu
   // buffer twice — currently safe due to sessionId dedupe in main.ts, but
   // trivially exploitable if that dedupe is ever relaxed.
   const poppingRef = useRef(false)
+  // Tracks shells adopted via merge-back: shellId → bufferSnapshot (or undefined).
+  // TerminalView reads this to know it should attach to an existing shell rather
+  // than opening a new one, and to replay the snapshot on mount.
+  const adoptedShellsRef = useRef(new Map<string, string | undefined>())
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
@@ -203,7 +213,37 @@ export const TerminalTabs = forwardRef<TerminalTabsHandle, TerminalTabsProps>(fu
     }
   }, [activeTabId, connectionId])
 
-  useImperativeHandle(ref, () => ({ popOutActive }), [popOutActive])
+  // ── Adopt a shell merging back from a standalone window ──
+  //
+  // Creates a new TerminalTab using the incoming shellId as the tab id (matching
+  // the existing convention where tab.id === shellId). Stores the bufferSnapshot
+  // in adoptedShellsRef so the TerminalView render below can pass
+  // attachToExistingShell + initialBufferSnapshot for that specific tab, without
+  // triggering a terminal:open IPC call (the shell is already live).
+  const adoptShell = useCallback((shellId: string, bufferSnapshot?: string) => {
+    adoptedShellsRef.current.set(shellId, bufferSnapshot)
+    const newTab: TerminalTab = {
+      id: shellId,
+      name: `Shell ${tabs.length + 1}`,
+    }
+    setTabs((prev) => [...prev, newTab])
+    setActiveTabId(shellId)
+  }, [tabs.length])
+
+  // Listen for the custom DOM event dispatched by App.tsx when a terminal
+  // standalone window triggers a merge-back for this connectionId.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.connectionId === connectionId) {
+        adoptShell(detail.shellId, detail.bufferSnapshot)
+      }
+    }
+    window.addEventListener('shellway:adopt-shell', handler)
+    return () => window.removeEventListener('shellway:adopt-shell', handler)
+  }, [connectionId, adoptShell])
+
+  useImperativeHandle(ref, () => ({ popOutActive, adoptShell }), [popOutActive, adoptShell])
 
   const handleSearch = useCallback(
     (query: string, direction: 'next' | 'prev') => {
@@ -378,32 +418,47 @@ export const TerminalTabs = forwardRef<TerminalTabsHandle, TerminalTabsProps>(fu
       {/* Terminal views — relative+overflow-hidden ensures ResizeObserver fires on height changes */}
       {/* Defer rendering until settings are resolved to avoid creating terminals with hardcoded defaults */}
       <div className="flex-1 relative overflow-hidden">
-        {resolvedSettings && tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={cn(
-              'absolute inset-0',
-              tab.id !== activeTabId && 'hidden'
-            )}
-          >
-            <TerminalView
-              shellId={tab.id}
-              connectionId={connectionId}
-              connectionStatus={connectionStatus}
-              isActive={tab.id === activeTabId}
-              terminalSettings={resolvedSettings}
-              onSearchAddon={(addon) => registerSearchAddon(tab.id, addon)}
-              onSearchRequest={() => {
-                setIsSearchOpen(true)
-              }}
-              onClearHandler={(clearFn) => registerClearHandler(tab.id, clearFn)}
-              onFocusHandler={(focusFn) => registerFocusHandler(tab.id, focusFn)}
-              onPasteHandler={(pasteFn) => registerPasteHandler(tab.id, pasteFn)}
-              onSerializeHandler={(fn) => registerSerializeHandler(tab.id, fn)}
-              onSnippetPaletteRequest={() => setSnippetPaletteOpen(true)}
-            />
-          </div>
-        ))}
+        {resolvedSettings && tabs.map((tab) => {
+          // Check if this tab was adopted from a merging standalone window.
+          // adoptedShellsRef uses `undefined` as the "no snapshot" sentinel and
+          // `has()` to distinguish "adopted with no snapshot" from "not adopted".
+          const isAdopted = adoptedShellsRef.current.has(tab.id)
+          const adoptedSnapshot = adoptedShellsRef.current.get(tab.id)
+          return (
+            <div
+              key={tab.id}
+              className={cn(
+                'absolute inset-0',
+                tab.id !== activeTabId && 'hidden'
+              )}
+            >
+              <TerminalView
+                shellId={tab.id}
+                connectionId={connectionId}
+                connectionStatus={connectionStatus}
+                isActive={tab.id === activeTabId}
+                terminalSettings={resolvedSettings}
+                attachToExistingShell={isAdopted || undefined}
+                initialBufferSnapshot={isAdopted ? adoptedSnapshot : undefined}
+                onSearchAddon={(addon) => registerSearchAddon(tab.id, addon)}
+                onSearchRequest={() => {
+                  setIsSearchOpen(true)
+                }}
+                onClearHandler={(clearFn) => {
+                  registerClearHandler(tab.id, clearFn)
+                  // Once TerminalView registers its clear handler it has mounted —
+                  // safe to remove the adopted-shell marker so future re-renders
+                  // don't force attachToExistingShell on a re-created view.
+                  if (isAdopted) adoptedShellsRef.current.delete(tab.id)
+                }}
+                onFocusHandler={(focusFn) => registerFocusHandler(tab.id, focusFn)}
+                onPasteHandler={(pasteFn) => registerPasteHandler(tab.id, pasteFn)}
+                onSerializeHandler={(fn) => registerSerializeHandler(tab.id, fn)}
+                onSnippetPaletteRequest={() => setSnippetPaletteOpen(true)}
+              />
+            </div>
+          )
+        })}
 
         {/* Snippet quick palette */}
         <SnippetPalette

@@ -291,10 +291,9 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   }, [tab.id])
 
   /**
-   * Non-destructive monitor pop-out: opens the monitor in a standalone window while
-   * keeping the Monitor sub-tab alive in the main window. Both the existing tab and
-   * the new window subscribe to the same polling stream via WindowManager's
-   * viewer-refcount, so polling continues as long as either viewer is present.
+   * Single-owner monitor pop-out: opens the monitor in a standalone window and marks
+   * the Monitor sub-tab as popped out in the main window (which shows a placeholder).
+   * If a standalone window already exists, focuses it instead (no state change).
    */
   const handlePopOutMonitor = useCallback(async () => {
     try {
@@ -306,10 +305,15 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
         connectionId: tab.id
       })
       if (result.focusedExisting) return
+      // Mark as popped out — main window shows placeholder instead of content
+      const current = useConnectionStore.getState().tabs.find(t => t.id === tab.id)
+      const poppedOut = new Set(current?.poppedOutSubTabs ?? [])
+      poppedOut.add('monitor')
+      updateTab(tab.id, { poppedOutSubTabs: [...poppedOut] as ConnectionTab['activeSubTab'][] })
     } catch (err) {
       toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
     }
-  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
+  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor, updateTab])
 
   /**
    * Non-destructive SQL sub-tab pop-out: opens the SQL client in a standalone
@@ -379,12 +383,9 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   }, [])
 
   /**
-   * Non-destructive SFTP sub-tab pop-out: opens SFTP in a standalone window while
-   * keeping the SFTP sub-tab alive in the main SSH connection. The SSH session
-   * stays alive because both windows hold subscriptions to the same connectionId
-   * via WindowManager's refcount. The SFTP main-process session is shared —
-   * SFTPView.tsx deliberately skips sftp.close() on unmount so both windows see
-   * the same transfer queue and directory state.
+   * Single-owner SFTP sub-tab pop-out: opens SFTP in a standalone window and marks
+   * the SFTP sub-tab as popped out in the main window (which shows a placeholder).
+   * If a standalone window already exists, focuses it instead (no state change).
    */
   const handlePopOutSFTP = useCallback(async () => {
     try {
@@ -396,10 +397,52 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
         connectionId: tab.id,
       })
       if (result.focusedExisting) return
+      // Mark as popped out — main window shows placeholder instead of content
+      const current = useConnectionStore.getState().tabs.find(t => t.id === tab.id)
+      const poppedOut = new Set(current?.poppedOutSubTabs ?? [])
+      poppedOut.add('sftp')
+      updateTab(tab.id, { poppedOutSubTabs: [...poppedOut] as ConnectionTab['activeSubTab'][] })
     } catch (err) {
       toast.error('Pop out failed', err instanceof Error ? err.message : String(err))
     }
-  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor])
+  }, [tab.id, tab.sessionId, tab.sessionName, tab.sessionColor, updateTab])
+
+  /** Clear the monitor popped-out state and navigate to the Monitor sub-tab. */
+  const handleMergeBackMonitor = useCallback(() => {
+    const current = useConnectionStore.getState().tabs.find(t => t.id === tab.id)
+    const poppedOut = new Set(current?.poppedOutSubTabs ?? [])
+    poppedOut.delete('monitor')
+    updateTab(tab.id, {
+      activeSubTab: 'monitor',
+      poppedOutSubTabs: poppedOut.size > 0 ? [...poppedOut] as ConnectionTab['activeSubTab'][] : undefined
+    })
+  }, [tab.id, updateTab])
+
+  /** Clear the SFTP popped-out state and navigate to the SFTP sub-tab. */
+  const handleMergeBackSFTP = useCallback(() => {
+    const current = useConnectionStore.getState().tabs.find(t => t.id === tab.id)
+    const poppedOut = new Set(current?.poppedOutSubTabs ?? [])
+    poppedOut.delete('sftp')
+    updateTab(tab.id, {
+      activeSubTab: 'sftp',
+      poppedOutSubTabs: poppedOut.size > 0 ? [...poppedOut] as ConnectionTab['activeSubTab'][] : undefined
+    })
+  }, [tab.id, updateTab])
+
+  // ── Cmd+Shift+O → pop out active sub-tab ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'O') {
+        e.preventDefault()
+        if (tab.activeSubTab === 'monitor') handlePopOutMonitor()
+        else if (tab.activeSubTab === 'sftp') handlePopOutSFTP()
+        else if (tab.activeSubTab === 'sql') handlePopOutSQL()
+        else if (tab.activeSubTab === 'terminal') handlePopOutTerminal()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [tab.activeSubTab, handlePopOutMonitor, handlePopOutSFTP, handlePopOutSQL, handlePopOutTerminal])
 
   // ── Disconnected / Error → show offline view ──
   if (isOffline) {
@@ -454,10 +497,10 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           <button
             onClick={handlePopOutMonitor}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
-            title="Open Monitor in new window"
+            title={tab.poppedOutSubTabs?.includes('monitor') ? 'Focus the standalone Monitor window' : 'Open Monitor in new window'}
           >
             <ExternalLink size={12} />
-            <span>Pop out</span>
+            <span>{tab.poppedOutSubTabs?.includes('monitor') ? 'Focus window' : 'Pop out'}</span>
           </button>
         )}
         {tab.activeSubTab === 'sql' && runningSubTabs.has('sql') && (
@@ -474,10 +517,10 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           <button
             onClick={handlePopOutSFTP}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-1 text-nd-text-muted hover:text-nd-accent hover:bg-nd-surface"
-            title="Open SFTP in new window"
+            title={tab.poppedOutSubTabs?.includes('sftp') ? 'Focus the standalone SFTP window' : 'Open SFTP in new window'}
           >
             <ExternalLink size={12} />
-            <span>Pop out</span>
+            <span>{tab.poppedOutSubTabs?.includes('sftp') ? 'Focus window' : 'Pop out'}</span>
           </button>
         )}
         {/*
@@ -538,7 +581,18 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
               'absolute inset-0 flex flex-col',
               tab.activeSubTab !== 'sftp' && 'hidden'
             )}>
-              <SFTPView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+              {tab.poppedOutSubTabs?.includes('sftp') ? (
+                <PoppedOutPlaceholder
+                  subTab="SFTP"
+                  onFocusWindow={() => window.novadeck.window.openStandalone({
+                    mode: 'sftp', sessionId: tab.sessionId, name: tab.sessionName,
+                    sessionColor: tab.sessionColor, connectionId: tab.id
+                  })}
+                  onMergeBack={handleMergeBackSFTP}
+                />
+              ) : (
+                <SFTPView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+              )}
             </div>
           )}
 
@@ -562,9 +616,20 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           {/* Monitor — conditional render when running (unmounts to stop SSH polling) */}
           {tab.activeSubTab === 'monitor' && runningSubTabs.has('monitor') && (
             <div className="absolute inset-0 flex flex-col">
-              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
-                <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
-              </Suspense>
+              {tab.poppedOutSubTabs?.includes('monitor') ? (
+                <PoppedOutPlaceholder
+                  subTab="Monitor"
+                  onFocusWindow={() => window.novadeck.window.openStandalone({
+                    mode: 'monitor', sessionId: tab.sessionId, name: tab.sessionName,
+                    sessionColor: tab.sessionColor, connectionId: tab.id
+                  })}
+                  onMergeBack={handleMergeBackMonitor}
+                />
+              ) : (
+                <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
+                  <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+                </Suspense>
+              )}
             </div>
           )}
 
@@ -611,6 +676,57 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           onToggle={toggleTransferQueue}
           connectionId={tab.id}
         />
+      </div>
+    </div>
+  )
+}
+
+// ── Popped-Out Placeholder ──
+
+/**
+ * Shown in the main window when a sub-tab (Monitor or SFTP) has been popped out
+ * into a standalone window. Provides two actions:
+ *   - "Focus window": calls openStandalone which finds and focuses the existing window
+ *   - "Merge back": clears the poppedOutSubTabs flag so the main window renders the
+ *     content again (the standalone window stays open and can be closed by the user)
+ */
+function PoppedOutPlaceholder({
+  subTab,
+  onFocusWindow,
+  onMergeBack,
+}: {
+  subTab: string
+  onFocusWindow: () => void
+  onMergeBack: () => void
+}) {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-4 max-w-sm">
+        <div className="w-12 h-12 rounded-full bg-nd-surface flex items-center justify-center mx-auto">
+          <ExternalLink size={20} className="text-nd-text-muted" />
+        </div>
+        <div>
+          <p className="text-nd-text-secondary text-sm font-medium">
+            {subTab} is open in a separate window
+          </p>
+          <p className="text-nd-text-muted text-xs mt-1">
+            The content has been moved to its own window for a focused workspace.
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={onFocusWindow}
+            className="px-3 py-1.5 rounded text-xs bg-nd-surface hover:bg-nd-accent/20 text-nd-text-secondary hover:text-nd-accent transition-colors"
+          >
+            Focus window
+          </button>
+          <button
+            onClick={onMergeBack}
+            className="px-3 py-1.5 rounded text-xs bg-nd-accent/15 hover:bg-nd-accent/25 text-nd-accent transition-colors"
+          >
+            Merge back
+          </button>
+        </div>
       </div>
     </div>
   )

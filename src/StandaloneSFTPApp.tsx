@@ -11,7 +11,7 @@ import { SFTPView } from '@/components/sftp/SFTPView'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { ToastContainer, toast } from '@/components/ui/Toast'
 import { getStandaloneHandoffOnce, type StandaloneConfig } from '@/standalone'
-import type { ConnectionTab } from '@/types/session'
+import type { ConnectionTab, ConnectionStatus } from '@/types/session'
 
 interface StandaloneSFTPAppProps {
   config: StandaloneConfig
@@ -51,7 +51,7 @@ interface SFTPHandoffState {
 export function StandaloneSFTPApp({ config }: StandaloneSFTPAppProps) {
   useTheme()
 
-  const { tabs, addTab } = useConnectionStore()
+  const { tabs, addTab, updateTab } = useConnectionStore()
   const { setTheme } = useUIStore()
 
   const [handoffResolved, setHandoffResolved] = useState(false)
@@ -137,6 +137,17 @@ export function StandaloneSFTPApp({ config }: StandaloneSFTPAppProps) {
     }
   }, [])
 
+  // ── Keep connection status badge in sync with SSH status changes ──
+  useEffect(() => {
+    if (!connectionId) return
+    const unsub = window.novadeck.ssh.onStatusChange?.((changedConnId: string, status: string) => {
+      if (changedConnId === connectionId) {
+        updateTab(connectionId, { status: status as ConnectionStatus })
+      }
+    })
+    return () => { unsub?.() }
+  }, [connectionId, updateTab])
+
   const tab = useMemo(
     () => (connectionId ? tabs.find(t => t.id === connectionId) : undefined),
     [tabs, connectionId]
@@ -172,6 +183,18 @@ export function StandaloneSFTPApp({ config }: StandaloneSFTPAppProps) {
     }
   }, [connectionId, handoff, config])
 
+  // ── Cmd+Shift+M → merge back ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'M') {
+        e.preventDefault()
+        handleMergeBack()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleMergeBack])
+
   const titleBarActions = connectionId ? (
     <button
       onClick={handleMergeBack}
@@ -185,6 +208,9 @@ export function StandaloneSFTPApp({ config }: StandaloneSFTPAppProps) {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-nd-bg-primary">
+      {(handoff?.sessionColor || config.sessionColor) && (
+        <div className="h-0.5 shrink-0" style={{ backgroundColor: handoff?.sessionColor || config.sessionColor }} />
+      )}
       <TitleBar actions={titleBarActions} />
 
       <main className="flex-1 overflow-hidden">
