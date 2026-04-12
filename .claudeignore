@@ -1,0 +1,137 @@
+# .claudeignore — files Claude Code should NOT scan/read by default
+# Deploy per project: cp ~/.claude/.claudeignore.template <project-root>/.claudeignore
+# Note: Claude Code already honors .gitignore. This file adds *extra* excludes
+# for files that are checked in but not worth reading (lock files, vendored deps,
+# generated code, IDE configs, large binaries).
+
+# ─── Lock files (checked in, but CC rarely needs to read them) ─────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+composer.lock
+Gemfile.lock
+Podfile.lock
+Cargo.lock
+poetry.lock
+pipfile.lock
+
+# ─── Vendored dependencies (checked in sometimes) ────────────────
+vendor/
+node_modules/
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+
+# ─── Build / generated output ───────────────────────────────────
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.vite/
+.parcel-cache/
+.cache/
+.astro/
+.angular/
+.webpack/
+coverage/
+.nyc_output/
+*.min.js
+*.min.css
+*.map
+*.tsbuildinfo
+
+# ─── Language caches ─────────────────────────────────────────────
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.gradle/
+target/
+.dart_tool/
+.pub-cache/
+
+# ─── Binary secrets (can't be meaningfully read anyway) ─────────
+# NOTE: .env and .env.* are deliberately NOT listed — agents sometimes
+# need to inspect env config. CC's settings.json permissions.deny is
+# the enforcement layer for .env access; adjust it there.
+*.pem
+*.key
+*.p12
+*.keystore
+secrets/
+
+# ─── Binary databases (can't be read as text) ──────────────────
+# NOTE: *.log is deliberately NOT excluded — agents often need to read
+# application logs (laravel.log, npm-debug.log, error logs) for debugging.
+*.sqlite
+*.sqlite3
+*.db
+
+# ─── Large binaries (Claude can't meaningfully read these) ───────
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.iso
+*.dmg
+*.pkg
+*.exe
+*.dll
+*.so
+*.dylib
+*.jar
+*.war
+*.class
+*.pyd
+*.o
+*.a
+
+# ─── Media (opt-in — comment these if you work with assets) ──────
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mp3
+*.wav
+*.flac
+*.psd
+*.ai
+*.sketch
+*.fig
+
+# ─── IDE / editor ───────────────────────────────────────────────
+.vscode/
+.idea/
+.fleet/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─── Framework-specific junk (Laravel, Flutter, etc.) ───────────
+# NOTE: storage/logs/ is deliberately NOT excluded — laravel.log and
+# other app logs under storage/logs/ are often needed for debugging.
+storage/framework/cache/
+bootstrap/cache/
+.phpunit.result.cache
+.phpstan/
+.phpunit.cache/
+.flutter-plugins
+.flutter-plugins-dependencies
+android/.gradle/
+ios/Pods/
+ios/.symlinks/
+
+# ─── Your custom additions ──────────────────────────────────────
+# .beads/
+# docs/generated/
+# types/generated/
