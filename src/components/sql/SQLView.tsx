@@ -353,6 +353,36 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
   }, [connectionStatus, connectionId, addTab, setActiveTab, setSelectedTable])
 
+  const handleRetry = useCallback(() => {
+    setConnectionStatus('disconnected')
+    setConnectionError(null)
+    setShowConnectDialog(true)
+  }, [setConnectionStatus, setConnectionError])
+
+  /** Reconnect a lost connection using the existing session config */
+  const handleReconnect = useCallback(async () => {
+    if (!sqlSessionId) {
+      // No session to reconnect — fall back to full retry
+      handleRetry()
+      return
+    }
+    setConnectionStatus('connecting')
+    setConnectionError(null)
+    try {
+      const result = await window.novadeck.sql.reconnect(sqlSessionId)
+      if (result.success) {
+        setConnectionStatus('connected')
+        setConnectionError(null)
+      } else {
+        setConnectionStatus('error')
+        setConnectionError(result.error || 'Reconnection failed')
+      }
+    } catch (err: any) {
+      setConnectionStatus('error')
+      setConnectionError(err.message || 'Reconnection failed')
+    }
+  }, [sqlSessionId, handleRetry, setConnectionStatus, setConnectionError])
+
   // ── Auto-reconnect after connection is lost (after server-side retries exhausted) ──
   useEffect(() => {
     if (connectionStatus === 'connected') {
@@ -537,36 +567,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     if (!sqlSessionId) return
     window.novadeck.sql.cancelAllQueries(sqlSessionId).catch(() => {})
   }, [sqlSessionId])
-
-  const handleRetry = useCallback(() => {
-    setConnectionStatus('disconnected')
-    setConnectionError(null)
-    setShowConnectDialog(true)
-  }, [setConnectionStatus, setConnectionError])
-
-  /** Reconnect a lost connection using the existing session config */
-  const handleReconnect = useCallback(async () => {
-    if (!sqlSessionId) {
-      // No session to reconnect — fall back to full retry
-      handleRetry()
-      return
-    }
-    setConnectionStatus('connecting')
-    setConnectionError(null)
-    try {
-      const result = await window.novadeck.sql.reconnect(sqlSessionId)
-      if (result.success) {
-        setConnectionStatus('connected')
-        setConnectionError(null)
-      } else {
-        setConnectionStatus('error')
-        setConnectionError(result.error || 'Reconnection failed')
-      }
-    } catch (err: any) {
-      setConnectionStatus('error')
-      setConnectionError(err.message || 'Reconnection failed')
-    }
-  }, [sqlSessionId, handleRetry, setConnectionStatus, setConnectionError])
 
   // ── Quick connect from saved config ──
   const handleQuickConnect = useCallback(async () => {

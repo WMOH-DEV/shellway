@@ -228,9 +228,9 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col h-full bg-nd-bg-secondary border-r border-nd-border shrink-0 transition-all duration-200 overflow-hidden",
+        "flex flex-col h-full bg-nd-bg-secondary border-r border-nd-border shrink-0 transition-[width] duration-200 ease-in-out overflow-hidden",
       )}
-      style={{ width }}
+      style={{ width, willChange: 'width' }}
     >
       {/* ── Header ── */}
       <div
