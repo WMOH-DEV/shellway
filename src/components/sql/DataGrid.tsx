@@ -909,14 +909,12 @@ export const DataGrid = React.memo(
         document.removeEventListener("selectionchange", onSelectionChange);
     }, [hasGrid]);
 
-    // Build a set of non-editable column names (auto-increment PKs, computed columns)
+    // Build a set of non-editable column names (only truly computed/generated columns)
     const nonEditableColumns = useMemo(() => {
       if (!columnMeta) return new Set<string>();
       return new Set(
         columnMeta
-          .filter(
-            (c) => c.isAutoIncrement || (c.isPrimaryKey && c.isAutoIncrement),
-          )
+          .filter((c) => c.isGenerated === true)
           .map((c) => c.name),
       );
     }, [columnMeta]);

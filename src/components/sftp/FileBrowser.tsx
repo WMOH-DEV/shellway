@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { FileRow } from './FileRow'
@@ -18,6 +18,9 @@ interface FileBrowserProps {
   onRenameChange: (value: string) => void
   onRenameSubmit: () => void
   onRenameCancel: () => void
+  /** Called whenever the displayed (sorted+filtered) order changes — lets the parent use correct indices for range selection */
+  onSortedEntriesChange?: (entries: FileEntry[]) => void
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>
   className?: string
 }
 
@@ -45,6 +48,8 @@ export function FileBrowser({
   onRenameChange,
   onRenameSubmit,
   onRenameCancel,
+  onSortedEntriesChange,
+  onKeyDown,
   className
 }: FileBrowserProps) {
   const [sortField, setSortField] = useState<SortField>('name')
@@ -95,8 +100,14 @@ export function FileBrowser({
     })
   }, [entries, sortField, sortDirection, showHidden])
 
+  // Notify parent whenever the displayed order changes so it can use correct
+  // indices for shift+click range selection.
+  useEffect(() => {
+    onSortedEntriesChange?.(sortedEntries)
+  }, [sortedEntries, onSortedEntriesChange])
+
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex flex-col h-full', className)} tabIndex={-1} onKeyDown={onKeyDown}>
       {/* Column headers */}
       <div className="grid grid-cols-[1fr_80px_140px_80px] items-center h-7 px-2 bg-nd-bg-tertiary border-b border-nd-border shrink-0 select-none">
         {COLUMN_HEADERS.map((col) => (

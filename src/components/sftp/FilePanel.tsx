@@ -78,6 +78,10 @@ export function FilePanel({
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
+  // Mirror of the sorted+filtered order rendered by FileBrowser — needed for
+  // correct shift+click range selection (FileBrowser sorts independently).
+  const sortedEntriesRef = useRef<FileEntry[]>([])
+
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -312,15 +316,15 @@ export function FilePanel({
           return next
         })
       } else if (e.shiftKey) {
-        // Range select
-        const sortedEntries = entries
+        // Range select — use the sorted display order, not the raw server order.
+        const displayEntries = sortedEntriesRef.current
         const lastSelected = Array.from(selectedPaths).pop()
         if (lastSelected) {
-          const lastIdx = sortedEntries.findIndex((e) => e.path === lastSelected)
-          const curIdx = sortedEntries.findIndex((e) => e.path === path)
+          const lastIdx = displayEntries.findIndex((e) => e.path === lastSelected)
+          const curIdx = displayEntries.findIndex((e) => e.path === path)
           if (lastIdx !== -1 && curIdx !== -1) {
             const [start, end] = [Math.min(lastIdx, curIdx), Math.max(lastIdx, curIdx)]
-            const range = sortedEntries.slice(start, end + 1).map((e) => e.path)
+            const range = displayEntries.slice(start, end + 1).map((e) => e.path)
             setSelectedPaths(new Set([...selectedPaths, ...range]))
             return
           }
@@ -331,6 +335,35 @@ export function FilePanel({
       }
     },
     [entries, selectedPaths]
+  )
+
+  /** Delete all currently selected files/directories */
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedPaths.size === 0 || type !== 'remote') return
+    const paths = Array.from(selectedPaths)
+    const allEntries = sortedEntriesRef.current
+    for (const p of paths) {
+      const entry = allEntries.find((e) => e.path === p)
+      if (!entry) continue
+      if (entry.isDirectory) {
+        await window.novadeck.sftp.rmdir(connectionId, entry.path, true)
+      } else {
+        await window.novadeck.sftp.unlink(connectionId, entry.path)
+      }
+    }
+    setSelectedPaths(new Set())
+    loadDirectory(currentPath)
+  }, [selectedPaths, type, connectionId, currentPath, loadDirectory])
+
+  /** Keyboard handler for the file list — Delete/Backspace deletes selection */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPaths.size > 0) {
+        e.preventDefault()
+        handleDeleteSelected()
+      }
+    },
+    [selectedPaths, handleDeleteSelected]
   )
 
   /** Create new folder */
@@ -736,6 +769,8 @@ export function FilePanel({
           onRenameChange={setRenameValue}
           onRenameSubmit={handleRenameSubmit}
           onRenameCancel={() => setRenamingPath(null)}
+          onSortedEntriesChange={(sorted) => { sortedEntriesRef.current = sorted }}
+          onKeyDown={handleKeyDown}
           className="flex-1"
         />
       )}

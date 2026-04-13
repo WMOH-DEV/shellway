@@ -331,13 +331,11 @@ export const DataTabView = React.memo(function DataTabView({
         abortRef.current.abort();
       }
 
-      // Cancel any in-flight manual COUNT(*) query server-side. The only
-      // caller that can have a count in flight is the opt-in "Count" button
-      // (handleExactCount) — there is no auto-count path anymore. We kill it
-      // because it may be holding the single MySQL connection busy, blocking
-      // the new data query from starting. The count result is non-critical —
-      // pagination will just keep its previous values if the kill lands
-      // before the COUNT completes.
+      // Cancel any in-flight COUNT(*) query server-side (auto-count or the
+      // opt-in "Count" button). We kill it because it may be holding the
+      // shared MySQL connection busy, blocking the new data query from
+      // starting. The count result is non-critical — pagination will just
+      // keep its previous values if the kill lands before the COUNT completes.
       if (countQueryIdRef.current) {
         (window as any).novadeck.sql
           .cancelQuery(countQueryIdRef.current)
@@ -439,32 +437,102 @@ export const DataTabView = React.memo(function DataTabView({
           });
           // No COUNT query needed — done.
         } else {
-          // Full page returned — more rows may exist. We deliberately do NOT
-          // run COUNT(*) automatically here. This matches the behaviour of
-          // TablePlus, DBeaver, and JetBrains DataGrip: the user asked for
-          // data, not for a total. Running a count query on every page load
-          // is pure overhead and a foot-gun on large or badly-indexed tables
-          // (COUNT(*) with an unindexed WHERE can take minutes and block the
-          // shared data connection).
-          //
-          // Instead we mark the total as unknown. totalRows is set to a
-          // lower-bound sentinel (page * pageSize + 1) so the Next button
-          // stays enabled and the user can keep paging. Once they reach a
-          // partial page, returnedRows < pageSize kicks in above and we get
-          // the exact total for free. If they want the total up-front, the
-          // "Count" button in the pagination bar runs the exact COUNT(*) on
-          // demand via handleExactCount. The isUnknownTotal flag tells the
-          // PaginationBar to render a range-only display ("1-200 rows")
-          // instead of pretending the sentinel is a real total.
-          const lowerBound = page * pageSize + 1;
-          setPagination({
-            page,
-            pageSize,
-            totalRows: lowerBound,
-            totalPages: Math.max(page + 1, Math.ceil(lowerBound / pageSize)),
-            isEstimatedCount: false,
-            isUnknownTotal: true,
-          });
+          // Full page returned — try a fast statistics-based estimate to decide
+          // whether to auto-run exact COUNT(*).  Small tables get an exact count
+          // for free; large tables fall back to isUnknownTotal so Next stays
+          // enabled without blocking the connection.
+          setIsCountLoading(true);
+          const countQid = crypto.randomUUID();
+          countQueryIdRef.current = countQid;
+          try {
+            // Step 1: Fast estimated count from DB statistics (whole-table, no scan).
+            let estimatedRows = 0;
+            let estimateSucceeded = false;
+            if (dbType === "mysql") {
+              const estRes = await (window as any).novadeck.sql.query(
+                sqlSessionId,
+                "SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+                [table],
+                countQid,
+              );
+              if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return;
+              if (estRes.success) {
+                estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0));
+                estimateSucceeded = true;
+              }
+            } else {
+              const estRes = await (window as any).novadeck.sql.query(
+                sqlSessionId,
+                "SELECT reltuples::bigint as count FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2",
+                [table, schema || "public"],
+                countQid,
+              );
+              if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return;
+              if (estRes.success) {
+                estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0));
+                estimateSucceeded = true;
+              }
+            }
+
+            // Step 2: For tables estimated ≤ 500k rows, run exact COUNT(*) with
+            // applied filters — cheap enough to be automatic.  For larger tables
+            // we use different strategies to avoid blocking the shared connection:
+            //   • Unfiltered large table → show the whole-table estimate (useful).
+            //   • Filtered large table   → isUnknownTotal (the estimate is for
+            //     the whole table and would mislead; Next stays enabled).
+            const EXACT_COUNT_THRESHOLD = 500_000;
+
+            if (!estimateSucceeded) {
+              // Estimate query failed — fall back to unknown total (safe).
+              const lowerBound = page * pageSize + 1;
+              setPagination({
+                page, pageSize,
+                totalRows: lowerBound,
+                totalPages: Math.max(page + 1, Math.ceil(lowerBound / pageSize)),
+                isEstimatedCount: false,
+                isUnknownTotal: true,
+              });
+            } else if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
+              // Small table — run exact COUNT(*) automatically (includes filters).
+              const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, currentFilters);
+              const exactCountQid = crypto.randomUUID();
+              countQueryIdRef.current = exactCountQid;
+              const countResponse = await (window as any).novadeck.sql.query(
+                sqlSessionId, countQuery, countParams, exactCountQid,
+              );
+              if (controller.signal.aborted || thisQueryId !== queryIdRef.current) return;
+              if (countResponse.success) {
+                const exactRows = Number(((countResponse.data as QueryResult).rows[0] as any)?.count ?? 0);
+                const totalPages = Math.max(1, Math.ceil(exactRows / pageSize));
+                setPagination({ page, pageSize, totalRows: exactRows, totalPages, isEstimatedCount: false, isUnknownTotal: false });
+              } else {
+                // Exact count failed — fall back to statistics estimate.
+                const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize));
+                setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true, isUnknownTotal: false });
+              }
+            } else if (!hasFilters) {
+              // Large unfiltered table — whole-table estimate is meaningful.
+              const totalPages = Math.max(1, Math.ceil(estimatedRows / pageSize));
+              setPagination({ page, pageSize, totalRows: estimatedRows, totalPages, isEstimatedCount: true, isUnknownTotal: false });
+            } else {
+              // Large filtered table — whole-table estimate would mislead.
+              // Use unknown total so Next stays enabled without a wrong "of N" label.
+              const lowerBound = page * pageSize + 1;
+              setPagination({
+                page, pageSize,
+                totalRows: lowerBound,
+                totalPages: Math.max(page + 1, Math.ceil(lowerBound / pageSize)),
+                isEstimatedCount: false,
+                isUnknownTotal: true,
+              });
+            }
+          } catch {
+            // Count failure is non-critical — keep existing pagination state.
+          } finally {
+            if (!controller.signal.aborted && thisQueryId === queryIdRef.current) {
+              setIsCountLoading(false);
+            }
+          }
         }
       } catch (err: any) {
         if (controller.signal.aborted || thisQueryId !== queryIdRef.current)

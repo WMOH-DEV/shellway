@@ -106,6 +106,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [savedConfigLoading, setSavedConfigLoading] = useState(true)
   const [quickConnecting, setQuickConnecting] = useState(false)
   const quickConnectRef = useRef(false) // Synchronous guard against double-click
+  const prevConnectionStatusRef = useRef('disconnected')
+  const wasConnectedRef = useRef(false)
+  const autoReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoReconnectCountRef = useRef(0)
 
   // ── Data transfer dialog states ──
   const [showExportDialog, setShowExportDialog] = useState(false)
@@ -309,6 +313,77 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       unsubCompleted()
     }
   }, [sqlSessionId, connectionId, addRunningQuery, removeRunningQuery])
+
+  // ── Persist open tabs to localStorage when they change (while connected) ──
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || tabs.length === 0) return
+    try {
+      localStorage.setItem(
+        `sql-tabs:${connectionId}`,
+        JSON.stringify({ tabs, activeTabId, selectedTable })
+      )
+    } catch {
+      // Ignore storage errors (e.g. private browsing with full storage)
+    }
+  }, [connectionStatus, tabs, activeTabId, selectedTable, connectionId])
+
+  // ── Restore saved tabs on connect if no tabs are already open ──
+  useEffect(() => {
+    const prev = prevConnectionStatusRef.current
+    prevConnectionStatusRef.current = connectionStatus
+    if (connectionStatus !== 'connected' || prev === 'connected') return
+    // Imperative read — avoids tabs being a reactive dependency here
+    if (getSQLConnectionState(connectionId).tabs.length > 0) return
+    try {
+      const raw = localStorage.getItem(`sql-tabs:${connectionId}`)
+      if (!raw) return
+      const saved = JSON.parse(raw) as { tabs: SQLTab[]; activeTabId: string | null; selectedTable: string | null }
+      if (!Array.isArray(saved?.tabs) || saved.tabs.length === 0) return
+      saved.tabs.forEach(t => addTab(t))
+      if (saved.activeTabId) setActiveTab(saved.activeTabId)
+      // Only restore selectedTable if the active tab IS the data tab for that table.
+      // Otherwise the selectedTable effect would override activeTabId with the data tab,
+      // discarding the user's actual last-active tab (e.g. a query editor).
+      const activeRestoredTab = saved.tabs.find((t: SQLTab) => t.id === saved.activeTabId)
+      if (saved.selectedTable && activeRestoredTab?.type === 'data' && activeRestoredTab?.table === saved.selectedTable) {
+        setSelectedTable(saved.selectedTable)
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }, [connectionStatus, connectionId, addTab, setActiveTab, setSelectedTable])
+
+  // ── Auto-reconnect after connection is lost (after server-side retries exhausted) ──
+  useEffect(() => {
+    if (connectionStatus === 'connected') {
+      wasConnectedRef.current = true
+      autoReconnectCountRef.current = 0
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current)
+        autoReconnectTimerRef.current = null
+      }
+      return
+    }
+    // Reset on manual disconnect so a subsequent initial connect failure won't auto-reconnect
+    if (connectionStatus === 'disconnected') {
+      wasConnectedRef.current = false
+      autoReconnectCountRef.current = 0
+      return
+    }
+    // Only auto-reconnect if we had an established connection (not an initial connect failure)
+    if (connectionStatus === 'error' && wasConnectedRef.current && sqlSessionId && autoReconnectCountRef.current < 3) {
+      autoReconnectCountRef.current++
+      autoReconnectTimerRef.current = setTimeout(() => {
+        handleReconnect()
+      }, 3000)
+    }
+    return () => {
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current)
+        autoReconnectTimerRef.current = null
+      }
+    }
+  }, [connectionStatus, sqlSessionId, handleReconnect])
 
   // ── Derived: active tab ──
   const activeTab = useMemo(

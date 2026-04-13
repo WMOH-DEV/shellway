@@ -736,6 +736,7 @@ interface ColumnRowProps {
   onUpdate: (uid: string, field: keyof StructureColumn, value: unknown) => void
   onDelete: (uid: string) => void
   onUndoDelete: (uid: string) => void
+  onContextMenu: (uid: string, e: React.MouseEvent) => void
   index: number
 }
 
@@ -747,6 +748,7 @@ const ColumnRow = memo(function ColumnRow({
   onUpdate,
   onDelete,
   onUndoDelete,
+  onContextMenu,
   index,
 }: ColumnRowProps) {
   const isModified = col._modified || col._status === 'added'
@@ -764,6 +766,7 @@ const ColumnRow = memo(function ColumnRow({
         !isDeleted && !isNew && isModified && 'bg-nd-warning/5',
         !isDeleted && 'hover:bg-nd-surface-hover'
       )}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(col._uid, e) }}
     >
       {/* Position indicator */}
       <td className={cn(tdClass, 'w-8 text-center text-nd-text-muted')}>
@@ -912,6 +915,8 @@ export const StructureTabView = memo(function StructureTabView({
   const [executing, setExecuting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [columnContextMenu, setColumnContextMenu] = useState<{ uid: string; x: number; y: number } | null>(null)
+  const [copiedColumn, setCopiedColumn] = useState<StructureColumn | null>(null)
 
   // Refs for scrolling from bottom bar actions
   const contentRef = useRef<HTMLDivElement>(null)
@@ -1056,6 +1061,84 @@ export const StructureTabView = memo(function StructureTabView({
       contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight, behavior: 'smooth' })
     }, 50)
   }, [dbType])
+
+  const handleInsertColumnAfter = useCallback((uid: string) => {
+    setColumns((prev) => {
+      const idx = prev.findIndex((c) => c._uid === uid)
+      if (idx === -1) return [...prev, createEmptyColumn(prev.length + 1, dbType)]
+      const newCol = createEmptyColumn(idx + 2, dbType)
+      return [...prev.slice(0, idx + 1), newCol, ...prev.slice(idx + 1)]
+    })
+  }, [dbType])
+
+  const handleDuplicateColumn = useCallback((uid: string) => {
+    setColumns((prev) => {
+      const idx = prev.findIndex((c) => c._uid === uid)
+      if (idx === -1) return prev
+      const src = prev[idx]
+      const dup: StructureColumn = {
+        ...src,
+        _uid: generateUid(),
+        _status: 'added',
+        _modified: false,
+        _deleted: false,
+        _originalName: null,
+        _original: null,
+        name: src.name ? `${src.name}_copy` : '',
+      }
+      return [...prev.slice(0, idx + 1), dup, ...prev.slice(idx + 1)]
+    })
+  }, [])
+
+  const handlePasteColumn = useCallback((afterUid: string) => {
+    if (!copiedColumn) return
+    setColumns((prev) => {
+      const idx = prev.findIndex((c) => c._uid === afterUid)
+      const pasted: StructureColumn = {
+        ...copiedColumn,
+        _uid: generateUid(),
+        _status: 'added',
+        _modified: false,
+        _deleted: false,
+        _originalName: null,
+        _original: null,
+        name: copiedColumn.name ? `${copiedColumn.name}_copy` : '',
+      }
+      if (idx === -1) return [...prev, pasted]
+      return [...prev.slice(0, idx + 1), pasted, ...prev.slice(idx + 1)]
+    })
+  }, [copiedColumn])
+
+  const handleColumnContextMenu = useCallback((uid: string, e: React.MouseEvent) => {
+    setColumnContextMenu({ uid, x: e.clientX, y: e.clientY })
+  }, [])
+
+  const handleColumnContextMenuAction = useCallback((action: string) => {
+    if (!columnContextMenu) return
+    const { uid } = columnContextMenu
+    setColumnContextMenu(null)
+    switch (action) {
+      case 'new':
+        handleInsertColumnAfter(uid)
+        break
+      case 'copy':
+        setColumns((prev) => {
+          const col = prev.find((c) => c._uid === uid)
+          if (col) setCopiedColumn(col)
+          return prev
+        })
+        break
+      case 'duplicate':
+        handleDuplicateColumn(uid)
+        break
+      case 'paste':
+        handlePasteColumn(uid)
+        break
+      case 'delete':
+        handleDeleteColumn(uid)
+        break
+    }
+  }, [columnContextMenu, handleInsertColumnAfter, handleDuplicateColumn, handlePasteColumn, handleDeleteColumn])
 
   // ── Listen for add-column / add-index events from the bottom bar ──
   useEffect(() => {
@@ -1310,6 +1393,7 @@ export const StructureTabView = memo(function StructureTabView({
                         onUpdate={handleUpdateColumn}
                         onDelete={handleDeleteColumn}
                         onUndoDelete={handleUndoDelete}
+                        onContextMenu={handleColumnContextMenu}
                         index={idx}
                       />
                     ))}
@@ -1442,6 +1526,50 @@ export const StructureTabView = memo(function StructureTabView({
         statements={pendingStatements}
         executing={executing}
       />
+
+      {/* ── Column row context menu ── */}
+      {columnContextMenu && (
+        <>
+          {/* Invisible backdrop to close on outside click */}
+          <div
+            className="fixed inset-0 z-40"
+            onMouseDown={() => setColumnContextMenu(null)}
+          />
+          <div
+            className="fixed z-50 min-w-[160px] rounded-md border border-nd-border bg-nd-bg-secondary shadow-lg py-0.5 text-xs"
+            style={{ left: columnContextMenu.x, top: columnContextMenu.y }}
+          >
+            {[
+              { id: 'new', label: 'New Column', icon: <Plus size={13} /> },
+              { id: 'copy', label: 'Copy', icon: <Copy size={13} /> },
+              { id: 'duplicate', label: 'Duplicate', icon: <Copy size={13} /> },
+              { id: 'paste', label: 'Paste', icon: <Copy size={13} />, disabled: !copiedColumn },
+              null, // separator
+              { id: 'delete', label: 'Delete', icon: <Trash2 size={13} />, danger: true },
+            ].map((item, i) =>
+              item === null ? (
+                <div key={`sep-${i}`} className="my-0.5 border-t border-nd-border/50" />
+              ) : (
+                <button
+                  key={item.id}
+                  disabled={item.disabled}
+                  onMouseDown={(e) => { e.stopPropagation(); if (!item.disabled) handleColumnContextMenuAction(item.id) }}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
+                    item.danger
+                      ? 'text-nd-error hover:bg-nd-error/10'
+                      : 'text-nd-text-primary hover:bg-nd-surface-hover',
+                    item.disabled && 'opacity-40 cursor-not-allowed'
+                  )}
+                >
+                  <span className="text-nd-text-muted">{item.icon}</span>
+                  {item.label}
+                </button>
+              )
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 })
