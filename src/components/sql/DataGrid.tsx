@@ -599,6 +599,37 @@ export const DataGrid = React.memo(
       columnWidthsRef.current = readSavedWidths(columnWidthsKey);
     }
 
+    // ── Column order persistence ──
+    // Mirrors the width-persistence pattern: load a saved ordering from
+    // localStorage (a plain `string[]` of column ids) and use it to sort the
+    // ColDef[] in columnDefs so the user's last drag-rearrangement survives
+    // refreshes, tab switches, and filter changes.
+    const columnOrderKey = columnWidthsKey
+      ? columnWidthsKey.replace(/^sql-colw:/, "sql-colo:")
+      : undefined;
+    const columnOrderRef = useRef<string[] | null>(null);
+    const columnOrderKeyRef = useRef(columnOrderKey);
+
+    const readSavedOrder = (key: string): string[] | null => {
+      try {
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    if (columnOrderKeyRef.current !== columnOrderKey) {
+      columnOrderKeyRef.current = columnOrderKey;
+      columnOrderRef.current = columnOrderKey
+        ? readSavedOrder(columnOrderKey)
+        : null;
+    }
+    if (columnOrderRef.current === null && columnOrderKey) {
+      columnOrderRef.current = readSavedOrder(columnOrderKey);
+    }
+
     // Cache auto-estimated widths per field set — recalculated when fields change,
     // NOT when rows change (to avoid re-estimating on pagination or cell edits).
     const estimatedWidthsRef = useRef<Record<string, number> | null>(null);
@@ -1043,6 +1074,19 @@ export const DataGrid = React.memo(
         return col;
       });
 
+      // Apply saved column order: sort data columns so persisted ordering wins.
+      // Unknown / newly-added columns keep their natural position at the end,
+      // matching ag-grid's default behaviour for new columns.
+      const savedOrder = columnOrderRef.current;
+      if (savedOrder && savedOrder.length > 0) {
+        const positionOf = new Map(savedOrder.map((name, i) => [name, i]));
+        cols.sort((a, b) => {
+          const ai = positionOf.get(a.field ?? "") ?? Number.MAX_SAFE_INTEGER;
+          const bi = positionOf.get(b.field ?? "") ?? Number.MAX_SAFE_INTEGER;
+          return ai - bi;
+        });
+      }
+
       // Filler column — fills remaining horizontal space after the last data column.
       // Clicking this area selects the row (like TablePlus). Not editable, sortable, or resizable.
       cols.push({
@@ -1457,6 +1501,14 @@ export const DataGrid = React.memo(
           localStorage.removeItem(columnWidthsKeyRef.current);
         } catch {}
       }
+      // Also clear saved column order so natural (field-defined) order wins
+      // after the resetColumnState call above.
+      columnOrderRef.current = null;
+      if (columnOrderKeyRef.current) {
+        try {
+          localStorage.removeItem(columnOrderKeyRef.current);
+        } catch {}
+      }
       // Apply estimated widths immediately if available
       if (estimatedWidthsRef.current) {
         const widthEntries = Object.entries(estimatedWidthsRef.current).map(
@@ -1513,6 +1565,43 @@ export const DataGrid = React.memo(
       // Grid API is now available — no additional action needed since
       // column widths are baked directly into columnDefs from the ref.
     }, []);
+
+    // ── Column order persistence — save on drag-reorder ──
+    const moveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const onColumnMoved = useCallback(
+      (event: { finished?: boolean; source?: string }) => {
+        // Only persist once the drag settles and only for user-driven moves —
+        // ignore the initial model-set call ag-grid fires on column def
+        // changes, which would clobber the saved order with the source order.
+        if (!event.finished || !columnOrderKeyRef.current) return;
+        if (event.source !== "uiColumnMoved") return;
+
+        const api = gridRef.current?.api;
+        if (!api) return;
+
+        const order = api
+          .getColumnState()
+          .map((c) => c.colId)
+          .filter((id): id is string => !!id && id !== "__filler");
+
+        columnOrderRef.current = order;
+
+        if (moveTimerRef.current) clearTimeout(moveTimerRef.current);
+        moveTimerRef.current = setTimeout(() => {
+          if (!columnOrderKeyRef.current || !columnOrderRef.current) return;
+          try {
+            localStorage.setItem(
+              columnOrderKeyRef.current,
+              JSON.stringify(columnOrderRef.current),
+            );
+          } catch {
+            // Storage full or unavailable — ignore
+          }
+        }, 300);
+      },
+      [],
+    );
 
     // ── Track hidden columns for external column picker ──
     const onHiddenColumnsChangeRef = useRef(onHiddenColumnsChange);
@@ -1688,6 +1777,7 @@ export const DataGrid = React.memo(
           onCellDoubleClicked={onCellDoubleClicked}
           onGridReady={onGridReady}
           onColumnResized={onColumnResized}
+          onColumnMoved={onColumnMoved}
           onColumnVisible={onColumnVisible}
           noRowsOverlayComponent={() => (
             <span className="text-nd-text-muted text-sm">No rows found</span>
