@@ -288,6 +288,13 @@ export const DataTabView = React.memo(function DataTabView({
   // Cache key to avoid re-fetching when switching back to a loaded tab
   const cacheKeyRef = useRef<string>("");
   const resultRef = useRef<QueryResult | null>(null);
+  // Cached whole-table row estimate from DB statistics. Stable across filter
+  // and pagination changes, so we skip the INFORMATION_SCHEMA / pg_class
+  // round-trip when still fresh. Refreshed after ESTIMATE_TTL_MS so inserts
+  // and deletes by other clients don't leave us with a stale count forever.
+  const estimateCacheRef = useRef<{ rows: number; fetchedAt: number } | null>(
+    null,
+  );
   // Tracks whether the currently displayed data was fetched with active filters
   const [isDataFiltered, setIsDataFiltered] = useState(false);
 
@@ -448,9 +455,18 @@ export const DataTabView = React.memo(function DataTabView({
           countQueryIdRef.current = countQid;
           try {
             // Step 1: Fast estimated count from DB statistics (whole-table, no scan).
+            // Reuse the cached estimate if it's fresh — it's derived from
+            // INFORMATION_SCHEMA / pg_class, which is updated by the server's
+            // statistics collector, not by our queries. Skipping the round-trip
+            // cuts ~1 query off every page change / filter apply.
+            const ESTIMATE_TTL_MS = 60_000;
             let estimatedRows = 0;
             let estimateSucceeded = false;
-            if (dbType === "mysql") {
+            const cached = estimateCacheRef.current;
+            if (cached && Date.now() - cached.fetchedAt < ESTIMATE_TTL_MS) {
+              estimatedRows = cached.rows;
+              estimateSucceeded = true;
+            } else if (dbType === "mysql") {
               const estRes = await (window as any).novadeck.sql.query(
                 sqlSessionId,
                 "SELECT TABLE_ROWS as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
@@ -461,6 +477,7 @@ export const DataTabView = React.memo(function DataTabView({
               if (estRes.success) {
                 estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0));
                 estimateSucceeded = true;
+                estimateCacheRef.current = { rows: estimatedRows, fetchedAt: Date.now() };
               }
             } else {
               const estRes = await (window as any).novadeck.sql.query(
@@ -473,6 +490,7 @@ export const DataTabView = React.memo(function DataTabView({
               if (estRes.success) {
                 estimatedRows = Math.max(0, Number((estRes.data as QueryResult).rows[0]?.count ?? 0));
                 estimateSucceeded = true;
+                estimateCacheRef.current = { rows: estimatedRows, fetchedAt: Date.now() };
               }
             }
 
@@ -1488,6 +1506,13 @@ export const DataTabView = React.memo(function DataTabView({
         originalValuesRef.current.delete(change.id);
       }
 
+      // Inserts / deletes mutate row count. Bust the estimate cache so the
+      // next count query reflects the new total.
+      const hasRowCountDelta = currentTableChanges.some(
+        (c) => c.type === "insert" || c.type === "delete",
+      );
+      if (hasRowCountDelta) estimateCacheRef.current = null;
+
       // Refresh data
       executeQuery({
         page: pagination.page,
@@ -1751,6 +1776,9 @@ export const DataTabView = React.memo(function DataTabView({
   // ── Refresh this table's data ──
   const handleRefreshTable = useCallback(() => {
     cacheKeyRef.current = "";
+    // Explicit refresh = user wants fresh numbers. Bust the estimate cache
+    // too so the next count goes back to the DB statistics.
+    estimateCacheRef.current = null;
     executeQuery({
       page: pagination.page,
       pageSize: pagination.pageSize,
