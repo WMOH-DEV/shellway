@@ -1386,40 +1386,109 @@ export const DataTabView = React.memo(function DataTabView({
       }
 
       // ── Process DELETE changes ──
+      // Batch deletes into a single `WHERE (pk...) IN ((...), (...))` statement
+      // per PK-column signature, chunked to keep each query under
+      // max_allowed_packet. Rows with NULL in any PK column fall back to
+      // per-row DELETE ... IS NULL (IN cannot match NULL).
+      const DELETE_BATCH_SIZE = 500;
+      const deleteGroups = new Map<
+        string,
+        {
+          pkColumns: string[];
+          rows: unknown[][];
+          nullRows: Record<string, unknown>[];
+        }
+      >();
+
       for (const change of currentTableChanges) {
         if (change.type !== "delete" || !change.primaryKey) continue;
 
-        const whereParts: string[] = [];
-        const delParams: unknown[] = [];
-        let delParamIdx = 1;
-
-        for (const [col, val] of Object.entries(change.primaryKey)) {
-          const quotedCol = quoteIdentifier(col, dbType);
-          if (val === null || val === undefined) {
-            whereParts.push(`${quotedCol} IS NULL`);
-          } else if (dbType === "mysql") {
-            whereParts.push(`${quotedCol} = ?`);
-            delParams.push(val);
-          } else {
-            whereParts.push(`${quotedCol} = $${delParamIdx}`);
-            delParamIdx++;
-            delParams.push(val);
-          }
-        }
-
-        const fullTable = buildFullTableName(
-          change.table,
-          change.schema,
-          dbType,
+        const pkEntries = Object.entries(change.primaryKey);
+        const pkColumns = pkEntries.map(([col]) => col);
+        const pkValues = pkEntries.map(([, val]) => val);
+        const hasNull = pkValues.some(
+          (v) => v === null || v === undefined,
         );
-        const limitClause = dbType === "mysql" ? " LIMIT 1" : "";
-        const sql = `DELETE FROM ${fullTable} WHERE ${whereParts.join(" AND ")}${limitClause}`;
+        const sigKey = pkColumns.join(" ");
 
-        const res = await queryApi.query(sqlSessionId, sql, delParams);
-        if (!res.success) {
-          throw new Error(`delete: ${res.error}`);
+        let group = deleteGroups.get(sigKey);
+        if (!group) {
+          group = { pkColumns, rows: [], nullRows: [] };
+          deleteGroups.set(sigKey, group);
         }
-        updateSQLs.push(sql);
+        if (hasNull) {
+          group.nullRows.push(change.primaryKey);
+        } else {
+          group.rows.push(pkValues);
+        }
+      }
+
+      const deleteFullTable = buildFullTableName(table, schema, dbType);
+
+      for (const group of deleteGroups.values()) {
+        const { pkColumns, rows, nullRows } = group;
+        const isComposite = pkColumns.length > 1;
+        const quotedPkCols = pkColumns
+          .map((c) => quoteIdentifier(c, dbType))
+          .join(", ");
+        const pkTuple = isComposite ? `(${quotedPkCols})` : quotedPkCols;
+
+        for (let i = 0; i < rows.length; i += DELETE_BATCH_SIZE) {
+          const batch = rows.slice(i, i + DELETE_BATCH_SIZE);
+          const params: unknown[] = [];
+          let pgIdx = 1;
+
+          const tuplePlaceholders = batch.map((row) => {
+            if (dbType === "mysql") {
+              const ph = row.map(() => "?").join(", ");
+              params.push(...row);
+              return isComposite ? `(${ph})` : ph;
+            }
+            const ph = row.map(() => `$${pgIdx++}`).join(", ");
+            params.push(...row);
+            return isComposite ? `(${ph})` : ph;
+          });
+
+          const sql = `DELETE FROM ${deleteFullTable} WHERE ${pkTuple} IN (${tuplePlaceholders.join(", ")})`;
+
+          const res = await queryApi.query(sqlSessionId, sql, params);
+          if (!res.success) {
+            throw new Error(`delete: ${res.error}`);
+          }
+          updateSQLs.push(sql);
+        }
+
+        // Per-row fallback for NULL PK values (shouldn't happen on real PKs,
+        // but preserved for the no-PK identity path where buildPrimaryKey
+        // may include nullable columns).
+        for (const pk of nullRows) {
+          const whereParts: string[] = [];
+          const delParams: unknown[] = [];
+          let delParamIdx = 1;
+
+          for (const [col, val] of Object.entries(pk)) {
+            const quotedCol = quoteIdentifier(col, dbType);
+            if (val === null || val === undefined) {
+              whereParts.push(`${quotedCol} IS NULL`);
+            } else if (dbType === "mysql") {
+              whereParts.push(`${quotedCol} = ?`);
+              delParams.push(val);
+            } else {
+              whereParts.push(`${quotedCol} = $${delParamIdx}`);
+              delParamIdx++;
+              delParams.push(val);
+            }
+          }
+
+          const limitClause = dbType === "mysql" ? " LIMIT 1" : "";
+          const sql = `DELETE FROM ${deleteFullTable} WHERE ${whereParts.join(" AND ")}${limitClause}`;
+
+          const res = await queryApi.query(sqlSessionId, sql, delParams);
+          if (!res.success) {
+            throw new Error(`delete: ${res.error}`);
+          }
+          updateSQLs.push(sql);
+        }
       }
 
       // ── COMMIT transaction ──
