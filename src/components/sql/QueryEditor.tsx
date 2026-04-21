@@ -26,7 +26,8 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2 } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles } from "lucide-react";
+import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
 import { Splitter } from "@/components/ui/Splitter";
@@ -390,11 +391,54 @@ export const QueryEditor = React.memo(function QueryEditor({
     if (selectedText.trim()) executeQuery(selectedText);
   }, [executeQuery]);
 
+  // ── Format query (Beautify via sql-formatter) ──
+  // Formats the current selection if non-empty, otherwise the entire editor
+  // content. Replaces the target range via a single edit op so Monaco's
+  // undo stack treats it as one reversible action.
+  const handleFormat = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selection = editor.getSelection();
+    const hasSelection = selection && !selection.isEmpty();
+    const targetRange = hasSelection
+      ? selection
+      : model.getFullModelRange();
+    const source = model.getValueInRange(targetRange);
+    if (!source.trim()) return;
+
+    const options: FormatOptionsWithLanguage = {
+      language: dbType === "mysql" ? "mysql" : "postgresql",
+      keywordCase: "upper",
+      tabWidth: 2,
+      linesBetweenQueries: 2,
+    };
+
+    let formatted: string;
+    try {
+      formatted = formatSQL(source, options);
+    } catch {
+      // Malformed SQL — sql-formatter throws on tokens it can't parse.
+      // Leave the buffer untouched rather than corrupting it.
+      return;
+    }
+    if (formatted === source) return;
+
+    editor.executeEdits("sql-format", [
+      { range: targetRange, text: formatted, forceMoveMarkers: true },
+    ]);
+    editor.pushUndoStop();
+  }, [dbType]);
+
   // Refs to avoid stale closures in Monaco keybindings (registered once on mount)
   const handleRunRef = useRef(handleRun);
   handleRunRef.current = handleRun;
   const handleRunSelectedRef = useRef(handleRunSelected);
   handleRunSelectedRef.current = handleRunSelected;
+  const handleFormatRef = useRef(handleFormat);
+  handleFormatRef.current = handleFormat;
 
   // ── Stable ref for schema — lets the Monaco completion provider always read
   // the latest tables/columns/databases without needing to re-register ──
@@ -435,6 +479,17 @@ export const QueryEditor = React.memo(function QueryEditor({
           monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
         ],
         run: () => handleRunSelectedRef.current(),
+      });
+
+      // Alt+Shift+F → Format (matches VS Code / Monaco default)
+      editor.addAction({
+        id: "sql-format",
+        label: "Format SQL",
+        keybindings: [
+          monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
+        ],
+        contextMenuGroupId: "1_modification",
+        run: () => handleFormatRef.current(),
       });
 
       // Focus editor on mount
@@ -521,6 +576,15 @@ export const QueryEditor = React.memo(function QueryEditor({
         >
           <PlayCircle size={13} />
           Run Selected
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleFormat}
+          title="Format SQL (Alt+Shift+F)"
+        >
+          <Sparkles size={13} />
+          Format
         </Button>
       </div>
 

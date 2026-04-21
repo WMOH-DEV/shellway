@@ -41,6 +41,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socks": "^2.8.7",
+    "sql-formatter": "^15.7.3",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^2.6.0",
     "uuid": "^13.0.0",
