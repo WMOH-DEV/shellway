@@ -822,6 +822,12 @@ export const DataGrid = React.memo(
     const timestampDropdownRef = useRef(timestampDropdown);
     timestampDropdownRef.current = timestampDropdown;
 
+    // Non-editable column set is declared further down in this function (it
+    // depends on columnMeta), so we expose it to the keydown handler via a
+    // ref to avoid a temporal-dead-zone crash. The ref is updated on every
+    // render so handlers always see the latest set.
+    const nonEditableColumnsRef = useRef<Set<string>>(new Set());
+
     // Keyboard Delete/Backspace handler for selected rows + Esc to deselect
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -880,6 +886,41 @@ export const DataGrid = React.memo(
           return;
         }
 
+        // Cmd/Ctrl+Shift+0 → set the focused cell to SQL NULL.
+        // Mirrors the right-click "Set Value → NULL" action. Only fires when
+        // the user is focused on a cell (not editing it) and the column is
+        // editable. We reuse onSetCellValue so the change flows through the
+        // normal staged-changes pipeline.
+        if (
+          (e.metaKey || e.ctrlKey) &&
+          e.shiftKey &&
+          (e.key === "0" || e.code === "Digit0")
+        ) {
+          if (
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable ||
+            target.closest(".ag-cell-edit-wrapper")
+          )
+            return;
+          if (!containerRef.current?.contains(target)) return;
+          if (!onSetCellValue) return;
+          const api = gridRef.current?.api;
+          if (!api) return;
+          const focused = api.getFocusedCell();
+          if (!focused) return;
+          const rowNode = api.getDisplayedRowAtIndex(focused.rowIndex);
+          const field = focused.column.getColDef().field;
+          if (!rowNode || !field) return;
+          if (nonEditableColumnsRef.current.has(field)) return;
+          const rowIndex = (rowNode.data as Record<string, unknown> | undefined)
+            ?.__rowIndex as number | undefined;
+          if (rowIndex === undefined) return;
+          onSetCellValue(rowIndex, field, null);
+          e.preventDefault();
+          return;
+        }
+
         // Delete/Backspace → delete selected rows
         if (!onDeleteRows) return;
         if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -906,7 +947,7 @@ export const DataGrid = React.memo(
       };
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [onDeleteRows]);
+    }, [onDeleteRows, onSetCellValue]);
 
     // Header right-click listener (event delegation on grid container)
     // Attach header right-click handler — re-run when result changes
@@ -1005,6 +1046,8 @@ export const DataGrid = React.memo(
           .map((c) => c.name),
       );
     }, [columnMeta]);
+    // Keep the TDZ-safe ref used by the keydown handler in sync.
+    nonEditableColumnsRef.current = nonEditableColumns;
 
     // Map column name → raw SQL type (e.g. "varchar(255)", "bigint unsigned")
     // for rendering type badges next to header labels.
@@ -1306,6 +1349,52 @@ export const DataGrid = React.memo(
             }
           },
         });
+        // Copy Row(s) as CSV / TSV — matches TablePlus. Preserves column order
+        // via result.fields, escapes CSV per RFC 4180 (quotes + double-quote
+        // escape), and serialises objects / NULLs the same way Copy-Cell does.
+        const copyRowsAsDelimited = (sep: "," | "\t") => {
+          const rowsToCopy = multiSelected
+            ? selectedRows
+            : rowData
+              ? [rowData]
+              : [];
+          if (rowsToCopy.length === 0 || !result?.fields?.length) return;
+          const fields = result.fields.map((f) => f.name);
+          const serialiseValue = (v: unknown): string => {
+            if (v === null || v === undefined) return "";
+            if (typeof v === "object") return JSON.stringify(v);
+            return String(v);
+          };
+          const encodeCell = (v: unknown): string => {
+            const text = serialiseValue(v);
+            if (sep === ",") {
+              return /[",\r\n]/.test(text)
+                ? `"${text.replace(/"/g, '""')}"`
+                : text;
+            }
+            // TSV — replace tabs / newlines in-cell to keep rows clean
+            return text.replace(/\t/g, " ").replace(/\r?\n/g, " ");
+          };
+          const header = fields
+            .map((name) => encodeCell(name))
+            .join(sep);
+          const body = rowsToCopy
+            .map((r: Record<string, unknown>) =>
+              fields.map((name) => encodeCell(r[name])).join(sep),
+            )
+            .join("\n");
+          navigator.clipboard.writeText(`${header}\n${body}`);
+        };
+        items.push({
+          label: multiSelected ? "Copy Rows as CSV" : "Copy Row as CSV",
+          icon: <ClipboardCopy size={13} />,
+          action: () => copyRowsAsDelimited(","),
+        });
+        items.push({
+          label: multiSelected ? "Copy Rows as TSV" : "Copy Row as TSV",
+          icon: <ClipboardCopy size={13} />,
+          action: () => copyRowsAsDelimited("\t"),
+        });
 
         // View / edit JSON in a modal — only for JSON / JSONB columns.
         // The SQL type comes from columnMeta (fetched at tab open); we also
@@ -1446,6 +1535,7 @@ export const DataGrid = React.memo(
         tableName,
         columnTypeMap,
         nonEditableColumns,
+        result,
       ],
     );
 
