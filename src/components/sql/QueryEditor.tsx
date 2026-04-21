@@ -463,7 +463,7 @@ export const QueryEditor = React.memo(function QueryEditor({
 
   // ── Sort handler for DataGrid ──
   const handleSort = useCallback(
-    (_column: string | null, _direction: "asc" | "desc") => {
+    (_keys: Array<{ column: string; direction: "asc" | "desc" }>) => {
       // In query editor, sorting is a client-side display concern.
       // DataGrid handles its own sorting via ag-grid.
     },

@@ -31,6 +31,7 @@ import type {
   QueryResult,
   QueryField,
   TableFilter,
+  SortKey,
   StagedChange,
   SchemaColumn,
   SchemaIndex,
@@ -73,8 +74,7 @@ function buildDataQuery(opts: {
   dbType: DatabaseType;
   page: number;
   pageSize: number;
-  sortColumn?: string;
-  sortDirection?: "asc" | "desc";
+  sortKeys?: SortKey[];
   filters: TableFilter[];
   /** Primary key columns — used as default ORDER BY when no explicit sort is set */
   primaryKeyColumns?: string[];
@@ -85,8 +85,7 @@ function buildDataQuery(opts: {
     dbType,
     page,
     pageSize,
-    sortColumn,
-    sortDirection,
+    sortKeys,
     filters,
     primaryKeyColumns,
   } = opts;
@@ -100,9 +99,11 @@ function buildDataQuery(opts: {
     query += ` ${where}`;
   }
 
-  if (sortColumn) {
-    const quotedCol = quoteIdentifier(sortColumn, dbType);
-    query += ` ORDER BY ${quotedCol} ${sortDirection ?? "asc"}`;
+  if (sortKeys && sortKeys.length > 0) {
+    const orderBy = sortKeys
+      .map((k) => `${quoteIdentifier(k.column, dbType)} ${k.direction}`)
+      .join(", ");
+    query += ` ORDER BY ${orderBy}`;
   } else if (primaryKeyColumns && primaryKeyColumns.length > 0) {
     // Default: order by primary key ASC for consistent results (oldest → newest)
     const pkOrder = primaryKeyColumns
@@ -248,8 +249,7 @@ export const DataTabView = React.memo(function DataTabView({
   const [columns, setColumns] = useState<QueryField[]>([]);
   const [pagination, setPagination] =
     useState<PaginationState>(defaultPagination);
-  const [sortColumn, setSortColumn] = useState<string | undefined>();
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
   const [filters, setFilters] = useState<TableFilter[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -299,13 +299,17 @@ export const DataTabView = React.memo(function DataTabView({
     async (opts: {
       page: number;
       pageSize: number;
-      sort?: string;
-      sortDir?: "asc" | "desc";
+      sortKeys?: SortKey[];
       currentFilters: TableFilter[];
       skipIfCached?: boolean;
     }) => {
-      const { page, pageSize, sort, sortDir, currentFilters, skipIfCached } =
-        opts;
+      const {
+        page,
+        pageSize,
+        sortKeys: sortKeysArg,
+        currentFilters,
+        skipIfCached,
+      } = opts;
 
       // Build a cache key
       const key = JSON.stringify({
@@ -313,8 +317,7 @@ export const DataTabView = React.memo(function DataTabView({
         schema,
         page,
         pageSize,
-        sort,
-        sortDir,
+        sortKeys: sortKeysArg,
         currentFilters,
       });
       if (skipIfCached && key === cacheKeyRef.current && resultRef.current) {
@@ -369,8 +372,7 @@ export const DataTabView = React.memo(function DataTabView({
           dbType,
           page,
           pageSize,
-          sortColumn: sort,
-          sortDirection: sortDir,
+          sortKeys: sortKeysArg,
           filters: currentFilters,
           primaryKeyColumns: primaryKeyColumnsRef.current,
         });
@@ -579,8 +581,7 @@ export const DataTabView = React.memo(function DataTabView({
     }
 
     setPagination(defaultPagination());
-    setSortColumn(undefined);
-    setSortDirection("asc");
+    setSortKeys([]);
     setFilters(savedFilters);
     filtersRef.current = savedFilters;
     setResult(null);
@@ -688,16 +689,14 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page,
         pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: filters,
       });
     },
     [
       executeQuery,
       pagination.pageSize,
-      sortColumn,
-      sortDirection,
+      sortKeys,
       filters,
       discardPendingChanges,
     ],
@@ -725,38 +724,23 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page: 1,
         pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: filters,
       });
     },
-    [executeQuery, sortColumn, sortDirection, filters, discardPendingChanges],
+    [executeQuery, sortKeys, filters, discardPendingChanges],
   );
 
   const handleSort = useCallback(
-    (column: string | null, direction: "asc" | "desc") => {
+    (nextSortKeys: SortKey[]) => {
       discardPendingChanges();
-      if (column === null) {
-        setSortColumn(undefined);
-        setSortDirection("asc");
-        executeQuery({
-          page: 1,
-          pageSize: pagination.pageSize,
-          sort: undefined,
-          sortDir: undefined,
-          currentFilters: filters,
-        });
-      } else {
-        setSortColumn(column);
-        setSortDirection(direction);
-        executeQuery({
-          page: 1,
-          pageSize: pagination.pageSize,
-          sort: column,
-          sortDir: direction,
-          currentFilters: filters,
-        });
-      }
+      setSortKeys(nextSortKeys);
+      executeQuery({
+        page: 1,
+        pageSize: pagination.pageSize,
+        sortKeys: nextSortKeys,
+        currentFilters: filters,
+      });
     },
     [executeQuery, pagination.pageSize, filters, discardPendingChanges],
   );
@@ -851,16 +835,14 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page: 1,
         pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: filtersToApply,
       });
     },
     [
       executeQuery,
       pagination.pageSize,
-      sortColumn,
-      sortDirection,
+      sortKeys,
       discardPendingChanges,
       filtersKey,
     ],
@@ -889,12 +871,15 @@ export const DataTabView = React.memo(function DataTabView({
   // Page/sort changes also get a fresh result set, so row indices reset
   const resetKeyRef = useRef("");
   useEffect(() => {
-    const key = `${table}|${schema}|${pagination.page}|${sortColumn}|${sortDirection}`;
+    const sortSig = sortKeys
+      .map((k) => `${k.column}:${k.direction}`)
+      .join(",");
+    const key = `${table}|${schema}|${pagination.page}|${sortSig}`;
     if (resetKeyRef.current && resetKeyRef.current !== key) {
       originalValuesRef.current.clear();
     }
     resetKeyRef.current = key;
-  }, [table, schema, pagination.page, sortColumn, sortDirection]);
+  }, [table, schema, pagination.page, sortKeys]);
 
   const handleCellEdit = useCallback(
     (
@@ -1507,8 +1492,7 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page: pagination.page,
         pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: filters,
       });
     } catch (err: any) {
@@ -1533,8 +1517,7 @@ export const DataTabView = React.memo(function DataTabView({
     removeStagedChange,
     executeQuery,
     pagination,
-    sortColumn,
-    sortDirection,
+    sortKeys,
     filters,
     columnMeta,
   ]);
@@ -1552,8 +1535,7 @@ export const DataTabView = React.memo(function DataTabView({
     executeQuery({
       page: pagination.page,
       pageSize: pagination.pageSize,
-      sort: sortColumn,
-      sortDir: sortDirection,
+      sortKeys,
       currentFilters: filters,
     });
   }, [
@@ -1561,8 +1543,7 @@ export const DataTabView = React.memo(function DataTabView({
     removeStagedChange,
     executeQuery,
     pagination,
-    sortColumn,
-    sortDirection,
+    sortKeys,
     filters,
   ]);
 
@@ -1619,8 +1600,7 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page: pagination.page,
         pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: filters,
       });
     };
@@ -1645,8 +1625,7 @@ export const DataTabView = React.memo(function DataTabView({
         executeQuery({
           page: pagination.page,
           pageSize: pagination.pageSize,
-          sort: sortColumn,
-          sortDir: sortDirection,
+          sortKeys,
           currentFilters: filters,
         });
       }
@@ -1671,8 +1650,7 @@ export const DataTabView = React.memo(function DataTabView({
     removeStagedChange,
     executeQuery,
     pagination,
-    sortColumn,
-    sortDirection,
+    sortKeys,
     filters,
   ]);
 
@@ -1705,8 +1683,7 @@ export const DataTabView = React.memo(function DataTabView({
       executeQuery({
         page: 1,
         pageSize: pagination.pageSize,
-        sort: sortColumn,
-        sortDir: sortDirection,
+        sortKeys,
         currentFilters: newFilters,
       });
     };
@@ -1717,8 +1694,7 @@ export const DataTabView = React.memo(function DataTabView({
     table,
     executeQuery,
     pagination.pageSize,
-    sortColumn,
-    sortDirection,
+    sortKeys,
   ]);
 
   // ── FK navigation — dispatch event to open referenced table with filter ──
@@ -1778,11 +1754,10 @@ export const DataTabView = React.memo(function DataTabView({
     executeQuery({
       page: pagination.page,
       pageSize: pagination.pageSize,
-      sort: sortColumn,
-      sortDir: sortDirection,
+      sortKeys,
       currentFilters: filters,
     });
-  }, [executeQuery, pagination.page, pagination.pageSize, sortColumn, sortDirection, filters]);
+  }, [executeQuery, pagination.page, pagination.pageSize, sortKeys, filters]);
 
   // ── View mode change handler for PaginationBar toggle ──
   const handleViewModeChange = useCallback((mode: TableViewMode) => {

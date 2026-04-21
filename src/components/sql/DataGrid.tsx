@@ -41,7 +41,7 @@ import {
   DatabaseZap,
 } from "lucide-react";
 import { useUIStore } from "@/stores/uiStore";
-import type { QueryResult, SchemaColumn } from "@/types/sql";
+import type { QueryResult, SchemaColumn, SortKey } from "@/types/sql";
 import {
   TimestampDropdownMenu,
   isTimestampType,
@@ -171,8 +171,9 @@ export interface ForeignKeyMap {
 
 interface DataGridProps {
   result: QueryResult | null;
-  /** column=null means sort was removed */
-  onSort: (column: string | null, direction: "asc" | "desc") => void;
+  /** Called when the user changes sort. Empty array = sort cleared.
+   *  Supports multi-key sort via Shift+click on column headers. */
+  onSort: (keys: SortKey[]) => void;
   isLoading: boolean;
   onCellEdit?: (
     rowIndex: number,
@@ -1074,21 +1075,25 @@ export const DataGrid = React.memo(
       [],
     );
 
-    // Handle header click for server-side sorting (asc → desc → none)
+    // Handle header click for server-side sorting (asc → desc → none).
+    // Multi-key sort: Shift+click adds a secondary sort column; ag-grid
+    // tracks the order via sortIndex on each column state entry.
     const onSortChanged = useCallback(() => {
       if (!gridRef.current?.api) return;
       const sortModel = gridRef.current.api
         .getColumnState()
-        .filter((c) => c.sort);
-      if (sortModel.length > 0) {
-        const { colId, sort } = sortModel[0];
-        if (colId && sort) {
-          onSort(colId, sort as "asc" | "desc");
-        }
-      } else {
-        // Sort was removed (3rd click cycle)
-        onSort(null, "asc");
-      }
+        .filter((c) => c.sort)
+        .slice()
+        .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+
+      const keys: SortKey[] = sortModel
+        .filter((c) => c.colId && (c.sort === "asc" || c.sort === "desc"))
+        .map((c) => ({
+          column: c.colId as string,
+          direction: c.sort as "asc" | "desc",
+        }));
+
+      onSort(keys);
     }, [onSort]);
 
     // Cell edit handler

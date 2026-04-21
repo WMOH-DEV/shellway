@@ -196,6 +196,13 @@ export interface TableFilter {
   value2?: string;
 }
 
+// ── Sort ──
+
+export interface SortKey {
+  column: string;
+  direction: "asc" | "desc";
+}
+
 // ── Staged changes (inline editing) ──
 
 export type ChangeType = "update" | "insert" | "delete";
