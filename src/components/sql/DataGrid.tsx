@@ -102,6 +102,44 @@ const shellwayLightTheme = themeQuartz.withParams({
   oddRowBackgroundColor: "rgb(248, 250, 252)",
 });
 
+// ── Column-type badge helpers ──
+
+/**
+ * Normalise a raw SQL type string ("varchar(255)", "bigint unsigned",
+ * "TIMESTAMP WITH TIME ZONE") into a short uppercase label for the header
+ * badge. Keeps the base type but drops length/precision modifiers — those
+ * are still visible in the Structure view for users who need them.
+ */
+function shortSqlType(sqlType: string): string {
+  return sqlType
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+(unsigned|zerofill)/gi, "")
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * Renders a muted type badge alongside the column name in the ag-grid
+ * header. Passed as innerHeaderComponent so the grid's sort/resize chrome
+ * stays intact.
+ */
+const ColumnTypeBadgeHeader = (props: {
+  displayName: string;
+  columnType?: string;
+}) => (
+  <span className="flex items-center gap-1.5 min-w-0">
+    <span className="truncate">{props.displayName}</span>
+    {props.columnType && (
+      <span
+        className="text-[10px] font-mono text-nd-text-muted opacity-70 shrink-0 leading-none"
+        title={props.columnType}
+      >
+        {shortSqlType(props.columnType)}
+      </span>
+    )}
+  </span>
+);
+
 // ── Auto-width constants ──
 // Maximum width (in px) that auto-sizing can assign to a column.
 // Prevents JSON blobs or large text from blowing up column widths.
@@ -920,6 +958,18 @@ export const DataGrid = React.memo(
       );
     }, [columnMeta]);
 
+    // Map column name → raw SQL type (e.g. "varchar(255)", "bigint unsigned")
+    // for rendering type badges next to header labels.
+    const columnTypeMap = useMemo(() => {
+      const map: Record<string, string> = {};
+      if (columnMeta) {
+        for (const c of columnMeta) {
+          if (c.type) map[c.name] = c.type;
+        }
+      }
+      return map;
+    }, [columnMeta]);
+
     // Column definitions derived from result fields — only table columns, no row numbers.
     // Saved widths are baked into each ColDef from columnWidthsRef so that every time
     // this useMemo re-runs (foreignKeys load, editedCells change, etc.), the correct
@@ -931,12 +981,17 @@ export const DataGrid = React.memo(
       const savedWidths = columnWidthsRef.current;
 
       const cols: ColDef[] = result.fields.map((field) => {
+        const columnType = columnTypeMap[field.name];
         const col: ColDef = {
           headerName: field.name,
           field: field.name,
           resizable: true,
           filter: false,
           cellStyle: { fontSize: "13px" },
+          headerComponentParams: {
+            innerHeaderComponent: ColumnTypeBadgeHeader,
+            innerHeaderComponentParams: { columnType },
+          },
           tooltipValueGetter: (params) => {
             if (params.value === null || params.value === undefined)
               return "(NULL)";
@@ -1011,6 +1066,7 @@ export const DataGrid = React.memo(
       nonEditableColumns,
       editedCells,
       foreignKeys,
+      columnTypeMap,
     ]);
 
     // Row data
