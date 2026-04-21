@@ -26,7 +26,7 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2 } from "lucide-react";
 import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
@@ -239,6 +239,13 @@ export const QueryEditor = React.memo(function QueryEditor({
   const [showHistory, setShowHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
+  // Transaction mode — runs BEGIN on the dedicated userConn and waits for
+  // the user to explicitly COMMIT or ROLLBACK. The userConn is already
+  // isolated from the data-tab shared connection, so transaction state
+  // only affects queries issued from this editor.
+  const [inTransaction, setInTransaction] = useState(false);
+  const [txnBusy, setTxnBusy] = useState(false);
+
   // User-configurable per-query timeout (seconds). 0 = unlimited.
   // Persisted globally (not per-connection) — behaves as a sanity net
   // shared across all query tabs.
@@ -421,6 +428,63 @@ export const QueryEditor = React.memo(function QueryEditor({
     },
     [connectionId, sqlSessionId, setQueryError, addRunningQuery],
   );
+
+  // ── Transaction control ──
+  // Issue a bare transaction statement on the user connection, surface any
+  // server error as a normal query error so the user sees it, and flip the
+  // UI state only when the server actually acknowledges the change.
+  const runTxnStatement = useCallback(
+    async (stmt: "BEGIN" | "COMMIT" | "ROLLBACK"): Promise<boolean> => {
+      setTxnBusy(true);
+      try {
+        const res = await (window as any).novadeck.sql.query(
+          sqlSessionId,
+          stmt,
+          undefined,
+          crypto.randomUUID(),
+          "user",
+        );
+        if (!res.success) {
+          const message =
+            typeof res.error === "string"
+              ? res.error
+              : (res.error?.message ?? `${stmt} failed`);
+          const qError: QueryError = { message };
+          setError(qError);
+          setQueryError(qError);
+          return false;
+        }
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const qError: QueryError = { message };
+        setError(qError);
+        setQueryError(qError);
+        return false;
+      } finally {
+        setTxnBusy(false);
+      }
+    },
+    [sqlSessionId, setQueryError],
+  );
+
+  const handleBeginTransaction = useCallback(async () => {
+    if (inTransaction || txnBusy) return;
+    const ok = await runTxnStatement("BEGIN");
+    if (ok) setInTransaction(true);
+  }, [inTransaction, txnBusy, runTxnStatement]);
+
+  const handleCommitTransaction = useCallback(async () => {
+    if (!inTransaction || txnBusy) return;
+    const ok = await runTxnStatement("COMMIT");
+    if (ok) setInTransaction(false);
+  }, [inTransaction, txnBusy, runTxnStatement]);
+
+  const handleRollbackTransaction = useCallback(async () => {
+    if (!inTransaction || txnBusy) return;
+    const ok = await runTxnStatement("ROLLBACK");
+    if (ok) setInTransaction(false);
+  }, [inTransaction, txnBusy, runTxnStatement]);
 
   // ── Run full query (always runs entire editor content, ignores any selection) ──
   const handleRun = useCallback(() => {
@@ -683,6 +747,49 @@ export const QueryEditor = React.memo(function QueryEditor({
           <Gauge size={13} />
           Explain
         </Button>
+        {/* Transaction controls — moved to after Explain, before Timeout */}
+        {!inTransaction ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBeginTransaction}
+            disabled={isLoading || txnBusy}
+            title="Begin an explicit transaction on this editor's connection"
+          >
+            <GitBranch size={13} />
+            Begin Txn
+          </Button>
+        ) : (
+          <>
+            <span
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md border border-amber-400/40 bg-amber-500/10 text-amber-300 font-medium"
+              title="An uncommitted transaction is open on this connection"
+            >
+              <GitBranch size={11} />
+              Txn open
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCommitTransaction}
+              disabled={txnBusy}
+              title="Commit the open transaction"
+            >
+              <Check size={13} />
+              Commit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRollbackTransaction}
+              disabled={txnBusy}
+              title="Roll back the open transaction"
+            >
+              <Undo2 size={13} />
+              Rollback
+            </Button>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1.5 text-xs text-nd-text-muted">
           <label
             htmlFor="sql-query-timeout"
