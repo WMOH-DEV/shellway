@@ -239,6 +239,28 @@ export const QueryEditor = React.memo(function QueryEditor({
   const [showHistory, setShowHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
+  // User-configurable per-query timeout (seconds). 0 = unlimited.
+  // Persisted globally (not per-connection) — behaves as a sanity net
+  // shared across all query tabs.
+  const QUERY_TIMEOUT_STORAGE_KEY = "sql-query-timeout-secs";
+  const [queryTimeoutSecs, setQueryTimeoutSecs] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(QUERY_TIMEOUT_STORAGE_KEY);
+      const parsed = raw ? Number.parseInt(raw, 10) : 0;
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const queryTimeoutRef = useRef(queryTimeoutSecs);
+  queryTimeoutRef.current = queryTimeoutSecs;
+  const persistQueryTimeout = useCallback((secs: number) => {
+    setQueryTimeoutSecs(secs);
+    try {
+      localStorage.setItem(QUERY_TIMEOUT_STORAGE_KEY, String(secs));
+    } catch {}
+  }, []);
+
   // Race condition protection — prevents stale results from overwriting newer ones
   const queryIdCounterRef = useRef(0);
   const ipcQueryIdRef = useRef<string | null>(null);
@@ -315,6 +337,22 @@ export const QueryEditor = React.memo(function QueryEditor({
 
       const startTime = performance.now();
 
+      // Optional client-side timeout. When it fires we call the existing
+      // server-side cancelQuery path so the DB stops working on this query
+      // rather than letting it run orphaned after we've given up on the
+      // result. queryIdCounterRef already discards any late response.
+      const timeoutSecs = queryTimeoutRef.current;
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      let timedOut = false;
+      if (timeoutSecs > 0) {
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          (window as any).novadeck.sql
+            .cancelQuery(thisIpcQueryId)
+            .catch(() => {});
+        }, timeoutSecs * 1000);
+      }
+
       try {
         const res = await (window as any).novadeck.sql.query(
           sqlSessionId,
@@ -323,6 +361,16 @@ export const QueryEditor = React.memo(function QueryEditor({
           thisIpcQueryId,
           "user",
         );
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (timedOut) {
+          if (thisQueryId !== queryIdCounterRef.current) return;
+          const qError: QueryError = {
+            message: `Query cancelled: timeout exceeded (${timeoutSecs}s). Increase it in the toolbar if needed.`,
+          };
+          setError(qError);
+          setQueryError(qError);
+          return;
+        }
 
         // Race guard — a newer query may have started while we were awaiting
         if (thisQueryId !== queryIdCounterRef.current) return;
@@ -358,6 +406,7 @@ export const QueryEditor = React.memo(function QueryEditor({
           setResult(queryResult);
         }
       } catch (err) {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         if (thisQueryId !== queryIdCounterRef.current) return;
         const message = err instanceof Error ? err.message : String(err);
         if (message === "Query cancelled") return;
@@ -634,6 +683,30 @@ export const QueryEditor = React.memo(function QueryEditor({
           <Gauge size={13} />
           Explain
         </Button>
+        <div className="ml-auto flex items-center gap-1.5 text-xs text-nd-text-muted">
+          <label
+            htmlFor="sql-query-timeout"
+            title="Cancel the query after this many seconds. 0 = no limit."
+            className="cursor-help"
+          >
+            Timeout
+          </label>
+          <input
+            id="sql-query-timeout"
+            type="number"
+            min={0}
+            step={1}
+            value={queryTimeoutSecs}
+            onChange={(e) => {
+              const raw = Number.parseInt(e.target.value, 10);
+              persistQueryTimeout(
+                Number.isFinite(raw) && raw >= 0 ? raw : 0,
+              );
+            }}
+            className="w-16 px-1.5 py-0.5 text-xs rounded border border-nd-border bg-nd-bg-primary text-nd-text-primary focus:outline-none focus:ring-1 focus:ring-nd-accent"
+          />
+          <span>s</span>
+        </div>
       </div>
 
       {/* Monaco editor */}
