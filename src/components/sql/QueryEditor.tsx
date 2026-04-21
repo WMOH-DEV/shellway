@@ -26,7 +26,7 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2, Sparkles } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge } from "lucide-react";
 import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
@@ -381,6 +381,32 @@ export const QueryEditor = React.memo(function QueryEditor({
     executeQuery(query);
   }, [executeQuery]);
 
+  // ── Explain the current query (or selection when present) ──
+  // Prefixes with EXPLAIN so the user sees the planner's decision without
+  // actually running the statement. Never uses ANALYZE — that would execute
+  // the query for real, which the user can already do with Run.
+  const handleExplain = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    const selected =
+      selection && !selection.isEmpty()
+        ? (editor.getModel()?.getValueInRange(selection) ?? "")
+        : editor.getValue();
+    const trimmed = selected.trim().replace(/;\s*$/, "");
+    if (!trimmed) return;
+    // Skip prefixing if user already wrote EXPLAIN/DESCRIBE/ANALYZE — let
+    // their version through as-is.
+    const lead = trimmed.slice(0, 16).toUpperCase();
+    const already =
+      lead.startsWith("EXPLAIN") ||
+      lead.startsWith("DESCRIBE") ||
+      lead.startsWith("DESC ") ||
+      lead.startsWith("ANALYZE");
+    const sql = already ? trimmed : `EXPLAIN ${trimmed}`;
+    executeQuery(sql);
+  }, [executeQuery]);
+
   // ── Run selected text only ──
   const handleRunSelected = useCallback(() => {
     const editor = editorRef.current;
@@ -439,6 +465,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   handleRunSelectedRef.current = handleRunSelected;
   const handleFormatRef = useRef(handleFormat);
   handleFormatRef.current = handleFormat;
+  const handleExplainRef = useRef(handleExplain);
+  handleExplainRef.current = handleExplain;
 
   // ── Stable ref for schema — lets the Monaco completion provider always read
   // the latest tables/columns/databases without needing to re-register ──
@@ -490,6 +518,16 @@ export const QueryEditor = React.memo(function QueryEditor({
         ],
         contextMenuGroupId: "1_modification",
         run: () => handleFormatRef.current(),
+      });
+
+      // Cmd+Shift+E → Explain
+      editor.addAction({
+        id: "sql-explain",
+        label: "Explain Query",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE,
+        ],
+        run: () => handleExplainRef.current(),
       });
 
       // Focus editor on mount
@@ -585,6 +623,16 @@ export const QueryEditor = React.memo(function QueryEditor({
         >
           <Sparkles size={13} />
           Format
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleExplain}
+          disabled={isLoading}
+          title="Show query plan without executing (Cmd+Shift+E)"
+        >
+          <Gauge size={13} />
+          Explain
         </Button>
       </div>
 
