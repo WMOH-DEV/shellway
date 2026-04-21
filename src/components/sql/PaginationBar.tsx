@@ -11,6 +11,7 @@ import {
   ListTree,
   Plus,
   RefreshCcw,
+  Timer,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
@@ -53,6 +54,8 @@ interface PaginationBarProps {
 }
 
 const PAGE_SIZES = [50, 100, 200, 500, 1000]
+// Auto-refresh presets (seconds). 0 = off. Cycles on button click.
+const AUTO_REFRESH_PRESETS = [0, 5, 10, 30, 60]
 
 // ── Component ──
 
@@ -77,6 +80,26 @@ export const PaginationBar = React.memo(function PaginationBar({
   const [pageInput, setPageInput] = useState(String(page))
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [showCountPopover, setShowCountPopover] = useState(false)
+  // Auto-refresh interval in seconds (0 = off). Reset on component unmount.
+  const [autoRefreshSecs, setAutoRefreshSecs] = useState(0)
+
+  // Periodically call onRefreshTable while auto-refresh is enabled. Skipped
+  // in structure mode — there's no data to refresh on that pane.
+  useEffect(() => {
+    if (autoRefreshSecs <= 0 || !onRefreshTable || viewMode === 'structure') {
+      return
+    }
+    const timer = setInterval(onRefreshTable, autoRefreshSecs * 1000)
+    return () => clearInterval(timer)
+  }, [autoRefreshSecs, onRefreshTable, viewMode])
+
+  const cycleAutoRefresh = useCallback(() => {
+    setAutoRefreshSecs((prev) => {
+      const idx = AUTO_REFRESH_PRESETS.indexOf(prev)
+      const next = AUTO_REFRESH_PRESETS[(idx + 1) % AUTO_REFRESH_PRESETS.length]
+      return next
+    })
+  }, [])
   const pickerRef = useRef<HTMLDivElement>(null)
   const countPopoverRef = useRef<HTMLDivElement>(null)
 
@@ -413,7 +436,7 @@ export const PaginationBar = React.memo(function PaginationBar({
 
       <div className="flex-1" />
 
-      {/* ── Right: Refresh + Column picker (only in data mode) ── */}
+      {/* ── Right: Refresh + Auto-refresh + Column picker (only in data mode) ── */}
       {!isStructure && (
         <button
           onClick={onRefreshTable}
@@ -421,6 +444,25 @@ export const PaginationBar = React.memo(function PaginationBar({
           title="Refresh this table (F5)"
         >
           <RefreshCcw size={11} />
+        </button>
+      )}
+      {!isStructure && onRefreshTable && (
+        <button
+          onClick={cycleAutoRefresh}
+          className={cn(
+            'flex items-center gap-1 h-5 px-1.5 rounded text-2xs font-medium transition-colors shrink-0 mr-1',
+            autoRefreshSecs > 0
+              ? 'text-nd-accent bg-nd-accent/10'
+              : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface',
+          )}
+          title={
+            autoRefreshSecs > 0
+              ? `Auto-refreshing every ${autoRefreshSecs}s — click to change`
+              : 'Auto-refresh off — click to cycle through 5s / 10s / 30s / 60s'
+          }
+        >
+          <Timer size={11} />
+          {autoRefreshSecs > 0 ? `${autoRefreshSecs}s` : 'Off'}
         </button>
       )}
       {!isStructure && fields && fields.length > 0 && (
