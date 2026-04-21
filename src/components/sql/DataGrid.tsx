@@ -48,6 +48,7 @@ import {
   SQL_EXPR_PREFIX,
   type TimestampDropdownState,
 } from "@/components/sql/TimestampCellEditor";
+import { JsonCellModal } from "@/components/sql/JsonCellModal";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -413,6 +414,16 @@ function needsNullRenderer(type: string): boolean {
   return !isBooleanType(type);
 }
 
+/**
+ * True when the column is some flavour of JSON: MySQL `json`, Postgres
+ * `json` / `jsonb`. Checked case-insensitively on the raw SQL type string.
+ */
+function isJsonType(type: string | undefined): boolean {
+  if (!type) return false;
+  const lower = type.toLowerCase();
+  return lower === "json" || lower === "jsonb";
+}
+
 // ── Clamp context menu position to stay within viewport ──
 
 function clampMenuPosition(
@@ -562,6 +573,12 @@ export const DataGrid = React.memo(
       useState<HeaderContextMenuState | null>(null);
     const [timestampDropdown, setTimestampDropdown] =
       useState<TimestampDropdownState | null>(null);
+    const [jsonModal, setJsonModal] = useState<{
+      field: string;
+      rowIndex: number;
+      oldValue: unknown;
+      editable: boolean;
+    } | null>(null);
     const resolvedTheme = useUIStore((s) => s.resolvedTheme);
     const gridTheme =
       resolvedTheme === "light" ? shellwayLightTheme : shellwayDarkTheme;
@@ -1289,6 +1306,29 @@ export const DataGrid = React.memo(
             }
           },
         });
+
+        // View / edit JSON in a modal — only for JSON / JSONB columns.
+        // The SQL type comes from columnMeta (fetched at tab open); we also
+        // accept values that are already objects, since some PG drivers
+        // return JSON pre-parsed on columns we didn't see tagged.
+        const columnType = field ? columnTypeMap[field] : undefined;
+        const isJsonCell =
+          (field && isJsonType(columnType)) ||
+          (cellValue !== null && typeof cellValue === "object");
+        if (isJsonCell && field && rowIndex !== undefined) {
+          const editable = !!onCellEdit && !nonEditableColumns.has(field);
+          items.push({
+            label: editable ? "Edit JSON…" : "View JSON…",
+            icon: <FileJson size={13} />,
+            action: () =>
+              setJsonModal({
+                field,
+                rowIndex,
+                oldValue: cellValue,
+                editable,
+              }),
+          });
+        }
         items.push({
           label: "Copy Row as INSERT",
           icon: <ClipboardCopy size={13} />,
@@ -1397,7 +1437,16 @@ export const DataGrid = React.memo(
           items,
         });
       },
-      [onInsertRow, onDuplicateRow, onDeleteRows, onSetCellValue, tableName],
+      [
+        onInsertRow,
+        onDuplicateRow,
+        onDeleteRows,
+        onSetCellValue,
+        onCellEdit,
+        tableName,
+        columnTypeMap,
+        nonEditableColumns,
+      ],
     );
 
     // Double-click on a non-editable cell selects the whole cell value as a
@@ -1912,6 +1961,25 @@ export const DataGrid = React.memo(
             state={timestampDropdown}
             onClose={() => setTimestampDropdown(null)}
             onSetValue={handleTimestampSetValue}
+          />
+        )}
+
+        {/* JSON cell view / edit modal */}
+        {jsonModal && (
+          <JsonCellModal
+            open
+            onClose={() => setJsonModal(null)}
+            title={jsonModal.editable ? `Edit JSON — ${jsonModal.field}` : `View JSON — ${jsonModal.field}`}
+            value={jsonModal.oldValue}
+            editable={jsonModal.editable}
+            onSave={(newText) => {
+              onCellEdit?.(
+                jsonModal.rowIndex,
+                jsonModal.field,
+                jsonModal.oldValue,
+                newText,
+              );
+            }}
           />
         )}
       </div>
