@@ -103,43 +103,6 @@ const shellwayLightTheme = themeQuartz.withParams({
   oddRowBackgroundColor: "rgb(248, 250, 252)",
 });
 
-// ── Column-type badge helpers ──
-
-/**
- * Normalise a raw SQL type string ("varchar(255)", "bigint unsigned",
- * "TIMESTAMP WITH TIME ZONE") into a short uppercase label for the header
- * badge. Keeps the base type but drops length/precision modifiers — those
- * are still visible in the Structure view for users who need them.
- */
-function shortSqlType(sqlType: string): string {
-  return sqlType
-    .replace(/\([^)]*\)/g, "")
-    .replace(/\s+(unsigned|zerofill)/gi, "")
-    .trim()
-    .toUpperCase();
-}
-
-/**
- * Renders a muted type badge alongside the column name in the ag-grid
- * header. Passed as innerHeaderComponent so the grid's sort/resize chrome
- * stays intact.
- */
-const ColumnTypeBadgeHeader = (props: {
-  displayName: string;
-  columnType?: string;
-}) => (
-  <span className="flex items-center gap-1.5 min-w-0">
-    <span className="truncate">{props.displayName}</span>
-    {props.columnType && (
-      <span
-        className="text-[10px] font-mono text-nd-text-muted opacity-70 shrink-0 leading-none"
-        title={props.columnType}
-      >
-        {shortSqlType(props.columnType)}
-      </span>
-    )}
-  </span>
-);
 
 // ── Auto-width constants ──
 // Maximum width (in px) that auto-sizing can assign to a column.
@@ -1079,10 +1042,7 @@ export const DataGrid = React.memo(
           resizable: true,
           filter: false,
           cellStyle: { fontSize: "13px" },
-          headerComponentParams: {
-            innerHeaderComponent: ColumnTypeBadgeHeader,
-            innerHeaderComponentParams: { columnType },
-          },
+          ...(columnType && { headerTooltip: columnType }),
           tooltipValueGetter: (params) => {
             if (params.value === null || params.value === undefined)
               return "(NULL)";
