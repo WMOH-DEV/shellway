@@ -89,6 +89,8 @@ export function BackupRestoreDialog({
   const [restoreFilePath, setRestoreFilePath] = useState<string | null>(null)
   const [restoreFileName, setRestoreFileName] = useState<string | null>(null)
   const [restoreFileSize, setRestoreFileSize] = useState<number | null>(null)
+  // 'abort' = stop & rollback on first error · 'skip' = log and continue
+  const [restoreOnError, setRestoreOnError] = useState<'abort' | 'skip'>('abort')
 
   // ── Shared ──
   const [operationId, setOperationId] = useState<string | null>(null)
@@ -112,6 +114,7 @@ export function BackupRestoreDialog({
       setRestoreFilePath(null)
       setRestoreFileName(null)
       setRestoreFileSize(null)
+      setRestoreOnError('abort')
       setMysqlSingleTransaction(true)
       setMysqlDropTable(true)
       setMysqlExtendedInsert(true)
@@ -284,6 +287,7 @@ export function BackupRestoreDialog({
           dbPort: effectivePort,
           dbUser,
           dbPassword,
+          onError: restoreOnError,
         }
       )
 
@@ -297,7 +301,7 @@ export function BackupRestoreDialog({
       setOperationErrors([err instanceof Error ? err.message : String(err)])
       setRestorePhase('complete')
     }
-  }, [restoreFilePath, sqlSessionId, currentDatabase, dbHost, effectivePort, dbUser, dbPassword])
+  }, [restoreFilePath, sqlSessionId, currentDatabase, dbHost, effectivePort, dbUser, dbPassword, restoreOnError])
 
   // ── Cancel ──
 
@@ -528,6 +532,45 @@ export function BackupRestoreDialog({
                 </p>
               </div>
             )}
+
+            {/* On-error behaviour */}
+            <div>
+              <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
+                On error
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRestoreOnError('abort')}
+                  className={cn(
+                    'flex-1 px-3 py-1.5 rounded-md border text-xs text-left transition-colors',
+                    restoreOnError === 'abort'
+                      ? 'border-nd-accent bg-nd-accent/10 text-nd-text-primary'
+                      : 'border-nd-border bg-nd-surface text-nd-text-secondary hover:text-nd-text-primary'
+                  )}
+                >
+                  <span className="block font-medium">Stop on error</span>
+                  <span className="block text-nd-text-muted mt-0.5">
+                    Roll back and abort on the first failing statement.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRestoreOnError('skip')}
+                  className={cn(
+                    'flex-1 px-3 py-1.5 rounded-md border text-xs text-left transition-colors',
+                    restoreOnError === 'skip'
+                      ? 'border-nd-accent bg-nd-accent/10 text-nd-text-primary'
+                      : 'border-nd-border bg-nd-surface text-nd-text-secondary hover:text-nd-text-primary'
+                  )}
+                >
+                  <span className="block font-medium">Ignore errors</span>
+                  <span className="block text-nd-text-muted mt-0.5">
+                    Log each failure and keep executing remaining statements.
+                  </span>
+                </button>
+              </div>
+            </div>
 
             {/* Credentials note */}
             {!dbUser && (

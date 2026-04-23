@@ -199,30 +199,51 @@ export default function App() {
       toast.info('System Resumed', 'Connections may need to be re-established.')
     })
 
-    // SQL connection errors (DB connection dropped during sleep/network loss)
-    // Note: auto-reconnect is attempted server-side; these events are for logging only
+    // Helper — locate the connection slice owning a given sqlSessionId
+    const findConnIdForSession = (sqlSessionId: string): string | null => {
+      const state = useSQLStore.getState()
+      for (const [connId, slice] of Object.entries(state.connections) as [string, any][]) {
+        if (slice.sqlSessionId === sqlSessionId) return connId
+      }
+      return null
+    }
+
+    // SQL connection errors (DB connection dropped during sleep/network loss).
+    // Backend attempts auto-reconnect in the background; flip UI to "connecting"
+    // so the user sees feedback and the status-driven reconnect effect doesn't
+    // race on a stale 'connected' flag.
     const unsubSQLConnError = window.novadeck.sql.onConnectionError((sqlSessionId, errorMessage) => {
       console.warn(`[SQL] Connection error (${sqlSessionId}):`, errorMessage)
+      const connId = findConnIdForSession(sqlSessionId)
+      if (!connId) return
+      const state = useSQLStore.getState()
+      const current = state.connections[connId]
+      if (current?.connectionStatus === 'connected') {
+        state.setConnectionStatus(connId, 'connecting')
+      }
     })
 
     // SQL connection successfully restored after a drop
     const unsubSQLReconnected = window.novadeck.sql.onConnectionReconnected((sqlSessionId) => {
       console.log(`[SQL] Connection reconnected (${sqlSessionId})`)
+      const connId = findConnIdForSession(sqlSessionId)
+      if (connId) {
+        const state = useSQLStore.getState()
+        state.setConnectionStatus(connId, 'connected')
+        state.setConnectionError(connId, null)
+      }
       toast.success('Connection Restored', 'Database connection was re-established automatically.')
     })
 
-    // SQL connection lost and auto-reconnect failed
+    // SQL connection lost and auto-reconnect failed — flip to error so the
+    // frontend auto-reconnect loop (SQLView) takes over with its own retries.
     const unsubSQLConnLost = window.novadeck.sql.onConnectionLost((sqlSessionId, errorMessage) => {
       console.warn(`[SQL] Connection lost (${sqlSessionId}):`, errorMessage)
-      // Find the connectionId that owns this sqlSessionId and update its status
+      const connId = findConnIdForSession(sqlSessionId)
+      if (!connId) return
       const state = useSQLStore.getState()
-      for (const [connId, slice] of Object.entries(state.connections) as [string, any][]) {
-        if (slice.sqlSessionId === sqlSessionId) {
-          state.setConnectionStatus(connId, 'error')
-          state.setConnectionError(connId, 'Connection lost. Click Reconnect to re-establish.')
-          break
-        }
-      }
+      state.setConnectionStatus(connId, 'error')
+      state.setConnectionError(connId, 'Connection lost. Reconnecting…')
     })
 
     return () => {

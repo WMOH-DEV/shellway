@@ -215,6 +215,13 @@ interface DataGridProps {
   onSetCellValue?: (rowIndex: number, field: string, value: unknown) => void;
   /** Actual table name used in generated SQL (e.g. `users` or `schema.users`). Falls back to 'table_name' if omitted. */
   tableName?: string;
+  /**
+   * When true, ag-grid sorts the current rows client-side (used by the Query
+   * editor, where rows are a one-shot result set). When false (default) the
+   * grid calls `onSort` so the caller can re-issue an ORDER BY query — used
+   * by DataTabView where pagination means client-side sort would be wrong.
+   */
+  clientSideSort?: boolean;
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -524,6 +531,7 @@ export const DataGrid = React.memo(
       onDeleteRows,
       onSetCellValue,
       tableName,
+      clientSideSort,
     },
     ref,
   ) {
@@ -1024,6 +1032,15 @@ export const DataGrid = React.memo(
       return map;
     }, [columnMeta]);
 
+    // columnMeta typically resolves AFTER the first data fetch, so the initial
+    // columnDefs are rebuilt to include headerTooltip later. ag-grid doesn't
+    // always re-render headers when only tooltip strings change, so we nudge
+    // it here. Without this, the column-type tooltip appears only when the
+    // metadata happens to arrive before the grid first mounts.
+    useEffect(() => {
+      gridRef.current?.api?.refreshHeader();
+    }, [columnTypeMap]);
+
     // Column definitions derived from result fields — only table columns, no row numbers.
     // Saved widths are baked into each ColDef from columnWidthsRef so that every time
     // this useMemo re-runs (foreignKeys load, editedCells change, etc.), the correct
@@ -1162,17 +1179,18 @@ export const DataGrid = React.memo(
       [],
     );
 
-    // Default column settings — sortable with no-op comparator (server-side sorting only)
-    // Default width (150px) is the initial width before auto-sizing kicks in on first
-    // data render. Auto-sizing respects: P1 saved user widths → P2 content auto-size
-    // → P3 clamped at MAX_AUTO_WIDTH to prevent JSON/text blobs from blowing up columns.
+    // Default column settings — sortable. For data-tab (paginated) views the
+    // comparator is a no-op and `onSort` re-issues a server-side ORDER BY.
+    // For query-editor results (clientSideSort=true) ag-grid's built-in
+    // comparator runs against the full result set, which is what the user
+    // expects for a one-shot custom query.
     const defaultColDef = useMemo<ColDef>(
       () => ({
         sortable: true,
         resizable: true,
         filter: false,
         suppressHeaderMenuButton: true,
-        comparator: () => 0, // Prevent client-side sorting; server-side only
+        ...(clientSideSort ? {} : { comparator: () => 0 }),
         unSortIcon: true,
         sortingOrder: ["desc", "asc", null], // Start with desc — data is already asc by default
         width: 150,
@@ -1192,13 +1210,16 @@ export const DataGrid = React.memo(
           return false;
         },
       }),
-      [],
+      [clientSideSort],
     );
 
     // Handle header click for server-side sorting (asc → desc → none).
     // Multi-key sort: Shift+click adds a secondary sort column; ag-grid
     // tracks the order via sortIndex on each column state entry.
+    // When clientSideSort is on, ag-grid sorts locally — we skip the callback
+    // so callers don't re-issue a query.
     const onSortChanged = useCallback(() => {
+      if (clientSideSort) return;
       if (!gridRef.current?.api) return;
       const sortModel = gridRef.current.api
         .getColumnState()
@@ -1214,7 +1235,7 @@ export const DataGrid = React.memo(
         }));
 
       onSort(keys);
-    }, [onSort]);
+    }, [onSort, clientSideSort]);
 
     // Cell edit handler
     const onCellValueChanged = useCallback(

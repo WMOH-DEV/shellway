@@ -385,7 +385,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
   }, [sqlSessionId, handleRetry, setConnectionStatus, setConnectionError])
 
-  // ── Auto-reconnect after connection is lost (after server-side retries exhausted) ──
+  // ── Auto-reconnect after connection is lost ──
+  // Retries for long enough to cover typical network hiccups (sleep, Wi-Fi
+  // switch, VPN drop). Exponential backoff caps at 30s between attempts; after
+  // MAX_AUTO_RECONNECT_ATTEMPTS we stop and leave the Retry button for the user.
+  const MAX_AUTO_RECONNECT_ATTEMPTS = 30
   useEffect(() => {
     if (connectionStatus === 'connected') {
       wasConnectedRef.current = true
@@ -403,11 +407,13 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       return
     }
     // Only auto-reconnect if we had an established connection (not an initial connect failure)
-    if (connectionStatus === 'error' && wasConnectedRef.current && sqlSessionId && autoReconnectCountRef.current < 3) {
-      autoReconnectCountRef.current++
+    if (connectionStatus === 'error' && wasConnectedRef.current && sqlSessionId && autoReconnectCountRef.current < MAX_AUTO_RECONNECT_ATTEMPTS) {
+      const attempt = autoReconnectCountRef.current++
+      // 2s, 4s, 8s, 16s, 30s, 30s, ... (capped)
+      const delayMs = Math.min(30_000, 2_000 * Math.pow(2, attempt))
       autoReconnectTimerRef.current = setTimeout(() => {
         handleReconnect()
-      }, 3000)
+      }, delayMs)
     }
     return () => {
       if (autoReconnectTimerRef.current) {
@@ -755,7 +761,19 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
     setShowDatabasePicker(false)
     setDbPickerSessionId(null)
-  }, [dbPickerSessionId, sqlSessionId, connectionId, connectionConfig, buildReconnectConfig, setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionConfig])
+
+    // Persist the newly-picked database so reopening the app doesn't snap
+    // back to the old selection. Fire-and-forget is fine — a storage failure
+    // here shouldn't affect the already-successful connection.
+    try {
+      const existing = await window.novadeck.sql.configGet(sessionId)
+      if (existing?.success && existing.data) {
+        await window.novadeck.sql.configSave({ ...existing.data, database })
+      }
+    } catch {
+      // Non-critical — leave the stale value rather than clobbering it with partial data.
+    }
+  }, [dbPickerSessionId, sqlSessionId, connectionId, connectionConfig, buildReconnectConfig, setCurrentDatabase, setSqlSessionId, setTunnelPort, setConnectionConfig, sessionId])
 
   // ── Handle onNeedDatabasePick from connect dialog ──
   const handleNeedDatabasePick = useCallback((sid: string) => {

@@ -4,6 +4,8 @@ import { EventEmitter } from 'events'
 import { createReadStream, createWriteStream } from 'fs'
 import { stat } from 'fs/promises'
 import { randomUUID } from 'crypto'
+import { createGunzip } from 'zlib'
+import type { Readable } from 'stream'
 import type { Client as SSHClient } from 'ssh2'
 import { SQLService, DatabaseType } from './SQLService'
 import { splitSQLStatements, preScanStatements } from '../utils/sqlParser'
@@ -619,21 +621,36 @@ export class SQLDataTransferService extends EventEmitter {
       const fileStat = await stat(filePath)
       const fileSize = fileStat.size
 
+      const isGzip = /\.gz$/i.test(filePath)
       this.updateProgress(operationId, {
         totalBytes: fileSize,
-        message: 'Preparing SQL import...',
+        message: isGzip
+          ? 'Preparing SQL import (decompressing gzip)...'
+          : 'Preparing SQL import...',
       })
 
-      const readStream = createReadStream(filePath, { encoding: 'utf-8' })
+      // Track raw file bytes read from disk so the progress bar reflects the
+      // user-visible file size — matters for .gz where decompressed bytes are
+      // much larger than the on-disk size.
       let processedBytes = 0
       let statementCount = 0
       let errorCount = 0
 
-      // Track bytes as they're read
-      readStream.on('data', (chunk: string | Buffer) => {
-        const bytes = typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length
-        processedBytes += bytes
+      const fileStream = createReadStream(filePath)
+      fileStream.on('data', (chunk: Buffer | string) => {
+        processedBytes += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length
       })
+
+      let readStream: Readable
+      if (isGzip) {
+        const gunzip = createGunzip()
+        // Any gunzip error surfaces on the downstream consumer via the parser
+        fileStream.pipe(gunzip)
+        readStream = gunzip
+      } else {
+        readStream = fileStream
+      }
+      readStream.setEncoding('utf-8')
 
       if (options.useTransaction) {
         await this.sqlService.executeQuery(sqlSessionId, 'BEGIN')

@@ -800,17 +800,35 @@ export function registerSQLIPC(): void {
       }
 
       const sshClient = getSSHClientForSession(sqlSessionId);
-      if (!sshClient) {
-        return {
-          success: false,
-          error:
-            "Restore requires an SSH connection. Direct database connections do not support server-side restore.",
-        };
-      }
-
       const connInfo = sqlService.getConnection(sqlSessionId);
       if (!connInfo) {
         return { success: false, error: "Database session not found" };
+      }
+
+      const opts = (options || {}) as RestoreOptions & {
+        dbHost?: string;
+        dbPort?: number;
+        dbUser?: string;
+        dbPassword?: string;
+        onError?: "abort" | "skip";
+      };
+      const onError: "abort" | "skip" = opts.onError === "skip" ? "skip" : "abort";
+
+      // Direct (non-SSH) connection: stream the local file through the
+      // existing statement-level importer. Handles .gz transparently.
+      // A transaction only makes sense when we actually abort on failure —
+      // under "skip", keeping the transaction open would still roll back
+      // everything at the next error, defeating the point.
+      if (!sshClient) {
+        try {
+          const result = await transferService.importSQL(sqlSessionId, filePath, {
+            useTransaction: onError === "abort",
+            onError,
+          });
+          return { success: true, operationId: result.operationId };
+        } catch (err: any) {
+          return { success: false, error: err.message || String(err) };
+        }
       }
 
       const dbConfig = {
@@ -818,13 +836,6 @@ export function registerSQLIPC(): void {
         port: connInfo.type === "mysql" ? 3306 : 5432,
         user: "",
         password: "",
-      };
-
-      const opts = (options || {}) as RestoreOptions & {
-        dbHost?: string;
-        dbPort?: number;
-        dbUser?: string;
-        dbPassword?: string;
       };
       if (opts.dbHost) dbConfig.host = opts.dbHost;
       if (opts.dbPort) dbConfig.port = opts.dbPort;

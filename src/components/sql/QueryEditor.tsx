@@ -35,6 +35,7 @@ import { DataGrid } from "@/components/sql/DataGrid";
 import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete";
 import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
+import { splitSQLStatements } from "@/utils/splitSQL";
 import type { QueryResult, QueryError, DatabaseType } from "@/types/sql";
 
 // ── Props ──
@@ -233,7 +234,13 @@ export const QueryEditor = React.memo(function QueryEditor({
   const monacoRef = useRef<typeof MonacoEditor | null>(null);
   const completionDisposableRef = useRef<MonacoEditor.IDisposable | null>(null);
 
-  const [result, setResult] = useState<QueryResult | null>(null);
+  // Results are stored as an array to support multi-statement queries
+  // (e.g. "SELECT * FROM a; SELECT * FROM b;"). `activeResultIndex` picks
+  // which result's grid is visible. For single-statement queries the array
+  // has one entry and no tab bar is rendered.
+  const [results, setResults] = useState<QueryResult[]>([]);
+  const [activeResultIndex, setActiveResultIndex] = useState(0);
+  const result = results[activeResultIndex] ?? null;
   const [error, setError] = useState<QueryError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -315,10 +322,16 @@ export const QueryEditor = React.memo(function QueryEditor({
   );
 
   // ── Execute query via IPC (with race condition protection) ──
+  // Splits the input on top-level `;` and runs each statement sequentially.
+  // Collected result sets become tabs ("Query 1", "Query 2", ...). On the
+  // first error we stop and surface it, keeping any results already gathered.
   const executeQuery = useCallback(
     async (query: string) => {
       const trimmed = query.trim();
       if (!trimmed) return;
+
+      const statements = splitSQLStatements(trimmed);
+      if (statements.length === 0) return;
 
       // Race protection — increment counter so stale results are discarded.
       // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
@@ -326,107 +339,122 @@ export const QueryEditor = React.memo(function QueryEditor({
       // race and kill a DIFFERENT query. Server-side KILL is only for explicit user
       // actions (QueryMonitor Kill button).
       const thisQueryId = ++queryIdCounterRef.current;
-      const thisIpcQueryId = crypto.randomUUID();
-      ipcQueryIdRef.current = thisIpcQueryId;
-
-      // Pre-register with the running queries monitor
-      addRunningQuery({
-        queryId: thisIpcQueryId,
-        sqlSessionId,
-        query: trimmed.length > 200 ? trimmed.slice(0, 200) + "…" : trimmed,
-        startedAt: Date.now(),
-        source: "editor",
-      });
 
       setIsLoading(true);
       setError(null);
       setQueryError(null);
+      setResults([]);
+      setActiveResultIndex(0);
 
-      const startTime = performance.now();
-
-      // Optional client-side timeout. When it fires we call the existing
-      // server-side cancelQuery path so the DB stops working on this query
-      // rather than letting it run orphaned after we've given up on the
-      // result. queryIdCounterRef already discards any late response.
       const timeoutSecs = queryTimeoutRef.current;
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-      let timedOut = false;
-      if (timeoutSecs > 0) {
-        timeoutHandle = setTimeout(() => {
-          timedOut = true;
-          (window as any).novadeck.sql
-            .cancelQuery(thisIpcQueryId)
-            .catch(() => {});
-        }, timeoutSecs * 1000);
-      }
+      const collected: QueryResult[] = [];
 
       try {
-        const res = await (window as any).novadeck.sql.query(
-          sqlSessionId,
-          trimmed,
-          undefined,
-          thisIpcQueryId,
-          "user",
-        );
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (timedOut) {
+        for (let idx = 0; idx < statements.length; idx++) {
+          // Stale-query guard — a newer run has started, abort loop
           if (thisQueryId !== queryIdCounterRef.current) return;
-          const qError: QueryError = {
-            message: `Query cancelled: timeout exceeded (${timeoutSecs}s). Increase it in the toolbar if needed.`,
-          };
-          setError(qError);
-          setQueryError(qError);
-          return;
+
+          const stmt = statements[idx];
+          const thisIpcQueryId = crypto.randomUUID();
+          ipcQueryIdRef.current = thisIpcQueryId;
+
+          addRunningQuery({
+            queryId: thisIpcQueryId,
+            sqlSessionId,
+            query: stmt.length > 200 ? stmt.slice(0, 200) + "…" : stmt,
+            startedAt: Date.now(),
+            source: "editor",
+          });
+
+          const startTime = performance.now();
+          let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+          let timedOut = false;
+          if (timeoutSecs > 0) {
+            timeoutHandle = setTimeout(() => {
+              timedOut = true;
+              (window as any).novadeck.sql
+                .cancelQuery(thisIpcQueryId)
+                .catch(() => {});
+            }, timeoutSecs * 1000);
+          }
+
+          try {
+            const res = await (window as any).novadeck.sql.query(
+              sqlSessionId,
+              stmt,
+              undefined,
+              thisIpcQueryId,
+              "user",
+            );
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            if (thisQueryId !== queryIdCounterRef.current) return;
+
+            if (timedOut) {
+              const qError: QueryError = {
+                message: `Query ${idx + 1} cancelled: timeout exceeded (${timeoutSecs}s). Increase it in the toolbar if needed.`,
+              };
+              setError(qError);
+              setQueryError(qError);
+              setResults(collected);
+              return;
+            }
+
+            const execTime = Math.round(performance.now() - startTime);
+
+            if (!res.success) {
+              const errMsg =
+                typeof res.error === "string"
+                  ? res.error
+                  : (res.error?.message ?? "Query failed");
+              if (errMsg === "Query cancelled") return;
+              const prefix =
+                statements.length > 1 ? `Query ${idx + 1}: ` : "";
+              const qError: QueryError = {
+                message: prefix + errMsg,
+                code: res.error?.code,
+                line: res.error?.line,
+                position: res.error?.position,
+              };
+              setError(qError);
+              setQueryError(qError);
+              setResults(collected);
+              return;
+            }
+
+            const data = res.data;
+            collected.push({
+              fields: data.fields ?? [],
+              rows: data.rows ?? [],
+              rowCount: data.rows?.length ?? 0,
+              affectedRows: data.affectedRows,
+              executionTimeMs: data.executionTimeMs ?? execTime,
+              truncated: data.truncated ?? false,
+            });
+          } catch (err) {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            if (thisQueryId !== queryIdCounterRef.current) return;
+            const message = err instanceof Error ? err.message : String(err);
+            if (message === "Query cancelled") return;
+            const prefix = statements.length > 1 ? `Query ${idx + 1}: ` : "";
+            const qError: QueryError = { message: prefix + message };
+            setError(qError);
+            setQueryError(qError);
+            setResults(collected);
+            return;
+          }
         }
 
-        // Race guard — a newer query may have started while we were awaiting
-        if (thisQueryId !== queryIdCounterRef.current) return;
-
-        const execTime = Math.round(performance.now() - startTime);
-
-        // IPC returns { success, data, error }
-        if (!res.success) {
-          const errMsg =
-            typeof res.error === "string"
-              ? res.error
-              : (res.error?.message ?? "Query failed");
-          // Don't show "Query cancelled" as an error — it was intentional
-          if (errMsg === "Query cancelled") return;
-          const qError: QueryError = {
-            message: errMsg,
-            code: res.error?.code,
-            line: res.error?.line,
-            position: res.error?.position,
-          };
-          setError(qError);
-          setQueryError(qError);
-        } else {
-          const data = res.data;
-          const queryResult: QueryResult = {
-            fields: data.fields ?? [],
-            rows: data.rows ?? [],
-            rowCount: data.rows?.length ?? 0,
-            affectedRows: data.affectedRows,
-            executionTimeMs: data.executionTimeMs ?? execTime,
-            truncated: data.truncated ?? false,
-          };
-          setResult(queryResult);
+        if (thisQueryId === queryIdCounterRef.current) {
+          setResults(collected);
+          setActiveResultIndex(0);
         }
-      } catch (err) {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (thisQueryId !== queryIdCounterRef.current) return;
-        const message = err instanceof Error ? err.message : String(err);
-        if (message === "Query cancelled") return;
-        const qError: QueryError = { message };
-        setError(qError);
-        setQueryError(qError);
       } finally {
         if (thisQueryId === queryIdCounterRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [connectionId, sqlSessionId, setQueryError, addRunningQuery],
+    [sqlSessionId, setQueryError, addRunningQuery],
   );
 
   // ── Transaction control ──
@@ -846,14 +874,44 @@ export const QueryEditor = React.memo(function QueryEditor({
         onHistory={() => setShowHistory(true)}
       />
       {error && <ErrorBanner error={error} />}
+      {results.length > 1 && (
+        <div className="flex items-center gap-0 px-2 pt-1 border-b border-nd-border bg-nd-bg-secondary shrink-0 overflow-x-auto">
+          {results.map((r, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setActiveResultIndex(i)}
+              className={cn(
+                "px-3 py-1 text-xs border-b-2 whitespace-nowrap transition-colors",
+                i === activeResultIndex
+                  ? "border-nd-accent text-nd-text-primary"
+                  : "border-transparent text-nd-text-muted hover:text-nd-text-secondary",
+              )}
+              title={`${r.rowCount} row${r.rowCount === 1 ? "" : "s"} · ${r.executionTimeMs}ms`}
+            >
+              Query {i + 1}
+              <span className="ml-1.5 text-nd-text-muted">
+                ({r.rowCount})
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 min-h-0">
         {result && result.rowCount > 0 ? (
-          <DataGrid result={result} onSort={handleSort} isLoading={isLoading} />
+          <DataGrid
+            result={result}
+            onSort={handleSort}
+            isLoading={isLoading}
+            clientSideSort
+          />
         ) : (
           !error &&
           !isLoading && (
             <div className="flex items-center justify-center h-full text-nd-text-muted text-sm">
-              Run a query to see results
+              {result && result.affectedRows !== undefined
+                ? `${result.affectedRows} row${result.affectedRows === 1 ? "" : "s"} affected`
+                : "Run a query to see results"}
             </div>
           )
         )}

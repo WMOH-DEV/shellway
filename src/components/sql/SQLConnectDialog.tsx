@@ -262,8 +262,18 @@ export function SQLConnectDialog({
     const dbTrimmed = database.trim()
     const isProduction = tag === 'production'
 
-    // Auto-save config before connecting — user shouldn't need to click "Save" first
-    window.novadeck.sql.configSave(buildSavePayload()).catch(() => {})
+    // Persist config *before* attempting to connect. Awaiting guarantees the
+    // write lands in electron-store even if the dialog is dismissed quickly
+    // after a fast success, and it runs even if the connect later throws —
+    // so the user never loses what they just typed. Failures are surfaced.
+    try {
+      const saveResult: any = await window.novadeck.sql.configSave(buildSavePayload())
+      if (saveResult && saveResult.success === false) {
+        console.warn('[SQL] Failed to persist connection config:', saveResult.error)
+      }
+    } catch (saveErr: any) {
+      console.warn('[SQL] Failed to persist connection config:', saveErr?.message || saveErr)
+    }
 
     try {
       const result = await window.novadeck.sql.connect(
