@@ -26,6 +26,7 @@ import { useBookmarkStore } from '@/stores/bookmarkStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { FileEntry, PanelType, ViewMode } from '@/types/sftp'
 import type { SFTPAutocompleteMode, SFTPDoubleClickAction } from '@/types/settings'
+import { SftpDeleteConfirm, type SftpDeleteTarget } from './SftpDeleteConfirm'
 
 export interface FilePanelHandle {
   refresh: () => void
@@ -84,6 +85,9 @@ export function FilePanel({
 
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false)
+
+  // Delete confirmation state
+  const [deleteTargets, setDeleteTargets] = useState<SftpDeleteTarget[] | null>(null)
 
   // Autocomplete mode from settings
   const [autocompleteMode, setAutocompleteMode] = useState<SFTPAutocompleteMode>('content')
@@ -337,23 +341,45 @@ export function FilePanel({
     [entries, selectedPaths]
   )
 
-  /** Delete all currently selected files/directories */
-  const handleDeleteSelected = useCallback(async () => {
+  /** Open the delete-confirmation dialog for the currently selected files/directories */
+  const handleDeleteSelected = useCallback(() => {
     if (selectedPaths.size === 0 || type !== 'remote') return
-    const paths = Array.from(selectedPaths)
     const allEntries = sortedEntriesRef.current
-    for (const p of paths) {
+    const targets: SftpDeleteTarget[] = []
+    for (const p of selectedPaths) {
       const entry = allEntries.find((e) => e.path === p)
       if (!entry) continue
-      if (entry.isDirectory) {
-        await window.novadeck.sftp.rmdir(connectionId, entry.path, true)
-      } else {
-        await window.novadeck.sftp.unlink(connectionId, entry.path)
-      }
+      targets.push({ path: entry.path, name: entry.name, isDirectory: entry.isDirectory })
     }
-    setSelectedPaths(new Set())
-    loadDirectory(currentPath)
-  }, [selectedPaths, type, connectionId, currentPath, loadDirectory])
+    if (targets.length === 0) return
+    setDeleteTargets(targets)
+  }, [selectedPaths, type])
+
+  /** Actual deletion — called after confirmation */
+  const runDelete = useCallback(
+    async (targets: SftpDeleteTarget[]) => {
+      const failures: string[] = []
+      for (const t of targets) {
+        try {
+          const res = t.isDirectory
+            ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
+            : await window.novadeck.sftp.unlink(connectionId, t.path)
+          if (!res?.success) {
+            failures.push(`${t.name}: ${res?.error || 'Unknown error'}`)
+          }
+        } catch (err) {
+          failures.push(`${t.name}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      setSelectedPaths(new Set())
+      loadDirectory(currentPath)
+      if (failures.length > 0) {
+        throw new Error(`Failed to delete ${failures.length} item(s):\n${failures.join('\n')}`)
+      }
+      toast.success('Deleted', `${targets.length} item${targets.length === 1 ? '' : 's'} removed`)
+    },
+    [connectionId, currentPath, loadDirectory]
+  )
 
   /** Keyboard handler for the file list — Delete/Backspace deletes selection */
   const handleKeyDown = useCallback(
@@ -774,6 +800,13 @@ export function FilePanel({
           className="flex-1"
         />
       )}
+
+      <SftpDeleteConfirm
+        open={deleteTargets !== null}
+        onClose={() => setDeleteTargets(null)}
+        targets={deleteTargets ?? []}
+        onConfirm={runDelete}
+      />
     </div>
   )
 }

@@ -21,6 +21,7 @@ import {
 import { cn } from '@/utils/cn'
 import { toast } from '@/components/ui/Toast'
 import type { FileEntry, PanelType } from '@/types/sftp'
+import { SftpDeleteConfirm, type SftpDeleteTarget } from './SftpDeleteConfirm'
 
 interface FileContextMenuProps {
   entry: FileEntry
@@ -99,6 +100,7 @@ export function FileContextMenu({
 }: FileContextMenuProps) {
   const isRemote = panelType === 'remote'
   const hasClipboard = clipboard !== null
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   useEffect(() => {
     const handler = () => onClose()
@@ -337,20 +339,9 @@ export function FileContextMenu({
             toast.success('Copied', 'Path copied to clipboard')
             break
 
-          // ── Delete ──
+          // ── Delete (opens confirmation dialog; actual delete runs on confirm) ──
           case 'delete': {
-            if (isRemote) {
-              if (entry.isDirectory) {
-                const r = await window.novadeck.sftp.rmdir(connectionId, entry.path, true)
-                if (r?.success) toast.success('Deleted', fileName(entry.path))
-                else toast.error('Delete failed', r?.error || 'Unknown error')
-              } else {
-                const r = await window.novadeck.sftp.unlink(connectionId, entry.path)
-                if (r?.success) toast.success('Deleted', fileName(entry.path))
-                else toast.error('Delete failed', r?.error || 'Unknown error')
-              }
-              onRefresh()
-            }
+            if (isRemote) setConfirmOpen(true)
             break
           }
         }
@@ -361,11 +352,12 @@ export function FileContextMenu({
     [entry, isRemote, connectionId, panelType, localPath, remotePath, onRefresh, onRename, onNavigate, onWatchTempFile, onPermissions, onPreview, onEdit, onOpenWithComplete]
   )
 
-  // Wrap handleAction to close the menu first, then execute async work
+  // Wrap handleAction to close the menu first, then execute async work.
+  // For 'delete' we don't close — the confirm dialog lives inside this component
+  // and needs the menu to stay mounted; it is closed explicitly when the dialog resolves.
   const handleActionAndClose = useCallback(
     (id: string) => {
-      onClose()
-      // Run the actual action after the menu closes (next tick)
+      if (id !== 'delete') onClose()
       setTimeout(() => handleAction(id), 0)
     },
     [onClose, handleAction]
@@ -403,44 +395,77 @@ export function FileContextMenu({
     setAdjustedPos({ x, y })
   }, [position])
 
+  const deleteTargets: SftpDeleteTarget[] = [
+    { path: entry.path, name: fileName(entry.path) || entry.path, isDirectory: entry.isDirectory }
+  ]
+
+  const runDelete = useCallback(
+    async (targets: SftpDeleteTarget[]) => {
+      const t = targets[0]
+      const res = t.isDirectory
+        ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
+        : await window.novadeck.sftp.unlink(connectionId, t.path)
+      if (!res?.success) {
+        throw new Error(res?.error || 'Unknown error')
+      }
+      toast.success('Deleted', t.name)
+      onRefresh()
+    },
+    [connectionId, onRefresh]
+  )
+
   return (
-    <motion.div
-      ref={menuRef}
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.1 }}
-      className="fixed z-[200] min-w-[220px] rounded-lg bg-nd-bg-secondary border border-nd-border shadow-xl py-1"
-      style={{
-        left: adjustedPos?.x ?? position.x,
-        top: adjustedPos?.y ?? position.y,
-        // Hide until layout effect has resolved the correct position
-        visibility: adjustedPos ? 'visible' : 'hidden'
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {items.map((item) =>
-        item.separator ? (
-          <div key={item.id} className="my-1 border-t border-nd-border" />
-        ) : (
-          <button
-            key={item.id}
-            disabled={item.disabled}
-            onClick={() => handleActionAndClose(item.id)}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
-              'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
-              item.danger ? 'text-nd-error' : 'text-nd-text-primary'
-            )}
-          >
-            <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>
-            <span className="flex-1">{item.label}</span>
-            {item.shortcut && (
-              <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
-            )}
-          </button>
-        )
+    <>
+      {!confirmOpen && (
+        <motion.div
+          ref={menuRef}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.1 }}
+          className="fixed z-[200] min-w-[220px] rounded-lg bg-nd-bg-secondary border border-nd-border shadow-xl py-1"
+          style={{
+            left: adjustedPos?.x ?? position.x,
+            top: adjustedPos?.y ?? position.y,
+            // Hide until layout effect has resolved the correct position
+            visibility: adjustedPos ? 'visible' : 'hidden'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {items.map((item) =>
+            item.separator ? (
+              <div key={item.id} className="my-1 border-t border-nd-border" />
+            ) : (
+              <button
+                key={item.id}
+                disabled={item.disabled}
+                onClick={() => handleActionAndClose(item.id)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
+                  'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
+                  item.danger ? 'text-nd-error' : 'text-nd-text-primary'
+                )}
+              >
+                <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>
+                <span className="flex-1">{item.label}</span>
+                {item.shortcut && (
+                  <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
+                )}
+              </button>
+            )
+          )}
+        </motion.div>
       )}
-    </motion.div>
+
+      <SftpDeleteConfirm
+        open={confirmOpen}
+        onClose={() => {
+          setConfirmOpen(false)
+          onClose()
+        }}
+        targets={deleteTargets}
+        onConfirm={runDelete}
+      />
+    </>
   )
 }

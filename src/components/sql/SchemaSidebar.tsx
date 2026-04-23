@@ -657,6 +657,17 @@ export function SchemaSidebar({
     fetchTables();
   }, [fetchTables]);
 
+  // External consumers (e.g. after DROP TABLE) can request a schema refresh via event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { sqlSessionId?: string } | undefined;
+      if (detail?.sqlSessionId && detail.sqlSessionId !== sqlSessionId) return;
+      fetchTables();
+    };
+    window.addEventListener("sql:refresh-schema", handler);
+    return () => window.removeEventListener("sql:refresh-schema", handler);
+  }, [fetchTables, sqlSessionId]);
+
   const handleDatabaseChange = useCallback(
     async (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newDb = e.target.value;

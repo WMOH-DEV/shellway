@@ -28,6 +28,7 @@ import { ExportTableDialog } from './ExportTableDialog'
 import { ImportSQLDialog } from './ImportSQLDialog'
 import { ImportCSVDialog } from './ImportCSVDialog'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
+import { TableDeleteDialog, type TableDeleteMode } from './TableDeleteDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { QueryMonitor } from './QueryMonitor'
@@ -122,6 +123,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false)
   const [showBackupRestoreDialog, setShowBackupRestoreDialog] = useState(false)
   const [backupRestoreInitialTab, setBackupRestoreInitialTab] = useState<'backup' | 'restore'>('backup')
+  const [tableDeleteDialog, setTableDeleteDialog] = useState<{ mode: TableDeleteMode; table: string } | null>(null)
 
   // ── Sidebar resize ──
   const sbDragging = useRef(false)
@@ -863,33 +865,82 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     setShowExportDialog(true)
   }, [multiSelectedTables])
 
-  // ── Truncate table handler ──
-  const handleTruncateTable = useCallback(async (tableName: string) => {
-    if (!sqlSessionId) return
-    // eslint-disable-next-line no-restricted-globals
-    const confirmed = confirm(`Are you sure you want to truncate "${tableName}"?\n\nThis will delete ALL rows in the table. This action cannot be undone.`)
-    if (!confirmed) return
-
-    try {
+  // ── Truncate / Drop table handler ──
+  // Runs sequentially on the same sqlSessionId so MySQL FOREIGN_KEY_CHECKS toggling
+  // and the operation itself share the same connection/session.
+  const runTableDelete = useCallback(
+    async (
+      mode: TableDeleteMode,
+      tableName: string,
+      options: { restartIdentity: boolean; disableForeignKeyCheck: boolean }
+    ) => {
+      if (!sqlSessionId) throw new Error('No active SQL session')
       const dbType = connectionConfig?.type
-      const quotedTable = dbType === 'mysql'
-        ? `\`${tableName.replace(/`/g, '``')}\``
-        : `"${tableName.replace(/"/g, '""')}"`
-      const result = await (window as any).novadeck.sql.query(sqlSessionId, `TRUNCATE TABLE ${quotedTable}`, [])
-      if (!result.success) {
-        console.warn('Truncate failed:', result.error)
+      if (dbType !== 'mysql' && dbType !== 'postgres') {
+        throw new Error(`Unsupported database type: ${String(dbType)}`)
+      }
+
+      const quotedTable =
+        dbType === 'mysql'
+          ? `\`${tableName.replace(/`/g, '``')}\``
+          : `"${tableName.replace(/"/g, '""')}"`
+
+      let stmt: string
+      if (mode === 'truncate') {
+        const parts = [`TRUNCATE TABLE ${quotedTable}`]
+        if (dbType === 'postgres') {
+          if (options.restartIdentity) parts.push('RESTART IDENTITY')
+          if (options.disableForeignKeyCheck) parts.push('CASCADE')
+        }
+        stmt = parts.join(' ')
       } else {
-        // Refresh data after truncate
+        stmt = `DROP TABLE ${quotedTable}`
+        if (dbType === 'postgres' && options.disableForeignKeyCheck) {
+          stmt += ' CASCADE'
+        }
+      }
+
+      const api = (window as any).novadeck.sql
+      const runQuery = async (sql: string) => {
+        const result = await api.query(sqlSessionId, sql, [])
+        if (!result.success) {
+          throw new Error(result.error || `Query failed: ${sql}`)
+        }
+        return result
+      }
+
+      const fkToggleMysql = dbType === 'mysql' && options.disableForeignKeyCheck
+
+      try {
+        if (fkToggleMysql) await runQuery('SET FOREIGN_KEY_CHECKS = 0')
+        await runQuery(stmt)
+      } finally {
+        if (fkToggleMysql) {
+          // Best-effort reset; don't mask the original error if this one fails.
+          try {
+            await runQuery('SET FOREIGN_KEY_CHECKS = 1')
+          } catch (e) {
+            console.warn('Failed to re-enable FOREIGN_KEY_CHECKS:', e)
+          }
+        }
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('sql:refresh-data', {
+          detail: { sqlSessionId, connectionId },
+        })
+      )
+      // After a drop, the schema list needs to refresh as well.
+      if (mode === 'drop') {
         window.dispatchEvent(
-          new CustomEvent('sql:refresh-data', {
+          new CustomEvent('sql:refresh-schema', {
             detail: { sqlSessionId, connectionId },
           })
         )
       }
-    } catch (err: any) {
-      console.warn('Truncate failed:', err.message || String(err))
-    }
-  }, [sqlSessionId, connectionConfig, connectionId])
+    },
+    [sqlSessionId, connectionConfig, connectionId]
+  )
 
   const handleTableAction = useCallback(
     (action: TableContextAction) => {
@@ -919,14 +970,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           handleOpenStructure(action.table)
           break
         case 'truncate-table':
-          handleTruncateTable(action.table)
+          setTableDeleteDialog({ mode: 'truncate', table: action.table })
           break
         case 'drop-table':
-          // TODO: Implement drop table confirmation dialog
+          setTableDeleteDialog({ mode: 'drop', table: action.table })
           break
       }
     },
-    [handleOpenStructure, handleTruncateTable]
+    [handleOpenStructure]
   )
 
   const handleDatabaseAction = useCallback(
@@ -1540,6 +1591,18 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           dbPort={connectionConfig.port}
           dbUser={connectionConfig.username}
           dbPassword={connectionConfig.password}
+        />
+      )}
+
+      {/* Truncate / Drop table dialog */}
+      {tableDeleteDialog && connectionConfig && (
+        <TableDeleteDialog
+          open={true}
+          onClose={() => setTableDeleteDialog(null)}
+          mode={tableDeleteDialog.mode}
+          tableName={tableDeleteDialog.table}
+          dbType={connectionConfig.type}
+          onConfirm={(opts) => runTableDelete(tableDeleteDialog.mode, tableDeleteDialog.table, opts)}
         />
       )}
     </div>
