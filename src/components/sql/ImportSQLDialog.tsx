@@ -630,9 +630,9 @@ export function ImportSQLDialog({
                     className="rounded accent-nd-accent mt-0.5"
                   />
                   <span>
-                    <span className="block">Dry run — simulate and roll back</span>
+                    <span className="block">Dry run — parse only, never touches the server</span>
                     <span className="block text-[10px] text-nd-text-muted mt-0.5">
-                      Wraps everything in a transaction that is always rolled back. Healing decisions still run so you get a full report without touching data. Note: CREATE/ALTER/DROP TABLE commit implicitly on MySQL.
+                      Streams and parses the file without sending any statement. Reports a breakdown of what the import would do (CREATE / INSERT / ALTER / etc). Safe on any dump — no transaction trickery, no implicit commits to worry about.
                     </span>
                   </span>
                 </label>

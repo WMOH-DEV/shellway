@@ -98,7 +98,7 @@ interface SQLStoreState {
   removeTab: (connectionId: string, id: string) => void
   /** Remove multiple tabs at once. If the active tab is among them, selects the nearest remaining tab. */
   removeTabs: (connectionId: string, ids: string[]) => void
-  setActiveTab: (connectionId: string, id: string) => void
+  setActiveTab: (connectionId: string, id: string | null) => void
   updateTab: (connectionId: string, id: string, updates: Partial<SQLTab>) => void
 
   // ── Data Grid actions ──
@@ -483,7 +483,7 @@ export function useSQLConnection(connectionId: string) {
       addTab: (tab: SQLTab) => s.addTab(connectionId, tab),
       removeTab: (id: string) => s.removeTab(connectionId, id),
       removeTabs: (ids: string[]) => s.removeTabs(connectionId, ids),
-      setActiveTab: (id: string) => s.setActiveTab(connectionId, id),
+      setActiveTab: (id: string | null) => s.setActiveTab(connectionId, id),
       updateTab: (id: string, updates: Partial<SQLTab>) => s.updateTab(connectionId, id, updates),
 
       setQueryResult: (result: QueryResult | null) => s.setQueryResult(connectionId, result),

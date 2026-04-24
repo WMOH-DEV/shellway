@@ -532,7 +532,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       const { table: refTable, filterColumn, filterValue } = detail
 
       // Open or focus the data tab for the referenced table
-      const existingTab = tabs.find((t) => t.type === 'data' && t.table === refTable)
+      const existingTab = tabs.find(
+        (t) => t.type === 'data' && t.table === refTable && t.database === currentDatabase
+      )
       let tabId: string
       if (existingTab) {
         tabId = existingTab.id
@@ -544,6 +546,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           type: 'data',
           label: refTable,
           table: refTable,
+          database: currentDatabase || undefined,
         }
         addTab(newTab)
       }
@@ -561,7 +564,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
     window.addEventListener('sql:navigate-fk', handleNavigateFK)
     return () => window.removeEventListener('sql:navigate-fk', handleNavigateFK)
-  }, [connectionId, tabs, setActiveTab, addTab, setSelectedTable])
+  }, [connectionId, tabs, setActiveTab, addTab, setSelectedTable, currentDatabase])
 
   // ── Cleanup on unmount — disconnect SQL session ──
   useEffect(() => {
@@ -578,9 +581,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   useEffect(() => {
     if (!selectedTable || !sqlSessionId) return
 
-    // Check if a data tab for this table already exists
+    // Check if a data tab for this table already exists in the current DB
     const existingTab = tabs.find(
-      (t) => t.type === 'data' && t.table === selectedTable
+      (t) => t.type === 'data' && t.table === selectedTable && t.database === currentDatabase
     )
     if (existingTab) {
       setActiveTab(existingTab.id)
@@ -591,6 +594,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         type: 'data',
         label: selectedTable,
         table: selectedTable,
+        database: currentDatabase || undefined,
       }
       addTab(newTab)
     }
@@ -886,9 +890,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   const handleOpenStructure = useCallback(
     (tableName: string) => {
-      // Find existing data tab for this table, or create one
+      // Find existing data tab for this table in the current DB, or create one
       const existingDataTab = tabs.find(
-        (t) => t.type === 'data' && t.table === tableName
+        (t) => t.type === 'data' && t.table === tableName && t.database === currentDatabase
       )
       if (existingDataTab) {
         setActiveTab(existingDataTab.id)
@@ -898,6 +902,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           type: 'data',
           label: tableName,
           table: tableName,
+          database: currentDatabase || undefined,
         }
         addTab(newTab)
         setSelectedTable(tableName)
@@ -913,7 +918,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         )
       }, 50)
     },
-    [tabs, addTab, setActiveTab, setSelectedTable, connectionId]
+    [tabs, addTab, setActiveTab, setSelectedTable, connectionId, currentDatabase]
   )
 
   // ── SchemaSidebar context menu handlers ──
@@ -1092,6 +1097,28 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const hasSSHConnection = useMemo(() => {
     return connectionConfig?.useSSHTunnel === true
   }, [connectionConfig])
+
+  // ── Visible tabs ──
+  // Data/structure tabs are scoped to the database they opened against, so
+  // switching databases hides tabs for the other database (they come back
+  // when you switch back). Query tabs are global and always visible.
+  const visibleTabs = useMemo(() => {
+    return tabs.filter((t) => {
+      if (t.type === 'query') return true
+      if (!t.database) return true // legacy tab without DB scope — keep visible
+      return t.database === currentDatabase
+    })
+  }, [tabs, currentDatabase])
+
+  // If the active tab got hidden by a DB switch, pick the first visible one.
+  useEffect(() => {
+    if (!activeTabId) return
+    if (visibleTabs.some((t) => t.id === activeTabId)) return
+    const next = visibleTabs[0]
+    setActiveTab(next ? next.id : null)
+    if (next?.table) setSelectedTable(next.table)
+    else setSelectedTable(null)
+  }, [visibleTabs, activeTabId, setActiveTab, setSelectedTable])
 
   // ── Tab content renderer ──
   // Track which tabs have been visited — mount on first visit, keep alive after
@@ -1357,7 +1384,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     <div className="flex flex-col h-full">
       {/* SQL Tab Bar */}
       <SQLTabBar
-        tabs={tabs}
+        tabs={visibleTabs}
         activeTabId={activeTabId}
         onSelect={handleTabSelect}
         onClose={handleTabClose}
@@ -1370,7 +1397,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         {(!sqlSessionId || !connectionConfig) ? (
           <EmptyPanel />
         ) : (
-          tabs.map((tab) => {
+          visibleTabs.map((tab) => {
             if (!mountedTabIds.has(tab.id)) return null
             const isActive = tab.id === activeTabId
             const dbType = connectionConfig.type

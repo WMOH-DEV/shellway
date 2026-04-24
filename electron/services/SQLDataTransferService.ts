@@ -97,11 +97,11 @@ export interface ImportSQLOptions {
   /** Database name for checkpoint metadata (shown in resume prompt). */
   database?: string
   /**
-   * Dry run: wrap the whole import in a transaction that is always rolled
-   * back at the end. Healing decisions still flow through, so the user gets
-   * a full report of what would happen without touching the target. Note
-   * that MySQL commits DDL implicitly — CREATE/ALTER/DROP TABLE will still
-   * persist.
+   * Dry run: parse the file without executing anything against the server.
+   * Returns a breakdown of statement types so the user can see what the
+   * import *would* do. We do NOT wrap in BEGIN/ROLLBACK — MySQL commits
+   * DDL implicitly, so a "rollback" can't undo CREATE/DROP/ALTER. A true
+   * simulation that never touches the target is the only honest answer.
    */
   dryRun?: boolean
 }
@@ -987,10 +987,11 @@ export class SQLDataTransferService extends EventEmitter {
 
       const runMode = this.resolveRunMode(options)
       const dryRun = options.dryRun === true
-      // A transaction is only coherent with strict-abort OR a dry run (where
-      // we always roll back at the end). Callers that ask for heal + tx in
-      // any other combination silently drop the transaction.
-      const useTransaction = dryRun || (options.useTransaction && runMode === 'strict-abort')
+      // A transaction is only coherent with strict-abort. Healing strategies
+      // that skip/quarantine statements can't guarantee atomicity, and wrapping
+      // everything in BEGIN/ROLLBACK for dry-run is a lie in MySQL (DDL commits
+      // implicitly). Dry-run is handled by a separate parse-only branch below.
+      const useTransaction = !dryRun && options.useTransaction && runMode === 'strict-abort'
 
       // Detect archive format from extension. gzip + zlib-deflate are handled
       // natively; other archive formats (zip, tar, bz2) require external deps
@@ -1048,6 +1049,82 @@ export class SQLDataTransferService extends EventEmitter {
         readStream = fileStream
       }
       readStream.setEncoding('utf-8')
+
+      // ── Dry run: parse-only simulation ──
+      // Stream the same way a real import would, but never send anything to
+      // the server. Classify each statement by leading keyword so the user
+      // sees a faithful preview of what the import *would* do.
+      if (dryRun) {
+        const counts: Record<string, number> = {}
+        const bump = (k: string) => { counts[k] = (counts[k] ?? 0) + 1 }
+        try {
+          for await (const stmt of splitSQLStatements(readStream)) {
+            this.checkCancelled(controller)
+            const trimmed = stmt.trim()
+            if (!trimmed) continue
+            statementIndex++
+            const lead = trimmed.slice(0, 32).toUpperCase()
+            if (/^CREATE\s+TABLE/.test(lead)) bump('createTable')
+            else if (/^CREATE\s+DATABASE/.test(lead)) bump('createDatabase')
+            else if (/^CREATE\s+(INDEX|UNIQUE|VIEW|TRIGGER|FUNCTION|PROCEDURE)/.test(lead)) bump('createOther')
+            else if (/^DROP\s+TABLE/.test(lead)) bump('dropTable')
+            else if (/^DROP\s+/.test(lead)) bump('dropOther')
+            else if (/^ALTER\s+/.test(lead)) bump('alter')
+            else if (/^TRUNCATE/.test(lead)) bump('truncate')
+            else if (/^INSERT\s+/.test(lead)) bump('insert')
+            else if (/^UPDATE\s+/.test(lead)) bump('update')
+            else if (/^DELETE\s+/.test(lead)) bump('delete')
+            else if (/^REPLACE\s+/.test(lead)) bump('replace')
+            else if (/^USE\s+/.test(lead)) bump('use')
+            else if (/^SET\s+/.test(lead)) bump('set')
+            else if (/^LOCK\s+|^UNLOCK\s+/.test(lead)) bump('lock')
+            else if (/^START\s+TRANSACTION|^BEGIN|^COMMIT|^ROLLBACK/.test(lead)) bump('transaction')
+            else bump('other')
+
+            if (statementIndex % 200 === 0) {
+              this.updateProgress(operationId, {
+                processedBytes,
+                percentage: fileSize > 0 ? Math.min(99, Math.round((processedBytes / fileSize) * 100)) : -1,
+                processedRows: statementIndex,
+                message: `Simulating… parsed ${statementIndex} statements`,
+              })
+              await new Promise<void>((resolve) => setImmediate(resolve))
+            }
+          }
+        } catch (err: any) {
+          throw err
+        }
+
+        const parts: string[] = []
+        const push = (k: string, label: string) => { if (counts[k]) parts.push(`${counts[k]} ${label}`) }
+        push('createDatabase', 'CREATE DATABASE')
+        push('dropTable', 'DROP TABLE')
+        push('createTable', 'CREATE TABLE')
+        push('alter', 'ALTER')
+        push('createOther', 'CREATE (index/view/etc)')
+        push('dropOther', 'DROP (other)')
+        push('truncate', 'TRUNCATE')
+        push('insert', 'INSERT')
+        push('update', 'UPDATE')
+        push('delete', 'DELETE')
+        push('replace', 'REPLACE')
+        push('use', 'USE')
+        push('set', 'SET')
+        push('lock', 'LOCK/UNLOCK')
+        push('transaction', 'transaction control')
+        push('other', 'other')
+
+        const summary = parts.length > 0 ? parts.join(', ') : 'no statements found'
+        this.updateProgress(operationId, {
+          processedBytes: fileSize,
+          processedRows: statementIndex,
+          percentage: 100,
+          message: `Dry run complete — ${statementIndex} statements: ${summary}. Nothing was sent to the server.`,
+        })
+        void deleteCheckpoint(operationId)
+        this.completeOperation(operationId, 'completed')
+        return
+      }
 
       if (useTransaction) {
         await this.sqlService.executeQuery(sqlSessionId, 'BEGIN')
@@ -1112,25 +1189,16 @@ export class SQLDataTransferService extends EventEmitter {
         }
 
         if (useTransaction) {
-          // Dry run always rolls back; strict-abort path commits.
-          if (dryRun) {
-            try {
-              await this.sqlService.executeQuery(sqlSessionId, 'ROLLBACK')
-            } catch { /* ignore */ }
-          } else {
-            await this.sqlService.executeQuery(sqlSessionId, 'COMMIT')
-          }
+          await this.sqlService.executeQuery(sqlSessionId, 'COMMIT')
         }
 
         const finalStats = this.operationStats.get(operationId)
         this.updateProgress(operationId, {
           processedRows: finalStats?.executed ?? statementIndex,
           processedBytes: fileSize,
-          message: dryRun
-            ? `Dry run complete — ${finalStats?.executed ?? 0} would execute, ${finalStats?.healed ?? 0} heals, ${finalStats?.skipped ?? 0} skips, ${finalStats?.quarantined ?? 0} quarantine. Rolled back.`
-            : finalStats
-              ? `Done — ${finalStats.executed} executed, ${finalStats.healed} healed, ${finalStats.skipped} skipped, ${finalStats.quarantined} quarantined`
-              : `Done — ${statementIndex} statements`,
+          message: finalStats
+            ? `Done — ${finalStats.executed} executed, ${finalStats.healed} healed, ${finalStats.skipped} skipped, ${finalStats.quarantined} quarantined`
+            : `Done — ${statementIndex} statements`,
         })
         // Clean completion — remove checkpoint; nothing to resume.
         void deleteCheckpoint(operationId)

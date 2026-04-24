@@ -266,6 +266,11 @@ export interface SQLTab {
   schema?: string;
   query?: string;
   isDirty?: boolean;
+  /** Database this tab is scoped to. Set for data/structure tabs so
+   *  switching the active database hides tabs that reference another
+   *  database's tables (they reappear when you switch back). Query tabs
+   *  leave this undefined and are always visible. */
+  database?: string;
   /** Index into the saved-queries stack (for query tabs). Used to persist
    *  and restore editor content across app restarts.  -1 = not yet assigned. */
   savedQueryIndex?: number;

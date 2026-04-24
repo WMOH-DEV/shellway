@@ -530,23 +530,41 @@ export const QueryEditor = React.memo(function QueryEditor({
     const editor = editorRef.current;
     if (!editor) return;
     const selection = editor.getSelection();
-    const selected =
-      selection && !selection.isEmpty()
-        ? (editor.getModel()?.getValueInRange(selection) ?? "")
-        : editor.getValue();
-    const trimmed = selected.trim().replace(/;\s*$/, "");
+    const hasSelection = selection && !selection.isEmpty();
+    const selected = hasSelection
+      ? (editor.getModel()?.getValueInRange(selection) ?? "")
+      : editor.getValue();
+    const trimmed = selected.trim();
     if (!trimmed) return;
-    // Skip prefixing if user already wrote EXPLAIN/DESCRIBE/ANALYZE — let
-    // their version through as-is.
-    const lead = trimmed.slice(0, 16).toUpperCase();
-    const already =
-      lead.startsWith("EXPLAIN") ||
-      lead.startsWith("DESCRIBE") ||
-      lead.startsWith("DESC ") ||
-      lead.startsWith("ANALYZE");
-    const sql = already ? trimmed : `EXPLAIN ${trimmed}`;
-    executeQuery(sql);
-  }, [executeQuery]);
+
+    // Split first so every statement gets its own EXPLAIN prefix.
+    // Without this, a buffer like `SELECT … ; DELETE FROM b ;` would
+    // EXPLAIN the SELECT and then *actually run* the DELETE.
+    const parts = splitSQLStatements(trimmed).filter((s) => s.trim());
+    if (parts.length === 0) return;
+
+    // If the user has multiple statements and no explicit selection,
+    // bail out rather than risk a destructive second statement. The
+    // user can select the statement they want explained.
+    if (parts.length > 1 && !hasSelection) {
+      setQueryError({
+        message:
+          "EXPLAIN requires a single statement. Select the one to explain, or keep only one statement in the editor.",
+      });
+      return;
+    }
+
+    const prefixed = parts.map((stmt) => {
+      const lead = stmt.trim().slice(0, 16).toUpperCase();
+      const already =
+        lead.startsWith("EXPLAIN") ||
+        lead.startsWith("DESCRIBE") ||
+        lead.startsWith("DESC ") ||
+        lead.startsWith("ANALYZE");
+      return already ? stmt.trim() : `EXPLAIN ${stmt.trim()}`;
+    });
+    executeQuery(prefixed.join(";\n"));
+  }, [executeQuery, setQueryError]);
 
   // ── Run selected text only ──
   const handleRunSelected = useCallback(() => {
