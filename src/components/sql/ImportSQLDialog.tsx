@@ -8,12 +8,15 @@ import {
   Loader2,
   Clock,
   ChevronDown,
+  RotateCcw,
+  X as XIcon,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { formatFileSize } from '@/utils/fileSize'
-import type { DatabaseType, TransferProgress } from '@/types/sql'
+import type { DatabaseType, HealRunMode, TransferProgress } from '@/types/sql'
+import { RunModeSelector } from './RunModeSelector'
 
 // ── Types ──
 
@@ -25,12 +28,42 @@ interface ImportSQLDialogProps {
   dbType: DatabaseType
   currentDatabase: string
   isProduction?: boolean
+  /**
+   * When set, the dialog auto-selects this file and triggers the pre-scan
+   * on open. Used by the "Open quarantine" flow to re-import skipped stmts.
+   */
+  initialFilePath?: string | null
+  /** Callback to reopen the dialog on a quarantine file (fed to parent). */
+  onOpenQuarantine?: (path: string) => void
 }
 
 interface PreScanResult {
   statementCount: number
   dangerousStatements: string[]
   fileSize: number
+  referencedTables?: string[]
+  charsets?: string[]
+  insertCount?: number
+  createTableCount?: number
+  dropTableCount?: number
+}
+
+interface PreflightTableInfo {
+  present: string[]
+  missing: string[]
+}
+
+interface TransferCheckpointDTO {
+  operationId: string
+  filePath: string
+  label: string
+  stmtIndex: number
+  processedBytes: number
+  totalBytes: number
+  dbType: 'mysql' | 'postgres'
+  runMode: HealRunMode
+  updatedAt: number
+  database?: string
 }
 
 type ImportPhase = 'select' | 'ready' | 'importing' | 'complete'
@@ -55,6 +88,8 @@ export function ImportSQLDialog({
   dbType,
   currentDatabase,
   isProduction,
+  initialFilePath = null,
+  onOpenQuarantine,
 }: ImportSQLDialogProps) {
   // File selection
   const [filePath, setFilePath] = useState<string | null>(null)
@@ -68,7 +103,14 @@ export function ImportSQLDialog({
 
   // Options
   const [useTransaction, setUseTransaction] = useState(false)
-  const [onError, setOnError] = useState<'abort' | 'skip'>('abort')
+  const [runMode, setRunMode] = useState<HealRunMode>('smart')
+  const [dryRun, setDryRun] = useState(false)
+
+  // Resumable checkpoints (interrupted imports)
+  const [checkpoints, setCheckpoints] = useState<TransferCheckpointDTO[]>([])
+
+  // Preflight: present/missing tables on target
+  const [preflight, setPreflight] = useState<PreflightTableInfo | null>(null)
 
   // Import state
   const [phase, setPhase] = useState<ImportPhase>('select')
@@ -108,7 +150,9 @@ export function ImportSQLDialog({
       setScanError(null)
       setDangerAcknowledged(false)
       setUseTransaction(false)
-      setOnError('abort')
+      setRunMode('smart')
+      setDryRun(false)
+      setPreflight(null)
       setPhase('select')
       setOperationId(null)
       setProgress(null)
@@ -164,45 +208,154 @@ export function ImportSQLDialog({
     return unsub
   }, [phase, sqlSessionId])
 
+  // ── Fetch resumable checkpoints on open ──
+  useEffect(() => {
+    if (!open) {
+      setCheckpoints([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await (window as any).novadeck.sql.listTransferCheckpoints?.()
+        if (cancelled) return
+        if (res?.success && Array.isArray(res.data)) {
+          setCheckpoints(res.data as TransferCheckpointDTO[])
+        }
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  const handleResume = useCallback(async (cp: TransferCheckpointDTO) => {
+    setImportErrors([])
+    setProgress(null)
+    operationIdRef.current = null
+    setPhase('importing')
+    try {
+      const result = await (window as any).novadeck.sql.importSQL(sqlSessionId, cp.filePath, {
+        useTransaction: false,
+        onError: 'skip',
+        runMode: cp.runMode,
+        skipFirst: cp.stmtIndex,
+        database: cp.database,
+      })
+      if (result.success && result.operationId) {
+        operationIdRef.current = result.operationId
+        setOperationId(result.operationId)
+      } else {
+        setImportErrors([result.error || 'Resume failed to start'])
+        setPhase('complete')
+      }
+    } catch (err) {
+      setImportErrors([err instanceof Error ? err.message : String(err)])
+      setPhase('complete')
+    }
+  }, [sqlSessionId])
+
+  const handleDiscardCheckpoint = useCallback(async (cp: TransferCheckpointDTO) => {
+    try {
+      await (window as any).novadeck.sql.deleteTransferCheckpoint?.(cp.operationId)
+    } catch { /* ignore */ }
+    setCheckpoints((prev) => prev.filter((c) => c.operationId !== cp.operationId))
+  }, [])
+
+  const handleDownloadReport = useCallback(() => {
+    const report = {
+      tool: 'shellway',
+      file: filePath,
+      fileName,
+      database: currentDatabase,
+      dbType,
+      startedAt: startTimeRef.current ? new Date(startTimeRef.current).toISOString() : null,
+      elapsedMs: elapsed,
+      status: progress?.status ?? 'unknown',
+      runMode,
+      stats: progress?.stats ?? null,
+      quarantinePath: progress?.quarantinePath ?? null,
+      errors: importErrors,
+      prescan: scanResult,
+    }
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `shellway-import-report-${Date.now()}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, [filePath, fileName, currentDatabase, dbType, elapsed, progress, runMode, importErrors, scanResult])
+
+  // ── Auto-load the initial file (quarantine re-import flow) ──
+
+  const runPreflight = useCallback(async (scan: PreScanResult) => {
+    if (!scan.referencedTables || scan.referencedTables.length === 0) return
+    try {
+      const res = await (window as any).novadeck.sql.preflightTables?.(
+        sqlSessionId,
+        scan.referencedTables,
+      )
+      if (res?.success && res.data) setPreflight(res.data as PreflightTableInfo)
+    } catch {
+      /* ignore — preflight is best-effort */
+    }
+  }, [sqlSessionId])
+
+  const scanFile = useCallback(async (selected: string) => {
+    const name = selected.split(/[/\\]/).pop() || selected
+    setFilePath(selected)
+    setFileName(name)
+    setScanResult(null)
+    setScanError(null)
+    setDangerAcknowledged(false)
+    setPreflight(null)
+    setScanning(true)
+    try {
+      const scanRes = await (window as any).novadeck.sql.preScanSQL(selected)
+      if (scanRes.success) {
+        const data = scanRes.data as PreScanResult
+        setScanResult(data)
+        setPhase('ready')
+        void runPreflight(data)
+      } else {
+        setScanError(scanRes.error || 'Failed to scan file')
+      }
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setScanning(false)
+    }
+  }, [runPreflight])
+
+  useEffect(() => {
+    if (open && initialFilePath && !filePath) {
+      void scanFile(initialFilePath)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFilePath])
+
   // ── File selection ──
 
   const handleChooseFile = useCallback(async () => {
     try {
       const result = await (window as any).novadeck.dialog.openFile({
         title: 'Choose SQL File',
-        filters: [{ name: 'SQL Files', extensions: ['sql'] }],
+        filters: [{ name: 'SQL Files', extensions: ['sql', 'gz'] }],
       })
 
       if (result.canceled || !result.filePaths?.length) return
 
       const selected = result.filePaths[0] as string
-      const name = selected.split(/[/\\]/).pop() || selected
-
-      setFilePath(selected)
-      setFileName(name)
-      setScanResult(null)
-      setScanError(null)
-      setDangerAcknowledged(false)
-
-      // Auto-trigger pre-scan
-      setScanning(true)
-      try {
-        const scanRes = await (window as any).novadeck.sql.preScanSQL(selected)
-        if (scanRes.success) {
-          setScanResult(scanRes.data as PreScanResult)
-          setPhase('ready')
-        } else {
-          setScanError(scanRes.error || 'Failed to scan file')
-        }
-      } catch (err) {
-        setScanError(err instanceof Error ? err.message : String(err))
-      } finally {
-        setScanning(false)
-      }
+      await scanFile(selected)
     } catch (err) {
       console.warn('File dialog error:', err)
     }
-  }, [])
+  }, [scanFile])
 
   // ── Import ──
 
@@ -217,8 +370,10 @@ export function ImportSQLDialog({
 
     try {
       const result = await (window as any).novadeck.sql.importSQL(sqlSessionId, filePath, {
-        useTransaction,
-        onError,
+        useTransaction: runMode === 'strict-abort' && useTransaction,
+        onError: runMode === 'strict-abort' ? 'abort' : 'skip',
+        runMode,
+        dryRun,
       })
 
       if (result.success && result.operationId) {
@@ -232,7 +387,7 @@ export function ImportSQLDialog({
       setImportErrors([err instanceof Error ? err.message : String(err)])
       setPhase('complete')
     }
-  }, [filePath, scanResult, sqlSessionId, useTransaction, onError])
+  }, [filePath, scanResult, sqlSessionId, useTransaction, runMode, dryRun])
 
   // ── Cancel ──
 
@@ -281,6 +436,48 @@ export function ImportSQLDialog({
         {/* ── Phase: Select / Ready ── */}
         {(phase === 'select' || phase === 'ready') && (
           <>
+            {/* Resumable imports banner */}
+            {checkpoints.length > 0 && (
+              <div className="rounded-md bg-nd-accent/10 border border-nd-accent/30 px-3 py-2.5 space-y-2">
+                <div className="flex items-start gap-2">
+                  <RotateCcw size={14} className="text-nd-accent mt-0.5 shrink-0" />
+                  <p className="text-xs font-medium text-nd-accent">
+                    {checkpoints.length === 1 ? 'Resumable import detected' : `${checkpoints.length} resumable imports detected`}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  {checkpoints.map((cp) => (
+                    <div
+                      key={cp.operationId}
+                      className="flex items-center gap-2 rounded-md bg-nd-surface border border-nd-border px-2.5 py-1.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] text-nd-text-primary font-medium truncate" title={cp.filePath}>
+                          {cp.label}
+                        </p>
+                        <p className="text-[10px] text-nd-text-muted">
+                          Stopped at stmt {cp.stmtIndex.toLocaleString()} · {formatFileSize(cp.processedBytes)} / {formatFileSize(cp.totalBytes)} ·{' '}
+                          {new Date(cp.updatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button variant="primary" size="sm" onClick={() => handleResume(cp)}>
+                        <RotateCcw size={11} />
+                        Resume
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => handleDiscardCheckpoint(cp)}
+                        className="rounded-md p-1 text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover transition-colors"
+                        title="Discard checkpoint"
+                      >
+                        <XIcon size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* File selector */}
             <div>
               <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
@@ -324,12 +521,62 @@ export function ImportSQLDialog({
                   <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
                     Pre-scan Results
                   </label>
-                  <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2 text-xs text-nd-text-secondary">
+                  <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2 text-xs text-nd-text-secondary space-y-0.5">
                     <p>
                       ~{scanResult.statementCount.toLocaleString()} statements found
+                      {typeof scanResult.insertCount === 'number' && scanResult.insertCount > 0 && (
+                        <span className="text-nd-text-muted"> · {scanResult.insertCount.toLocaleString()} INSERTs</span>
+                      )}
+                      {typeof scanResult.createTableCount === 'number' && scanResult.createTableCount > 0 && (
+                        <span className="text-nd-text-muted"> · {scanResult.createTableCount} CREATE TABLE</span>
+                      )}
+                      {typeof scanResult.dropTableCount === 'number' && scanResult.dropTableCount > 0 && (
+                        <span className="text-nd-text-muted"> · {scanResult.dropTableCount} DROP TABLE</span>
+                      )}
                     </p>
+                    {scanResult.referencedTables && scanResult.referencedTables.length > 0 && (
+                      <p className="text-nd-text-muted">
+                        {scanResult.referencedTables.length} distinct table{scanResult.referencedTables.length === 1 ? '' : 's'} referenced
+                      </p>
+                    )}
+                    {scanResult.charsets && scanResult.charsets.length > 0 && (
+                      <p className="text-nd-text-muted">
+                        Charset{scanResult.charsets.length === 1 ? '' : 's'}: {scanResult.charsets.join(', ')}
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {/* Preflight: target schema comparison */}
+                {preflight && (preflight.present.length > 0 || preflight.missing.length > 0) && (
+                  <div>
+                    <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
+                      Target schema check
+                    </label>
+                    <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2 text-[11px] space-y-0.5">
+                      <p className="text-nd-text-primary">
+                        <span className="text-emerald-400 font-medium">{preflight.present.length}</span>
+                        <span className="text-nd-text-muted"> already present</span>
+                        {'  ·  '}
+                        <span className={preflight.missing.length > 0 ? 'text-amber-400 font-medium' : 'text-nd-text-primary'}>
+                          {preflight.missing.length}
+                        </span>
+                        <span className="text-nd-text-muted"> missing</span>
+                      </p>
+                      {preflight.missing.length > 0 && (
+                        <p className="text-nd-text-muted break-all">
+                          <span className="text-amber-400/80">Missing: </span>
+                          {preflight.missing.slice(0, 8).join(', ')}
+                          {preflight.missing.length > 8 && <span> … (+{preflight.missing.length - 8} more)</span>}
+                        </p>
+                      )}
+                      <p className="text-[10px] text-nd-text-muted pt-0.5">
+                        Missing tables will be created by the import if it contains CREATE TABLE statements,
+                        or produce &ldquo;unknown table&rdquo; errors that healing can resolve.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Dangerous statements warning */}
                 {hasDangerousStatements && (
@@ -361,59 +608,43 @@ export function ImportSQLDialog({
                 )}
 
                 {/* Options */}
-                <div>
-                  <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
-                    Options
+                <RunModeSelector value={runMode} onChange={setRunMode} />
+
+                {runMode === 'strict-abort' && (
+                  <label className="flex items-center gap-2 text-xs text-nd-text-primary cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useTransaction}
+                      onChange={(e) => setUseTransaction(e.target.checked)}
+                      className="rounded accent-nd-accent"
+                    />
+                    Wrap in a single transaction (roll back on first error)
                   </label>
-                  <div className="space-y-2.5">
-                    <label className="flex items-center gap-2 text-xs text-nd-text-primary cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useTransaction}
-                        onChange={(e) => setUseTransaction(e.target.checked)}
-                        className="rounded accent-nd-accent"
-                      />
-                      Execute in single transaction
-                    </label>
+                )}
 
-                    <div>
-                      <span className="block text-xs text-nd-text-muted mb-1">On error</span>
-                      <div className="flex gap-3">
-                        <label className="flex items-center gap-1.5 text-xs text-nd-text-primary cursor-pointer">
-                          <input
-                            type="radio"
-                            name="onError"
-                            value="abort"
-                            checked={onError === 'abort'}
-                            onChange={() => setOnError('abort')}
-                            className="accent-nd-accent"
-                          />
-                          Abort
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-nd-text-primary cursor-pointer">
-                          <input
-                            type="radio"
-                            name="onError"
-                            value="skip"
-                            checked={onError === 'skip'}
-                            onChange={() => setOnError('skip')}
-                            className="accent-nd-accent"
-                          />
-                          Skip and continue
-                        </label>
-                      </div>
-                    </div>
+                <label className="flex items-start gap-2 text-xs text-nd-text-primary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dryRun}
+                    onChange={(e) => setDryRun(e.target.checked)}
+                    className="rounded accent-nd-accent mt-0.5"
+                  />
+                  <span>
+                    <span className="block">Dry run — simulate and roll back</span>
+                    <span className="block text-[10px] text-nd-text-muted mt-0.5">
+                      Wraps everything in a transaction that is always rolled back. Healing decisions still run so you get a full report without touching data. Note: CREATE/ALTER/DROP TABLE commit implicitly on MySQL.
+                    </span>
+                  </span>
+                </label>
 
-                    <div>
-                      <span className="block text-xs text-nd-text-muted mb-1">Target database</span>
-                      <input
-                        type="text"
-                        value={currentDatabase}
-                        readOnly
-                        className="w-full px-2.5 py-1.5 rounded-md bg-nd-surface border border-nd-border text-xs text-nd-text-primary font-mono"
-                      />
-                    </div>
-                  </div>
+                <div>
+                  <span className="block text-xs text-nd-text-muted mb-1">Target database</span>
+                  <input
+                    type="text"
+                    value={currentDatabase}
+                    readOnly
+                    className="w-full px-2.5 py-1.5 rounded-md bg-nd-surface border border-nd-border text-xs text-nd-text-primary font-mono"
+                  />
                 </div>
               </div>
             )}
@@ -457,13 +688,21 @@ export function ImportSQLDialog({
               </div>
             </div>
 
-            {/* Current statement preview */}
+            {/* Status message */}
             {currentMessage && (
               <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2">
-                <p className="text-[11px] font-mono text-nd-text-muted truncate">
-                  {currentMessage.length > 100
-                    ? currentMessage.slice(0, 100) + '...'
-                    : currentMessage}
+                <p className="text-[11px] text-nd-text-secondary truncate">
+                  {currentMessage.length > 140 ? currentMessage.slice(0, 140) + '…' : currentMessage}
+                </p>
+              </div>
+            )}
+
+            {/* Current statement preview (monospace, separate from status) */}
+            {progress?.currentStatement && (
+              <div className="rounded-md bg-black/20 border border-nd-border px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-nd-text-muted mb-1">Currently executing</p>
+                <p className="text-[11px] font-mono text-nd-text-primary break-all">
+                  {progress.currentStatement}
                 </p>
               </div>
             )}
@@ -547,22 +786,39 @@ export function ImportSQLDialog({
             {/* Summary */}
             <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2.5 space-y-1 text-xs text-nd-text-secondary">
               <p>
-                Statements executed:{' '}
+                Executed:{' '}
                 <span className="text-nd-text-primary font-medium">
-                  {processedRows.toLocaleString()}
+                  {(progress?.stats?.executed ?? processedRows).toLocaleString()}
                 </span>
               </p>
-              <p>
-                Errors:{' '}
-                <span
-                  className={cn(
-                    'font-medium',
-                    importErrors.length > 0 ? 'text-red-400' : 'text-nd-text-primary'
-                  )}
-                >
-                  {importErrors.length}
-                </span>
-              </p>
+              {progress?.stats && (
+                <>
+                  <p>
+                    Healed:{' '}
+                    <span className="text-emerald-400 font-medium">
+                      {progress.stats.healed.toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    Skipped:{' '}
+                    <span className={cn('font-medium', progress.stats.skipped > 0 ? 'text-amber-400' : 'text-nd-text-primary')}>
+                      {progress.stats.skipped.toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    Quarantined:{' '}
+                    <span className={cn('font-medium', progress.stats.quarantined > 0 ? 'text-amber-400' : 'text-nd-text-primary')}>
+                      {progress.stats.quarantined.toLocaleString()}
+                    </span>
+                  </p>
+                </>
+              )}
+              {progress?.quarantinePath && (
+                <p className="pt-1 border-t border-nd-border mt-1.5 text-[11px]">
+                  <span className="text-nd-text-muted">Quarantine file: </span>
+                  <span className="text-nd-text-primary font-mono break-all">{progress.quarantinePath}</span>
+                </p>
+              )}
               <p>
                 Time:{' '}
                 <span className="text-nd-text-primary font-medium">{formatElapsed(elapsed)}</span>
@@ -597,8 +853,27 @@ export function ImportSQLDialog({
               </div>
             )}
 
-            {/* Close */}
-            <div className="flex justify-end pt-1">
+            {/* Close + quarantine re-import + report */}
+            <div className="flex justify-end gap-2 pt-1 flex-wrap">
+              <Button variant="ghost" size="sm" onClick={handleDownloadReport}>
+                <FileText size={13} />
+                Download report
+              </Button>
+              {progress?.quarantinePath && onOpenQuarantine && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const path = progress.quarantinePath!
+                    onClose()
+                    // Give the close animation a moment before reopening.
+                    setTimeout(() => onOpenQuarantine(path), 100)
+                  }}
+                >
+                  <FileText size={13} />
+                  Re-run quarantine
+                </Button>
+              )}
               <Button variant="secondary" size="sm" onClick={onClose}>
                 Close
               </Button>

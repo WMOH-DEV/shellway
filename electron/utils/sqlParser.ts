@@ -243,28 +243,81 @@ export async function scanDangerousStatements(stream: Readable): Promise<string[
 }
 
 /**
- * Combined single-pass pre-scan: count statements AND detect dangerous patterns.
- * Avoids reading the file twice (once for count, once for scan).
+ * Combined single-pass pre-scan: count statements, detect dangerous patterns,
+ * collect every table referenced by DDL/DML, and detect charset declarations.
+ * Extracting this metadata during the single file pass is cheap and lets the
+ * UI surface a preflight report without reading the file again.
  */
 export async function preScanStatements(stream: Readable): Promise<{
   count: number
   dangerous: string[]
+  tables: string[]
+  charsets: string[]
+  insertCount: number
+  createTableCount: number
+  dropTableCount: number
 }> {
   let count = 0
-  const found = new Set<string>()
-  const HEAD_SIZE = 200
+  let insertCount = 0
+  let createTableCount = 0
+  let dropTableCount = 0
+  const dangerous = new Set<string>()
+  const tables = new Set<string>()
+  const charsets = new Set<string>()
+  const HEAD_SIZE = 400
+
+  // Capture identifiers like `tbl`, "tbl", schema.tbl — one per regex.
+  const ID_RE = '((?:`[^`]+`|"[^"]+"|\\[\\w.$]+(?:\\.[\\w.$]+)?))'
+  const INSERT_RE = new RegExp(`^\\s*INSERT(?:\\s+IGNORE)?\\s+INTO\\s+${ID_RE}`, 'i')
+  const CREATE_TBL_RE = new RegExp(`^\\s*CREATE\\s+(?:TEMPORARY\\s+)?TABLE(?:\\s+IF\\s+NOT\\s+EXISTS)?\\s+${ID_RE}`, 'i')
+  const DROP_TBL_RE = new RegExp(`^\\s*DROP\\s+TABLE(?:\\s+IF\\s+EXISTS)?\\s+${ID_RE}`, 'i')
+  const TRUNC_RE = new RegExp(`^\\s*TRUNCATE(?:\\s+TABLE)?\\s+${ID_RE}`, 'i')
+  const ALTER_RE = new RegExp(`^\\s*ALTER\\s+TABLE\\s+${ID_RE}`, 'i')
+  const SET_NAMES_RE = /\bSET\s+NAMES\s+['"]?([A-Za-z0-9_]+)['"]?/i
+  const DEFAULT_CHARSET_RE = /\bDEFAULT\s+CHARSET\s*=\s*['"]?([A-Za-z0-9_]+)['"]?/i
+  const CHARACTER_SET_RE = /\bCHARACTER\s+SET\s+['"]?([A-Za-z0-9_]+)['"]?/i
+
+  const addTable = (raw: string | undefined): void => {
+    if (!raw) return
+    const clean = raw.replace(/[`"[\]]/g, '')
+    // Drop schema prefix for the comparison summary (schema.table → table)
+    const short = clean.includes('.') ? clean.split('.').pop()! : clean
+    tables.add(short)
+  }
 
   for await (const stmt of splitSQLStatements(stream)) {
     count++
     const head = stmt.length > HEAD_SIZE ? stmt.substring(0, HEAD_SIZE) : stmt
+
     for (const { pattern, description } of DANGEROUS_PATTERNS) {
-      if (pattern.test(head)) {
-        found.add(description)
-      }
+      if (pattern.test(head)) dangerous.add(description)
     }
+
+    let m = head.match(INSERT_RE)
+    if (m) { insertCount++; addTable(m[1]); continue }
+    m = head.match(CREATE_TBL_RE)
+    if (m) { createTableCount++; addTable(m[1]); continue }
+    m = head.match(DROP_TBL_RE)
+    if (m) { dropTableCount++; addTable(m[1]); continue }
+    m = head.match(TRUNC_RE)
+    if (m) { addTable(m[1]); continue }
+    m = head.match(ALTER_RE)
+    if (m) { addTable(m[1]); continue }
+
+    // Charset / collation declarations (just collect first match per statement)
+    const charsetMatch = head.match(SET_NAMES_RE) || head.match(DEFAULT_CHARSET_RE) || head.match(CHARACTER_SET_RE)
+    if (charsetMatch) charsets.add(charsetMatch[1].toLowerCase())
   }
 
-  return { count, dangerous: Array.from(found) }
+  return {
+    count,
+    dangerous: Array.from(dangerous),
+    tables: Array.from(tables),
+    charsets: Array.from(charsets),
+    insertCount,
+    createTableCount,
+    dropTableCount,
+  }
 }
 
 /**

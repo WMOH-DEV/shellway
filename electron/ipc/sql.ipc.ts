@@ -16,6 +16,7 @@ import {
   RestoreOptions,
 } from "../services/SQLDataTransferService";
 import { getSSHService } from "./ssh.ipc";
+import { listCheckpoints, deleteCheckpoint } from "../services/TransferCheckpointStore";
 
 const sqlService = new SQLService();
 const sqlConfigStore = new SQLConfigStore();
@@ -27,6 +28,20 @@ transferService.on("progress", (sqlSessionId: string, progress: unknown) => {
     win.webContents.send("sql:transfer:progress", sqlSessionId, progress);
   }
 });
+
+// Forward healing resolution-request events (paused import awaiting user decision)
+transferService.on(
+  "resolution-request",
+  (sqlSessionId: string, request: unknown) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(
+        "sql:transfer:needs-resolution",
+        sqlSessionId,
+        request,
+      );
+    }
+  },
+);
 
 // Forward query-executed events from SQLService to all renderer windows
 // This captures ALL queries: direct sql:query, getColumns, getIndexes, getForeignKeys, etc.
@@ -811,19 +826,36 @@ export function registerSQLIPC(): void {
         dbUser?: string;
         dbPassword?: string;
         onError?: "abort" | "skip";
+        /** Healing run mode — takes precedence over onError when set. */
+        runMode?:
+          | "full-auto"
+          | "smart"
+          | "ask-always"
+          | "strict-abort";
       };
       const onError: "abort" | "skip" = opts.onError === "skip" ? "skip" : "abort";
+      // Legacy fallback: map old onError into a run mode when the caller
+      // hasn't set one explicitly. Transaction is only safe in strict-abort.
+      const runMode =
+        opts.runMode ?? (onError === "skip" ? "full-auto" : "strict-abort");
 
-      // Direct (non-SSH) connection: stream the local file through the
-      // existing statement-level importer. Handles .gz transparently.
-      // A transaction only makes sense when we actually abort on failure —
-      // under "skip", keeping the transaction open would still roll back
-      // everything at the next error, defeating the point.
-      if (!sshClient) {
+      // Healing requires per-statement control, which the remote mysql/psql
+      // binary doesn't give us. So whenever the user asks for any heal mode
+      // we route through the healing-aware importer — it runs over the
+      // existing DB connection (which is already SSH-tunneled if applicable),
+      // giving us full statement-level control + gzip decompression.
+      //
+      // Direct connections always take this path.
+      // SSH connections take this path unless the user explicitly picked
+      // strict-abort (in which case the native binary is faster).
+      const preferHealingPath = !sshClient || runMode !== "strict-abort";
+      if (preferHealingPath) {
         try {
           const result = await transferService.importSQL(sqlSessionId, filePath, {
-            useTransaction: onError === "abort",
+            useTransaction: runMode === "strict-abort",
             onError,
+            runMode,
+            database,
           });
           return { success: true, operationId: result.operationId };
         } catch (err: any) {
@@ -1081,6 +1113,78 @@ export function registerSQLIPC(): void {
       return { success: false, error: err.message || String(err) };
     }
   });
+
+  // ── Preflight: compare SQL file's referenced tables with the target DB ──
+  ipcMain.handle(
+    "sql:import:preflight-tables",
+    async (_event, sqlSessionId: string, tables: unknown) => {
+      if (!sqlSessionId || typeof sqlSessionId !== "string") {
+        return { success: false, error: "Invalid session ID" };
+      }
+      if (!Array.isArray(tables)) {
+        return { success: false, error: "tables must be an array" };
+      }
+      try {
+        const data = await transferService.preflightCompareTables(
+          sqlSessionId,
+          tables as string[],
+        );
+        return { success: true, data };
+      } catch (err: any) {
+        return { success: false, error: err.message || String(err) };
+      }
+    },
+  );
+
+  // ── List resumable import checkpoints ──
+  ipcMain.handle("sql:transfer:listCheckpoints", async () => {
+    try {
+      const data = await listCheckpoints();
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  // ── Drop a checkpoint (user declined to resume) ──
+  ipcMain.handle(
+    "sql:transfer:deleteCheckpoint",
+    async (_event, operationId: string) => {
+      if (!operationId || typeof operationId !== "string") {
+        return { success: false, error: "Invalid operation ID" };
+      }
+      await deleteCheckpoint(operationId);
+      return { success: true };
+    },
+  );
+
+  // ── Resolve a paused transfer with a heal decision ──
+  ipcMain.handle(
+    "sql:transfer:resolve",
+    async (_event, operationId: string, decision: unknown) => {
+      if (!operationId || typeof operationId !== "string") {
+        return { success: false, error: "Invalid operation ID" };
+      }
+      if (!decision || typeof decision !== "object") {
+        return { success: false, error: "Invalid decision payload" };
+      }
+      const d = decision as {
+        action?: string;
+        strategy?: string;
+        editedStatement?: string;
+        param?: string | number;
+        rememberForClass?: boolean;
+      };
+      const allowedActions = ["heal", "skip", "quarantine", "abort", "retry"];
+      if (!d.action || !allowedActions.includes(d.action)) {
+        return { success: false, error: "Invalid decision action" };
+      }
+      return transferService.resolveOperation(
+        operationId,
+        decision as Parameters<typeof transferService.resolveOperation>[1],
+      );
+    },
+  );
 }
 
 // ── Helper: find a free local port ──

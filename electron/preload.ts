@@ -695,6 +695,17 @@ const api = {
       ipcRenderer.invoke("sql:import:sql", sqlSessionId, filePath, options),
     preScanSQL: (filePath: string) =>
       ipcRenderer.invoke("sql:import:sql-prescan", filePath),
+    /** Compare scanned table names against what exists in the target DB. */
+    preflightTables: (sqlSessionId: string, tables: string[]) =>
+      ipcRenderer.invoke(
+        "sql:import:preflight-tables",
+        sqlSessionId,
+        tables,
+      ) as Promise<{
+        success: boolean;
+        data?: { present: string[]; missing: string[] };
+        error?: string;
+      }>,
     importCSV: (sqlSessionId: string, filePath: string, options: unknown) =>
       ipcRenderer.invoke("sql:import:csv", sqlSessionId, filePath, options),
     previewCSV: (filePath: string) =>
@@ -752,6 +763,37 @@ const api = {
     // Transfer control
     cancelTransfer: (operationId: string) =>
       ipcRenderer.invoke("sql:transfer:cancel", operationId),
+    /** Submit a heal decision for a paused import/restore. */
+    resolveTransfer: (operationId: string, decision: unknown) =>
+      ipcRenderer.invoke(
+        "sql:transfer:resolve",
+        operationId,
+        decision,
+      ) as Promise<{ success: boolean; error?: string }>,
+    /** List resumable (interrupted) import checkpoints. */
+    listTransferCheckpoints: () =>
+      ipcRenderer.invoke("sql:transfer:listCheckpoints") as Promise<{
+        success: boolean;
+        data?: Array<{
+          operationId: string;
+          filePath: string;
+          label: string;
+          stmtIndex: number;
+          processedBytes: number;
+          totalBytes: number;
+          dbType: "mysql" | "postgres";
+          runMode: "full-auto" | "smart" | "ask-always" | "strict-abort";
+          updatedAt: number;
+          database?: string;
+        }>;
+        error?: string;
+      }>,
+    /** Delete a checkpoint (user declined to resume). */
+    deleteTransferCheckpoint: (operationId: string) =>
+      ipcRenderer.invoke(
+        "sql:transfer:deleteCheckpoint",
+        operationId,
+      ) as Promise<{ success: boolean; error?: string }>,
     onTransferProgress: (
       callback: (sqlSessionId: string, progress: unknown) => void,
     ) => {
@@ -762,6 +804,19 @@ const api = {
       ) => callback(sqlSessionId, progress);
       ipcRenderer.on("sql:transfer:progress", handler);
       return () => ipcRenderer.removeListener("sql:transfer:progress", handler);
+    },
+    /** Subscribe to resolution-request events (paused imports awaiting user decision). */
+    onResolutionRequest: (
+      callback: (sqlSessionId: string, request: unknown) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        sqlSessionId: string,
+        request: unknown,
+      ) => callback(sqlSessionId, request);
+      ipcRenderer.on("sql:transfer:needs-resolution", handler);
+      return () =>
+        ipcRenderer.removeListener("sql:transfer:needs-resolution", handler);
     },
 
     /** Subscribe to ALL query executions (schema queries, data queries, DDL, etc.) */

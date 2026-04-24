@@ -29,11 +29,12 @@ import { ImportSQLDialog } from './ImportSQLDialog'
 import { ImportCSVDialog } from './ImportCSVDialog'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { TableDeleteDialog, type TableDeleteMode } from './TableDeleteDialog'
+import { HealingDialog } from './HealingDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { QueryMonitor } from './QueryMonitor'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery } from '@/types/sql'
+import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -124,6 +125,18 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const [showBackupRestoreDialog, setShowBackupRestoreDialog] = useState(false)
   const [backupRestoreInitialTab, setBackupRestoreInitialTab] = useState<'backup' | 'restore'>('backup')
   const [tableDeleteDialog, setTableDeleteDialog] = useState<{ mode: TableDeleteMode; table: string } | null>(null)
+  /** Quarantine re-import: file path to auto-load in ImportSQLDialog. */
+  const [quarantineReimportPath, setQuarantineReimportPath] = useState<string | null>(null)
+
+  // Healing: paused-import resolution queue. We queue requests (rare edge case
+  // where multiple fire before the user answers) and show them one at a time.
+  const [healQueue, setHealQueue] = useState<ResolutionRequest[]>([])
+  const activeHealRequest = healQueue[0] ?? null
+
+  const handleOpenQuarantine = useCallback((path: string) => {
+    setQuarantineReimportPath(path)
+    setShowImportSQLDialog(true)
+  }, [])
 
   // ── Sidebar resize ──
   const sbDragging = useRef(false)
@@ -315,6 +328,37 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       unsubCompleted()
     }
   }, [sqlSessionId, connectionId, addRunningQuery, removeRunningQuery])
+
+  // ── Healing: subscribe to resolution-request events from the main process ──
+  // Fires whenever an import/restore pauses on a statement that needs user input.
+  useEffect(() => {
+    if (!sqlSessionId) return
+    const unsub = window.novadeck.sql.onResolutionRequest?.((sid: string, req: unknown) => {
+      if (sid !== sqlSessionId) return
+      setHealQueue((prev) => [...prev, req as ResolutionRequest])
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [sqlSessionId])
+
+  const handleResolveHeal = useCallback(
+    async (operationId: string, decision: HealDecision) => {
+      try {
+        await window.novadeck.sql.resolveTransfer?.(operationId, decision)
+      } finally {
+        setHealQueue((prev) => (prev.length > 0 && prev[0].operationId === operationId ? prev.slice(1) : prev))
+      }
+    },
+    [],
+  )
+
+  const handleDismissHeal = useCallback(() => {
+    const req = healQueue[0]
+    if (!req) return
+    // Dismiss = skip (operation keeps running; no data is lost)
+    void handleResolveHeal(req.operationId, { action: 'skip' })
+  }, [healQueue, handleResolveHeal])
 
   // ── Persist open tabs to localStorage when they change (while connected) ──
   useEffect(() => {
@@ -1555,12 +1599,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       {sqlSessionId && connectionConfig && (
         <ImportSQLDialog
           open={showImportSQLDialog}
-          onClose={() => setShowImportSQLDialog(false)}
+          onClose={() => { setShowImportSQLDialog(false); setQuarantineReimportPath(null) }}
           sqlSessionId={sqlSessionId}
           connectionId={connectionId}
           dbType={connectionConfig.type}
           currentDatabase={currentDatabase}
           isProduction={connectionConfig.isProduction}
+          initialFilePath={quarantineReimportPath}
+          onOpenQuarantine={handleOpenQuarantine}
         />
       )}
 
@@ -1609,6 +1655,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           dbPort={connectionConfig.port}
           dbUser={connectionConfig.username}
           dbPassword={connectionConfig.password}
+          onOpenQuarantine={handleOpenQuarantine}
         />
       )}
 
@@ -1623,6 +1670,13 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           onConfirm={(opts) => runTableDelete(tableDeleteDialog.mode, tableDeleteDialog.table, opts)}
         />
       )}
+
+      {/* Healing dialog — appears when a running import/restore pauses on an error */}
+      <HealingDialog
+        request={activeHealRequest}
+        onResolve={handleResolveHeal}
+        onDismiss={handleDismissHeal}
+      />
     </div>
   )
 })

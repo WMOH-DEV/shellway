@@ -13,7 +13,8 @@ import { cn } from '@/utils/cn'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { formatFileSize } from '@/utils/fileSize'
-import type { DatabaseType, TransferProgress } from '@/types/sql'
+import type { DatabaseType, HealRunMode, TransferProgress } from '@/types/sql'
+import { RunModeSelector } from './RunModeSelector'
 
 // ── Types ──
 
@@ -32,6 +33,8 @@ interface BackupRestoreDialogProps {
   dbPort?: number
   dbUser?: string
   dbPassword?: string
+  /** Callback to reopen the Import SQL dialog on a quarantine file. */
+  onOpenQuarantine?: (path: string) => void
 }
 
 type ActiveTab = 'backup' | 'restore'
@@ -62,6 +65,7 @@ export function BackupRestoreDialog({
   dbPort,
   dbUser = '',
   dbPassword = '',
+  onOpenQuarantine,
 }: BackupRestoreDialogProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab)
 
@@ -89,8 +93,7 @@ export function BackupRestoreDialog({
   const [restoreFilePath, setRestoreFilePath] = useState<string | null>(null)
   const [restoreFileName, setRestoreFileName] = useState<string | null>(null)
   const [restoreFileSize, setRestoreFileSize] = useState<number | null>(null)
-  // 'abort' = stop & rollback on first error · 'skip' = log and continue
-  const [restoreOnError, setRestoreOnError] = useState<'abort' | 'skip'>('abort')
+  const [restoreRunMode, setRestoreRunMode] = useState<HealRunMode>('smart')
 
   // ── Shared ──
   const [operationId, setOperationId] = useState<string | null>(null)
@@ -114,7 +117,7 @@ export function BackupRestoreDialog({
       setRestoreFilePath(null)
       setRestoreFileName(null)
       setRestoreFileSize(null)
-      setRestoreOnError('abort')
+      setRestoreRunMode('smart')
       setMysqlSingleTransaction(true)
       setMysqlDropTable(true)
       setMysqlExtendedInsert(true)
@@ -287,7 +290,9 @@ export function BackupRestoreDialog({
           dbPort: effectivePort,
           dbUser,
           dbPassword,
-          onError: restoreOnError,
+          runMode: restoreRunMode,
+          // Back-compat: mirror strict-abort to the legacy onError field.
+          onError: restoreRunMode === 'strict-abort' ? 'abort' : 'skip',
         }
       )
 
@@ -301,7 +306,7 @@ export function BackupRestoreDialog({
       setOperationErrors([err instanceof Error ? err.message : String(err)])
       setRestorePhase('complete')
     }
-  }, [restoreFilePath, sqlSessionId, currentDatabase, dbHost, effectivePort, dbUser, dbPassword, restoreOnError])
+  }, [restoreFilePath, sqlSessionId, currentDatabase, dbHost, effectivePort, dbUser, dbPassword, restoreRunMode])
 
   // ── Cancel ──
 
@@ -534,43 +539,7 @@ export function BackupRestoreDialog({
             )}
 
             {/* On-error behaviour */}
-            <div>
-              <label className="block text-xs font-medium text-nd-text-secondary mb-1.5">
-                On error
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRestoreOnError('abort')}
-                  className={cn(
-                    'flex-1 px-3 py-1.5 rounded-md border text-xs text-left transition-colors',
-                    restoreOnError === 'abort'
-                      ? 'border-nd-accent bg-nd-accent/10 text-nd-text-primary'
-                      : 'border-nd-border bg-nd-surface text-nd-text-secondary hover:text-nd-text-primary'
-                  )}
-                >
-                  <span className="block font-medium">Stop on error</span>
-                  <span className="block text-nd-text-muted mt-0.5">
-                    Roll back and abort on the first failing statement.
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRestoreOnError('skip')}
-                  className={cn(
-                    'flex-1 px-3 py-1.5 rounded-md border text-xs text-left transition-colors',
-                    restoreOnError === 'skip'
-                      ? 'border-nd-accent bg-nd-accent/10 text-nd-text-primary'
-                      : 'border-nd-border bg-nd-surface text-nd-text-secondary hover:text-nd-text-primary'
-                  )}
-                >
-                  <span className="block font-medium">Ignore errors</span>
-                  <span className="block text-nd-text-muted mt-0.5">
-                    Log each failure and keep executing remaining statements.
-                  </span>
-                </button>
-              </div>
-            </div>
+            <RunModeSelector value={restoreRunMode} onChange={setRestoreRunMode} />
 
             {/* Credentials note */}
             {!dbUser && (
@@ -707,6 +676,50 @@ export function BackupRestoreDialog({
                   </span>
                 </p>
               )}
+              {progress?.stats && activeTab === 'restore' && (
+                <>
+                  <p>
+                    Executed:{' '}
+                    <span className="text-nd-text-primary font-medium">
+                      {progress.stats.executed.toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    Healed:{' '}
+                    <span className="text-emerald-400 font-medium">
+                      {progress.stats.healed.toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    Skipped:{' '}
+                    <span
+                      className={cn(
+                        'font-medium',
+                        progress.stats.skipped > 0 ? 'text-amber-400' : 'text-nd-text-primary',
+                      )}
+                    >
+                      {progress.stats.skipped.toLocaleString()}
+                    </span>
+                  </p>
+                  <p>
+                    Quarantined:{' '}
+                    <span
+                      className={cn(
+                        'font-medium',
+                        progress.stats.quarantined > 0 ? 'text-amber-400' : 'text-nd-text-primary',
+                      )}
+                    >
+                      {progress.stats.quarantined.toLocaleString()}
+                    </span>
+                  </p>
+                </>
+              )}
+              {progress?.quarantinePath && (
+                <p className="pt-1 border-t border-nd-border mt-1.5 text-[11px]">
+                  <span className="text-nd-text-muted">Quarantine file: </span>
+                  <span className="text-nd-text-primary font-mono break-all">{progress.quarantinePath}</span>
+                </p>
+              )}
               <p>
                 Time:{' '}
                 <span className="text-nd-text-primary font-medium">{formatElapsed(elapsed)}</span>
@@ -724,8 +737,22 @@ export function BackupRestoreDialog({
               </div>
             )}
 
-            {/* Close */}
-            <div className="flex justify-end pt-1">
+            {/* Close + quarantine re-import */}
+            <div className="flex justify-end gap-2 pt-1">
+              {progress?.quarantinePath && onOpenQuarantine && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const path = progress.quarantinePath!
+                    onClose()
+                    setTimeout(() => onOpenQuarantine(path), 100)
+                  }}
+                >
+                  <FileText size={13} />
+                  Re-run quarantine
+                </Button>
+              )}
               <Button variant="secondary" size="sm" onClick={onClose}>
                 Close
               </Button>

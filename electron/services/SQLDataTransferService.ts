@@ -1,16 +1,34 @@
 // electron/services/SQLDataTransferService.ts
 
 import { EventEmitter } from 'events'
-import { createReadStream, createWriteStream } from 'fs'
-import { stat } from 'fs/promises'
+import { createReadStream, createWriteStream, type WriteStream } from 'fs'
+import { stat, mkdir } from 'fs/promises'
+import { join } from 'path'
 import { randomUUID } from 'crypto'
-import { createGunzip } from 'zlib'
+import { createGunzip, createUnzip } from 'zlib'
+import { app } from 'electron'
 import type { Readable } from 'stream'
 import type { Client as SSHClient } from 'ssh2'
 import { SQLService, DatabaseType } from './SQLService'
 import { splitSQLStatements, preScanStatements } from '../utils/sqlParser'
 import { parseCSVStream, previewCSV as csvPreview } from '../utils/csvParser'
 import { shellEscape, validateIdentifier, quoteIdentifier, validateBinaryPath } from '../utils/shellEscape'
+import {
+  classifyError,
+  getHealOptions,
+  pickAutoStrategy,
+  isSafeForSmartAuto,
+  type ClassifiedError,
+} from '../utils/sqlErrorClassifier'
+import { applyHeal } from './HealingEngine'
+import { writeCheckpoint, deleteCheckpoint } from './TransferCheckpointStore'
+import type {
+  HealRunMode,
+  HealErrorClass,
+  HealDecision,
+  ResolutionRequest,
+  TransferStats,
+} from '../../src/types/sql'
 
 // ── Types ──
 
@@ -18,7 +36,7 @@ export interface TransferProgress {
   operationId: string
   sqlSessionId: string
   operation: 'export' | 'import' | 'backup' | 'restore'
-  status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused'
   percentage: number // 0-100, -1 for indeterminate
   processedRows?: number
   totalRows?: number
@@ -27,6 +45,12 @@ export interface TransferProgress {
   currentTable?: string
   message?: string
   error?: string
+  /** Preview of the currently-executing statement (truncated). */
+  currentStatement?: string
+  /** Cumulative tally (executed/healed/skipped/quarantined/failed). */
+  stats?: TransferStats
+  /** Path to the quarantine file (if any statements were quarantined). */
+  quarantinePath?: string
   startedAt: number
   completedAt?: number
 }
@@ -57,6 +81,29 @@ export interface ExportOptions {
 export interface ImportSQLOptions {
   useTransaction: boolean
   onError: 'abort' | 'skip'
+  /**
+   * Healing run mode. Takes precedence over `onError` when set.
+   * - 'full-auto': apply recommended heal for every error, never prompt
+   * - 'smart': auto-heal safe classes, prompt on risky ones (default in UI)
+   * - 'ask-always': prompt on every error
+   * - 'strict-abort': stop on first error (equivalent to onError: 'abort')
+   */
+  runMode?: HealRunMode
+  /**
+   * Skip the first N statements on resume. Used when restarting an import
+   * from a checkpoint after a crash or cancel.
+   */
+  skipFirst?: number
+  /** Database name for checkpoint metadata (shown in resume prompt). */
+  database?: string
+  /**
+   * Dry run: wrap the whole import in a transaction that is always rolled
+   * back at the end. Healing decisions still flow through, so the user gets
+   * a full report of what would happen without touching the target. Note
+   * that MySQL commits DDL implicitly — CREATE/ALTER/DROP TABLE will still
+   * persist.
+   */
+  dryRun?: boolean
 }
 
 export interface ImportCSVOptions {
@@ -73,6 +120,8 @@ export interface ImportCSVOptions {
   batchSize?: number
   /** Error handling strategy */
   onError: 'abort' | 'skip'
+  /** Healing run mode (same semantics as ImportSQLOptions.runMode). */
+  runMode?: HealRunMode
   /** Schema name (PostgreSQL) */
   schema?: string
   /** Total expected rows (from preview) for accurate progress */
@@ -157,6 +206,12 @@ function escapeSQLValue(value: unknown, dbType: DatabaseType): string {
   return "'" + str + "'"
 }
 
+/** Shorten a statement for UI preview — keeps the first few tokens. */
+function truncateForPreview(stmt: string, max = 120): string {
+  const collapsed = stmt.replace(/\s+/g, ' ').trim()
+  return collapsed.length > max ? collapsed.slice(0, max) + '…' : collapsed
+}
+
 /** Escape a CSV field per RFC 4180. */
 function escapeCSVField(value: unknown, delimiter: string): string {
   if (value === null || value === undefined) return ''
@@ -172,6 +227,16 @@ function escapeCSVField(value: unknown, delimiter: string): string {
 export class SQLDataTransferService extends EventEmitter {
   private sqlService: SQLService
   private operations = new Map<string, { controller: AbortController; progress: TransferProgress }>()
+
+  // ── Healing state (per operation) ──
+  /** Unblocks the paused import loop when the user (or auto) resolves an error. */
+  private pendingResolutions = new Map<string, (decision: HealDecision) => void>()
+  /** "Apply to all similar errors" — remembered decisions per error class, per run. */
+  private decisionMemory = new Map<string, Map<HealErrorClass, HealDecision>>()
+  /** Running stats for each operation (executed/healed/skipped/quarantined/failed). */
+  private operationStats = new Map<string, TransferStats>()
+  /** Per-op quarantine file stream; lazily created on first quarantine. */
+  private quarantineStreams = new Map<string, { path: string; stream: WriteStream; count: number }>()
 
   constructor(sqlService: SQLService) {
     super()
@@ -192,22 +257,27 @@ export class SQLDataTransferService extends EventEmitter {
     }
     const operationId = randomUUID()
     const controller = new AbortController()
+    const stats: TransferStats = { executed: 0, healed: 0, skipped: 0, quarantined: 0, failed: 0 }
     const progress: TransferProgress = {
       operationId,
       sqlSessionId,
       operation,
       status: 'running',
       percentage: 0,
+      stats: { ...stats },
       startedAt: Date.now(),
     }
     this.operations.set(operationId, { controller, progress })
+    this.operationStats.set(operationId, stats)
     return { operationId, controller }
   }
 
   private updateProgress(operationId: string, updates: Partial<TransferProgress>): void {
     const op = this.operations.get(operationId)
     if (!op) return
-    Object.assign(op.progress, updates)
+    // Always ship the current stats snapshot along with updates so UI stays in sync
+    const stats = this.operationStats.get(operationId)
+    Object.assign(op.progress, updates, stats ? { stats: { ...stats } } : {})
     this.emit('progress', op.progress.sqlSessionId, { ...op.progress })
   }
 
@@ -222,15 +292,306 @@ export class SQLDataTransferService extends EventEmitter {
     op.progress.completedAt = Date.now()
     if (error) op.progress.error = error
     if (status === 'completed') op.progress.percentage = 100
+    const stats = this.operationStats.get(operationId)
+    if (stats) op.progress.stats = { ...stats }
+    const qinfo = this.quarantineStreams.get(operationId)
+    if (qinfo) op.progress.quarantinePath = qinfo.path
     this.emit('progress', op.progress.sqlSessionId, { ...op.progress })
+    // Close quarantine file if any
+    void this.closeQuarantine(operationId)
+    // Drop any pending resolver (caller aborted/cancelled while paused)
+    this.pendingResolutions.delete(operationId)
+    this.decisionMemory.delete(operationId)
     // Clean up after a delay (let UI show completion)
-    setTimeout(() => this.operations.delete(operationId), 30000)
+    setTimeout(() => {
+      this.operations.delete(operationId)
+      this.operationStats.delete(operationId)
+    }, 30000)
   }
 
   private checkCancelled(controller: AbortController): void {
     if (controller.signal.aborted) {
       throw new Error('Operation cancelled')
     }
+  }
+
+  private bumpStat(operationId: string, key: keyof TransferStats): void {
+    const stats = this.operationStats.get(operationId)
+    if (stats) stats[key] += 1
+  }
+
+  // ── Healing: pause/resume protocol ──
+
+  /**
+   * Resolve a paused operation with the caller's heal decision. Called from the
+   * IPC layer in response to a user's choice in the HealingDialog.
+   */
+  resolveOperation(
+    operationId: string,
+    decision: HealDecision,
+  ): { success: boolean; error?: string } {
+    const resolver = this.pendingResolutions.get(operationId)
+    if (!resolver) {
+      return { success: false, error: 'No pending resolution for this operation' }
+    }
+    this.pendingResolutions.delete(operationId)
+    resolver(decision)
+    return { success: true }
+  }
+
+  /** Block the import loop until `resolveOperation` is called (or operation is cancelled). */
+  private waitForResolution(
+    operationId: string,
+    controller: AbortController,
+    request: ResolutionRequest,
+  ): Promise<HealDecision> {
+    return new Promise<HealDecision>((resolve, reject) => {
+      this.pendingResolutions.set(operationId, (decision) => {
+        controller.signal.removeEventListener('abort', onAbort)
+        resolve(decision)
+      })
+      const onAbort = (): void => {
+        this.pendingResolutions.delete(operationId)
+        reject(new Error('Operation cancelled'))
+      }
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+      this.updateProgress(operationId, {
+        status: 'paused',
+        message: `Paused on statement ${request.statementIndex} — awaiting resolution (${request.errorClass})`,
+      })
+      this.emit('resolution-request', request.sqlSessionId, request)
+    })
+  }
+
+  /**
+   * Central error-resolution flow. Classifies, consults decision memory,
+   * applies run-mode policy, optionally prompts the user, then returns what
+   * the caller should do next.
+   *
+   * Returns:
+   *   { status: 'skipped' }                    — proceed to next statement
+   *   { status: 'retry', statement }           — re-execute `statement`
+   *   (throws)                                 — abort the whole operation
+   */
+  private async handleStatementError(
+    operationId: string,
+    sqlSessionId: string,
+    dbType: DatabaseType,
+    statement: string,
+    statementIndex: number,
+    error: unknown,
+    runMode: HealRunMode,
+    controller: AbortController,
+  ): Promise<{ status: 'skipped' } | { status: 'retry'; statement: string }> {
+    const classified: ClassifiedError = classifyError(error, dbType)
+    const memory = this.decisionMemory.get(operationId)
+    let decision: HealDecision | null = null
+
+    // 1) Remembered "apply to all" for this class?
+    const remembered = memory?.get(classified.class)
+    if (remembered) decision = remembered
+
+    // 2) Strict mode bypasses heal entirely
+    if (!decision && runMode === 'strict-abort') {
+      this.bumpStat(operationId, 'failed')
+      throw new Error(`Statement ${statementIndex} failed: ${classified.message}`)
+    }
+
+    // 3) Auto-decide based on mode
+    if (!decision) {
+      if (runMode === 'full-auto') {
+        const auto = pickAutoStrategy(classified.class, dbType)
+        decision = auto ? { action: 'heal', strategy: auto } : { action: 'skip' }
+      } else if (runMode === 'smart' && isSafeForSmartAuto(classified.class)) {
+        const auto = pickAutoStrategy(classified.class, dbType)
+        if (auto) decision = { action: 'heal', strategy: auto }
+      }
+    }
+
+    // 4) Still undecided → ask the user (ask-always, or smart on a risky class)
+    if (!decision) {
+      const request: ResolutionRequest = {
+        operationId,
+        sqlSessionId,
+        statementIndex,
+        statement,
+        errorClass: classified.class,
+        errorMessage: classified.message,
+        errorCode: classified.code,
+        availableStrategies: getHealOptions(classified.class, dbType),
+      }
+      decision = await this.waitForResolution(operationId, controller, request)
+      // Unpause
+      this.updateProgress(operationId, { status: 'running' })
+    }
+
+    // Persist remember-for-class choice
+    if (decision.rememberForClass) {
+      if (!memory) this.decisionMemory.set(operationId, new Map([[classified.class, decision]]))
+      else memory.set(classified.class, decision)
+    }
+
+    // Apply the decision
+    if (decision.action === 'abort') {
+      this.bumpStat(operationId, 'failed')
+      throw new Error(`User aborted at statement ${statementIndex}: ${classified.message}`)
+    }
+    if (decision.action === 'skip') {
+      this.bumpStat(operationId, 'skipped')
+      this.updateProgress(operationId, {
+        error: `Statement ${statementIndex} skipped (${classified.class}): ${classified.message}`,
+      })
+      return { status: 'skipped' }
+    }
+    if (decision.action === 'quarantine') {
+      await this.quarantineStatement(operationId, statement, classified, statementIndex)
+      this.bumpStat(operationId, 'quarantined')
+      return { status: 'skipped' }
+    }
+    if (decision.action === 'retry') {
+      return { status: 'retry', statement: decision.editedStatement ?? statement }
+    }
+
+    // action === 'heal'
+    const outcome = applyHeal({ dbType, statement, error: classified, decision })
+    // Run any pre-statements (session flags, ALTERs, DROP IF EXISTS)
+    if (outcome.preStatements) {
+      for (const pre of outcome.preStatements) {
+        try {
+          await this.sqlService.executeQuery(sqlSessionId, pre)
+        } catch (preErr: unknown) {
+          const msg = preErr instanceof Error ? preErr.message : String(preErr)
+          this.bumpStat(operationId, 'skipped')
+          this.updateProgress(operationId, {
+            error: `Heal pre-statement failed at stmt ${statementIndex}: ${msg}`,
+          })
+          return { status: 'skipped' }
+        }
+      }
+    }
+    if (!outcome.rewritten) {
+      // Heal didn't produce a rewrite (e.g. needs schema introspection) — quarantine instead of silently dropping
+      await this.quarantineStatement(operationId, statement, classified, statementIndex)
+      this.bumpStat(operationId, 'quarantined')
+      return { status: 'skipped' }
+    }
+    return { status: 'retry', statement: outcome.rewritten }
+  }
+
+  /**
+   * Execute a statement with the healing flow wrapped around it. First-attempt
+   * successes bump `executed`; successes after heal bump `healed`.
+   * Returns 'executed' or 'skipped'. Throws on abort.
+   */
+  private async tryExecuteWithHealing(
+    operationId: string,
+    sqlSessionId: string,
+    dbType: DatabaseType,
+    statement: string,
+    statementIndex: number,
+    runMode: HealRunMode,
+    controller: AbortController,
+    params?: unknown[],
+  ): Promise<'executed' | 'skipped'> {
+    let currentStmt = statement
+    let attempts = 0
+    const MAX_ATTEMPTS = 4
+    while (true) {
+      attempts++
+      try {
+        // Only first attempt uses original params (heals may rewrite the SQL
+        // but we pass params through unchanged — most statement-level heals
+        // preserve placeholder positions).
+        await this.sqlService.executeQuery(sqlSessionId, currentStmt, params)
+        if (attempts === 1) this.bumpStat(operationId, 'executed')
+        else this.bumpStat(operationId, 'healed')
+        return 'executed'
+      } catch (err: unknown) {
+        if (attempts >= MAX_ATTEMPTS) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (runMode === 'strict-abort') throw err
+          this.bumpStat(operationId, 'skipped')
+          this.updateProgress(operationId, {
+            error: `Statement ${statementIndex} failed after ${attempts} attempts: ${msg}`,
+          })
+          return 'skipped'
+        }
+        const result = await this.handleStatementError(
+          operationId,
+          sqlSessionId,
+          dbType,
+          currentStmt,
+          statementIndex,
+          err,
+          runMode,
+          controller,
+        )
+        if (result.status === 'skipped') return 'skipped'
+        currentStmt = result.statement
+      }
+    }
+  }
+
+  /**
+   * Map legacy {onError, useTransaction} options to a HealRunMode. A caller
+   * that supplies `runMode` directly takes precedence.
+   */
+  private resolveRunMode(options: {
+    runMode?: HealRunMode
+    onError?: 'abort' | 'skip'
+  }): HealRunMode {
+    if (options.runMode) return options.runMode
+    return options.onError === 'skip' ? 'full-auto' : 'strict-abort'
+  }
+
+  // ── Healing: quarantine file writer (P2 will add re-import) ──
+
+  private async quarantineStatement(
+    operationId: string,
+    statement: string,
+    classified: ClassifiedError,
+    statementIndex: number,
+  ): Promise<void> {
+    try {
+      let info = this.quarantineStreams.get(operationId)
+      if (!info) {
+        // Resolve userData dir lazily — works in both main process and tests.
+        const baseDir = app?.getPath ? join(app.getPath('userData'), 'shellway', 'quarantine') : '.shellway-quarantine'
+        await mkdir(baseDir, { recursive: true })
+        const fname = `${Date.now()}-${operationId.slice(0, 8)}.sql`
+        const path = join(baseDir, fname)
+        const stream = createWriteStream(path, { flags: 'w', encoding: 'utf-8' })
+        stream.write(`-- Shellway quarantine file\n`)
+        stream.write(`-- Operation: ${operationId}\n`)
+        stream.write(`-- Created:   ${new Date().toISOString()}\n`)
+        stream.write(`-- Each entry: an error annotation followed by the offending statement.\n`)
+        stream.write(`-- Re-run this file in Shellway after reviewing/fixing to apply the skipped statements.\n\n`)
+        info = { path, stream, count: 0 }
+        this.quarantineStreams.set(operationId, info)
+        this.updateProgress(operationId, { quarantinePath: path })
+      }
+      info.count += 1
+      info.stream.write(`-- [${info.count}] stmt #${statementIndex} · class=${classified.class}`)
+      if (classified.code !== undefined) info.stream.write(` · code=${classified.code}`)
+      info.stream.write(`\n-- error: ${classified.message.replace(/\r?\n/g, ' ')}\n`)
+      info.stream.write(statement.trim())
+      if (!statement.trimEnd().endsWith(';')) info.stream.write(';')
+      info.stream.write('\n\n')
+    } catch (err: unknown) {
+      // If the file system is broken, don't crash the whole import — just
+      // report and let this one statement be counted as skipped instead.
+      const msg = err instanceof Error ? err.message : String(err)
+      this.updateProgress(operationId, { error: `Quarantine write failed: ${msg}` })
+    }
+  }
+
+  private async closeQuarantine(operationId: string): Promise<void> {
+    const info = this.quarantineStreams.get(operationId)
+    if (!info) return
+    this.quarantineStreams.delete(operationId)
+    await new Promise<void>((resolve) => {
+      info.stream.end(() => resolve())
+    })
   }
 
   // ── Export ──
@@ -618,23 +979,55 @@ export class SQLDataTransferService extends EventEmitter {
     controller: AbortController
   ): Promise<void> {
     try {
+      const dbType = this.sqlService.getConnectionType(sqlSessionId)
+      if (!dbType) throw new Error('Not connected')
+
       const fileStat = await stat(filePath)
       const fileSize = fileStat.size
 
+      const runMode = this.resolveRunMode(options)
+      const dryRun = options.dryRun === true
+      // A transaction is only coherent with strict-abort OR a dry run (where
+      // we always roll back at the end). Callers that ask for heal + tx in
+      // any other combination silently drop the transaction.
+      const useTransaction = dryRun || (options.useTransaction && runMode === 'strict-abort')
+
+      // Detect archive format from extension. gzip + zlib-deflate are handled
+      // natively; other archive formats (zip, tar, bz2) require external deps
+      // we don't ship — reject with a clear message rather than exploding.
+      const lower = filePath.toLowerCase()
       const isGzip = /\.gz$/i.test(filePath)
+      const isDeflate = /\.(z|zz|deflate)$/i.test(filePath)
+      if (/\.zip$/i.test(lower)) {
+        throw new Error(
+          '.zip archives are not yet supported directly — extract the .sql file first, or use a .sql.gz dump.',
+        )
+      }
+      if (/\.bz2$/i.test(lower)) {
+        throw new Error(
+          '.bz2 archives are not yet supported directly — extract the .sql file first, or use a .sql.gz dump.',
+        )
+      }
+      if (/\.tar(\.gz)?$/i.test(lower)) {
+        throw new Error(
+          'tar/tar.gz archives hold multiple files — extract the target .sql (or .sql.gz) and import it directly.',
+        )
+      }
+
       this.updateProgress(operationId, {
         totalBytes: fileSize,
         message: isGzip
           ? 'Preparing SQL import (decompressing gzip)...'
-          : 'Preparing SQL import...',
+          : isDeflate
+            ? 'Preparing SQL import (decompressing deflate)...'
+            : 'Preparing SQL import...',
       })
 
       // Track raw file bytes read from disk so the progress bar reflects the
       // user-visible file size — matters for .gz where decompressed bytes are
       // much larger than the on-disk size.
       let processedBytes = 0
-      let statementCount = 0
-      let errorCount = 0
+      let statementIndex = 0
 
       const fileStream = createReadStream(filePath)
       fileStream.on('data', (chunk: Buffer | string) => {
@@ -644,71 +1037,106 @@ export class SQLDataTransferService extends EventEmitter {
       let readStream: Readable
       if (isGzip) {
         const gunzip = createGunzip()
-        // Any gunzip error surfaces on the downstream consumer via the parser
         fileStream.pipe(gunzip)
         readStream = gunzip
+      } else if (isDeflate) {
+        // createUnzip auto-detects gzip + raw deflate + zlib-deflate
+        const unzip = createUnzip()
+        fileStream.pipe(unzip)
+        readStream = unzip
       } else {
         readStream = fileStream
       }
       readStream.setEncoding('utf-8')
 
-      if (options.useTransaction) {
+      if (useTransaction) {
         await this.sqlService.executeQuery(sqlSessionId, 'BEGIN')
       }
 
+      const skipFirst = options.skipFirst ?? 0
       try {
         for await (const stmt of splitSQLStatements(readStream)) {
           this.checkCancelled(controller)
-
-          // Skip empty statements
           if (!stmt.trim()) continue
 
-          try {
-            await this.sqlService.executeQuery(sqlSessionId, stmt)
-            statementCount++
-          } catch (err: any) {
-            errorCount++
-            if (options.onError === 'abort') {
-              throw new Error(`Statement ${statementCount + 1} failed: ${err.message}`)
-            }
-            // Skip — report the error via progress event and continue
-            this.updateProgress(operationId, {
-              processedRows: statementCount,
-              error: `Statement ${statementCount + errorCount} failed: ${err.message}`,
-            })
-          }
+          statementIndex++
 
-          // Update progress periodically
-          if (statementCount % 50 === 0) {
+          // Fast-forward past already-executed statements on resume.
+          if (statementIndex <= skipFirst) continue
+
+          await this.tryExecuteWithHealing(
+            operationId,
+            sqlSessionId,
+            dbType,
+            stmt,
+            statementIndex,
+            runMode,
+            controller,
+          )
+
+          // Periodic progress update
+          if (statementIndex % 50 === 0) {
+            const stats = this.operationStats.get(operationId)
+            const errTotal = stats ? stats.skipped + stats.quarantined : 0
             this.updateProgress(operationId, {
               processedBytes,
-              processedRows: statementCount,
+              processedRows: stats?.executed ?? 0,
               percentage: fileSize > 0 ? Math.min(99, Math.round((processedBytes / fileSize) * 100)) : -1,
-              message: `Executed ${statementCount} statements${errorCount > 0 ? ` (${errorCount} errors)` : ''}...`,
+              currentStatement: truncateForPreview(stmt),
+              message: errTotal > 0
+                ? `Executed ${stats?.executed ?? 0}, healed ${stats?.healed ?? 0}, skipped ${stats?.skipped ?? 0}, quarantined ${stats?.quarantined ?? 0}`
+                : `Executed ${stats?.executed ?? 0} statements (${stats?.healed ?? 0} healed)`,
             })
           }
 
-          // Yield to event loop periodically so V8's garbage collector can run.
-          // Without this, rapid statement execution keeps the main thread busy and
-          // GC never gets a chance to reclaim memory from processed statements,
-          // eventually causing OOM on large imports.
-          if ((statementCount + errorCount) % 200 === 0) {
+          // Checkpoint every 500 stmts so interrupted runs can resume.
+          if (statementIndex % 500 === 0 && runMode !== 'strict-abort') {
+            void writeCheckpoint({
+              operationId,
+              filePath,
+              label: filePath.split(/[/\\]/).pop() ?? filePath,
+              stmtIndex: statementIndex,
+              processedBytes,
+              totalBytes: fileSize,
+              dbType,
+              runMode,
+              updatedAt: Date.now(),
+              database: options.database,
+            })
+          }
+
+          // Yield to event loop periodically for GC
+          if (statementIndex % 200 === 0) {
             await new Promise<void>((resolve) => setImmediate(resolve))
           }
         }
 
-        if (options.useTransaction) {
-          await this.sqlService.executeQuery(sqlSessionId, 'COMMIT')
+        if (useTransaction) {
+          // Dry run always rolls back; strict-abort path commits.
+          if (dryRun) {
+            try {
+              await this.sqlService.executeQuery(sqlSessionId, 'ROLLBACK')
+            } catch { /* ignore */ }
+          } else {
+            await this.sqlService.executeQuery(sqlSessionId, 'COMMIT')
+          }
         }
 
+        const finalStats = this.operationStats.get(operationId)
         this.updateProgress(operationId, {
-          processedRows: statementCount,
+          processedRows: finalStats?.executed ?? statementIndex,
           processedBytes: fileSize,
-          message: `Completed: ${statementCount} statements${errorCount > 0 ? `, ${errorCount} errors` : ''}`,
+          message: dryRun
+            ? `Dry run complete — ${finalStats?.executed ?? 0} would execute, ${finalStats?.healed ?? 0} heals, ${finalStats?.skipped ?? 0} skips, ${finalStats?.quarantined ?? 0} quarantine. Rolled back.`
+            : finalStats
+              ? `Done — ${finalStats.executed} executed, ${finalStats.healed} healed, ${finalStats.skipped} skipped, ${finalStats.quarantined} quarantined`
+              : `Done — ${statementIndex} statements`,
         })
+        // Clean completion — remove checkpoint; nothing to resume.
+        void deleteCheckpoint(operationId)
         this.completeOperation(operationId, 'completed')
       } catch (err: any) {
-        if (options.useTransaction) {
+        if (useTransaction) {
           try {
             await this.sqlService.executeQuery(sqlSessionId, 'ROLLBACK')
           } catch { /* ignore rollback errors */ }
@@ -756,6 +1184,7 @@ export class SQLDataTransferService extends EventEmitter {
         ? `${quoteIdentifier(schema, dbType)}.${quoteIdentifier(table, dbType)}`
         : quoteIdentifier(table, dbType)
 
+      const runMode = this.resolveRunMode(options)
       const estimatedTotalRows = options.totalRows ?? 0
 
       this.updateProgress(operationId, {
@@ -774,7 +1203,6 @@ export class SQLDataTransferService extends EventEmitter {
       let isFirstRow = true
       let rowBatch: string[][] = []
       let processedRows = 0
-      let errorCount = 0
 
       // Read header row first if present
       for await (const row of csvStream) {
@@ -793,40 +1221,30 @@ export class SQLDataTransferService extends EventEmitter {
                   mappedHeaders.push(options.columnMapping[i])
                   indices.push(i)
                 }
-                // Columns not in the mapping are skipped
               }
               headers = mappedHeaders
               includedIndices = indices
             }
 
-            // Create table if requested
             if (options.createTable) {
               await this.createTableFromCSV(sqlSessionId, table, headers, dbType, schema)
             }
-
-            // Truncate if requested
             if (options.truncateBefore) {
               await this.sqlService.executeQuery(sqlSessionId, `TRUNCATE TABLE ${quotedTable}`)
             }
 
             continue
           } else {
-            // No headers — generate column names
             headers = row.map((_, i) => `col_${i + 1}`)
-
             if (options.createTable) {
               await this.createTableFromCSV(sqlSessionId, table, headers, dbType, schema)
             }
-
             if (options.truncateBefore) {
               await this.sqlService.executeQuery(sqlSessionId, `TRUNCATE TABLE ${quotedTable}`)
             }
-
-            // Don't skip — fall through to process this row as data
           }
         }
 
-        // Filter row data to only include mapped columns
         const filteredRow = includedIndices
           ? includedIndices.map((idx) => (idx < row.length ? row[idx] : ''))
           : row
@@ -834,35 +1252,38 @@ export class SQLDataTransferService extends EventEmitter {
         rowBatch.push(filteredRow)
 
         if (rowBatch.length >= batchSize) {
-          const errors = await this.insertCSVBatch(
-            sqlSessionId, quotedTable, headers, rowBatch, dbType, options.onError
+          await this.insertCSVBatch(
+            sqlSessionId, quotedTable, headers, rowBatch, dbType, runMode, operationId, processedRows, controller,
           )
           processedRows += rowBatch.length
-          errorCount += errors
           rowBatch = []
 
+          const stats = this.operationStats.get(operationId)
           this.updateProgress(operationId, {
             processedRows,
             percentage: estimatedTotalRows > 0
               ? Math.min(99, Math.round((processedRows / estimatedTotalRows) * 100))
               : -1,
-            message: `Imported ${processedRows} rows${errorCount > 0 ? ` (${errorCount} errors)` : ''}...`,
+            message: stats
+              ? `Imported ${processedRows} rows (${stats.healed} healed, ${stats.skipped} skipped, ${stats.quarantined} quarantined)`
+              : `Imported ${processedRows} rows...`,
           })
         }
       }
 
-      // Flush remaining batch
       if (rowBatch.length > 0) {
-        const errors = await this.insertCSVBatch(
-          sqlSessionId, quotedTable, headers, rowBatch, dbType, options.onError
+        await this.insertCSVBatch(
+          sqlSessionId, quotedTable, headers, rowBatch, dbType, runMode, operationId, processedRows, controller,
         )
         processedRows += rowBatch.length
-        errorCount += errors
       }
 
+      const finalStats = this.operationStats.get(operationId)
       this.updateProgress(operationId, {
         processedRows,
-        message: `Completed: ${processedRows} rows imported${errorCount > 0 ? `, ${errorCount} errors` : ''}`,
+        message: finalStats
+          ? `Completed — ${processedRows} rows (${finalStats.healed} healed, ${finalStats.skipped} skipped, ${finalStats.quarantined} quarantined)`
+          : `Completed: ${processedRows} rows imported`,
       })
       this.completeOperation(operationId, 'completed')
     } catch (err: any) {
@@ -874,7 +1295,8 @@ export class SQLDataTransferService extends EventEmitter {
   /**
    * Insert a batch of CSV rows using PARAMETERIZED queries.
    * NEVER concatenates values into SQL strings.
-   * Returns the number of errors encountered.
+   * On batch failure, falls through to per-row insertion driven by the healing
+   * engine so each row gets its own chance at a heal/skip/quarantine decision.
    */
   private async insertCSVBatch(
     sqlSessionId: string,
@@ -882,18 +1304,17 @@ export class SQLDataTransferService extends EventEmitter {
     headers: string[],
     rows: string[][],
     dbType: DatabaseType,
-    onError: 'abort' | 'skip'
-  ): Promise<number> {
+    runMode: HealRunMode,
+    operationId: string,
+    rowIndexBase: number,
+    controller: AbortController,
+  ): Promise<void> {
     const colNames = headers.map((h) => quoteIdentifier(h, dbType)).join(', ')
-    let errorCount = 0
 
     if (dbType === 'mysql') {
-      // MySQL: INSERT INTO `table` (`col1`, `col2`) VALUES (?, ?), (?, ?)
       const placeholderRow = `(${headers.map(() => '?').join(', ')})`
       const allPlaceholders = rows.map(() => placeholderRow).join(', ')
       const sql = `INSERT INTO ${quotedTable} (${colNames}) VALUES ${allPlaceholders}`
-
-      // Flatten all row values into a single params array
       const params: unknown[] = []
       for (const row of rows) {
         for (let i = 0; i < headers.length; i++) {
@@ -901,22 +1322,19 @@ export class SQLDataTransferService extends EventEmitter {
           params.push(val === '' ? null : val)
         }
       }
-
       try {
         await this.sqlService.executeQuery(sqlSessionId, sql, params)
-      } catch (err: any) {
-        if (onError === 'abort') throw err
-        // On skip: try inserting one-by-one to salvage good rows
-        errorCount = await this.insertRowsIndividually(
-          sqlSessionId, quotedTable, headers, rows, dbType
-        )
+        // Bulk success — count every row as executed.
+        const stats = this.operationStats.get(operationId)
+        if (stats) stats.executed += rows.length
+        return
+      } catch {
+        // Bulk failed — fall through to per-row healing path.
       }
     } else {
-      // PostgreSQL: INSERT INTO "table" ("col1", "col2") VALUES ($1, $2), ($3, $4)
       let paramIdx = 1
       const placeholders: string[] = []
       const params: unknown[] = []
-
       for (const row of rows) {
         const rowPlaceholders: string[] = []
         for (let i = 0; i < headers.length; i++) {
@@ -927,61 +1345,66 @@ export class SQLDataTransferService extends EventEmitter {
         }
         placeholders.push(`(${rowPlaceholders.join(', ')})`)
       }
-
       const sql = `INSERT INTO ${quotedTable} (${colNames}) VALUES ${placeholders.join(', ')}`
-
       try {
         await this.sqlService.executeQuery(sqlSessionId, sql, params)
-      } catch (err: any) {
-        if (onError === 'abort') throw err
-        errorCount = await this.insertRowsIndividually(
-          sqlSessionId, quotedTable, headers, rows, dbType
-        )
+        const stats = this.operationStats.get(operationId)
+        if (stats) stats.executed += rows.length
+        return
+      } catch {
+        // Bulk failed — fall through to per-row healing path.
       }
     }
 
-    return errorCount
+    // Per-row path — each row gets its own heal decision.
+    await this.insertRowsIndividually(
+      sqlSessionId, quotedTable, headers, rows, dbType, runMode, operationId, rowIndexBase, controller,
+    )
   }
 
   /**
-   * Fallback: insert rows one-by-one when a batch fails and onError is 'skip'.
-   * Returns the number of rows that failed.
+   * Per-row insertion routed through the healing engine. Each row that fails
+   * consults decision memory / run mode / user and is healed, skipped, or
+   * quarantined accordingly.
    */
   private async insertRowsIndividually(
     sqlSessionId: string,
     quotedTable: string,
     headers: string[],
     rows: string[][],
-    dbType: DatabaseType
-  ): Promise<number> {
+    dbType: DatabaseType,
+    runMode: HealRunMode,
+    operationId: string,
+    rowIndexBase: number,
+    controller: AbortController,
+  ): Promise<void> {
     const colNames = headers.map((h) => quoteIdentifier(h, dbType)).join(', ')
-    let errorCount = 0
 
-    for (const row of rows) {
+    for (let r = 0; r < rows.length; r++) {
+      this.checkCancelled(controller)
+
+      const row = rows[r]
       const params: unknown[] = []
-      let placeholders: string
-
-      if (dbType === 'mysql') {
-        placeholders = headers.map(() => '?').join(', ')
-      } else {
-        placeholders = headers.map((_, i) => `$${i + 1}`).join(', ')
-      }
-
+      const placeholders = dbType === 'mysql'
+        ? headers.map(() => '?').join(', ')
+        : headers.map((_, i) => `$${i + 1}`).join(', ')
       for (let i = 0; i < headers.length; i++) {
         const val = i < row.length ? row[i] : null
         params.push(val === '' ? null : val)
       }
-
       const sql = `INSERT INTO ${quotedTable} (${colNames}) VALUES (${placeholders})`
 
-      try {
-        await this.sqlService.executeQuery(sqlSessionId, sql, params)
-      } catch {
-        errorCount++
-      }
+      await this.tryExecuteWithHealing(
+        operationId,
+        sqlSessionId,
+        dbType,
+        sql,
+        rowIndexBase + r + 1,
+        runMode,
+        controller,
+        params,
+      )
     }
-
-    return errorCount
   }
 
   /**
@@ -1025,17 +1448,78 @@ export class SQLDataTransferService extends EventEmitter {
     statementCount: number
     dangerousStatements: string[]
     fileSize: number
+    referencedTables: string[]
+    charsets: string[]
+    insertCount: number
+    createTableCount: number
+    dropTableCount: number
   }> {
     const fileStat = await stat(filePath)
     const fileSize = fileStat.size
 
-    // Single-pass: count statements AND scan for dangerous patterns simultaneously.
-    // Previously this read the file twice (once for count, once for scan), which
-    // doubled I/O and memory pressure on large SQL dumps.
-    const stream = createReadStream(filePath, { encoding: 'utf-8' })
-    const { count, dangerous } = await preScanStatements(stream)
+    // For .gz files, decompress through the same stream plumbing so the parser
+    // sees plaintext SQL. Other archive types (.zip/.tar/.bz2) are rejected at
+    // runSQLImport time; preflight here accepts them as "large file" without
+    // scanning — the dangerous/table info would be meaningless anyway.
+    const isGzip = /\.gz$/i.test(filePath)
+    let stream: Readable
+    if (isGzip) {
+      const gunzip = createGunzip()
+      createReadStream(filePath).pipe(gunzip)
+      gunzip.setEncoding('utf-8')
+      stream = gunzip
+    } else {
+      stream = createReadStream(filePath, { encoding: 'utf-8' })
+    }
 
-    return { statementCount: count, dangerousStatements: dangerous, fileSize }
+    const {
+      count,
+      dangerous,
+      tables,
+      charsets,
+      insertCount,
+      createTableCount,
+      dropTableCount,
+    } = await preScanStatements(stream)
+
+    return {
+      statementCount: count,
+      dangerousStatements: dangerous,
+      fileSize,
+      referencedTables: tables,
+      charsets,
+      insertCount,
+      createTableCount,
+      dropTableCount,
+    }
+  }
+
+  /**
+   * Compare the tables named in a SQL file against the tables that exist in
+   * the target database. Returns which are present and which would need to
+   * be created (or may fail INSERTs for unknown-table errors).
+   */
+  async preflightCompareTables(
+    sqlSessionId: string,
+    candidateTables: string[],
+  ): Promise<{ present: string[]; missing: string[] }> {
+    if (candidateTables.length === 0) return { present: [], missing: [] }
+    try {
+      const existing = await this.sqlService.getTables(sqlSessionId)
+      const existingSet = new Set(existing.map((t) => t.name.toLowerCase()))
+      const present: string[] = []
+      const missing: string[] = []
+      for (const raw of candidateTables) {
+        const norm = raw.toLowerCase()
+        if (existingSet.has(norm)) present.push(raw)
+        else missing.push(raw)
+      }
+      return { present, missing }
+    } catch {
+      // Don't fail preflight on introspection errors — return empty and let
+      // the UI degrade gracefully.
+      return { present: [], missing: [] }
+    }
   }
 
   // ── DDL Generation ──

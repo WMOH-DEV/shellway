@@ -292,7 +292,21 @@ export type TransferStatus =
   | "running"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "paused";
+
+export interface TransferStats {
+  /** Statements/rows that executed successfully on first try */
+  executed: number;
+  /** Errors resolved via a heal transformation */
+  healed: number;
+  /** Errors skipped (user opted to skip, or auto-skip policy) */
+  skipped: number;
+  /** Statements written to the quarantine file */
+  quarantined: number;
+  /** Fatal errors (after abort) */
+  failed: number;
+}
 
 export interface TransferProgress {
   operationId: string;
@@ -308,6 +322,129 @@ export interface TransferProgress {
   currentTable?: string;
   message?: string;
   error?: string;
+  /** Preview of the statement currently executing (truncated). */
+  currentStatement?: string;
+  /** Cumulative outcome tally for the run. */
+  stats?: TransferStats;
+  /** Path to the quarantine file, if any statements were quarantined. */
+  quarantinePath?: string;
   startedAt: number;
   completedAt?: number;
+}
+
+// ── Healing: run modes, error taxonomy, decisions ──
+
+/** How the import/restore loop reacts to a failing statement. */
+export type HealRunMode =
+  /** Apply the recommended heal for every error, no prompts. */
+  | "full-auto"
+  /** Auto-heal low-risk classes, ask on high-risk ones. Default. */
+  | "smart"
+  /** Pause on every error and wait for the user. */
+  | "ask-always"
+  /** Stop on the first error (preserves old abort behaviour). */
+  | "strict-abort";
+
+/** Canonical taxonomy of driver errors the healing engine knows how to treat. */
+export type HealErrorClass =
+  | "syntax"
+  | "duplicate-key"
+  | "fk-violation"
+  | "not-null-violation"
+  | "data-too-long"
+  | "type-mismatch"
+  | "bad-default"
+  | "unknown-column"
+  | "unknown-table"
+  | "table-exists"
+  | "duplicate-constraint"
+  | "charset"
+  | "privileges"
+  | "lock-wait"
+  | "connection-lost"
+  | "disk-or-memory"
+  | "unknown";
+
+/** All heal actions the engine can take at the statement level. */
+export type HealStrategy =
+  // Control-level decisions (always available)
+  | "retry-as-is"
+  | "retry-with-edit"
+  | "skip"
+  | "quarantine"
+  | "abort"
+  // duplicate-key
+  | "insert-ignore"
+  | "replace-into"
+  | "on-conflict-nothing"
+  | "on-conflict-update"
+  // fk-violation
+  | "disable-fk-checks"
+  | "defer-fk"
+  // not-null / bad-default / type-mismatch
+  | "strip-default"
+  | "substitute-default"
+  | "make-nullable"
+  | "coerce-type"
+  | "set-null-on-value"
+  // data-too-long
+  | "truncate-value"
+  | "widen-column"
+  // table-exists / unknown-table
+  | "drop-if-exists"
+  | "if-not-exists"
+  | "create-table-stub"
+  // duplicate-constraint
+  | "strip-constraint-name"
+  // unknown-column
+  | "remove-column-ref"
+  | "add-column"
+  // charset
+  | "reencode-utf8"
+  | "strip-invalid-chars"
+  // transient
+  | "retry-with-backoff"
+  | "reconnect-and-retry";
+
+/** A heal option offered to the user for a given error class. */
+export interface HealOptionDescriptor {
+  strategy: HealStrategy;
+  label: string;
+  description: string;
+  /** Mark the heal shown first in UI and applied automatically in Full Auto / Smart (for safe classes). */
+  recommended?: boolean;
+  /** Heal rewrites schema (ALTER TABLE). Higher blast radius — Smart mode asks. */
+  schemaMutation?: boolean;
+  /** Heal mutates data values (truncate, substitute). */
+  dataMutation?: boolean;
+}
+
+/** Payload emitted to the renderer when a statement fails and needs a decision. */
+export interface ResolutionRequest {
+  operationId: string;
+  sqlSessionId: string;
+  /** 1-based index within the import (statement number). */
+  statementIndex: number;
+  /** Full failing statement (may be long; renderer truncates for preview). */
+  statement: string;
+  errorClass: HealErrorClass;
+  errorMessage: string;
+  /** Driver-native error code (e.g. ER_DUP_ENTRY, 23505). */
+  errorCode?: string | number;
+  /** Heals available for this error class. */
+  availableStrategies: HealOptionDescriptor[];
+}
+
+/** The user's (or auto-mode's) response to a ResolutionRequest. */
+export interface HealDecision {
+  /** Umbrella action. When 'heal', `strategy` specifies which transform to apply. */
+  action: "heal" | "skip" | "quarantine" | "abort" | "retry";
+  /** The heal transform. Required when action === 'heal'. */
+  strategy?: HealStrategy;
+  /** User-edited SQL when action === 'retry'. */
+  editedStatement?: string;
+  /** Extra parameter (e.g. substitute value, widen target size). */
+  param?: string | number;
+  /** Persist this decision for all subsequent errors of the same class in this run. */
+  rememberForClass?: boolean;
 }
