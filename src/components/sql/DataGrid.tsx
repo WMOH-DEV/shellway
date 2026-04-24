@@ -840,9 +840,11 @@ export const DataGrid = React.memo(
           // Respect any active text selection — let the browser handle it
           const sel = window.getSelection()?.toString() ?? "";
           if (sel.length > 0) return;
-          const focused = gridRef.current?.api?.getFocusedCell();
+          const api = gridRef.current?.api;
+          if (!api) return;
+          const focused = api.getFocusedCell();
           if (!focused) return;
-          const rowNode = gridRef.current.api.getDisplayedRowAtIndex(focused.rowIndex);
+          const rowNode = api.getDisplayedRowAtIndex(focused.rowIndex);
           const field = focused.column.getColDef().field;
           if (!rowNode || !field) return;
           const value = (rowNode.data as Record<string, unknown> | undefined)?.[field];
