@@ -366,7 +366,7 @@ function healStripInvalidChars(ctx: HealContext): HealOutcome {
   const stmt = ctx.statement.replace(
     /'((?:[^']|'')*)'/g,
     (_m, inner: string) => {
-      const cleaned = inner.replace(/[ --￾￿]/g, "");
+      const cleaned = inner.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, "");
       return `'${cleaned}'`;
     },
   );
