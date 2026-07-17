@@ -115,6 +115,61 @@ export function getSQLConfigStore(): SQLConfigStore {
   return sqlConfigStore;
 }
 
+/**
+ * Rebuild a session's SSH tunnel before the DB reconnect runs.
+ *
+ * A tunneled session's stored config points at 127.0.0.1:<localPort>. Whatever
+ * killed the DB connection (sleep, network drop, SSH restart) usually killed
+ * the tunnel too, so that port forwards nowhere and reconnecting to it can
+ * never succeed. Stand up a fresh tunnel and hand back the new local endpoint.
+ */
+sqlService.prepareReconnect = async (sqlSessionId, config) => {
+  const spec = tunnelSpecs.get(sqlSessionId);
+  if (!spec) return; // Direct connection — config is already correct
+
+  // Tear down the old tunnel; it is dead or about to be replaced
+  await cleanupTunnel(sqlSessionId);
+  cleanupEphemeralSSH(sqlSessionId);
+
+  let localPort: number;
+  if (spec.sshConfig) {
+    // Mode 3: standalone ephemeral SSH tunnel
+    localPort = await createEphemeralTunnel(
+      sqlSessionId,
+      spec.sshConfig,
+      spec.dbHost,
+      spec.dbPort,
+    );
+  } else {
+    // Mode 2: tunnel through the existing SSH session — which must itself be up
+    const conn = getSSHService().get(spec.connectionId);
+    if (!conn) throw new Error("SSH connection not found — reconnect SSH first");
+
+    localPort = await findFreePort();
+    const { getPortForwardService } = await import("./portforward.ipc");
+    const ruleId = `sql-tunnel-${sqlSessionId}`;
+    const entry = await getPortForwardService().add(conn, {
+      id: ruleId,
+      type: "local",
+      name: `SQL: ${spec.database || "server"}`,
+      sourceHost: "127.0.0.1",
+      sourcePort: localPort,
+      destinationHost: spec.dbHost,
+      destinationPort: spec.dbPort,
+    });
+    if (entry.status === "error") {
+      throw new Error(`SSH tunnel failed: ${entry.error}`);
+    }
+    tunnelMap.set(sqlSessionId, {
+      connectionId: spec.connectionId,
+      ruleId,
+      localPort,
+    });
+  }
+
+  return { ...config, host: "127.0.0.1", port: localPort };
+};
+
 // Track SSH tunnel mappings: sqlSessionId -> { connectionId, ruleId, localPort }
 const tunnelMap = new Map<
   string,
@@ -125,6 +180,23 @@ const tunnelMap = new Map<
 const ephemeralSSH = new Map<
   string,
   { client: SSHClient; server: Server; localPort: number }
+>();
+
+/**
+ * How each session's tunnel was originally built, keyed by sqlSessionId.
+ * The DB config only records the tunnel's local endpoint (127.0.0.1:port),
+ * which dies with the tunnel — reconnecting needs the real target and the SSH
+ * details to stand a new one up.
+ */
+const tunnelSpecs = new Map<
+  string,
+  {
+    connectionId: string;
+    sshConfig?: SSHTunnelConfig;
+    dbHost: string;
+    dbPort: number;
+    database?: string;
+  }
 >();
 
 /** SSH tunnel configuration for standalone (non-SSH-session) database connections */
@@ -197,6 +269,13 @@ export function registerSQLIPC(): void {
         let dbPort = config.port;
 
         if (config.useSSHTunnel) {
+          tunnelSpecs.set(sqlSessionId, {
+            connectionId,
+            sshConfig: config.sshConfig,
+            dbHost: config.host,
+            dbPort: config.port,
+            database: config.database,
+          });
           if (config.sshConfig) {
             // ── Mode 3: Standalone ephemeral SSH tunnel ──
             const ssh = config.sshConfig;
@@ -285,6 +364,7 @@ export function registerSQLIPC(): void {
     await sqlService.disconnect(sqlSessionId);
     await cleanupTunnel(sqlSessionId);
     cleanupEphemeralSSH(sqlSessionId);
+    tunnelSpecs.delete(sqlSessionId);
     return { success: true };
   });
 

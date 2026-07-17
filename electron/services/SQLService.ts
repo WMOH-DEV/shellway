@@ -67,6 +67,25 @@ export class SQLService extends EventEmitter {
   private connections = new Map<string, ActiveConnection>();
   /** In-flight queries tracked by queryId */
   private runningQueries = new Map<string, TrackedQuery>();
+  /**
+   * Last-known config per session, kept independently of `connections`.
+   * A dropped connection removes its ActiveConnection, but reconnecting needs
+   * the config — so it must outlive the connection itself. Cleared only by an
+   * explicit disconnect.
+   */
+  private sessionConfigs = new Map<string, DBConfig>();
+  /** In-flight reconnect per session — dedupes concurrent attempts */
+  private reconnecting = new Map<string, Promise<{ success: boolean; error?: string }>>();
+
+  /**
+   * Called before reconnecting a session, so callers can rebuild transports the
+   * stored config depends on (e.g. an SSH tunnel whose local port died with it).
+   * Returning a config replaces the stored one for that attempt.
+   */
+  prepareReconnect?: (
+    sqlSessionId: string,
+    config: DBConfig,
+  ) => Promise<DBConfig | void>;
 
   // ── Connect ──
 
@@ -76,6 +95,10 @@ export class SQLService extends EventEmitter {
   ): Promise<{ success: boolean; error?: string; currentDatabase?: string }> {
     // Disconnect existing if any
     await this.disconnect(sqlSessionId).catch(() => {});
+
+    // Remember the config even if connecting fails — the session may still be
+    // retried/reconnected from the UI.
+    this.sessionConfigs.set(sqlSessionId, config);
 
     try {
       let result: { success: boolean; error?: string };
@@ -283,6 +306,10 @@ export class SQLService extends EventEmitter {
   // ── Disconnect ──
 
   async disconnect(sqlSessionId: string): Promise<void> {
+    // An explicit disconnect ends the session — drop the retained config so it
+    // can't be resurrected by a stray reconnect.
+    this.sessionConfigs.delete(sqlSessionId);
+
     const active = this.connections.get(sqlSessionId);
     if (!active) return;
 
@@ -321,17 +348,26 @@ export class SQLService extends EventEmitter {
   }
 
   async disconnectAll(): Promise<void> {
-    const ids = Array.from(this.connections.keys());
-    await Promise.allSettled(ids.map((id) => this.disconnect(id)));
+    const ids = new Set([
+      ...this.connections.keys(),
+      ...this.sessionConfigs.keys(),
+    ]);
+    await Promise.allSettled(Array.from(ids, (id) => this.disconnect(id)));
   }
 
   isConnected(sqlSessionId: string): boolean {
     return this.connections.has(sqlSessionId);
   }
 
-  /** Expose active session IDs for system-resume health checks */
+  /**
+   * Expose known session IDs for system-resume health checks.
+   * Includes sessions whose connection has already dropped — those are exactly
+   * the ones a resume should try to bring back.
+   */
   getActiveSessionIds(): string[] {
-    return Array.from(this.connections.keys());
+    return Array.from(
+      new Set([...this.connections.keys(), ...this.sessionConfigs.keys()]),
+    );
   }
 
   // ── Ping / Reconnect ──
@@ -364,25 +400,52 @@ export class SQLService extends EventEmitter {
    * Closes old connections silently, creates new ones, and updates the ActiveConnection in-place.
    */
   async reconnect(sqlSessionId: string): Promise<{ success: boolean; error?: string }> {
+    // Dedupe: the driver's error handler and the renderer's auto-retry can both
+    // fire for the same drop. Without this they race and tear down each other's
+    // freshly-created connection.
+    const inFlight = this.reconnecting.get(sqlSessionId);
+    if (inFlight) return inFlight;
+
+    const attempt = this.doReconnect(sqlSessionId).finally(() => {
+      this.reconnecting.delete(sqlSessionId);
+    });
+    this.reconnecting.set(sqlSessionId, attempt);
+    return attempt;
+  }
+
+  private async doReconnect(
+    sqlSessionId: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    // Read the config from sessionConfigs, not from the ActiveConnection: a lost
+    // connection has no entry, and that is exactly when reconnect is needed.
+    const config = this.sessionConfigs.get(sqlSessionId);
+    if (!config) {
+      return { success: false, error: "No connection found for session" };
+    }
+
     const active = this.connections.get(sqlSessionId);
-    if (!active) return { success: false, error: "No connection found for session" };
-
-    const { config, type } = active;
-
-    // Silently close old connections (they may already be dead)
-    try { active.conn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
-    try { active.userConn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
-
-    // Remove old entry before reconnecting (connectMySQL/connectPostgres will set it)
-    this.connections.delete(sqlSessionId);
+    if (active) {
+      // Silently close old connections (they may already be dead)
+      try { active.conn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
+      try { active.userConn?.end?.().catch?.(() => {}); } catch { /* ignore */ }
+      this.connections.delete(sqlSessionId);
+    }
 
     try {
-      let result: { success: boolean; error?: string };
-      if (type === "mysql") {
-        result = await this.connectMySQL(sqlSessionId, config);
-      } else {
-        result = await this.connectPostgres(sqlSessionId, config);
+      // Let the owner rebuild any transport the config rides on (SSH tunnel).
+      let effectiveConfig = config;
+      if (this.prepareReconnect) {
+        const prepared = await this.prepareReconnect(sqlSessionId, config);
+        if (prepared) {
+          effectiveConfig = prepared;
+          this.sessionConfigs.set(sqlSessionId, prepared);
+        }
       }
+
+      const result =
+        effectiveConfig.type === "mysql"
+          ? await this.connectMySQL(sqlSessionId, effectiveConfig)
+          : await this.connectPostgres(sqlSessionId, effectiveConfig);
 
       if (result.success) {
         this.emit("connection-reconnected", sqlSessionId);
