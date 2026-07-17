@@ -107,7 +107,11 @@ const TabItem = memo(function TabItem({
         )}
       >
         {tabIcons[tab.type]}
-        <span className="max-w-[120px] truncate">{tab.label}</span>
+        {/* Extra tabs on an already-open table render italic, so two tabs with
+            the same name stay tellable apart (as TablePlus does). */}
+        <span className={cn('max-w-[120px] truncate', tab.filterScope && 'italic')}>
+          {tab.label}
+        </span>
 
         {/* Dirty indicator */}
         {tab.isDirty && (

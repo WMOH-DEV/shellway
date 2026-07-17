@@ -66,8 +66,13 @@ function buildTableContextMenuItems(
           { id: "sep-multi", label: "", separator: true },
         ]
       : []),
+    {
+      id: `open-new-tab:${tableName}`,
+      label: "Open in New Tab",
+      icon: <Copy size={14} />,
+    },
     ...(isView
-      ? []
+      ? [{ id: "sep-0", label: "", separator: true }]
       : [
           {
             id: `structure:${tableName}`,
@@ -311,7 +316,8 @@ export type TableContextAction =
   | { type: "copy-name"; table: string }
   | { type: "drop-table"; table: string }
   | { type: "truncate-table"; table: string }
-  | { type: "view-structure"; table: string };
+  | { type: "view-structure"; table: string }
+  | { type: "open-new-tab"; table: string };
 
 /** Context menu action type for database actions */
 export type DatabaseContextAction =
@@ -516,7 +522,12 @@ export function SchemaSidebar({
       }
 
       // Parse action: "type:value:tableName" or "copy:tableName"
-      if (id.startsWith("structure:")) {
+      if (id.startsWith("open-new-tab:")) {
+        onTableAction({
+          type: "open-new-tab",
+          table: id.slice("open-new-tab:".length),
+        });
+      } else if (id.startsWith("structure:")) {
         onTableAction({
           type: "view-structure",
           table: id.slice("structure:".length),

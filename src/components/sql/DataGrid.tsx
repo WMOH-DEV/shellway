@@ -241,6 +241,13 @@ export interface DataGridHandle {
     oldValue: unknown;
     newValue: unknown;
   } | null;
+  /**
+   * Discard any in-progress cell edit without committing it. Must be called
+   * before the grid's rows are replaced — an editor left open across a data
+   * swap keeps showing the old value over the new row, and would commit that
+   * stale value into whichever row lands at the same index.
+   */
+  cancelEditing: () => void;
   /** Select a row by its __rowIndex, deselecting all others */
   selectRow: (rowIndex: number) => void;
   /** Get the first selected row's data (without __rowIndex), or null */
@@ -1819,6 +1826,11 @@ export const DataGrid = React.memo(
           const newValue = rowNode.data[field];
 
           return { rowIndex, field, oldValue, newValue };
+        },
+        cancelEditing: () => {
+          // `true` = cancel, so the in-progress value is discarded rather than
+          // written back into the row that is about to be replaced.
+          gridRef.current?.api?.stopEditing(true);
         },
         selectRow: (rowIndex: number) => {
           const api = gridRef.current?.api;

@@ -581,8 +581,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   useEffect(() => {
     if (!selectedTable || !sqlSessionId) return
 
+    // Selecting a tab also sets selectedTable, which lands here. If the active
+    // tab already shows this table then the change came from the user clicking
+    // that tab — focusing the "first" tab for the table would drag them off the
+    // copy they just picked. Read the store directly: this effect intentionally
+    // only depends on selectedTable, so its closure may be a render behind.
+    const state = getSQLConnectionState(connectionId)
+    const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
+    if (
+      activeTab?.type === 'data' &&
+      activeTab.table === selectedTable &&
+      activeTab.database === currentDatabase
+    ) {
+      return
+    }
+
     // Check if a data tab for this table already exists in the current DB
-    const existingTab = tabs.find(
+    const existingTab = state.tabs.find(
       (t) => t.type === 'data' && t.table === selectedTable && t.database === currentDatabase
     )
     if (existingTab) {
@@ -843,11 +858,16 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   const handleTabClose = useCallback(
     (id: string) => {
-      // If closing the tab for the currently selected table, clear selectedTable
-      // so clicking the same table name in the sidebar re-triggers tab creation.
-      const closingTab = getSQLConnectionState(connectionId).tabs.find((t) => t.id === id)
-      if (closingTab?.table && closingTab.table === getSQLConnectionState(connectionId).selectedTable) {
-        setSelectedTable(null)
+      // If this was the last tab for the currently selected table, clear
+      // selectedTable so clicking that table again re-triggers tab creation.
+      // A table can be open in several tabs, so only clear once none remain.
+      const state = getSQLConnectionState(connectionId)
+      const closingTab = state.tabs.find((t) => t.id === id)
+      if (closingTab?.table && closingTab.table === state.selectedTable) {
+        const othersRemain = state.tabs.some(
+          (t) => t.id !== id && t.table === closingTab.table
+        )
+        if (!othersRemain) setSelectedTable(null)
       }
       removeTab(id)
     },
@@ -857,11 +877,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const handleCloseTabs = useCallback(
     (ids: string[]) => {
       if (ids.length === 0) return
-      // If any closing tab references the currently selected table, clear selectedTable
+      // Clear selectedTable only if no tab for it survives this close
       const connState = getSQLConnectionState(connectionId)
       const closingTabs = connState.tabs.filter((t) => ids.includes(t.id))
       if (closingTabs.some((t) => t.table && t.table === connState.selectedTable)) {
-        setSelectedTable(null)
+        const othersRemain = connState.tabs.some(
+          (t) => !ids.includes(t.id) && t.table === connState.selectedTable
+        )
+        if (!othersRemain) setSelectedTable(null)
       }
       removeTabs(ids)
     },
@@ -887,6 +910,34 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
     addTab(newTab)
   }, [tabs, addTab, connectionId])
+
+  /**
+   * Open another data tab for a table that may already be open.
+   * Selecting a table in the sidebar focuses its existing tab; this deliberately
+   * bypasses that so the same table can be viewed side by side with different
+   * filters (TablePlus behaviour). `filterScope` keeps each copy's filters from
+   * clobbering the others in storage.
+   */
+  const handleOpenInNewTab = useCallback(
+    (tableName: string) => {
+      const tabId = crypto.randomUUID()
+      const isAlreadyOpen = tabs.some(
+        (t) => t.type === 'data' && t.table === tableName && t.database === currentDatabase
+      )
+      const newTab: SQLTab = {
+        id: tabId,
+        type: 'data',
+        label: tableName,
+        table: tableName,
+        database: currentDatabase || undefined,
+        // The first tab for a table keeps the shared (table-keyed) filter storage
+        filterScope: isAlreadyOpen ? tabId : undefined,
+      }
+      addTab(newTab)
+      setActiveTab(tabId)
+    },
+    [tabs, currentDatabase, addTab, setActiveTab]
+  )
 
   const handleOpenStructure = useCallback(
     (tableName: string) => {
@@ -1036,6 +1087,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         case 'view-structure':
           handleOpenStructure(action.table)
           break
+        case 'open-new-tab':
+          handleOpenInNewTab(action.table)
+          break
         case 'truncate-table':
           setTableDeleteDialog({ mode: 'truncate', table: action.table })
           break
@@ -1044,7 +1098,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           break
       }
     },
-    [handleOpenStructure]
+    [handleOpenStructure, handleOpenInNewTab]
   )
 
   const handleDatabaseAction = useCallback(
@@ -1412,9 +1466,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                     <LazyDataTabView
                       connectionId={connectionId}
                       sqlSessionId={sqlSessionId}
+                      tabId={tab.id}
                       table={tab.table}
                       schema={tab.schema}
                       dbType={dbType}
+                      filterScope={tab.filterScope}
                     />
                   ) : tab.type === 'query' ? (
                     <LazyQueryEditor

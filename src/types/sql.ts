@@ -212,6 +212,10 @@ export interface StagedChange {
   type: ChangeType;
   table: string;
   schema?: string;
+  /** Tab that staged this edit. A table can be open in several tabs, and each
+   *  keeps its own pending edits — without this they share one set, so editing
+   *  in one tab and filtering in another silently discards the edit. */
+  tabId?: string;
   primaryKey?: Record<string, unknown>;
   /** Row data at the time of edit (used to build WHERE clause) */
   rowData?: Record<string, unknown>;
@@ -274,6 +278,11 @@ export interface SQLTab {
   /** Index into the saved-queries stack (for query tabs). Used to persist
    *  and restore editor content across app restarts.  -1 = not yet assigned. */
   savedQueryIndex?: number;
+  /** Set on extra tabs opened for a table that is already open ("Open in New
+   *  Tab"). Filters persist per table, so without a scope every tab on the same
+   *  table would overwrite the others' filters. The first tab leaves this unset
+   *  and keeps the plain table-keyed storage. */
+  filterScope?: string;
 }
 
 // ── Running Queries ──

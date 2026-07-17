@@ -46,9 +46,14 @@ const LazyStructureTabView = lazy(() => import("./StructureTabView"));
 interface DataTabViewProps {
   connectionId: string;
   sqlSessionId: string;
+  /** Identity of the owning tab — scopes pending edits to this tab alone */
+  tabId: string;
   table: string;
   schema?: string;
   dbType: DatabaseType;
+  /** Isolates this tab's persisted filters when the same table is open in
+   *  several tabs. Unset on the first tab, which keeps the table-keyed storage. */
+  filterScope?: string;
 }
 
 // ── Helpers ──
@@ -215,9 +220,11 @@ function defaultPagination(): PaginationState {
 export const DataTabView = React.memo(function DataTabView({
   connectionId,
   sqlSessionId,
+  tabId,
   table,
   schema,
   dbType,
+  filterScope,
 }: DataTabViewProps) {
   // Store — staged changes + connection info for inline editing
   const {
@@ -241,8 +248,29 @@ export const DataTabView = React.memo(function DataTabView({
       currentDatabase || connectionConfig.database || "_",
       schema ? `${schema}.${table}` : table,
     ];
+    // Extra tabs on the same table get their own slot; the first tab keeps the
+    // plain key so filters saved by earlier versions still load.
+    if (filterScope) parts.push(filterScope);
     return parts.join(":");
-  }, [connectionConfig, currentDatabase, schema, table]);
+  }, [connectionConfig, currentDatabase, schema, table, filterScope]);
+
+  /**
+   * Does this staged change belong to this tab?
+   *
+   * The same table can be open in several tabs, each with its own pending edits.
+   * Matching on table alone would make them share one set — so a filter in one
+   * tab would discard another tab's unsaved work.
+   *
+   * `tabId` is undefined on changes staged before this became tab-scoped; fall
+   * back to table matching for those so they stay editable rather than orphaned.
+   */
+  const isOwnChange = useCallback(
+    (c: StagedChange) =>
+      c.table === table &&
+      (c.schema ?? undefined) === (schema ?? undefined) &&
+      (c.tabId === undefined || c.tabId === tabId),
+    [table, schema, tabId],
+  );
 
   // State
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -330,6 +358,11 @@ export const DataTabView = React.memo(function DataTabView({
       if (skipIfCached && key === cacheKeyRef.current && resultRef.current) {
         return; // already loaded
       }
+
+      // This query is about to replace every row in the grid, so no cell editor
+      // may outlive it — one that does keeps painting its old value over the new
+      // row (and would commit it into a different record on blur).
+      dataGridRef.current?.cancelEditing();
 
       // Cancel any in-flight query (renderer-side only — abort prevents stale state updates).
       // We do NOT send server-side KILL QUERY for the DATA query because KILL QUERY
@@ -687,18 +720,20 @@ export const DataTabView = React.memo(function DataTabView({
   // Clear pending changes when data context changes (page, sort, filter)
   // Row indices are positional — navigating makes them point to different rows
   const discardPendingChanges = useCallback(() => {
+    // Close any open cell editor first. Every caller is about to replace the
+    // grid's rows, and an editor that survives that swap paints its old value
+    // over the new row until the user clicks away.
+    dataGridRef.current?.cancelEditing();
+
     // Read latest from ref to avoid stale closure
-    const currentTableChanges = stagedChangesRef.current.filter(
-      (c) =>
-        c.table === table && (c.schema ?? undefined) === (schema ?? undefined),
-    );
+    const currentTableChanges = stagedChangesRef.current.filter(isOwnChange);
     if (currentTableChanges.length > 0) {
       for (const change of currentTableChanges) {
         removeStagedChange(change.id);
       }
       originalValuesRef.current.clear();
     }
-  }, [table, schema, removeStagedChange]);
+  }, [isOwnChange, removeStagedChange]);
 
   const handlePageChange = useCallback(
     (page: number) => {
@@ -870,14 +905,8 @@ export const DataTabView = React.memo(function DataTabView({
 
   const insertChanges = useMemo(
     () =>
-      stagedChanges.filter(
-        (c) =>
-          c.type === "insert" &&
-          c.table === table &&
-          (c.schema ?? undefined) === (schema ?? undefined) &&
-          c.newRow,
-      ),
-    [stagedChanges, table, schema],
+      stagedChanges.filter((c) => c.type === "insert" && c.newRow && isOwnChange(c)),
+    [stagedChanges, isOwnChange],
   );
 
   // ── Inline editing → staged changes ──
@@ -910,11 +939,7 @@ export const DataTabView = React.memo(function DataTabView({
       // Read latest from ref to avoid stale closure (same pattern as handleDeleteRows)
       const currentStaged = stagedChangesRef.current;
       const currentInserts = currentStaged.filter(
-        (c) =>
-          c.type === "insert" &&
-          c.table === table &&
-          (c.schema ?? undefined) === (schema ?? undefined) &&
-          c.newRow,
+        (c) => c.type === "insert" && c.newRow && isOwnChange(c),
       );
 
       // ── Insert row edit: update the staged insert's newRow directly ──
@@ -934,7 +959,7 @@ export const DataTabView = React.memo(function DataTabView({
       if (valuesAreEqual(_oldValue, newValue)) return;
 
       // ── Normal row edit (existing DB row) ──
-      const cellKey = `edit-${table}-${rowIndex}-${field}`;
+      const cellKey = `edit-${tabId}-${rowIndex}-${field}`;
 
       // Capture original value on first edit of this cell
       if (!originalValuesRef.current.has(cellKey)) {
@@ -967,6 +992,7 @@ export const DataTabView = React.memo(function DataTabView({
         type: "update",
         table,
         schema,
+        tabId,
         primaryKey: buildPrimaryKey(rowData, primaryKeyColumns),
         changes: { [field]: { old: originalValue, new: newValue } },
         rowData,
@@ -1011,6 +1037,7 @@ export const DataTabView = React.memo(function DataTabView({
       type: "insert",
       table,
       schema,
+      tabId,
       newRow,
     };
     upsertStagedChange(change);
@@ -1043,6 +1070,7 @@ export const DataTabView = React.memo(function DataTabView({
         type: "insert",
         table,
         schema,
+        tabId,
         newRow,
       };
       upsertStagedChange(change);
@@ -1077,11 +1105,7 @@ export const DataTabView = React.memo(function DataTabView({
       // Read latest from ref to avoid stale closure when user quickly adds then deletes a row
       const currentStaged = stagedChangesRef.current;
       const currentInserts = currentStaged.filter(
-        (c) =>
-          c.type === "insert" &&
-          c.table === table &&
-          (c.schema ?? undefined) === (schema ?? undefined) &&
-          c.newRow,
+        (c) => c.type === "insert" && c.newRow && isOwnChange(c),
       );
 
       for (const rowIndex of rowIndices) {
@@ -1098,13 +1122,13 @@ export const DataTabView = React.memo(function DataTabView({
         const row = result.rows[rowIndex] as Record<string, unknown>;
         if (!row) continue;
 
-        const changeId = `delete-${table}-${rowIndex}`;
+        const changeId = `delete-${tabId}-${rowIndex}`;
 
         // If this row already has a delete staged, skip
         if (currentStaged.find((c) => c.id === changeId)) continue;
 
         // Also remove any pending edit changes for this row
-        const editPrefix = `edit-${table}-${rowIndex}-`;
+        const editPrefix = `edit-${tabId}-${rowIndex}-`;
         for (const c of currentStaged) {
           if (c.id.startsWith(editPrefix)) {
             removeStagedChange(c.id);
@@ -1117,6 +1141,7 @@ export const DataTabView = React.memo(function DataTabView({
           type: "delete",
           table,
           schema,
+          tabId,
           primaryKey: buildPrimaryKey(row, primaryKeyColumns),
           rowData: row,
         };
@@ -1157,8 +1182,8 @@ export const DataTabView = React.memo(function DataTabView({
     const rows = new Set<number>();
     const cells = new Set<string>();
     const deleted = new Set<number>();
-    const editPrefix = `edit-${table}-`;
-    const deletePrefix = `delete-${table}-`;
+    const editPrefix = `edit-${tabId}-`;
+    const deletePrefix = `delete-${tabId}-`;
     for (const change of stagedChanges) {
       if (change.id.startsWith(editPrefix) && change.type === "update") {
         // Parse rowIndex and field from the stable ID
@@ -1196,13 +1221,8 @@ export const DataTabView = React.memo(function DataTabView({
 
   // Filter staged changes to only those for the current table
   const tableChanges = useMemo(
-    () =>
-      stagedChanges.filter(
-        (c) =>
-          c.table === table &&
-          (c.schema ?? undefined) === (schema ?? undefined),
-      ),
-    [stagedChanges, table, schema],
+    () => stagedChanges.filter(isOwnChange),
+    [stagedChanges, isOwnChange],
   );
 
   const handleSaveChanges = useCallback(async () => {
@@ -1224,11 +1244,7 @@ export const DataTabView = React.memo(function DataTabView({
     // Read changes from the Zustand store (updated synchronously by handleCellEdit above)
     const freshStagedChanges =
       useSQLStore.getState().connections[connectionId]?.stagedChanges ?? [];
-    const currentTableChanges = freshStagedChanges.filter(
-      (c) =>
-        c.table === table &&
-        (c.schema ?? undefined) === (schema ?? undefined),
-    );
+    const currentTableChanges = freshStagedChanges.filter(isOwnChange);
     if (currentTableChanges.length === 0) return;
     savingRef.current = true;
     setIsSaving(true);
@@ -1412,7 +1428,7 @@ export const DataTabView = React.memo(function DataTabView({
         const hasNull = pkValues.some(
           (v) => v === null || v === undefined,
         );
-        const sigKey = pkColumns.join(" ");
+        const sigKey = pkColumns.join("\u0000");
 
         let group = deleteGroups.get(sigKey);
         if (!group) {
