@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, shell } from 'electron'
 import { promises as fsp } from 'fs'
 import { join, basename, parse as parsePath, posix } from 'path'
 import { homedir } from 'os'
@@ -196,6 +196,193 @@ function getEffectiveConflictPolicy(
 
   const globalSettings = getSettingsStore().getAll()
   return globalSettings.sftpDefaultConflictResolution ?? 'ask'
+}
+
+// ── Directory transfer helpers ──
+
+/**
+ * Result of expanding a folder into individual file transfers.
+ * `conflicts` counts files skipped because the policy was 'ask' — nothing in the
+ * renderer can prompt per-file mid-tree, so those are left untouched and reported.
+ */
+interface DirectoryTransferResult {
+  success: true
+  directory: true
+  enqueued: number
+  skipped: number
+  conflicts: number
+}
+
+/**
+ * Mirror a remote directory tree locally, enqueueing one transfer per file.
+ * Directories merge (the universal file-manager behaviour) rather than being
+ * replaced, so an existing destination folder keeps files the source lacks.
+ */
+async function enqueueDirectoryDownload(opts: {
+  queue: TransferQueue
+  sftp: SFTPService
+  policy: SFTPConflictResolution
+  transferId: string
+  remotePath: string
+  localPath: string
+}): Promise<DirectoryTransferResult> {
+  const { queue, sftp, policy, transferId, remotePath, localPath } = opts
+
+  // A plain file sitting where the folder should go makes mkdir fail with a raw
+  // EEXIST. Earlier builds created exactly such a file when a folder download
+  // was attempted, so say what is wrong instead of leaking errno.
+  let existing: Awaited<ReturnType<typeof fsp.stat>> | null = null
+  try {
+    existing = await fsp.stat(localPath)
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err
+  }
+  if (existing && !existing.isDirectory()) {
+    throw new Error(
+      `A file named '${basename(localPath)}' already exists here — rename or remove it first`
+    )
+  }
+
+  const tree = await sftp.walkTree(remotePath)
+
+  await fsp.mkdir(localPath, { recursive: true })
+  for (const node of tree) {
+    if (node.isDirectory) {
+      await fsp.mkdir(join(localPath, ...node.relativePath.split('/')), { recursive: true })
+    }
+  }
+
+  let enqueued = 0
+  let skipped = 0
+  let conflicts = 0
+
+  for (const node of tree) {
+    if (node.isDirectory) continue
+
+    const destPath = join(localPath, ...node.relativePath.split('/'))
+    const conflict = await resolveTransferConflict({
+      policy,
+      direction: 'download',
+      sourcePath: node.path,
+      destinationPath: destPath,
+      sftp
+    })
+
+    if (conflict.action === 'skip') { skipped++; continue }
+    // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
+    // mid-tree — leave the file alone and report the count instead.
+    if (conflict.action === 'conflict') { conflicts++; continue }
+
+    queue.enqueue({
+      id: `${transferId}-${enqueued}`,
+      fileName: node.relativePath,
+      sourcePath: node.path,
+      destinationPath: conflict.destinationPath ?? destPath,
+      direction: 'download',
+      totalBytes: node.size
+    })
+    enqueued++
+  }
+
+  return { success: true, directory: true, enqueued, skipped, conflicts }
+}
+
+/** Walk a local directory tree, mirroring `SFTPService.walkTree`'s shape. */
+async function walkLocalTree(
+  rootPath: string
+): Promise<{ path: string; relativePath: string; isDirectory: boolean; size: number }[]> {
+  const collected: { path: string; relativePath: string; isDirectory: boolean; size: number }[] = []
+
+  const visit = async (dir: string, prefix: string): Promise<void> => {
+    const dirents = await fsp.readdir(dir, { withFileTypes: true })
+    for (const dirent of dirents) {
+      const fullPath = join(dir, dirent.name)
+      const relativePath = prefix ? `${prefix}/${dirent.name}` : dirent.name
+      // Never follow symlinks — one pointing at an ancestor would loop forever
+      if (dirent.isSymbolicLink()) continue
+      if (dirent.isDirectory()) {
+        collected.push({ path: fullPath, relativePath, isDirectory: true, size: 0 })
+        await visit(fullPath, relativePath)
+      } else if (dirent.isFile()) {
+        let size = 0
+        try { size = (await fsp.stat(fullPath)).size } catch { /* unreadable — enqueue anyway */ }
+        collected.push({ path: fullPath, relativePath, isDirectory: false, size })
+      }
+    }
+  }
+
+  await visit(rootPath, '')
+  return collected
+}
+
+/** Mirror a local directory tree onto the remote, enqueueing one transfer per file. */
+async function enqueueDirectoryUpload(opts: {
+  queue: TransferQueue
+  sftp: SFTPService
+  policy: SFTPConflictResolution
+  transferId: string
+  localPath: string
+  remotePath: string
+}): Promise<DirectoryTransferResult> {
+  const { queue, sftp, policy, transferId, localPath, remotePath } = opts
+
+  // mkdirRecursive treats "path already exists" as done, so a file occupying the
+  // destination would be silently accepted and every child upload would then
+  // fail against a non-directory. Catch it once, up front.
+  try {
+    const existing = await sftp.stat(remotePath)
+    if (!existing.isDirectory) {
+      throw new Error(
+        `A file named '${posix.basename(remotePath)}' already exists there — rename or remove it first`
+      )
+    }
+  } catch (err: unknown) {
+    // stat throwing means it doesn't exist, which is the normal case
+    if (err instanceof Error && err.message.startsWith('A file named')) throw err
+  }
+
+  const tree = await walkLocalTree(localPath)
+
+  await sftp.mkdirRecursive(remotePath)
+  for (const node of tree) {
+    if (node.isDirectory) {
+      await sftp.mkdirRecursive(posix.join(remotePath, node.relativePath))
+    }
+  }
+
+  let enqueued = 0
+  let skipped = 0
+  let conflicts = 0
+
+  for (const node of tree) {
+    if (node.isDirectory) continue
+
+    const destPath = posix.join(remotePath, node.relativePath)
+    const conflict = await resolveTransferConflict({
+      policy,
+      direction: 'upload',
+      sourcePath: node.path,
+      destinationPath: destPath,
+      sftp
+    })
+
+    if (conflict.action === 'skip') { skipped++; continue }
+    // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
+    // mid-tree — leave the file alone and report the count instead.
+    if (conflict.action === 'conflict') { conflicts++; continue }
+
+    queue.enqueue({
+      id: `${transferId}-${enqueued}`,
+      fileName: node.relativePath,
+      sourcePath: node.path,
+      destinationPath: conflict.destinationPath ?? destPath,
+      direction: 'upload',
+      totalBytes: node.size
+    })
+    enqueued++
+  }
+
+  return { success: true, directory: true, enqueued, skipped, conflicts }
 }
 
 /** Active SFTP services by connectionId */
@@ -495,6 +682,22 @@ export function registerSFTPIPC(): void {
 
     try {
       const policy = getEffectiveConflictPolicy(connectionId, resolution)
+
+      // Directories can't be streamed like a file — mirror the tree instead.
+      // Without this the download below creates an empty local file named after
+      // the folder.
+      let sourceIsDirectory = false
+      try {
+        sourceIsDirectory = (await sftp.stat(remotePath)).isDirectory
+      } catch {
+        // Source vanished or is unreadable — let the file path below report it
+      }
+      if (sourceIsDirectory) {
+        return await enqueueDirectoryDownload({
+          queue, sftp, policy, transferId, remotePath, localPath
+        })
+      }
+
       const result = await resolveTransferConflict({
         policy,
         direction: 'download',
@@ -550,6 +753,19 @@ export function registerSFTPIPC(): void {
 
     try {
       const policy = getEffectiveConflictPolicy(connectionId, resolution)
+
+      let sourceIsDirectory = false
+      try {
+        sourceIsDirectory = (await fsp.stat(localPath)).isDirectory()
+      } catch {
+        // Source vanished — let the file path below report it
+      }
+      if (sourceIsDirectory) {
+        return await enqueueDirectoryUpload({
+          queue, sftp, policy, transferId, localPath, remotePath
+        })
+      }
+
       const result = await resolveTransferConflict({
         policy,
         direction: 'upload',
@@ -644,6 +860,66 @@ export function registerSFTPIPC(): void {
 
   ipcMain.handle('sftp:local-homedir', () => {
     return homedir()
+  })
+
+  ipcMain.handle('sftp:local-mkdir', async (_event, localPath: string) => {
+    try {
+      await fsp.mkdir(localPath, { recursive: true })
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'mkdir failed' }
+    }
+  })
+
+  ipcMain.handle('sftp:local-writeFile', async (_event, localPath: string, content: string) => {
+    try {
+      await fsp.writeFile(localPath, content, 'utf8')
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'write failed' }
+    }
+  })
+
+  ipcMain.handle('sftp:local-rename', async (_event, oldPath: string, newPath: string) => {
+    try {
+      await fsp.rename(oldPath, newPath)
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'rename failed' }
+    }
+  })
+
+  ipcMain.handle('sftp:local-copy', async (_event, sourcePath: string, destPath: string) => {
+    try {
+      // `recursive` covers directories; for a plain file it behaves like copyFile.
+      await fsp.cp(sourcePath, destPath, { recursive: true, errorOnExist: true, force: false })
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'copy failed' }
+    }
+  })
+
+  /**
+   * Move a local file/folder to the OS trash rather than unlinking it.
+   * Deleting from the machine the user is sitting at should be recoverable —
+   * unlike a remote delete, where there is no trash to fall back on.
+   */
+  ipcMain.handle('sftp:local-trash', async (_event, localPath: string) => {
+    try {
+      await shell.trashItem(localPath)
+      return { success: true }
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'delete failed' }
+    }
+  })
+
+  ipcMain.handle('sftp:local-exists', async (_event, localPath: string) => {
+    try {
+      await fsp.access(localPath)
+      return true
+    } catch {
+      return false
+    }
   })
 
   // ── Close SFTP session ──

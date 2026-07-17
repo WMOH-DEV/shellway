@@ -343,7 +343,7 @@ export function FilePanel({
 
   /** Open the delete-confirmation dialog for the currently selected files/directories */
   const handleDeleteSelected = useCallback(() => {
-    if (selectedPaths.size === 0 || type !== 'remote') return
+    if (selectedPaths.size === 0) return
     const allEntries = sortedEntriesRef.current
     const targets: SftpDeleteTarget[] = []
     for (const p of selectedPaths) {
@@ -353,7 +353,7 @@ export function FilePanel({
     }
     if (targets.length === 0) return
     setDeleteTargets(targets)
-  }, [selectedPaths, type])
+  }, [selectedPaths])
 
   /** Actual deletion — called after confirmation */
   const runDelete = useCallback(
@@ -361,9 +361,13 @@ export function FilePanel({
       const failures: string[] = []
       for (const t of targets) {
         try {
-          const res = t.isDirectory
-            ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
-            : await window.novadeck.sftp.unlink(connectionId, t.path)
+          // Local deletes go to the OS trash; remote ones have no trash to use.
+          const res =
+            type === 'remote'
+              ? t.isDirectory
+                ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
+                : await window.novadeck.sftp.unlink(connectionId, t.path)
+              : await window.novadeck.sftp.localTrash(t.path)
           if (!res?.success) {
             failures.push(`${t.name}: ${res?.error || 'Unknown error'}`)
           }
@@ -376,9 +380,12 @@ export function FilePanel({
       if (failures.length > 0) {
         throw new Error(`Failed to delete ${failures.length} item(s):\n${failures.join('\n')}`)
       }
-      toast.success('Deleted', `${targets.length} item${targets.length === 1 ? '' : 's'} removed`)
+      toast.success(
+        type === 'remote' ? 'Deleted' : 'Moved to Trash',
+        `${targets.length} item${targets.length === 1 ? '' : 's'}`
+      )
     },
-    [connectionId, currentPath, loadDirectory]
+    [connectionId, currentPath, loadDirectory, type]
   )
 
   /** Keyboard handler for the file list — Delete/Backspace deletes selection */
@@ -405,7 +412,11 @@ export function FilePanel({
       if (type === 'remote') {
         await window.novadeck.sftp.mkdir(connectionId, newPath)
       } else {
-        // Local mkdir would need a separate IPC — simplified for now
+        const res = await window.novadeck.sftp.localMkdir(newPath)
+        if (!res.success) {
+          toast.error('Failed to create folder', res.error || 'Unknown error')
+          return
+        }
       }
       loadDirectory(currentPath)
     } catch (err) {
@@ -432,6 +443,12 @@ export function FilePanel({
     try {
       if (type === 'remote') {
         await window.novadeck.sftp.rename(connectionId, renamingPath, newPath)
+      } else {
+        const res = await window.novadeck.sftp.localRename(renamingPath, newPath)
+        if (!res.success) {
+          toast.error('Rename failed', res.error || 'Unknown error')
+          return
+        }
       }
       setRenamingPath(null)
       loadDirectory(currentPath)
@@ -806,6 +823,7 @@ export function FilePanel({
         onClose={() => setDeleteTargets(null)}
         targets={deleteTargets ?? []}
         onConfirm={runDelete}
+        toTrash={type !== 'remote'}
       />
     </div>
   )

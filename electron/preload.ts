@@ -1,5 +1,26 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+/** Outcome of a local filesystem mutation. */
+export interface LocalFsResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Outcome of a download/upload request. Folder transfers expand into one queued
+ * transfer per contained file, so they report counts instead of a single item.
+ */
+export interface SFTPTransferResult {
+  success: boolean;
+  error?: string;
+  skipped?: boolean;
+  conflict?: boolean;
+  /** Set when the source was a folder that was expanded into per-file transfers */
+  directory?: boolean;
+  enqueued?: number;
+  conflicts?: number;
+}
+
 /**
  * Typed API exposed to the renderer process via `window.novadeck`.
  * All communication with the main process goes through here.
@@ -442,7 +463,7 @@ const api = {
         remotePath,
         localPath,
         totalBytes,
-      ),
+      ) as Promise<SFTPTransferResult>,
     upload: (
       connectionId: string,
       transferId: string,
@@ -457,7 +478,7 @@ const api = {
         localPath,
         remotePath,
         totalBytes,
-      ),
+      ) as Promise<SFTPTransferResult>,
     transferPause: (connectionId: string, transferId: string) =>
       ipcRenderer.invoke("sftp:transfer-pause", connectionId, transferId),
     transferResume: (connectionId: string, transferId: string) =>
@@ -476,6 +497,31 @@ const api = {
       }>,
     localHomedir: () =>
       ipcRenderer.invoke("sftp:local-homedir") as Promise<string>,
+    localMkdir: (path: string) =>
+      ipcRenderer.invoke("sftp:local-mkdir", path) as Promise<LocalFsResult>,
+    localWriteFile: (path: string, content: string) =>
+      ipcRenderer.invoke(
+        "sftp:local-writeFile",
+        path,
+        content,
+      ) as Promise<LocalFsResult>,
+    localRename: (oldPath: string, newPath: string) =>
+      ipcRenderer.invoke(
+        "sftp:local-rename",
+        oldPath,
+        newPath,
+      ) as Promise<LocalFsResult>,
+    localCopy: (sourcePath: string, destPath: string) =>
+      ipcRenderer.invoke(
+        "sftp:local-copy",
+        sourcePath,
+        destPath,
+      ) as Promise<LocalFsResult>,
+    /** Move to the OS trash — recoverable, unlike the remote delete */
+    localTrash: (path: string) =>
+      ipcRenderer.invoke("sftp:local-trash", path) as Promise<LocalFsResult>,
+    localExists: (path: string) =>
+      ipcRenderer.invoke("sftp:local-exists", path) as Promise<boolean>,
     onTransferUpdate: (
       callback: (connectionId: string, item: unknown) => void,
     ) => {

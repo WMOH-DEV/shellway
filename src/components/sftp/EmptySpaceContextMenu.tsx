@@ -58,15 +58,29 @@ export function EmptySpaceContextMenu({
       try {
         switch (id) {
           case 'newFolder': {
+            const newPath = joinPath(currentPath, 'New Folder')
             if (isRemote) {
-              await window.novadeck.sftp.mkdir(connectionId, joinPath(currentPath, 'New Folder'))
+              await window.novadeck.sftp.mkdir(connectionId, newPath)
+            } else {
+              const res = await window.novadeck.sftp.localMkdir(newPath)
+              if (!res.success) {
+                toast.error('Could not create folder', res.error || 'Unknown error')
+                break
+              }
             }
             onRefresh()
             break
           }
           case 'newFile': {
+            const newPath = joinPath(currentPath, 'untitled.txt')
             if (isRemote) {
-              await window.novadeck.sftp.writeFile(connectionId, joinPath(currentPath, 'untitled.txt'), '')
+              await window.novadeck.sftp.writeFile(connectionId, newPath, '')
+            } else {
+              const res = await window.novadeck.sftp.localWriteFile(newPath, '')
+              if (!res.success) {
+                toast.error('Could not create file', res.error || 'Unknown error')
+                break
+              }
             }
             onRefresh()
             break

@@ -15,11 +15,13 @@ interface SftpDeleteConfirmProps {
   targets: SftpDeleteTarget[]
   /** Runs the actual delete. Parent resolves with the final outcome; errors bubble into the dialog. */
   onConfirm: (targets: SftpDeleteTarget[]) => Promise<void>
+  /** Local deletes go to the OS trash and are recoverable — remote ones are not. */
+  toTrash?: boolean
 }
 
 const MAX_PREVIEW = 10
 
-export function SftpDeleteConfirm({ open, onClose, targets, onConfirm }: SftpDeleteConfirmProps) {
+export function SftpDeleteConfirm({ open, onClose, targets, onConfirm, toTrash }: SftpDeleteConfirmProps) {
   const [isRunning, setIsRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,22 +50,33 @@ export function SftpDeleteConfirm({ open, onClose, targets, onConfirm }: SftpDel
   const folderCount = targets.filter((t) => t.isDirectory).length
   const fileCount = count - folderCount
 
+  const verb = toTrash ? 'move' : 'permanently delete'
+
   let title: string
   let summary: string
   if (count === 1) {
     const t = targets[0]
-    title = t.isDirectory ? `Delete folder '${t.name}'` : `Delete file '${t.name}'`
-    summary = t.isDirectory
-      ? 'This will permanently delete the folder and everything inside it.'
-      : 'This will permanently delete the file.'
+    const kind = t.isDirectory ? 'folder' : 'file'
+    title = toTrash
+      ? `Move ${kind} '${t.name}' to Trash`
+      : `Delete ${kind} '${t.name}'`
+    if (toTrash) {
+      summary = t.isDirectory
+        ? 'This will move the folder and everything inside it to the Trash.'
+        : 'This will move the file to the Trash.'
+    } else {
+      summary = t.isDirectory
+        ? 'This will permanently delete the folder and everything inside it.'
+        : 'This will permanently delete the file.'
+    }
   } else {
-    title = `Delete ${count} items`
+    title = toTrash ? `Move ${count} items to Trash` : `Delete ${count} items`
     const parts: string[] = []
     if (fileCount > 0) parts.push(`${fileCount} ${fileCount === 1 ? 'file' : 'files'}`)
     if (folderCount > 0) parts.push(`${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`)
-    summary = `This will permanently delete ${parts.join(' and ')}${
+    summary = `This will ${verb} ${parts.join(' and ')}${
       folderCount > 0 ? ' including all of their contents' : ''
-    }.`
+    }${toTrash ? ' to the Trash' : ''}.`
   }
 
   const preview = targets.slice(0, MAX_PREVIEW)
@@ -78,7 +91,11 @@ export function SftpDeleteConfirm({ open, onClose, targets, onConfirm }: SftpDel
           </div>
           <div className="space-y-1">
             <p className="text-sm text-nd-text-primary">{summary}</p>
-            <p className="text-xs text-nd-text-muted">This action cannot be undone.</p>
+            <p className="text-xs text-nd-text-muted">
+              {toTrash
+                ? 'You can restore it from the Trash.'
+                : 'This action cannot be undone.'}
+            </p>
           </div>
         </div>
 
@@ -114,7 +131,7 @@ export function SftpDeleteConfirm({ open, onClose, targets, onConfirm }: SftpDel
           </Button>
           <Button variant="danger" onClick={handleConfirm} disabled={isRunning}>
             {isRunning && <Loader2 size={14} className="animate-spin" />}
-            Delete
+            {toTrash ? 'Move to Trash' : 'Delete'}
           </Button>
         </div>
       </div>

@@ -253,6 +253,44 @@ export class SFTPService extends EventEmitter {
   }
 
   /**
+   * Recursively enumerate a remote directory tree.
+   * Returns every descendant, each with its path relative to `rootPath`, so a
+   * caller can mirror the structure locally. Directories are listed before
+   * their contents, so creating them in order is safe.
+   *
+   * Symlinks are recorded but never followed — a link pointing at an ancestor
+   * would otherwise loop forever.
+   */
+  async walkTree(
+    rootPath: string
+  ): Promise<{ path: string; relativePath: string; isDirectory: boolean; size: number }[]> {
+    const collected: { path: string; relativePath: string; isDirectory: boolean; size: number }[] = []
+
+    const visit = async (dir: string, prefix: string): Promise<void> => {
+      const entries = await this.readdir(dir, false)
+      for (const entry of entries) {
+        const relativePath = prefix ? posix.join(prefix, entry.name) : entry.name
+        if (entry.isSymlink) {
+          collected.push({ path: entry.path, relativePath, isDirectory: false, size: entry.size })
+          continue
+        }
+        collected.push({
+          path: entry.path,
+          relativePath,
+          isDirectory: entry.isDirectory,
+          size: entry.size
+        })
+        if (entry.isDirectory) {
+          await visit(entry.path, relativePath)
+        }
+      }
+    }
+
+    await visit(rootPath, '')
+    return collected
+  }
+
+  /**
    * Download a file from remote to local.
    * Emits 'progress' events with (transferId, transferred, total).
    * @param bandwidthLimit KB/s, 0 = unlimited

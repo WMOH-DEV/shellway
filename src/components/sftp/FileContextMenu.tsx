@@ -81,6 +81,43 @@ function joinPath(base: string, name: string): string {
   return base.endsWith(sep) ? base + name : base + sep + name
 }
 
+type TransferResult = Awaited<ReturnType<typeof window.novadeck.sftp.download>>
+
+/** Turn a transfer response into a toast — folders report per-file counts. */
+function reportTransfer(
+  res: TransferResult,
+  verb: 'Download' | 'Upload',
+  name: string,
+  destination: string
+): void {
+  if (!res?.success) {
+    toast.error(`${verb} failed`, res?.error || 'Unknown error')
+    return
+  }
+  if (res.directory) {
+    if (res.enqueued === 0) {
+      toast.warning(
+        `Nothing to ${verb.toLowerCase()}`,
+        res.conflicts
+          ? `${name}: every file already exists at the destination`
+          : `${name} is empty`
+      )
+      return
+    }
+    const skippedNote = res.conflicts ? `, ${res.conflicts} already existed` : ''
+    toast.info(
+      `${verb} started`,
+      `${name} — ${res.enqueued} file${res.enqueued === 1 ? '' : 's'}${skippedNote} → ${destination}`
+    )
+    return
+  }
+  if (res.skipped) {
+    toast.warning(`${verb} skipped`, `${name} already exists at the destination`)
+    return
+  }
+  toast.info(`${verb} started`, `${name} → ${destination}`)
+}
+
 export function FileContextMenu({
   entry,
   position,
@@ -205,7 +242,7 @@ export function FileContextMenu({
             break
           }
 
-          // ── Download: remote file → current local panel path ──
+          // ── Download: remote file/folder → current local panel path ──
           case 'download': {
             if (!localPath) {
               toast.error('Download failed', 'Local panel path not available')
@@ -213,12 +250,15 @@ export function FileContextMenu({
             }
             const destPath = joinPath(localPath, fileName(entry.path))
             const transferId = crypto.randomUUID()
-            await window.novadeck.sftp.download(connectionId, transferId, entry.path, destPath, entry.size || 0)
-            toast.info('Download started', `${fileName(entry.path)} → ${localPath}`)
+            const res = await window.novadeck.sftp.download(
+              connectionId, transferId, entry.path, destPath, entry.size || 0
+            )
+            reportTransfer(res, 'Download', fileName(entry.path), localPath)
+            onRefresh()
             break
           }
 
-          // ── Upload: local file → current remote panel path ──
+          // ── Upload: local file/folder → current remote panel path ──
           case 'upload': {
             if (!remotePath) {
               toast.error('Upload failed', 'Remote panel path not available')
@@ -226,8 +266,10 @@ export function FileContextMenu({
             }
             const destPath = joinPath(remotePath, fileName(entry.path))
             const transferId = crypto.randomUUID()
-            await window.novadeck.sftp.upload(connectionId, transferId, entry.path, destPath, entry.size || 0)
-            toast.info('Upload started', `${fileName(entry.path)} → ${remotePath}`)
+            const res = await window.novadeck.sftp.upload(
+              connectionId, transferId, entry.path, destPath, entry.size || 0
+            )
+            reportTransfer(res, 'Upload', fileName(entry.path), remotePath)
             break
           }
 
@@ -246,26 +288,51 @@ export function FileContextMenu({
             if (!clipboard || clipboard.entries.length === 0) break
             const destDir = entry.isDirectory ? entry.path : parentDir(entry.path)
 
+            // Pasting across panels is a transfer, not a copy — that flows
+            // through the transfer queue, which this menu doesn't own.
+            if (clipboard.panelType !== panelType) {
+              toast.error(
+                'Cannot paste here',
+                'Use drag & drop, Download or Upload to move files between panels'
+              )
+              break
+            }
+
+            let pasted = 0
             for (const src of clipboard.entries) {
               const dest = joinPath(destDir, fileName(src.path))
-              if (isRemote && clipboard.panelType === 'remote') {
+              if (src.path === dest) continue
+
+              if (isRemote) {
                 if (clipboard.operation === 'cut') {
                   await window.novadeck.sftp.rename(connectionId, src.path, dest)
-                } else {
-                  if (!src.isDirectory) {
-                    const content = await window.novadeck.sftp.readFile(connectionId, src.path)
-                    if (content.success && content.data !== undefined) {
-                      await window.novadeck.sftp.writeFile(connectionId, dest, content.data)
-                    }
-                  } else {
-                    toast.error('Cannot copy', 'Directory copy on remote not yet supported')
+                  pasted++
+                } else if (!src.isDirectory) {
+                  const content = await window.novadeck.sftp.readFile(connectionId, src.path)
+                  if (content.success && content.data !== undefined) {
+                    await window.novadeck.sftp.writeFile(connectionId, dest, content.data)
+                    pasted++
                   }
+                } else {
+                  toast.error('Cannot copy', 'Directory copy on remote is not supported')
+                }
+              } else {
+                const res =
+                  clipboard.operation === 'cut'
+                    ? await window.novadeck.sftp.localRename(src.path, dest)
+                    : await window.novadeck.sftp.localCopy(src.path, dest)
+                if (!res.success) {
+                  toast.error('Paste failed', res.error || 'Unknown error')
+                } else {
+                  pasted++
                 }
               }
             }
             if (clipboard.operation === 'cut') clipboard = null
             onRefresh()
-            toast.success('Pasted', 'Files pasted successfully')
+            if (pasted > 0) {
+              toast.success('Pasted', `${pasted} item${pasted === 1 ? '' : 's'}`)
+            }
             break
           }
 
@@ -278,16 +345,32 @@ export function FileContextMenu({
           case 'duplicate': {
             const name = fileName(entry.path)
             const dir = parentDir(entry.path)
-            const ext = name.includes('.') ? '.' + name.split('.').pop() : ''
+            const ext = !entry.isDirectory && name.includes('.')
+              ? '.' + name.split('.').pop()
+              : ''
             const base = ext ? name.slice(0, -(ext.length)) : name
             const dupPath = joinPath(dir, `${base} (copy)${ext}`)
 
-            if (isRemote && !entry.isDirectory) {
+            if (isRemote) {
+              if (entry.isDirectory) {
+                toast.error('Cannot duplicate', 'Directory duplicate on remote is not supported')
+                break
+              }
               const content = await window.novadeck.sftp.readFile(connectionId, entry.path)
               if (content.success && content.data !== undefined) {
                 await window.novadeck.sftp.writeFile(connectionId, dupPath, content.data)
                 toast.success('Duplicated', `${base} (copy)${ext}`)
                 onRefresh()
+              } else {
+                toast.error('Duplicate failed', content.error || 'Could not read file')
+              }
+            } else {
+              const res = await window.novadeck.sftp.localCopy(entry.path, dupPath)
+              if (res.success) {
+                toast.success('Duplicated', `${base} (copy)${ext}`)
+                onRefresh()
+              } else {
+                toast.error('Duplicate failed', res.error || 'Unknown error')
               }
             }
             break
@@ -307,8 +390,15 @@ export function FileContextMenu({
           // ── New Folder ──
           case 'newFolder': {
             const dir = entry.isDirectory ? entry.path : parentDir(entry.path)
+            const newPath = joinPath(dir, 'New Folder')
             if (isRemote) {
-              await window.novadeck.sftp.mkdir(connectionId, joinPath(dir, 'New Folder'))
+              await window.novadeck.sftp.mkdir(connectionId, newPath)
+            } else {
+              const res = await window.novadeck.sftp.localMkdir(newPath)
+              if (!res.success) {
+                toast.error('Could not create folder', res.error || 'Unknown error')
+                break
+              }
             }
             onRefresh()
             break
@@ -317,8 +407,15 @@ export function FileContextMenu({
           // ── New File ──
           case 'newFile': {
             const dir = entry.isDirectory ? entry.path : parentDir(entry.path)
+            const newPath = joinPath(dir, 'untitled.txt')
             if (isRemote) {
-              await window.novadeck.sftp.writeFile(connectionId, joinPath(dir, 'untitled.txt'), '')
+              await window.novadeck.sftp.writeFile(connectionId, newPath, '')
+            } else {
+              const res = await window.novadeck.sftp.localWriteFile(newPath, '')
+              if (!res.success) {
+                toast.error('Could not create file', res.error || 'Unknown error')
+                break
+              }
             }
             onRefresh()
             break
@@ -341,7 +438,7 @@ export function FileContextMenu({
 
           // ── Delete (opens confirmation dialog; actual delete runs on confirm) ──
           case 'delete': {
-            if (isRemote) setConfirmOpen(true)
+            setConfirmOpen(true)
             break
           }
         }
@@ -402,16 +499,21 @@ export function FileContextMenu({
   const runDelete = useCallback(
     async (targets: SftpDeleteTarget[]) => {
       const t = targets[0]
-      const res = t.isDirectory
-        ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
-        : await window.novadeck.sftp.unlink(connectionId, t.path)
+      let res: { success: boolean; error?: string }
+      if (isRemote) {
+        res = t.isDirectory
+          ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
+          : await window.novadeck.sftp.unlink(connectionId, t.path)
+      } else {
+        res = await window.novadeck.sftp.localTrash(t.path)
+      }
       if (!res?.success) {
         throw new Error(res?.error || 'Unknown error')
       }
-      toast.success('Deleted', t.name)
+      toast.success(isRemote ? 'Deleted' : 'Moved to Trash', t.name)
       onRefresh()
     },
-    [connectionId, onRefresh]
+    [connectionId, isRemote, onRefresh]
   )
 
   return (
@@ -465,6 +567,7 @@ export function FileContextMenu({
         }}
         targets={deleteTargets}
         onConfirm={runDelete}
+        toTrash={!isRemote}
       />
     </>
   )
