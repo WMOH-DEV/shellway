@@ -179,7 +179,7 @@ export function useSQLShortcuts(
         const conn = getSQLConnectionState(connectionIdRef.current)
         const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
         window.dispatchEvent(new CustomEvent('sql:insert-row', {
-          detail: { connectionId: connectionIdRef.current, table: activeTab?.table },
+          detail: { connectionId: connectionIdRef.current, table: activeTab?.table, tabId: activeTab?.id },
         }))
         return
       }
@@ -192,7 +192,7 @@ export function useSQLShortcuts(
         const conn = getSQLConnectionState(connectionIdRef.current)
         const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
         window.dispatchEvent(new CustomEvent('sql:duplicate-row', {
-          detail: { connectionId: connectionIdRef.current, table: activeTab?.table },
+          detail: { connectionId: connectionIdRef.current, table: activeTab?.table, tabId: activeTab?.id },
         }))
         return
       }

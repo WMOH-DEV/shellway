@@ -1596,12 +1596,14 @@ export const DataTabView = React.memo(function DataTabView({
       // or detail matches this tab's connectionId + table
       if (detail?.connectionId && detail.connectionId !== connectionId) return;
       if (detail?.table && detail.table !== table) return;
+      // The same table can be open in several tabs — only the targeted one acts
+      if (detail?.tabId && detail.tabId !== tabId) return;
       handleInsertRow();
     };
     window.addEventListener("sql:insert-row", handleInsertRowEvent);
     return () =>
       window.removeEventListener("sql:insert-row", handleInsertRowEvent);
-  }, [handleInsertRow, connectionId, table]);
+  }, [handleInsertRow, connectionId, table, tabId]);
 
   // ── Listen for duplicate-row event from shortcuts ──
   useEffect(() => {
@@ -1609,13 +1611,14 @@ export const DataTabView = React.memo(function DataTabView({
       const detail = (e as CustomEvent).detail;
       if (detail?.connectionId && detail.connectionId !== connectionId) return;
       if (detail?.table && detail.table !== table) return;
+      if (detail?.tabId && detail.tabId !== tabId) return;
       const rowData = dataGridRef.current?.getSelectedRowData();
       if (rowData) handleDuplicateRow(rowData);
     };
     window.addEventListener("sql:duplicate-row", handleDuplicateRowEvent);
     return () =>
       window.removeEventListener("sql:duplicate-row", handleDuplicateRowEvent);
-  }, [handleDuplicateRow, connectionId, table]);
+  }, [handleDuplicateRow, connectionId, table, tabId]);
 
   // ── Listen for save/discard events from shortcuts + status bar ──
   useEffect(() => {

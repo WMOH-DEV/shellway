@@ -238,8 +238,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── Check if SQL sub-tab is actually the active one (not hidden behind Terminal/SFTP) ──
   // In standalone mode, SQL is always the active view — no sub-tab switching.
+  // Every open tab stays mounted, so this must also require the tab to be the
+  // focused one — otherwise a shortcut fires in every connected SQL view at once.
   const isSQLSubTabActive = useConnectionStore(
     useCallback((s) => {
+      if (s.activeTabId !== connectionId) return false
       if (isStandalone) return true
       const tab = s.tabs.find((t) => t.id === connectionId)
       return tab?.activeSubTab === 'sql'
