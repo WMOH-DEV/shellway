@@ -690,9 +690,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         sslMode: c.sslMode,
       }
 
+      config.configSessionId = sessionId
+
       // Attach SSH config for standalone tunnels (saved from previous connection)
       if (isStandalone && c.useSSHTunnel && c.sshHost) {
-        config.configSessionId = sessionId
         config.sshConfig = {
           host: c.sshHost,
           port: c.sshPort || 22,

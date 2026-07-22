@@ -171,9 +171,10 @@ export function SQLConnectDialog({
         sslMode,
       }
 
+      cfg.configSessionId = sessionId
+
       // Attach SSH config for standalone tunnels
       if (isStandalone && useSSHTunnel && sshHost) {
-        cfg.configSessionId = sessionId
         cfg.sshConfig = {
           host: sshHost,
           port: Number(sshPort) || 22,

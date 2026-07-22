@@ -55,6 +55,7 @@ sqlService.on(
       executionTimeMs: number;
       rowCount?: number;
       error?: string;
+      source?: "user" | "data" | "internal";
     },
   ) => {
     for (const win of BrowserWindow.getAllWindows()) {

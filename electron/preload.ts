@@ -880,6 +880,7 @@ const api = {
           executionTimeMs: number;
           rowCount?: number;
           error?: string;
+          source?: "user" | "data" | "internal";
         },
       ) => void,
     ) => {

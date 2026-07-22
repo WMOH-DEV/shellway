@@ -515,6 +515,7 @@ export class SQLService extends EventEmitter {
           params,
           executionTimeMs: result.executionTimeMs,
           error: "Query cancelled",
+          source,
         });
         throw new Error("Query cancelled");
       }
@@ -525,6 +526,7 @@ export class SQLService extends EventEmitter {
         params,
         executionTimeMs: result.executionTimeMs,
         rowCount: result.rowCount,
+        source,
       });
       return result;
     } catch (err: any) {
@@ -553,6 +555,7 @@ export class SQLService extends EventEmitter {
                 params,
                 executionTimeMs: retryResult.executionTimeMs,
                 rowCount: retryResult.rowCount,
+                source,
               });
               return retryResult;
             }
@@ -571,6 +574,7 @@ export class SQLService extends EventEmitter {
           params,
           executionTimeMs: elapsed,
           error: errorMsg,
+          source,
         });
       }
       const errorMsg = isCancelled ? "Query cancelled" : errMsg;
