@@ -276,6 +276,23 @@ export interface HistoryFilter {
   offset?: number;
 }
 
+// ── Saved query library ──
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  groupId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QueryGroup {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
 // ── Connection state ──
 
 export type SQLConnectionStatus =

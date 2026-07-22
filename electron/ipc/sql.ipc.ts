@@ -22,11 +22,13 @@ import {
   SQLHistoryStore,
   interpolateParams,
 } from "../services/SQLHistoryStore";
+import { SQLQueryLibraryStore } from "../services/SQLQueryLibraryStore";
 
 const sqlService = new SQLService();
 const sqlConfigStore = new SQLConfigStore();
 const transferService = new SQLDataTransferService(sqlService);
 const historyStore = new SQLHistoryStore();
+const queryLibrary = new SQLQueryLibraryStore();
 
 /** sqlSessionId → the stable scope + the database queries are currently landing in. */
 const historyScopes = new Map<string, { scopeId: string; database: string }>();
@@ -676,6 +678,7 @@ export function registerSQLIPC(): void {
     try {
       sqlConfigStore.delete(sessionId);
       historyStore.dropScope(sessionId);
+      queryLibrary.dropScope(sessionId);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -735,6 +738,55 @@ export function registerSQLIPC(): void {
   ipcMain.handle("sql:history:databases", (_event, scopeId: string) => {
     return historyStore.databases(scopeId);
   });
+
+  // ── Saved query library ──
+
+  ipcMain.handle("sql:queries:list", (_event, scopeId: string) => {
+    return queryLibrary.listQueries(scopeId);
+  });
+
+  ipcMain.handle(
+    "sql:queries:save",
+    (
+      _event,
+      scopeId: string,
+      input: { id?: string; name: string; sql: string; groupId: string | null },
+    ) => {
+      return queryLibrary.saveQuery(scopeId, input);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:delete",
+    (_event, scopeId: string, id: string) => {
+      return { success: queryLibrary.deleteQuery(scopeId, id) };
+    },
+  );
+
+  ipcMain.handle("sql:queries:groups", (_event, scopeId: string) => {
+    return queryLibrary.listGroups(scopeId);
+  });
+
+  ipcMain.handle(
+    "sql:queries:groupCreate",
+    (_event, scopeId: string, name: string) => {
+      return queryLibrary.createGroup(scopeId, name);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:groupRename",
+    (_event, scopeId: string, id: string, name: string) => {
+      return { success: queryLibrary.renameGroup(scopeId, id, name) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:groupDelete",
+    (_event, scopeId: string, id: string) => {
+      return { success: queryLibrary.deleteGroup(scopeId, id) };
+    },
+  );
 
   // ── Data Transfer: Export ──
 
