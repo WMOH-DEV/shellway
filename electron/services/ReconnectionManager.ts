@@ -5,6 +5,13 @@ import type { ReconnectionConfig } from '../../src/types/session'
 export type ReconnectionState = 'idle' | 'waiting' | 'attempting' | 'paused'
 
 /**
+ * Safety ceiling for `maxAttempts: 0` ("keep trying"). A misconfigured session —
+ * wrong port, moved host — would otherwise retry forever, which reads as a port
+ * scan to fail2ban and gets the client banned.
+ */
+const UNATTENDED_ATTEMPT_CEILING = 12
+
+/**
  * ReconnectionManager — implements exponential backoff reconnection strategy.
  *
  * Events:
@@ -12,7 +19,7 @@ export type ReconnectionState = 'idle' | 'waiting' | 'attempting' | 'paused'
  *   'waiting'   → (connectionId, delayMs, attemptNumber, nextRetryAt)
  *   'success'   → (connectionId, attemptNumber)
  *   'failed'    → (connectionId, attemptNumber, error)
- *   'exhausted' → (connectionId, totalAttempts)
+ *   'exhausted' → (connectionId, totalAttempts, reason?)
  *   'paused'    → (connectionId)
  *   'resumed'   → (connectionId)
  */
@@ -41,8 +48,9 @@ export class ReconnectionManager extends EventEmitter {
     return this.currentAttempt
   }
 
+  /** Attempts that will actually be made — "keep trying" still stops at the ceiling. */
   get maxAttempts(): number {
-    return this.config.maxAttempts
+    return this.config.maxAttempts > 0 ? this.config.maxAttempts : UNATTENDED_ATTEMPT_CEILING
   }
 
   get nextRetryAt(): number | null {
@@ -88,8 +96,7 @@ export class ReconnectionManager extends EventEmitter {
   private scheduleNext(): void {
     if (!this._connectionId) return
 
-    // Check if we've exhausted max attempts (0 = unlimited)
-    if (this.config.maxAttempts > 0 && this.currentAttempt >= this.config.maxAttempts) {
+    if (this.currentAttempt >= this.maxAttempts) {
       this._state = 'idle'
       this.emit('exhausted', this._connectionId, this.currentAttempt)
       return
@@ -143,6 +150,19 @@ export class ReconnectionManager extends EventEmitter {
     this._nextRetryAt = null
   }
 
+  /**
+   * Stop retrying a failure that retrying cannot fix (rejected credentials,
+   * host key mismatch). Repeating those is what trips intrusion detection.
+   */
+  abort(reason: string): void {
+    this.clearTimer()
+    this._state = 'idle'
+    this._nextRetryAt = null
+    if (this._connectionId) {
+      this.emit('exhausted', this._connectionId, this.currentAttempt, reason)
+    }
+  }
+
   /** Cancel reconnection (user manually disconnected) */
   cancel(): void {
     this.clearTimer()
@@ -176,6 +196,9 @@ export class ReconnectionManager extends EventEmitter {
     if (!this._connectionId) return
 
     this.clearTimer()
+    // Retrying by hand after the sequence stopped means the user changed
+    // something — start a fresh sequence rather than re-tripping the ceiling.
+    if (this._state === 'idle') this.currentAttempt = 0
     this._state = 'attempting'
     this.currentAttempt++
     this._nextRetryAt = null

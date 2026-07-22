@@ -134,9 +134,11 @@ sqlService.prepareReconnect = async (sqlSessionId, config) => {
   let localPort: number;
   if (spec.sshConfig) {
     // Mode 3: standalone ephemeral SSH tunnel
+    const sshConfig = resolveSavedTunnelConfig(spec) ?? spec.sshConfig;
+    spec.sshConfig = sshConfig;
     localPort = await createEphemeralTunnel(
       sqlSessionId,
-      spec.sshConfig,
+      sshConfig,
       spec.dbHost,
       spec.dbPort,
     );
@@ -193,11 +195,39 @@ const tunnelSpecs = new Map<
   {
     connectionId: string;
     sshConfig?: SSHTunnelConfig;
+    /** Key into SQLConfigStore, so a reconnect can pick up edited SSH details */
+    configSessionId?: string;
     dbHost: string;
     dbPort: number;
     database?: string;
   }
 >();
+
+/**
+ * Re-read the saved SSH tunnel details for a standalone DB session. Without
+ * this, a session opened before the SSH port changed keeps dialling the old
+ * port on every reconnect.
+ */
+function resolveSavedTunnelConfig(spec: {
+  configSessionId?: string;
+  sshConfig?: SSHTunnelConfig;
+}): SSHTunnelConfig | null {
+  if (!spec.configSessionId) return null;
+  const saved = sqlConfigStore.get(spec.configSessionId);
+  if (!saved?.sshHost) return null;
+
+  const authMethod = saved.sshAuthMethod ?? "password";
+  return {
+    host: saved.sshHost,
+    port: saved.sshPort || 22,
+    username: saved.sshUsername || "",
+    authMethod,
+    password: authMethod === "password" ? saved.sshPassword : undefined,
+    privateKeyPath:
+      authMethod === "privatekey" ? saved.sshPrivateKeyPath : undefined,
+    passphrase: authMethod === "privatekey" ? saved.sshPassphrase : undefined,
+  };
+}
 
 /** SSH tunnel configuration for standalone (non-SSH-session) database connections */
 interface SSHTunnelConfig {
@@ -233,6 +263,7 @@ export function registerSQLIPC(): void {
         ssl?: boolean;
         sslMode?: string;
         sshConfig?: SSHTunnelConfig;
+        configSessionId?: string;
       },
     ) => {
       // ── Input validation ──
@@ -272,6 +303,7 @@ export function registerSQLIPC(): void {
           tunnelSpecs.set(sqlSessionId, {
             connectionId,
             sshConfig: config.sshConfig,
+            configSessionId: config.configSessionId,
             dbHost: config.host,
             dbPort: config.port,
             database: config.database,
@@ -279,6 +311,11 @@ export function registerSQLIPC(): void {
           if (config.sshConfig) {
             // ── Mode 3: Standalone ephemeral SSH tunnel ──
             const ssh = config.sshConfig;
+            if (!ssh.port) {
+              console.warn(
+                `[SQL] No SSH port saved for ${ssh.host} — falling back to 22.`,
+              );
+            }
             const localPort = await createEphemeralTunnel(
               sqlSessionId,
               ssh,

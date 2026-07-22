@@ -233,6 +233,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     // Initiate SSH connection
     window.novadeck.ssh
       .connect(tab.id, {
+        savedSessionId: session.id,
         host: session.host,
         port: session.port,
         username: session.username,

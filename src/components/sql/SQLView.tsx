@@ -669,6 +669,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
       // Attach SSH config for standalone tunnels (saved from previous connection)
       if (isStandalone && c.useSSHTunnel && c.sshHost) {
+        config.configSessionId = sessionId
         config.sshConfig = {
           host: c.sshHost,
           port: c.sshPort || 22,
@@ -759,6 +760,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         const saved = await window.novadeck.sql.configGet(sessionId)
         if (saved?.success && saved.data?.sshHost) {
           const c = saved.data
+          reconnectCfg.configSessionId = sessionId
           reconnectCfg.sshConfig = {
             host: c.sshHost,
             port: c.sshPort || 22,

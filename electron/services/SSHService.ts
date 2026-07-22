@@ -111,6 +111,13 @@ export class SSHConnection extends EventEmitter {
   private log: LogService
   private proxySocket: Socket | null = null
 
+  /**
+   * Re-resolve the saved session right before a reconnect. Without this the
+   * config captured at open time is replayed forever, so a session edited to a
+   * new host/port keeps dialling the old one for as long as the tab is open.
+   */
+  refreshConfig?: () => Promise<SSHConnectionConfig | null>
+
   constructor(id: string, config: SSHConnectionConfig) {
     super()
     this.id = id
@@ -645,14 +652,10 @@ export class SSHConnection extends EventEmitter {
     this.reconnectionManager = new ReconnectionManager(reconnConfig)
 
     this.reconnectionManager.on('attempt', (connectionId: string, attempt: number) => {
-      LogService.reconnecting(
-        this.log,
-        this.sessionId,
-        attempt,
-        reconnConfig.maxAttempts
-      )
+      const maxAttempts = this.reconnectionManager?.maxAttempts ?? reconnConfig.maxAttempts
+      LogService.reconnecting(this.log, this.sessionId, attempt, maxAttempts)
       this.setStatus('reconnecting')
-      this.emit('reconnect-attempt', connectionId, attempt, reconnConfig.maxAttempts)
+      this.emit('reconnect-attempt', connectionId, attempt, maxAttempts)
 
       // Actually attempt reconnection
       this.performReconnect().then(
@@ -663,7 +666,17 @@ export class SSHConnection extends EventEmitter {
         (err) => {
           const msg = err instanceof Error ? err.message : 'Unknown error'
           LogService.reconnectionFailed(this.log, this.sessionId, attempt, msg)
-          this.reconnectionManager?.onFailure(msg)
+          if (SSHConnection.isFatalConnectError(err)) {
+            this.log.log(
+              this.sessionId,
+              'error',
+              'ssh',
+              `Stopping automatic reconnection — ${msg}. Fix the session settings and reconnect manually.`
+            )
+            this.reconnectionManager?.abort(msg)
+          } else {
+            this.reconnectionManager?.onFailure(msg)
+          }
         }
       )
     })
@@ -703,9 +716,52 @@ export class SSHConnection extends EventEmitter {
 
   /** Perform the actual reconnection (create new client and connect) */
   private async performReconnect(): Promise<void> {
+    await this.applyRefreshedConfig()
     this._client = new Client()
     this.setupClientEvents()
     await this.connect()
+  }
+
+  /** Pull the latest saved settings into this connection, if a resolver is wired. */
+  private async applyRefreshedConfig(): Promise<void> {
+    if (!this.refreshConfig) return
+
+    let latest: SSHConnectionConfig | null = null
+    try {
+      latest = await this.refreshConfig()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.log.log(this.sessionId, 'warning', 'ssh', `Could not re-read saved session before reconnect: ${msg}`)
+      return
+    }
+    if (!latest) return
+
+    const prev = this.config
+    this.config = { ...latest, sessionId: prev.sessionId }
+
+    if (prev.host !== this.config.host || prev.port !== this.config.port) {
+      this.log.log(
+        this.sessionId,
+        'info',
+        'ssh',
+        `Reconnect target updated from ${prev.host}:${prev.port} to ${this.config.host}:${this.config.port} (saved session changed)`
+      )
+    }
+    if (this.config.reconnection) {
+      this.reconnectionManager?.updateConfig(this.config.reconnection)
+    }
+  }
+
+  /** Failures that retrying cannot fix — repeating them is what gets a client banned. */
+  private static isFatalConnectError(err: unknown): boolean {
+    const e = err as { level?: string; message?: string } | null
+    if (e?.level === 'client-authentication') return true
+    const msg = (e?.message ?? '').toLowerCase()
+    return (
+      msg.includes('all configured authentication methods failed') ||
+      msg.includes('authentication failure') ||
+      msg.includes('host key verification failed')
+    )
   }
 
   /** Trigger reconnection from outside (e.g., retry now button) */
