@@ -436,6 +436,7 @@ export const DataTabView = React.memo(function DataTabView({
           query,
           params,
           thisIpcQueryId,
+          "data",
         );
 
         // Check again after async call
