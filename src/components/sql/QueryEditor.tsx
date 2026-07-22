@@ -727,7 +727,8 @@ export const QueryEditor = React.memo(function QueryEditor({
         keybindings: [
           monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS,
         ],
-        contextMenuGroupId: "navigation",
+        contextMenuGroupId: "1_modification",
+        contextMenuOrder: 1.5,
         run: () => handleSaveToLibraryRef.current(),
       });
 

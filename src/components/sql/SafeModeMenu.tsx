@@ -57,7 +57,7 @@ export function SafeModeMenu({ mode, onChange }: SafeModeMenuProps) {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-[26rem] rounded-md border border-nd-border bg-nd-bg-secondary shadow-xl py-1">
+        <div className="absolute right-0 top-full mt-1 z-50 w-[26rem] max-w-[calc(100vw-1rem)] rounded-md border border-nd-border bg-nd-bg-secondary shadow-xl py-1">
           {SAFE_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}
