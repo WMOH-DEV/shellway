@@ -26,7 +26,7 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2 } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2, BookmarkPlus } from "lucide-react";
 import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +37,7 @@ import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
 import { splitSQLStatements } from "@/utils/splitSQL";
 import { useSafeModeGate } from "./SafeModeGate";
+import { SaveQueryDialog } from "./SaveQueryDialog";
 import type { QueryResult, QueryError, DatabaseType, SafeMode } from "@/types/sql";
 
 // ── Props ──
@@ -250,6 +251,7 @@ export const QueryEditor = React.memo(function QueryEditor({
   const [isLoading, setIsLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [saveQuerySql, setSaveQuerySql] = useState<string | null>(null);
 
   // Transaction mode — runs BEGIN on the dedicated userConn and waits for
   // the user to explicitly COMMIT or ROLLBACK. The userConn is already
@@ -634,10 +636,25 @@ export const QueryEditor = React.memo(function QueryEditor({
   }, [dbType]);
 
   // Refs to avoid stale closures in Monaco keybindings (registered once on mount)
+  const handleSaveToLibrary = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    const selected =
+      selection && !selection.isEmpty()
+        ? (editor.getModel()?.getValueInRange(selection) ?? "")
+        : editor.getValue();
+    const trimmed = selected.trim();
+    if (!trimmed) return;
+    setSaveQuerySql(trimmed);
+  }, []);
+
   const handleRunRef = useRef(handleRun);
   handleRunRef.current = handleRun;
   const handleRunSelectedRef = useRef(handleRunSelected);
   handleRunSelectedRef.current = handleRunSelected;
+  const handleSaveToLibraryRef = useRef(handleSaveToLibrary);
+  handleSaveToLibraryRef.current = handleSaveToLibrary;
   const handleFormatRef = useRef(handleFormat);
   handleFormatRef.current = handleFormat;
   const handleExplainRef = useRef(handleExplain);
@@ -703,6 +720,16 @@ export const QueryEditor = React.memo(function QueryEditor({
           monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE,
         ],
         run: () => handleExplainRef.current(),
+      });
+
+      editor.addAction({
+        id: "sql-save-to-library",
+        label: "Save to Queries",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS,
+        ],
+        contextMenuGroupId: "navigation",
+        run: () => handleSaveToLibraryRef.current(),
       });
 
       // Focus editor on mount
@@ -808,6 +835,15 @@ export const QueryEditor = React.memo(function QueryEditor({
         >
           <Gauge size={13} />
           Explain
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSaveToLibrary}
+          title="Save this query to the library (Cmd+Shift+S)"
+        >
+          <BookmarkPlus size={13} />
+          Save
         </Button>
         {/* Transaction controls — moved to after Explain, before Timeout */}
         {!inTransaction ? (
@@ -975,6 +1011,14 @@ export const QueryEditor = React.memo(function QueryEditor({
       )}
 
       {gateDialog}
+
+      <SaveQueryDialog
+        open={saveQuerySql !== null}
+        scopeId={scopeId}
+        sql={saveQuerySql ?? ""}
+        onClose={() => setSaveQuerySql(null)}
+        onSaved={() => window.dispatchEvent(new CustomEvent("sql:queries-changed"))}
+      />
     </div>
   );
 
