@@ -1,6 +1,7 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain, BrowserWindow, powerMonitor } from "electron";
+import { ipcMain, BrowserWindow, powerMonitor, app } from "electron";
+import { randomUUID } from "crypto";
 import { Client as SSHClient } from "ssh2";
 import { readFileSync } from "fs";
 import { access, constants as fsConstants } from "fs/promises";
@@ -17,10 +18,20 @@ import {
 } from "../services/SQLDataTransferService";
 import { getSSHService } from "./ssh.ipc";
 import { listCheckpoints, deleteCheckpoint } from "../services/TransferCheckpointStore";
+import {
+  SQLHistoryStore,
+  interpolateParams,
+} from "../services/SQLHistoryStore";
 
 const sqlService = new SQLService();
 const sqlConfigStore = new SQLConfigStore();
 const transferService = new SQLDataTransferService(sqlService);
+const historyStore = new SQLHistoryStore();
+
+/** sqlSessionId → the stable scope + the database queries are currently landing in. */
+const historyScopes = new Map<string, { scopeId: string; database: string }>();
+
+app.on("before-quit", () => historyStore.flush());
 
 // Forward progress events from the transfer service to all renderer windows
 transferService.on("progress", (sqlSessionId: string, progress: unknown) => {
@@ -61,6 +72,21 @@ sqlService.on(
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("sql:query-executed", sqlSessionId, info);
     }
+
+    if (info.source !== "user" && info.source !== "data") return;
+    const scope = historyScopes.get(sqlSessionId);
+    if (!scope) return;
+    historyStore.add(scope.scopeId, {
+      id: randomUUID(),
+      query: interpolateParams(info.query, info.params),
+      database: scope.database,
+      source: info.source,
+      executedAt: Date.now(),
+      executionTimeMs: info.executionTimeMs,
+      rowCount: info.rowCount,
+      error: info.error,
+      isFavorite: false,
+    });
   },
 );
 
@@ -377,6 +403,10 @@ export function registerSQLIPC(): void {
         });
 
         if (result.success) {
+          historyScopes.set(sqlSessionId, {
+            scopeId: config.configSessionId ?? sqlSessionId,
+            database: result.currentDatabase ?? config.database ?? "",
+          });
           return {
             success: true,
             tunnelPort:
@@ -403,6 +433,8 @@ export function registerSQLIPC(): void {
     await cleanupTunnel(sqlSessionId);
     cleanupEphemeralSSH(sqlSessionId);
     tunnelSpecs.delete(sqlSessionId);
+    historyScopes.delete(sqlSessionId);
+    historyStore.flush();
     return { success: true };
   });
 
@@ -499,6 +531,8 @@ export function registerSQLIPC(): void {
     async (_event, sqlSessionId: string, database: string) => {
       try {
         await sqlService.switchDatabase(sqlSessionId, database);
+        const scope = historyScopes.get(sqlSessionId);
+        if (scope) scope.database = database;
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message };
@@ -641,6 +675,7 @@ export function registerSQLIPC(): void {
   ipcMain.handle("sql:config:delete", (_event, sessionId: string) => {
     try {
       sqlConfigStore.delete(sessionId);
+      historyStore.dropScope(sessionId);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -665,6 +700,40 @@ export function registerSQLIPC(): void {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  });
+
+  // ── Persistent query history ──
+
+  ipcMain.handle(
+    "sql:history:list",
+    (_event, scopeId: string, filter: unknown) => {
+      return historyStore.list(scopeId, (filter ?? {}) as any);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:favorite",
+    (_event, scopeId: string, id: string) => {
+      return { success: historyStore.toggleFavorite(scopeId, id) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:remove",
+    (_event, scopeId: string, ids: string[]) => {
+      return { success: historyStore.remove(scopeId, ids) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:clear",
+    (_event, scopeId: string, keepFavorites: boolean) => {
+      return { success: historyStore.clear(scopeId, keepFavorites) };
+    },
+  );
+
+  ipcMain.handle("sql:history:databases", (_event, scopeId: string) => {
+    return historyStore.databases(scopeId);
   });
 
   // ── Data Transfer: Export ──

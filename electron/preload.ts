@@ -732,6 +732,16 @@ const api = {
         success: boolean;
         error?: string;
       }>,
+    historyList: (scopeId: string, filter: unknown) =>
+      ipcRenderer.invoke("sql:history:list", scopeId, filter),
+    historyFavorite: (scopeId: string, id: string) =>
+      ipcRenderer.invoke("sql:history:favorite", scopeId, id),
+    historyRemove: (scopeId: string, ids: string[]) =>
+      ipcRenderer.invoke("sql:history:remove", scopeId, ids),
+    historyClear: (scopeId: string, keepFavorites: boolean) =>
+      ipcRenderer.invoke("sql:history:clear", scopeId, keepFavorites),
+    historyDatabases: (scopeId: string) =>
+      ipcRenderer.invoke("sql:history:databases", scopeId),
     configGetStandalone: () =>
       ipcRenderer.invoke("sql:config:getStandalone") as Promise<{
         success: boolean;

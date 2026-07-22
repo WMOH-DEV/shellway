@@ -250,6 +250,32 @@ export interface QueryHistoryEntry {
   isFavorite: boolean;
 }
 
+// ── Persisted query history (main-process store) ──
+
+export type HistorySource = "user" | "data";
+
+export interface PersistedHistoryEntry {
+  id: string;
+  query: string;
+  database: string;
+  source: HistorySource;
+  executedAt: number;
+  executionTimeMs: number;
+  rowCount?: number;
+  error?: string;
+  isFavorite: boolean;
+}
+
+export interface HistoryFilter {
+  search?: string;
+  source?: HistorySource | "all";
+  database?: string;
+  favoritesOnly?: boolean;
+  errorsOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
 // ── Connection state ──
 
 export type SQLConnectionStatus =
