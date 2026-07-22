@@ -776,6 +776,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       useSSHTunnel: config!.useSSHTunnel,
       ssl: config!.ssl,
       sslMode: (config as any)?.sslMode,
+      configSessionId: sessionId,
     }
 
     // For standalone DB tabs with SSH tunnels, restore sshConfig from saved config
@@ -784,7 +785,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         const saved = await window.novadeck.sql.configGet(sessionId)
         if (saved?.success && saved.data?.sshHost) {
           const c = saved.data
-          reconnectCfg.configSessionId = sessionId
           reconnectCfg.sshConfig = {
             host: c.sshHost,
             port: c.sshPort || 22,
