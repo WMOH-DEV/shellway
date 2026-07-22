@@ -18,7 +18,8 @@ import type { SQLTab } from '@/types/sql'
 export function useSQLShortcuts(
   connectionId: string,
   sqlSessionId: string | null,
-  isActive: boolean
+  isActive: boolean,
+  scopeId: string
 ) {
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
@@ -29,13 +30,16 @@ export function useSQLShortcuts(
   const connectionIdRef = useRef(connectionId)
   connectionIdRef.current = connectionId
 
+  const scopeIdRef = useRef(scopeId)
+  scopeIdRef.current = scopeId
+
   // ── New query tab ──
   const addQueryTab = useCallback(() => {
     const conn = getSQLConnectionState(connectionIdRef.current)
     const store = useSQLStore.getState()
     const queryCount = conn.tabs.filter((t) => t.type === 'query').length + 1
     const openQueryTabs = conn.tabs.filter((t) => t.type === 'query')
-    const savedQueries = getSavedQueries(connectionIdRef.current)
+    const savedQueries = getSavedQueries(scopeIdRef.current)
     const assignIndex = savedQueries.length - 1 - openQueryTabs.length
     const savedContent = assignIndex >= 0 ? savedQueries[assignIndex]?.content : undefined
 

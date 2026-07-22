@@ -316,10 +316,10 @@ export const QueryEditor = React.memo(function QueryEditor({
       if (trimmed) {
         if (savedIndexRef.current >= 0) {
           // Update existing slot
-          saveQueryAtIndex(connectionId, savedIndexRef.current, trimmed);
+          saveQueryAtIndex(scopeId, savedIndexRef.current, trimmed);
         } else {
           // First meaningful content in a new tab — append to stack
-          savedIndexRef.current = appendSavedQuery(connectionId, trimmed);
+          savedIndexRef.current = appendSavedQuery(scopeId, trimmed);
         }
       }
     },

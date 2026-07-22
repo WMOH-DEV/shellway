@@ -1,27 +1,43 @@
 /**
- * Saved Queries Stack — persists query editor content in localStorage.
+ * Editor draft stack — remembers unsaved query-tab content between launches.
  *
- * Each SQL connection maintains an ordered stack of saved queries (most recent last).
- * When a new query tab opens, it gets the next unseen saved query in LIFO order.
- * This mimics TablePlus behavior: reopen the app, open a query tab, see your last query.
+ * Keyed on the connection's stable scope id (SQLView's `sessionId`). The
+ * previous key was the per-tab `connectionId`, which is a fresh uuid on every
+ * tab open, so drafts were never restored and every launch orphaned another
+ * entry.
  */
 
-/** Maximum number of saved queries per connection to prevent localStorage bloat. */
 const MAX_SAVED_QUERIES = 50
+const KEY_PREFIX = 'sql-draft:'
+const LEGACY_KEY_PREFIX = 'sql-queries:'
 
 interface SavedQuery {
   content: string
   savedAt: number
 }
 
-function storageKey(connectionId: string): string {
-  return `sql-queries:${connectionId}`
+function storageKey(scopeId: string): string {
+  return `${KEY_PREFIX}${scopeId}`
 }
 
-/** Read the saved queries stack for a connection. */
-export function getSavedQueries(connectionId: string): SavedQuery[] {
+/** Remove the orphaned entries written by the old connectionId-keyed scheme. */
+export function pruneLegacyDrafts(): void {
   try {
-    const raw = localStorage.getItem(storageKey(connectionId))
+    const doomed: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(LEGACY_KEY_PREFIX)) doomed.push(key)
+    }
+    for (const key of doomed) localStorage.removeItem(key)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function getSavedQueries(scopeId: string): SavedQuery[] {
+  if (!scopeId) return []
+  try {
+    const raw = localStorage.getItem(storageKey(scopeId))
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
@@ -30,33 +46,36 @@ export function getSavedQueries(connectionId: string): SavedQuery[] {
   }
 }
 
-function setSavedQueries(connectionId: string, queries: SavedQuery[]): void {
+function setSavedQueries(scopeId: string, queries: SavedQuery[]): void {
   try {
-    // Prune oldest entries if over the cap
-    const trimmed = queries.length > MAX_SAVED_QUERIES
-      ? queries.slice(queries.length - MAX_SAVED_QUERIES)
-      : queries
-    localStorage.setItem(storageKey(connectionId), JSON.stringify(trimmed))
+    const trimmed =
+      queries.length > MAX_SAVED_QUERIES
+        ? queries.slice(queries.length - MAX_SAVED_QUERIES)
+        : queries
+    localStorage.setItem(storageKey(scopeId), JSON.stringify(trimmed))
   } catch {
     /* storage full or unavailable */
   }
 }
 
-/** Save or update a query at a specific index in the stack. */
-export function saveQueryAtIndex(connectionId: string, index: number, content: string): void {
-  const queries = getSavedQueries(connectionId)
-  // Extend the array if needed
+export function saveQueryAtIndex(
+  scopeId: string,
+  index: number,
+  content: string
+): void {
+  if (!scopeId) return
+  const queries = getSavedQueries(scopeId)
   while (queries.length <= index) {
     queries.push({ content: '', savedAt: Date.now() })
   }
   queries[index] = { content, savedAt: Date.now() }
-  setSavedQueries(connectionId, queries)
+  setSavedQueries(scopeId, queries)
 }
 
-/** Append a new query to the stack. Returns the new index. */
-export function appendSavedQuery(connectionId: string, content: string): number {
-  const queries = getSavedQueries(connectionId)
+export function appendSavedQuery(scopeId: string, content: string): number {
+  if (!scopeId) return -1
+  const queries = getSavedQueries(scopeId)
   queries.push({ content, savedAt: Date.now() })
-  setSavedQueries(connectionId, queries)
+  setSavedQueries(scopeId, queries)
   return queries.length - 1
 }

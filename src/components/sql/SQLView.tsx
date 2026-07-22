@@ -44,7 +44,7 @@ const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
 // QueryHistoryPanel is still used by QueryEditor for its own history panel
 
-import { getSavedQueries } from '@/utils/savedQueries'
+import { getSavedQueries, pruneLegacyDrafts } from '@/utils/savedQueries'
 
 // ── Loading fallback ──
 function PanelSpinner() {
@@ -268,7 +268,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [isStandalone, connectionId, connectionStatus])
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
-  useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive)
+  useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive, sessionId)
+
+  useEffect(() => {
+    pruneLegacyDrafts()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -928,7 +932,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const handleNewQuery = useCallback(() => {
     const queryCount = tabs.filter((t) => t.type === 'query').length + 1
     const openQueryTabs = tabs.filter((t) => t.type === 'query')
-    const savedQueries = getSavedQueries(connectionId)
+    const savedQueries = getSavedQueries(sessionId)
 
     // Assign the next unseen saved query (LIFO: most recent first).
     // Tab 0 (first opened) gets savedQueries[last], tab 1 gets [last-1], etc.
@@ -943,7 +947,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
     }
     addTab(newTab)
-  }, [tabs, addTab, connectionId])
+  }, [tabs, addTab, sessionId])
 
   /**
    * Open another data tab for a table that may already be open.
