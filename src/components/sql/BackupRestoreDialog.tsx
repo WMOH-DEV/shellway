@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button'
 import { formatFileSize } from '@/utils/fileSize'
 import type { DatabaseType, HealRunMode, TransferProgress } from '@/types/sql'
 import { RunModeSelector } from './RunModeSelector'
+import { RevealInFolderButton } from './RevealInFolderButton'
 
 // ── Types ──
 
@@ -87,6 +88,7 @@ export function BackupRestoreDialog({
 
   // Shared backup options
   const [backupScope, setBackupScope] = useState<'both' | 'structure' | 'data'>('both')
+  const [backupFilePath, setBackupFilePath] = useState<string | null>(null)
 
   // ── Restore state ──
   const [restorePhase, setRestorePhase] = useState<OperationPhase>('options')
@@ -114,6 +116,7 @@ export function BackupRestoreDialog({
       setActiveTab(initialTab)
       setBackupPhase('options')
       setRestorePhase('options')
+      setBackupFilePath(null)
       setRestoreFilePath(null)
       setRestoreFileName(null)
       setRestoreFileSize(null)
@@ -198,6 +201,7 @@ export function BackupRestoreDialog({
       if (result.canceled || !result.filePath) return
 
       const filePath = result.filePath as string
+      setBackupFilePath(filePath)
 
       setBackupPhase('running')
       setOperationErrors([])
@@ -739,6 +743,9 @@ export function BackupRestoreDialog({
 
             {/* Close + quarantine re-import */}
             <div className="flex justify-end gap-2 pt-1">
+              {activeTab === 'backup' && isCompleted && operationErrors.length === 0 && backupFilePath && (
+                <RevealInFolderButton filePath={backupFilePath} />
+              )}
               {progress?.quarantinePath && onOpenQuarantine && (
                 <Button
                   variant="secondary"

@@ -3,6 +3,7 @@ import { Download, FileText, FileJson, Database } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { RevealInFolderButton } from './RevealInFolderButton'
 import type { TransferProgress } from '@/types/sql'
 
 // ── Types ──
@@ -90,8 +91,8 @@ export function ExportTableDialog({
   const [progress, setProgress] = useState<TransferProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
+  const [savedFilePath, setSavedFilePath] = useState<string | null>(null)
   const operationIdRef = useRef<string | null>(null)
-  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -114,13 +115,8 @@ export function ExportTableDialog({
       setProgress(null)
       setError(null)
       setResultMessage(null)
+      setSavedFilePath(null)
       operationIdRef.current = null
-    }
-    return () => {
-      if (autoCloseTimerRef.current) {
-        clearTimeout(autoCloseTimerRef.current)
-        autoCloseTimerRef.current = null
-      }
     }
   }, [open, table, selectedTables, initialFormat])
 
@@ -150,7 +146,6 @@ export function ExportTableDialog({
             `Exported ${rows.toLocaleString()} rows successfully`
           )
           setPhase('done')
-          autoCloseTimerRef.current = setTimeout(onClose, 3000)
         } else if (p.status === 'failed') {
           setError(p.error || 'Export failed')
           setPhase('done')
@@ -187,6 +182,7 @@ export function ExportTableDialog({
     })
 
     if (saveResult.canceled || !saveResult.filePath) return
+    setSavedFilePath(saveResult.filePath)
 
     // Build export options
     const options: Record<string, unknown> = {
@@ -267,10 +263,6 @@ export function ExportTableDialog({
   }, [])
 
   const handleClose = useCallback(() => {
-    if (autoCloseTimerRef.current) {
-      clearTimeout(autoCloseTimerRef.current)
-      autoCloseTimerRef.current = null
-    }
     onClose()
   }, [onClose])
 
@@ -593,7 +585,10 @@ export function ExportTableDialog({
               </p>
             )}
 
-            <div className="flex items-center justify-end pt-1">
+            <div className="flex items-center justify-end gap-2 pt-1">
+              {savedFilePath && !error && (
+                <RevealInFolderButton filePath={savedFilePath} />
+              )}
               <Button variant="ghost" size="sm" onClick={handleClose}>
                 Close
               </Button>

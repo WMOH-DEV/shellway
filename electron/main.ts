@@ -217,6 +217,10 @@ ipcMain.handle("shell:openPath", async (_event, filePath: string) => {
   return shell.openPath(filePath);
 });
 
+ipcMain.handle("shell:showItemInFolder", async (_event, filePath: string) => {
+  shell.showItemInFolder(filePath);
+});
+
 /**
  * Spawn an application to open a file.
  * Uses 'spawn' event (Node 15.1+) to avoid race condition where ENOENT

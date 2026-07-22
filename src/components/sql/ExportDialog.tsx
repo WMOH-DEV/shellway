@@ -3,6 +3,7 @@ import { Download, FileText, FileJson, Database } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { RevealInFolderButton } from './RevealInFolderButton'
 import { exportToCSV, exportToJSON, exportToSQL } from '@/utils/sqlExport'
 import type { CSVOptions, JSONOptions, SQLOptions } from '@/utils/sqlExport'
 import type { QueryResult, DatabaseType } from '@/types/sql'
@@ -39,6 +40,7 @@ export function ExportDialog({ result, table, dbType, onClose }: ExportDialogPro
   const [batchInserts, setBatchInserts] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [savedFilePath, setSavedFilePath] = useState<string | null>(null)
 
   const tableName = table || 'exported_data'
 
@@ -88,13 +90,31 @@ export function ExportDialog({ result, table, dbType, onClose }: ExportDialogPro
       // Write file
       await (window as any).novadeck.fs.writeFile(saveResult.filePath, content)
 
-      onClose()
+      setSavedFilePath(saveResult.filePath)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsExporting(false)
     }
   }, [format, result, includeHeaders, prettyPrint, batchInserts, tableName, dbType, onClose])
+
+  if (savedFilePath) {
+    return (
+      <Modal open onClose={onClose} title="Export Data" maxWidth="max-w-sm">
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-green-400 bg-green-500/10 rounded-md px-3 py-2">
+            Exported successfully
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <RevealInFolderButton filePath={savedFilePath} />
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )
+  }
 
   return (
     <Modal open onClose={onClose} title="Export Data" maxWidth="max-w-sm">

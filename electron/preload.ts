@@ -174,6 +174,8 @@ const api = {
   shell: {
     openPath: (path: string) =>
       ipcRenderer.invoke("shell:openPath", path) as Promise<string>,
+    showItemInFolder: (path: string) =>
+      ipcRenderer.invoke("shell:showItemInFolder", path) as Promise<void>,
     openFileWithApp: (filePath: string, appPath: string) =>
       ipcRenderer.invoke(
         "shell:openFileWithApp",
