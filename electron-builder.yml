@@ -26,6 +26,8 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 mac:
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
   extendInfo:
     - NSDocumentsFolderUsageDescription: Shellway needs access to your files for SFTP transfers.
