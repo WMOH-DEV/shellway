@@ -1,6 +1,7 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain, BrowserWindow, powerMonitor } from "electron";
+import { ipcMain, BrowserWindow, powerMonitor, app } from "electron";
+import { randomUUID } from "crypto";
 import { Client as SSHClient } from "ssh2";
 import { readFileSync } from "fs";
 import { access, constants as fsConstants } from "fs/promises";
@@ -17,10 +18,22 @@ import {
 } from "../services/SQLDataTransferService";
 import { getSSHService } from "./ssh.ipc";
 import { listCheckpoints, deleteCheckpoint } from "../services/TransferCheckpointStore";
+import {
+  SQLHistoryStore,
+  interpolateParams,
+} from "../services/SQLHistoryStore";
+import { SQLQueryLibraryStore } from "../services/SQLQueryLibraryStore";
 
 const sqlService = new SQLService();
 const sqlConfigStore = new SQLConfigStore();
 const transferService = new SQLDataTransferService(sqlService);
+const historyStore = new SQLHistoryStore();
+const queryLibrary = new SQLQueryLibraryStore();
+
+/** sqlSessionId → the stable scope + the database queries are currently landing in. */
+const historyScopes = new Map<string, { scopeId: string; database: string }>();
+
+app.on("before-quit", () => historyStore.flush());
 
 // Forward progress events from the transfer service to all renderer windows
 transferService.on("progress", (sqlSessionId: string, progress: unknown) => {
@@ -55,11 +68,27 @@ sqlService.on(
       executionTimeMs: number;
       rowCount?: number;
       error?: string;
+      source?: "user" | "data" | "internal";
     },
   ) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("sql:query-executed", sqlSessionId, info);
     }
+
+    if (info.source !== "user" && info.source !== "data") return;
+    const scope = historyScopes.get(sqlSessionId);
+    if (!scope) return;
+    historyStore.add(scope.scopeId, {
+      id: randomUUID(),
+      query: interpolateParams(info.query, info.params),
+      database: scope.database,
+      source: info.source,
+      executedAt: Date.now(),
+      executionTimeMs: info.executionTimeMs,
+      rowCount: info.rowCount,
+      error: info.error,
+      isFavorite: false,
+    });
   },
 );
 
@@ -134,9 +163,11 @@ sqlService.prepareReconnect = async (sqlSessionId, config) => {
   let localPort: number;
   if (spec.sshConfig) {
     // Mode 3: standalone ephemeral SSH tunnel
+    const sshConfig = resolveSavedTunnelConfig(spec) ?? spec.sshConfig;
+    spec.sshConfig = sshConfig;
     localPort = await createEphemeralTunnel(
       sqlSessionId,
-      spec.sshConfig,
+      sshConfig,
       spec.dbHost,
       spec.dbPort,
     );
@@ -193,11 +224,39 @@ const tunnelSpecs = new Map<
   {
     connectionId: string;
     sshConfig?: SSHTunnelConfig;
+    /** Key into SQLConfigStore, so a reconnect can pick up edited SSH details */
+    configSessionId?: string;
     dbHost: string;
     dbPort: number;
     database?: string;
   }
 >();
+
+/**
+ * Re-read the saved SSH tunnel details for a standalone DB session. Without
+ * this, a session opened before the SSH port changed keeps dialling the old
+ * port on every reconnect.
+ */
+function resolveSavedTunnelConfig(spec: {
+  configSessionId?: string;
+  sshConfig?: SSHTunnelConfig;
+}): SSHTunnelConfig | null {
+  if (!spec.configSessionId) return null;
+  const saved = sqlConfigStore.get(spec.configSessionId);
+  if (!saved?.sshHost) return null;
+
+  const authMethod = saved.sshAuthMethod ?? "password";
+  return {
+    host: saved.sshHost,
+    port: saved.sshPort || 22,
+    username: saved.sshUsername || "",
+    authMethod,
+    password: authMethod === "password" ? saved.sshPassword : undefined,
+    privateKeyPath:
+      authMethod === "privatekey" ? saved.sshPrivateKeyPath : undefined,
+    passphrase: authMethod === "privatekey" ? saved.sshPassphrase : undefined,
+  };
+}
 
 /** SSH tunnel configuration for standalone (non-SSH-session) database connections */
 interface SSHTunnelConfig {
@@ -233,6 +292,7 @@ export function registerSQLIPC(): void {
         ssl?: boolean;
         sslMode?: string;
         sshConfig?: SSHTunnelConfig;
+        configSessionId?: string;
       },
     ) => {
       // ── Input validation ──
@@ -272,6 +332,7 @@ export function registerSQLIPC(): void {
           tunnelSpecs.set(sqlSessionId, {
             connectionId,
             sshConfig: config.sshConfig,
+            configSessionId: config.configSessionId,
             dbHost: config.host,
             dbPort: config.port,
             database: config.database,
@@ -279,6 +340,11 @@ export function registerSQLIPC(): void {
           if (config.sshConfig) {
             // ── Mode 3: Standalone ephemeral SSH tunnel ──
             const ssh = config.sshConfig;
+            if (!ssh.port) {
+              console.warn(
+                `[SQL] No SSH port saved for ${ssh.host} — falling back to 22.`,
+              );
+            }
             const localPort = await createEphemeralTunnel(
               sqlSessionId,
               ssh,
@@ -339,6 +405,10 @@ export function registerSQLIPC(): void {
         });
 
         if (result.success) {
+          historyScopes.set(sqlSessionId, {
+            scopeId: config.configSessionId ?? sqlSessionId,
+            database: result.currentDatabase ?? config.database ?? "",
+          });
           return {
             success: true,
             tunnelPort:
@@ -365,6 +435,8 @@ export function registerSQLIPC(): void {
     await cleanupTunnel(sqlSessionId);
     cleanupEphemeralSSH(sqlSessionId);
     tunnelSpecs.delete(sqlSessionId);
+    historyScopes.delete(sqlSessionId);
+    historyStore.flush();
     return { success: true };
   });
 
@@ -461,6 +533,8 @@ export function registerSQLIPC(): void {
     async (_event, sqlSessionId: string, database: string) => {
       try {
         await sqlService.switchDatabase(sqlSessionId, database);
+        const scope = historyScopes.get(sqlSessionId);
+        if (scope) scope.database = database;
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message };
@@ -603,11 +677,24 @@ export function registerSQLIPC(): void {
   ipcMain.handle("sql:config:delete", (_event, sessionId: string) => {
     try {
       sqlConfigStore.delete(sessionId);
+      historyStore.dropScope(sessionId);
+      queryLibrary.dropScope(sessionId);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
   });
+
+  ipcMain.handle(
+    "sql:config:setSafeMode",
+    (_event, sessionId: string, mode: string) => {
+      try {
+        return { success: sqlConfigStore.setSafeMode(sessionId, mode) };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    },
+  );
 
   ipcMain.handle("sql:config:getStandalone", () => {
     try {
@@ -617,6 +704,89 @@ export function registerSQLIPC(): void {
       return { success: false, error: err.message };
     }
   });
+
+  // ── Persistent query history ──
+
+  ipcMain.handle(
+    "sql:history:list",
+    (_event, scopeId: string, filter: unknown) => {
+      return historyStore.list(scopeId, (filter ?? {}) as any);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:favorite",
+    (_event, scopeId: string, id: string) => {
+      return { success: historyStore.toggleFavorite(scopeId, id) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:remove",
+    (_event, scopeId: string, ids: string[]) => {
+      return { success: historyStore.remove(scopeId, ids) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:history:clear",
+    (_event, scopeId: string, keepFavorites: boolean) => {
+      return { success: historyStore.clear(scopeId, keepFavorites) };
+    },
+  );
+
+  ipcMain.handle("sql:history:databases", (_event, scopeId: string) => {
+    return historyStore.databases(scopeId);
+  });
+
+  // ── Saved query library ──
+
+  ipcMain.handle("sql:queries:list", (_event, scopeId: string) => {
+    return queryLibrary.listQueries(scopeId);
+  });
+
+  ipcMain.handle(
+    "sql:queries:save",
+    (
+      _event,
+      scopeId: string,
+      input: { id?: string; name: string; sql: string; groupId: string | null },
+    ) => {
+      return queryLibrary.saveQuery(scopeId, input);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:delete",
+    (_event, scopeId: string, id: string) => {
+      return { success: queryLibrary.deleteQuery(scopeId, id) };
+    },
+  );
+
+  ipcMain.handle("sql:queries:groups", (_event, scopeId: string) => {
+    return queryLibrary.listGroups(scopeId);
+  });
+
+  ipcMain.handle(
+    "sql:queries:groupCreate",
+    (_event, scopeId: string, name: string) => {
+      return queryLibrary.createGroup(scopeId, name);
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:groupRename",
+    (_event, scopeId: string, id: string, name: string) => {
+      return { success: queryLibrary.renameGroup(scopeId, id, name) };
+    },
+  );
+
+  ipcMain.handle(
+    "sql:queries:groupDelete",
+    (_event, scopeId: string, id: string) => {
+      return { success: queryLibrary.deleteGroup(scopeId, id) };
+    },
+  );
 
   // ── Data Transfer: Export ──
 

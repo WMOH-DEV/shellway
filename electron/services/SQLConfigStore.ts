@@ -26,6 +26,8 @@ export interface StoredSQLConfig {
   isProduction: boolean
   /** Tag/environment: development, staging, production, testing */
   tag?: 'none' | 'development' | 'staging' | 'production' | 'testing'
+  /** Query guard level for this connection. Defaults by tag when unset. */
+  safeMode?: 'silent' | 'warn-all' | 'warn-writes' | 'password-all' | 'password-writes'
   /** Last successful connection time */
   lastUsed?: number
 
@@ -121,6 +123,19 @@ export class SQLConfigStore {
     const filtered = configs.filter((c) => c.sessionId !== sessionId)
     if (filtered.length === configs.length) return false
     this.store.set('configs', filtered)
+    return true
+  }
+
+  /** Update only the safe-mode field, leaving encrypted secrets untouched. */
+  setSafeMode(sessionId: string, safeMode: string): boolean {
+    const configs = this.store.get('configs', [])
+    const idx = configs.findIndex((c) => c.sessionId === sessionId)
+    if (idx < 0) return false
+    configs[idx] = {
+      ...configs[idx],
+      safeMode: safeMode as StoredSQLConfig['safeMode']
+    }
+    this.store.set('configs', configs)
     return true
   }
 

@@ -9,6 +9,14 @@ export type ConnectionTag =
   | "production"
   | "testing";
 
+/** How aggressively the client guards queries sent to this connection. */
+export type SafeMode =
+  | "silent"
+  | "warn-all"
+  | "warn-writes"
+  | "password-all"
+  | "password-writes";
+
 export interface DatabaseConnectionConfig {
   id: string;
   name: string;
@@ -23,6 +31,7 @@ export interface DatabaseConnectionConfig {
   sslMode?: SSLMode;
   isProduction?: boolean;
   tag?: ConnectionTag;
+  safeMode?: SafeMode;
   connectionName?: string;
 }
 
@@ -239,6 +248,49 @@ export interface QueryHistoryEntry {
   rowCount?: number;
   error?: string;
   isFavorite: boolean;
+}
+
+// ── Persisted query history (main-process store) ──
+
+export type HistorySource = "user" | "data";
+
+export interface PersistedHistoryEntry {
+  id: string;
+  query: string;
+  database: string;
+  source: HistorySource;
+  executedAt: number;
+  executionTimeMs: number;
+  rowCount?: number;
+  error?: string;
+  isFavorite: boolean;
+}
+
+export interface HistoryFilter {
+  search?: string;
+  source?: HistorySource | "all";
+  database?: string;
+  favoritesOnly?: boolean;
+  errorsOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+// ── Saved query library ──
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  groupId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QueryGroup {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 // ── Connection state ──

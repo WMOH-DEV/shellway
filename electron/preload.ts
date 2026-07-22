@@ -727,6 +727,35 @@ const api = {
         success: boolean;
         error?: string;
       }>,
+    configSetSafeMode: (sessionId: string, mode: string) =>
+      ipcRenderer.invoke("sql:config:setSafeMode", sessionId, mode) as Promise<{
+        success: boolean;
+        error?: string;
+      }>,
+    historyList: (scopeId: string, filter: unknown) =>
+      ipcRenderer.invoke("sql:history:list", scopeId, filter),
+    historyFavorite: (scopeId: string, id: string) =>
+      ipcRenderer.invoke("sql:history:favorite", scopeId, id),
+    historyRemove: (scopeId: string, ids: string[]) =>
+      ipcRenderer.invoke("sql:history:remove", scopeId, ids),
+    historyClear: (scopeId: string, keepFavorites: boolean) =>
+      ipcRenderer.invoke("sql:history:clear", scopeId, keepFavorites),
+    historyDatabases: (scopeId: string) =>
+      ipcRenderer.invoke("sql:history:databases", scopeId),
+    queriesList: (scopeId: string) =>
+      ipcRenderer.invoke("sql:queries:list", scopeId),
+    queriesSave: (scopeId: string, input: unknown) =>
+      ipcRenderer.invoke("sql:queries:save", scopeId, input),
+    queriesDelete: (scopeId: string, id: string) =>
+      ipcRenderer.invoke("sql:queries:delete", scopeId, id),
+    queryGroupsList: (scopeId: string) =>
+      ipcRenderer.invoke("sql:queries:groups", scopeId),
+    queryGroupCreate: (scopeId: string, name: string) =>
+      ipcRenderer.invoke("sql:queries:groupCreate", scopeId, name),
+    queryGroupRename: (scopeId: string, id: string, name: string) =>
+      ipcRenderer.invoke("sql:queries:groupRename", scopeId, id, name),
+    queryGroupDelete: (scopeId: string, id: string) =>
+      ipcRenderer.invoke("sql:queries:groupDelete", scopeId, id),
     configGetStandalone: () =>
       ipcRenderer.invoke("sql:config:getStandalone") as Promise<{
         success: boolean;
@@ -875,6 +904,7 @@ const api = {
           executionTimeMs: number;
           rowCount?: number;
           error?: string;
+          source?: "user" | "data" | "internal";
         },
       ) => void,
     ) => {

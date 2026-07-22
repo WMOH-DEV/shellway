@@ -157,10 +157,30 @@ export function registerSSHIPC(): void {
         // Map the renderer's session-shaped config to the flat SSHConnectionConfig
         const config = mapToConnectionConfig(rawConfig)
 
+        if ((rawConfig as { port?: number })?.port == null) {
+          logService.log(
+            connectionId,
+            'warning',
+            'ssh',
+            `No port saved for ${config.host} — falling back to 22.`
+          )
+        }
+
         // Create the connection first (without connecting) so we can attach
         // event listeners BEFORE the connect attempt. This prevents unhandled
         // EventEmitter errors if connect fails and ssh2 emits follow-up events.
         const conn = sshService.create(connectionId, config)
+
+        // Reconnects re-resolve the saved session, so an edited host/port/auth
+        // takes effect on the next retry instead of only on a brand-new tab.
+        const savedSessionId = (rawConfig as { savedSessionId?: string })?.savedSessionId
+        if (savedSessionId) {
+          conn.refreshConfig = async () => {
+            const { getSessionStore } = await import('./session.ipc')
+            const saved = getSessionStore().getById(savedSessionId)
+            return saved ? mapToConnectionConfig(saved) : null
+          }
+        }
 
         // Forward status changes to renderer
         conn.on('status', (status) => {

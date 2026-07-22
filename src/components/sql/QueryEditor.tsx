@@ -26,7 +26,7 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2 } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2, BookmarkPlus } from "lucide-react";
 import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +36,9 @@ import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete"
 import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
 import { splitSQLStatements } from "@/utils/splitSQL";
-import type { QueryResult, QueryError, DatabaseType } from "@/types/sql";
+import { useSafeModeGate } from "./SafeModeGate";
+import { SaveQueryDialog } from "./SaveQueryDialog";
+import type { QueryResult, QueryError, DatabaseType, SafeMode } from "@/types/sql";
 
 // ── Props ──
 
@@ -48,6 +50,8 @@ interface QueryEditorProps {
   initialQuery?: string;
   /** Index into the saved-queries stack for persistence (-1 = new/unassigned) */
   savedQueryIndex?: number;
+  safeMode?: SafeMode;
+  scopeId: string;
 }
 
 // ── Shellway dark theme definition ──
@@ -227,6 +231,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   dbType,
   initialQuery,
   savedQueryIndex,
+  safeMode,
+  scopeId,
 }: QueryEditorProps) {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(
     null,
@@ -243,8 +249,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   const result = results[activeResultIndex] ?? null;
   const [error, setError] = useState<QueryError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [saveQuerySql, setSaveQuerySql] = useState<string | null>(null);
 
   // Transaction mode — runs BEGIN on the dedicated userConn and waits for
   // the user to explicitly COMMIT or ROLLBACK. The userConn is already
@@ -284,10 +290,18 @@ export const QueryEditor = React.memo(function QueryEditor({
     tables,
     columns,
     databases,
+    connectionConfig,
+    currentDatabase,
     setCurrentQuery,
     setQueryError,
     addRunningQuery,
   } = useSQLConnection(connectionId);
+
+  const { requestApproval, gateDialog } = useSafeModeGate({
+    mode: safeMode ?? "silent",
+    password: connectionConfig?.password,
+    databaseName: currentDatabase,
+  });
 
   // Track the saved-query index for this tab (may be assigned on mount or created later)
   const savedIndexRef = useRef(savedQueryIndex ?? -1);
@@ -301,10 +315,10 @@ export const QueryEditor = React.memo(function QueryEditor({
       if (trimmed) {
         if (savedIndexRef.current >= 0) {
           // Update existing slot
-          saveQueryAtIndex(connectionId, savedIndexRef.current, trimmed);
+          saveQueryAtIndex(scopeId, savedIndexRef.current, trimmed);
         } else {
           // First meaningful content in a new tab — append to stack
-          savedIndexRef.current = appendSavedQuery(connectionId, trimmed);
+          savedIndexRef.current = appendSavedQuery(scopeId, trimmed);
         }
       }
     },
@@ -332,6 +346,9 @@ export const QueryEditor = React.memo(function QueryEditor({
 
       const statements = splitSQLStatements(trimmed);
       if (statements.length === 0) return;
+
+      const approved = await requestApproval(trimmed);
+      if (!approved) return;
 
       // Race protection — increment counter so stale results are discarded.
       // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
@@ -454,7 +471,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         }
       }
     },
-    [sqlSessionId, setQueryError, addRunningQuery],
+    [sqlSessionId, setQueryError, addRunningQuery, requestApproval],
   );
 
   // ── Transaction control ──
@@ -618,10 +635,25 @@ export const QueryEditor = React.memo(function QueryEditor({
   }, [dbType]);
 
   // Refs to avoid stale closures in Monaco keybindings (registered once on mount)
+  const handleSaveToLibrary = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    const selected =
+      selection && !selection.isEmpty()
+        ? (editor.getModel()?.getValueInRange(selection) ?? "")
+        : editor.getValue();
+    const trimmed = selected.trim();
+    if (!trimmed) return;
+    setSaveQuerySql(trimmed);
+  }, []);
+
   const handleRunRef = useRef(handleRun);
   handleRunRef.current = handleRun;
   const handleRunSelectedRef = useRef(handleRunSelected);
   handleRunSelectedRef.current = handleRunSelected;
+  const handleSaveToLibraryRef = useRef(handleSaveToLibrary);
+  handleSaveToLibraryRef.current = handleSaveToLibrary;
   const handleFormatRef = useRef(handleFormat);
   handleFormatRef.current = handleFormat;
   const handleExplainRef = useRef(handleExplain);
@@ -689,6 +721,17 @@ export const QueryEditor = React.memo(function QueryEditor({
         run: () => handleExplainRef.current(),
       });
 
+      editor.addAction({
+        id: "sql-save-to-library",
+        label: "Save to Queries",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS,
+        ],
+        contextMenuGroupId: "1_modification",
+        contextMenuOrder: 1.5,
+        run: () => handleSaveToLibraryRef.current(),
+      });
+
       // Focus editor on mount
       editor.focus();
     },
@@ -722,24 +765,7 @@ export const QueryEditor = React.memo(function QueryEditor({
     [],
   );
 
-  // ── Load query from history ──
-  const handleSelectHistoryQuery = useCallback(
-    (query: string) => {
-      const editor = editorRef.current;
-      if (editor) {
-        editor.setValue(query);
-        setCurrentQuery(query);
-      }
-      setShowHistory(false);
-    },
-    [setCurrentQuery],
-  );
-
-  // Lazy-import QueryHistoryPanel and ExportDialog to keep initial bundle small
-  const QueryHistoryPanel = useMemo(
-    () => React.lazy(() => import("@/components/sql/QueryHistoryPanel")),
-    [],
-  );
+  // Lazy-import ExportDialog to keep initial bundle small
   const ExportDialog = useMemo(
     () => React.lazy(() => import("@/components/sql/ExportDialog")),
     [],
@@ -792,6 +818,15 @@ export const QueryEditor = React.memo(function QueryEditor({
         >
           <Gauge size={13} />
           Explain
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSaveToLibrary}
+          title="Save this query to the library (Cmd+Shift+S)"
+        >
+          <BookmarkPlus size={13} />
+          Save
         </Button>
         {/* Transaction controls — moved to after Explain, before Timeout */}
         {!inTransaction ? (
@@ -889,7 +924,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         error={error}
         isLoading={isLoading}
         onExport={() => setShowExport(true)}
-        onHistory={() => setShowHistory(true)}
+        onHistory={() => window.dispatchEvent(new CustomEvent("sql:show-history"))}
       />
       {error && <ErrorBanner error={error} />}
       {results.length > 1 && (
@@ -935,18 +970,6 @@ export const QueryEditor = React.memo(function QueryEditor({
         )}
       </div>
 
-      {/* History panel (lazy) */}
-      {showHistory && (
-        <React.Suspense fallback={null}>
-          <QueryHistoryPanel
-            connectionId={connectionId}
-            sqlSessionId={sqlSessionId}
-            onSelectQuery={handleSelectHistoryQuery}
-            onClose={() => setShowHistory(false)}
-          />
-        </React.Suspense>
-      )}
-
       {/* Export dialog (lazy) */}
       {showExport && result && (
         <React.Suspense fallback={null}>
@@ -957,6 +980,16 @@ export const QueryEditor = React.memo(function QueryEditor({
           />
         </React.Suspense>
       )}
+
+      {gateDialog}
+
+      <SaveQueryDialog
+        open={saveQuerySql !== null}
+        scopeId={scopeId}
+        sql={saveQuerySql ?? ""}
+        onClose={() => setSaveQuerySql(null)}
+        onSaved={() => window.dispatchEvent(new CustomEvent("sql:queries-changed"))}
+      />
     </div>
   );
 

@@ -20,7 +20,8 @@ import {
 import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { SchemaSidebar, type TableContextAction, type DatabaseContextAction } from './SchemaSidebar'
+import { SQLSidebar } from './SQLSidebar'
+import type { TableContextAction, DatabaseContextAction } from './SchemaSidebar'
 import { SQLConnectDialog } from './SQLConnectDialog'
 import { DatabasePickerDialog } from './DatabasePickerDialog'
 import { CreateDatabaseDialog } from './CreateDatabaseDialog'
@@ -33,16 +34,17 @@ import { HealingDialog } from './HealingDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { QueryMonitor } from './QueryMonitor'
+import { SafeModeMenu } from './SafeModeMenu'
+import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest } from '@/types/sql'
+import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
 const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
-// QueryHistoryPanel is still used by QueryEditor for its own history panel
 
-import { getSavedQueries } from '@/utils/savedQueries'
+import { getSavedQueries, pruneLegacyDrafts } from '@/utils/savedQueries'
 
 // ── Loading fallback ──
 function PanelSpinner() {
@@ -97,6 +99,8 @@ interface SQLViewProps {
  */
 const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }: SQLViewProps) {
   const [showConnectDialog, setShowConnectDialog] = useState(false)
+  const [safeMode, setSafeMode] = useState<SafeMode>('silent')
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
   const [queryLogHeight, setQueryLogHeight] = useState(200)
@@ -238,8 +242,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── Check if SQL sub-tab is actually the active one (not hidden behind Terminal/SFTP) ──
   // In standalone mode, SQL is always the active view — no sub-tab switching.
+  // Every open tab stays mounted, so this must also require the tab to be the
+  // focused one — otherwise a shortcut fires in every connected SQL view at once.
   const isSQLSubTabActive = useConnectionStore(
     useCallback((s) => {
+      if (s.activeTabId !== connectionId) return false
       if (isStandalone) return true
       const tab = s.tabs.find((t) => t.id === connectionId)
       return tab?.activeSubTab === 'sql'
@@ -262,7 +269,42 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [isStandalone, connectionId, connectionStatus])
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
-  useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive)
+  useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive, sessionId)
+
+  useEffect(() => {
+    pruneLegacyDrafts()
+  }, [])
+
+  useEffect(() => {
+    const handler = () => {
+      setShowSidebar(true)
+      try {
+        localStorage.setItem(`sql-sidebar-tab:${sessionId}`, 'history')
+      } catch {
+        /* storage unavailable */
+      }
+      window.dispatchEvent(new CustomEvent('sql:sidebar-tab', { detail: 'history' }))
+    }
+    window.addEventListener('sql:show-history', handler)
+    return () => window.removeEventListener('sql:show-history', handler)
+  }, [sessionId])
+
+  useEffect(() => {
+    let cancelled = false
+    window.novadeck.sql
+      .configGet(sessionId)
+      .then((result: any) => {
+        if (cancelled || !result?.success || !result.data) return
+        const saved = result.data.safeMode as SafeMode | undefined
+        setSafeMode(
+          saved ?? resolveDefaultSafeMode(result.data.tag, result.data.isProduction)
+        )
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
 
   // ── Subscribe to ALL query executions from the main process ──
   // This captures schema queries (getColumns, getIndexes, etc.) that bypass the renderer-side logQuery.
@@ -296,6 +338,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         error: info.error,
         isFavorite: false,
       })
+
+      if (info.source === 'user' || info.source === 'data') {
+        setHistoryRefreshToken((value) => value + 1)
+      }
     })
     return () => { unsub() }
   }, [sqlSessionId, addHistoryEntry])
@@ -667,6 +713,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         sslMode: c.sslMode,
       }
 
+      config.configSessionId = sessionId
+
       // Attach SSH config for standalone tunnels (saved from previous connection)
       if (isStandalone && c.useSSHTunnel && c.sshHost) {
         config.sshConfig = {
@@ -751,6 +799,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       useSSHTunnel: config!.useSSHTunnel,
       ssl: config!.ssl,
       sslMode: (config as any)?.sslMode,
+      configSessionId: sessionId,
     }
 
     // For standalone DB tabs with SSH tunnels, restore sshConfig from saved config
@@ -891,10 +940,18 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [connectionId, removeTabs, setSelectedTable]
   )
 
+  const handleSafeModeChange = useCallback(
+    (mode: SafeMode) => {
+      setSafeMode(mode)
+      window.novadeck.sql.configSetSafeMode?.(sessionId, mode).catch(() => {})
+    },
+    [sessionId]
+  )
+
   const handleNewQuery = useCallback(() => {
     const queryCount = tabs.filter((t) => t.type === 'query').length + 1
     const openQueryTabs = tabs.filter((t) => t.type === 'query')
-    const savedQueries = getSavedQueries(connectionId)
+    const savedQueries = getSavedQueries(sessionId)
 
     // Assign the next unseen saved query (LIFO: most recent first).
     // Tab 0 (first opened) gets savedQueries[last], tab 1 gets [last-1], etc.
@@ -909,7 +966,21 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
     }
     addTab(newTab)
-  }, [tabs, addTab, connectionId])
+  }, [tabs, addTab, sessionId])
+
+  const handleOpenSavedQuery = useCallback(
+    (sql: string, name?: string) => {
+      const queryCount = tabs.filter((t) => t.type === 'query').length + 1
+      addTab({
+        id: crypto.randomUUID(),
+        type: 'query',
+        label: name || `Query ${queryCount}`,
+        query: sql,
+        savedQueryIndex: -1,
+      })
+    },
+    [tabs, addTab]
+  )
 
   /**
    * Open another data tab for a table that may already be open.
@@ -1471,6 +1542,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       schema={tab.schema}
                       dbType={dbType}
                       filterScope={tab.filterScope}
+                      safeMode={safeMode}
                     />
                   ) : tab.type === 'query' ? (
                     <LazyQueryEditor
@@ -1479,6 +1551,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       dbType={dbType}
                       initialQuery={tab.query}
                       savedQueryIndex={tab.savedQueryIndex}
+                      safeMode={safeMode}
+                      scopeId={sessionId}
                     />
                   ) : tab.type === 'structure' && tab.table ? (
                     <LazyStructureTabView
@@ -1565,6 +1639,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           }}
         />
         <ToolbarSep />
+        <SafeModeMenu mode={safeMode} onChange={handleSafeModeChange} />
         <QueryMonitor
           runningQueries={runningQueries.filter((q) => q.source !== 'internal')}
           onCancelQuery={handleCancelQuery}
@@ -1596,13 +1671,17 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           )}
           style={showSidebar ? { width: sidebarWidth } : undefined}
         >
-          <SchemaSidebar
+          <SQLSidebar
             connectionId={connectionId}
+            scopeId={sessionId}
+            currentDatabase={currentDatabase}
+            historyRefreshToken={historyRefreshToken}
             hasSSHConnection={hasSSHConnection}
             onTableAction={handleTableAction}
             onDatabaseAction={handleDatabaseAction}
             multiSelectedTables={multiSelectedTables}
             onMultiSelectChange={setMultiSelectedTables}
+            onOpenQuery={handleOpenSavedQuery}
           />
           {/* Sidebar resize handle */}
           <div

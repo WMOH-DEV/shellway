@@ -68,7 +68,7 @@ export interface AppSettings {
 
   // Reconnection (exponential backoff)
   reconnectionEnabled: boolean
-  reconnectionMaxAttempts: number      // 0 = unlimited
+  reconnectionMaxAttempts: number      // 0 = keep trying, capped by a safety ceiling
   reconnectionInitialDelay: number     // seconds
   reconnectionMaxDelay: number         // seconds
   reconnectionBackoffMultiplier: number
