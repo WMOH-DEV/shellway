@@ -646,6 +646,17 @@ export function registerSQLIPC(): void {
     }
   });
 
+  ipcMain.handle(
+    "sql:config:setSafeMode",
+    (_event, sessionId: string, mode: string) => {
+      try {
+        return { success: sqlConfigStore.setSafeMode(sessionId, mode) };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    },
+  );
+
   ipcMain.handle("sql:config:getStandalone", () => {
     try {
       const configs = sqlConfigStore.getStandalone();

@@ -9,6 +9,14 @@ export type ConnectionTag =
   | "production"
   | "testing";
 
+/** How aggressively the client guards queries sent to this connection. */
+export type SafeMode =
+  | "silent"
+  | "warn-all"
+  | "warn-writes"
+  | "password-all"
+  | "password-writes";
+
 export interface DatabaseConnectionConfig {
   id: string;
   name: string;
@@ -23,6 +31,7 @@ export interface DatabaseConnectionConfig {
   sslMode?: SSLMode;
   isProduction?: boolean;
   tag?: ConnectionTag;
+  safeMode?: SafeMode;
   connectionName?: string;
 }
 

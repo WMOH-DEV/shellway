@@ -727,6 +727,11 @@ const api = {
         success: boolean;
         error?: string;
       }>,
+    configSetSafeMode: (sessionId: string, mode: string) =>
+      ipcRenderer.invoke("sql:config:setSafeMode", sessionId, mode) as Promise<{
+        success: boolean;
+        error?: string;
+      }>,
     configGetStandalone: () =>
       ipcRenderer.invoke("sql:config:getStandalone") as Promise<{
         success: boolean;
