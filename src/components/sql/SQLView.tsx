@@ -33,8 +33,10 @@ import { HealingDialog } from './HealingDialog'
 import { SQLTabBar } from './SQLTabBar'
 import { SQLStatusBar } from './SQLStatusBar'
 import { QueryMonitor } from './QueryMonitor'
+import { SafeModeMenu } from './SafeModeMenu'
+import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest } from '@/types/sql'
+import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -97,6 +99,7 @@ interface SQLViewProps {
  */
 const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }: SQLViewProps) {
   const [showConnectDialog, setShowConnectDialog] = useState(false)
+  const [safeMode, setSafeMode] = useState<SafeMode>('silent')
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
   const [queryLogHeight, setQueryLogHeight] = useState(200)
@@ -266,6 +269,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
   useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive)
+
+  useEffect(() => {
+    let cancelled = false
+    window.novadeck.sql
+      .configGet(sessionId)
+      .then((result: any) => {
+        if (cancelled || !result?.success || !result.data) return
+        const saved = result.data.safeMode as SafeMode | undefined
+        setSafeMode(
+          saved ?? resolveDefaultSafeMode(result.data.tag, result.data.isProduction)
+        )
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
 
   // ── Subscribe to ALL query executions from the main process ──
   // This captures schema queries (getColumns, getIndexes, etc.) that bypass the renderer-side logQuery.
@@ -896,6 +916,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [connectionId, removeTabs, setSelectedTable]
   )
 
+  const handleSafeModeChange = useCallback(
+    (mode: SafeMode) => {
+      setSafeMode(mode)
+      window.novadeck.sql.configSetSafeMode?.(sessionId, mode).catch(() => {})
+    },
+    [sessionId]
+  )
+
   const handleNewQuery = useCallback(() => {
     const queryCount = tabs.filter((t) => t.type === 'query').length + 1
     const openQueryTabs = tabs.filter((t) => t.type === 'query')
@@ -1476,6 +1504,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       schema={tab.schema}
                       dbType={dbType}
                       filterScope={tab.filterScope}
+                      safeMode={safeMode}
                     />
                   ) : tab.type === 'query' ? (
                     <LazyQueryEditor
@@ -1484,6 +1513,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       dbType={dbType}
                       initialQuery={tab.query}
                       savedQueryIndex={tab.savedQueryIndex}
+                      safeMode={safeMode}
+                      scopeId={sessionId}
                     />
                   ) : tab.type === 'structure' && tab.table ? (
                     <LazyStructureTabView
@@ -1570,6 +1601,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           }}
         />
         <ToolbarSep />
+        <SafeModeMenu mode={safeMode} onChange={handleSafeModeChange} />
         <QueryMonitor
           runningQueries={runningQueries.filter((q) => q.source !== 'internal')}
           onCancelQuery={handleCancelQuery}

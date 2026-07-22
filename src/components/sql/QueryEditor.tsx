@@ -36,7 +36,8 @@ import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete"
 import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
 import { splitSQLStatements } from "@/utils/splitSQL";
-import type { QueryResult, QueryError, DatabaseType } from "@/types/sql";
+import { useSafeModeGate } from "./SafeModeGate";
+import type { QueryResult, QueryError, DatabaseType, SafeMode } from "@/types/sql";
 
 // ── Props ──
 
@@ -48,6 +49,8 @@ interface QueryEditorProps {
   initialQuery?: string;
   /** Index into the saved-queries stack for persistence (-1 = new/unassigned) */
   savedQueryIndex?: number;
+  safeMode?: SafeMode;
+  scopeId: string;
 }
 
 // ── Shellway dark theme definition ──
@@ -227,6 +230,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   dbType,
   initialQuery,
   savedQueryIndex,
+  safeMode,
+  scopeId,
 }: QueryEditorProps) {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(
     null,
@@ -284,10 +289,18 @@ export const QueryEditor = React.memo(function QueryEditor({
     tables,
     columns,
     databases,
+    connectionConfig,
+    currentDatabase,
     setCurrentQuery,
     setQueryError,
     addRunningQuery,
   } = useSQLConnection(connectionId);
+
+  const { requestApproval, gateDialog } = useSafeModeGate({
+    mode: safeMode ?? "silent",
+    password: connectionConfig?.password,
+    databaseName: currentDatabase,
+  });
 
   // Track the saved-query index for this tab (may be assigned on mount or created later)
   const savedIndexRef = useRef(savedQueryIndex ?? -1);
@@ -332,6 +345,9 @@ export const QueryEditor = React.memo(function QueryEditor({
 
       const statements = splitSQLStatements(trimmed);
       if (statements.length === 0) return;
+
+      const approved = await requestApproval(trimmed);
+      if (!approved) return;
 
       // Race protection — increment counter so stale results are discarded.
       // We do NOT send server-side KILL QUERY here because KILL QUERY targets the
@@ -454,7 +470,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         }
       }
     },
-    [sqlSessionId, setQueryError, addRunningQuery],
+    [sqlSessionId, setQueryError, addRunningQuery, requestApproval],
   );
 
   // ── Transaction control ──
@@ -957,6 +973,8 @@ export const QueryEditor = React.memo(function QueryEditor({
           />
         </React.Suspense>
       )}
+
+      {gateDialog}
     </div>
   );
 

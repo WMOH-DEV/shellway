@@ -21,6 +21,7 @@ import {
 import { FilterBar } from "@/components/sql/FilterBar";
 import { buildWhereClause } from "@/utils/sqlFilterBuilder";
 import { useSQLConnection, useSQLStore } from "@/stores/sqlStore";
+import { useSafeModeGate } from "./SafeModeGate";
 import {
   SQL_EXPR_PREFIX,
   resolveSQLExpr,
@@ -36,6 +37,7 @@ import type {
   SchemaColumn,
   SchemaIndex,
   SchemaForeignKey,
+  SafeMode,
 } from "@/types/sql";
 
 // Lazy-load StructureTabView — only needed when user toggles to structure mode
@@ -54,6 +56,7 @@ interface DataTabViewProps {
   /** Isolates this tab's persisted filters when the same table is open in
    *  several tabs. Unset on the first tab, which keeps the table-keyed storage. */
   filterScope?: string;
+  safeMode?: SafeMode;
 }
 
 // ── Helpers ──
@@ -225,6 +228,7 @@ export const DataTabView = React.memo(function DataTabView({
   schema,
   dbType,
   filterScope,
+  safeMode,
 }: DataTabViewProps) {
   // Store — staged changes + connection info for inline editing
   const {
@@ -235,6 +239,12 @@ export const DataTabView = React.memo(function DataTabView({
     currentDatabase,
     addRunningQuery,
   } = useSQLConnection(connectionId);
+
+  const { requestApproval, gateDialog } = useSafeModeGate({
+    mode: safeMode ?? "silent",
+    password: connectionConfig?.password,
+    databaseName: currentDatabase,
+  });
 
   // Stable key for persisting filters per table across sessions
   // Format: sql-flt:{type}:{host}:{port}:{database}:{schema}.{table}
@@ -1246,6 +1256,21 @@ export const DataTabView = React.memo(function DataTabView({
       useSQLStore.getState().connections[connectionId]?.stagedChanges ?? [];
     const currentTableChanges = freshStagedChanges.filter(isOwnChange);
     if (currentTableChanges.length === 0) return;
+
+    const approved = await requestApproval(
+      currentTableChanges
+        .map((change) => {
+          const target = buildFullTableName(change.table, change.schema, dbType);
+          if (change.type === "insert")
+            return `INSERT INTO ${target} (...) VALUES (...)`;
+          if (change.type === "delete")
+            return `DELETE FROM ${target} WHERE <primary key>`;
+          return `UPDATE ${target} SET ... WHERE <primary key>`;
+        })
+        .join(";\n"),
+    );
+    if (!approved) return;
+
     savingRef.current = true;
     setIsSaving(true);
     setError(null);
@@ -1561,6 +1586,7 @@ export const DataTabView = React.memo(function DataTabView({
     sortKeys,
     filters,
     columnMeta,
+    requestApproval,
   ]);
 
   const handleDiscardChanges = useCallback(() => {
@@ -2017,6 +2043,8 @@ export const DataTabView = React.memo(function DataTabView({
         onInsertRow={handleInsertRow}
         onRefreshTable={handleRefreshTable}
       />
+
+      {gateDialog}
     </div>
   );
 });
