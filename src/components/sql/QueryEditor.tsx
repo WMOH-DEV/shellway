@@ -249,7 +249,6 @@ export const QueryEditor = React.memo(function QueryEditor({
   const result = results[activeResultIndex] ?? null;
   const [error, setError] = useState<QueryError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [saveQuerySql, setSaveQuerySql] = useState<string | null>(null);
 
@@ -765,24 +764,7 @@ export const QueryEditor = React.memo(function QueryEditor({
     [],
   );
 
-  // ── Load query from history ──
-  const handleSelectHistoryQuery = useCallback(
-    (query: string) => {
-      const editor = editorRef.current;
-      if (editor) {
-        editor.setValue(query);
-        setCurrentQuery(query);
-      }
-      setShowHistory(false);
-    },
-    [setCurrentQuery],
-  );
-
-  // Lazy-import QueryHistoryPanel and ExportDialog to keep initial bundle small
-  const QueryHistoryPanel = useMemo(
-    () => React.lazy(() => import("@/components/sql/QueryHistoryPanel")),
-    [],
-  );
+  // Lazy-import ExportDialog to keep initial bundle small
   const ExportDialog = useMemo(
     () => React.lazy(() => import("@/components/sql/ExportDialog")),
     [],
@@ -941,7 +923,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         error={error}
         isLoading={isLoading}
         onExport={() => setShowExport(true)}
-        onHistory={() => setShowHistory(true)}
+        onHistory={() => window.dispatchEvent(new CustomEvent("sql:show-history"))}
       />
       {error && <ErrorBanner error={error} />}
       {results.length > 1 && (
@@ -986,18 +968,6 @@ export const QueryEditor = React.memo(function QueryEditor({
           )
         )}
       </div>
-
-      {/* History panel (lazy) */}
-      {showHistory && (
-        <React.Suspense fallback={null}>
-          <QueryHistoryPanel
-            connectionId={connectionId}
-            sqlSessionId={sqlSessionId}
-            onSelectQuery={handleSelectHistoryQuery}
-            onClose={() => setShowHistory(false)}
-          />
-        </React.Suspense>
-      )}
 
       {/* Export dialog (lazy) */}
       {showExport && result && (

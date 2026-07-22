@@ -20,7 +20,8 @@ import {
 import { SQLQueryLog } from './SQLQueryLog'
 import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
-import { SchemaSidebar, type TableContextAction, type DatabaseContextAction } from './SchemaSidebar'
+import { SQLSidebar } from './SQLSidebar'
+import type { TableContextAction, DatabaseContextAction } from './SchemaSidebar'
 import { SQLConnectDialog } from './SQLConnectDialog'
 import { DatabasePickerDialog } from './DatabasePickerDialog'
 import { CreateDatabaseDialog } from './CreateDatabaseDialog'
@@ -42,7 +43,6 @@ import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecisio
 const LazyDataTabView = lazy(() => import('./DataTabView'))
 const LazyQueryEditor = lazy(() => import('./QueryEditor'))
 const LazyStructureTabView = lazy(() => import('./StructureTabView'))
-// QueryHistoryPanel is still used by QueryEditor for its own history panel
 
 import { getSavedQueries, pruneLegacyDrafts } from '@/utils/savedQueries'
 
@@ -100,6 +100,7 @@ interface SQLViewProps {
 const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }: SQLViewProps) {
   const [showConnectDialog, setShowConnectDialog] = useState(false)
   const [safeMode, setSafeMode] = useState<SafeMode>('silent')
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
   const [showDatabasePicker, setShowDatabasePicker] = useState(false)
   const [showQueryLog, setShowQueryLog] = useState(false)
   const [queryLogHeight, setQueryLogHeight] = useState(200)
@@ -275,6 +276,20 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [])
 
   useEffect(() => {
+    const handler = () => {
+      setShowSidebar(true)
+      try {
+        localStorage.setItem(`sql-sidebar-tab:${sessionId}`, 'history')
+      } catch {
+        /* storage unavailable */
+      }
+      window.dispatchEvent(new CustomEvent('sql:sidebar-tab', { detail: 'history' }))
+    }
+    window.addEventListener('sql:show-history', handler)
+    return () => window.removeEventListener('sql:show-history', handler)
+  }, [sessionId])
+
+  useEffect(() => {
     let cancelled = false
     window.novadeck.sql
       .configGet(sessionId)
@@ -323,6 +338,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         error: info.error,
         isFavorite: false,
       })
+
+      if (info.source === 'user' || info.source === 'data') {
+        setHistoryRefreshToken((value) => value + 1)
+      }
     })
     return () => { unsub() }
   }, [sqlSessionId, addHistoryEntry])
@@ -948,6 +967,20 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     }
     addTab(newTab)
   }, [tabs, addTab, sessionId])
+
+  const handleOpenSavedQuery = useCallback(
+    (sql: string, name?: string) => {
+      const queryCount = tabs.filter((t) => t.type === 'query').length + 1
+      addTab({
+        id: crypto.randomUUID(),
+        type: 'query',
+        label: name || `Query ${queryCount}`,
+        query: sql,
+        savedQueryIndex: -1,
+      })
+    },
+    [tabs, addTab]
+  )
 
   /**
    * Open another data tab for a table that may already be open.
@@ -1638,13 +1671,17 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           )}
           style={showSidebar ? { width: sidebarWidth } : undefined}
         >
-          <SchemaSidebar
+          <SQLSidebar
             connectionId={connectionId}
+            scopeId={sessionId}
+            currentDatabase={currentDatabase}
+            historyRefreshToken={historyRefreshToken}
             hasSSHConnection={hasSSHConnection}
             onTableAction={handleTableAction}
             onDatabaseAction={handleDatabaseAction}
             multiSelectedTables={multiSelectedTables}
             onMultiSelectChange={setMultiSelectedTables}
+            onOpenQuery={handleOpenSavedQuery}
           />
           {/* Sidebar resize handle */}
           <div
