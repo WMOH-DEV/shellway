@@ -41,7 +41,13 @@ import {
   DatabaseZap,
 } from "lucide-react";
 import { useUIStore } from "@/stores/uiStore";
-import type { QueryResult, SchemaColumn, SortKey } from "@/types/sql";
+import type {
+  DatabaseType,
+  QueryResult,
+  SchemaColumn,
+  SortKey,
+} from "@/types/sql";
+import { generateMultiRowInsert } from "@/utils/sqlStatementGenerator";
 import {
   TimestampDropdownMenu,
   isTimestampType,
@@ -215,6 +221,8 @@ interface DataGridProps {
   onSetCellValue?: (rowIndex: number, field: string, value: unknown) => void;
   /** Actual table name used in generated SQL (e.g. `users` or `schema.users`). Falls back to 'table_name' if omitted. */
   tableName?: string;
+  /** Dialect used to quote identifiers in generated SQL. Defaults to MySQL. */
+  dbType?: DatabaseType;
   /**
    * When true, ag-grid sorts the current rows client-side (used by the Query
    * editor, where rows are a one-shot result set). When false (default) the
@@ -538,6 +546,7 @@ export const DataGrid = React.memo(
       onDeleteRows,
       onSetCellValue,
       tableName,
+      dbType = "mysql",
       clientSideSort,
     },
     ref,
@@ -1409,25 +1418,31 @@ export const DataGrid = React.memo(
           });
         }
         items.push({
-          label: "Copy Row as INSERT",
+          label: multiSelected ? "Copy Rows as INSERT" : "Copy Row as INSERT",
           icon: <ClipboardCopy size={13} />,
           action: () => {
-            const rowsToCopy = multiSelected ? selectedRows : rowData ? [rowData] : [];
-            const statements = rowsToCopy.map((r: Record<string, unknown>) => {
-              const { __rowIndex, ...clean } = r;
-              const cols = Object.keys(clean).join(", ");
-              const vals = Object.values(clean)
-                .map((v) =>
-                  v === null || v === undefined
-                    ? "NULL"
-                    : typeof v === "number"
-                      ? String(v)
-                      : `'${String(v).replace(/'/g, "''")}'`,
+            const rowsToCopy = multiSelected
+              ? [...selectedRows].sort(
+                  (a, b) =>
+                    (a.__rowIndex as number) - (b.__rowIndex as number),
                 )
-                .join(", ");
-              return `INSERT INTO ${tableName ?? "table_name"} (${cols}) VALUES (${vals});`;
-            });
-            navigator.clipboard.writeText(statements.join("\n"));
+              : rowData
+                ? [rowData]
+                : [];
+            if (rowsToCopy.length === 0) return;
+
+            const columns = result?.fields?.length
+              ? result.fields.map((f) => f.name)
+              : Object.keys(rowsToCopy[0]).filter((k) => k !== "__rowIndex");
+
+            const sql = generateMultiRowInsert(
+              tableName ?? "table_name",
+              columns,
+              rowsToCopy,
+              dbType,
+              columnTypeMap,
+            );
+            if (sql) navigator.clipboard.writeText(sql);
           },
         });
 
@@ -1523,6 +1538,7 @@ export const DataGrid = React.memo(
         onSetCellValue,
         onCellEdit,
         tableName,
+        dbType,
         columnTypeMap,
         nonEditableColumns,
         result,

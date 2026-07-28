@@ -37,6 +37,32 @@ function formatValue(value: unknown, dbType: DatabaseType): string {
   return `'${escapeString(String(value))}'`
 }
 
+// mysql2 hands back BIGINT/DECIMAL as strings, so the column type — not typeof — decides quoting.
+const NUMERIC_SQL_TYPES = new Set([
+  'tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint',
+  'int2', 'int4', 'int8', 'serial', 'smallserial', 'bigserial',
+  'decimal', 'numeric', 'dec', 'fixed',
+  'float', 'double', 'real', 'float4', 'float8',
+])
+
+const NUMERIC_LITERAL = /^-?\d+(\.\d+)?$/
+
+function isNumericSQLType(type: string | undefined): boolean {
+  if (!type) return false
+  const base = type.toLowerCase().trim().split(/[\s(]/)[0]
+  return NUMERIC_SQL_TYPES.has(base)
+}
+
+function formatRowValue(value: unknown, dbType: DatabaseType, sqlType?: string): string {
+  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+    return `'${escapeString(JSON.stringify(value))}'`
+  }
+  if (typeof value === 'string' && isNumericSQLType(sqlType) && NUMERIC_LITERAL.test(value)) {
+    return value
+  }
+  return formatValue(value, dbType)
+}
+
 // ── Statement generators ──
 
 export function generateUpdateSQL(change: StagedChange, dbType: DatabaseType): string {
@@ -67,6 +93,27 @@ export function generateInsertSQL(change: StagedChange, dbType: DatabaseType): s
   const values = entries.map(([, val]) => formatValue(val, dbType)).join(', ')
 
   return `INSERT INTO ${table} (${columns}) VALUES (${values});`
+}
+
+/**
+ * Build a single multi-row INSERT for the given rows. `qualifiedTable` must
+ * already be quoted (it may carry a schema prefix); column names are quoted here.
+ */
+export function generateMultiRowInsert(
+  qualifiedTable: string,
+  columns: string[],
+  rows: Record<string, unknown>[],
+  dbType: DatabaseType,
+  columnTypes: Record<string, string> = {},
+): string {
+  if (columns.length === 0 || rows.length === 0) return ''
+
+  const columnList = columns.map((c) => quoteIdentifier(c, dbType)).join(', ')
+  const tuples = rows.map(
+    (row) => `(${columns.map((c) => formatRowValue(row[c], dbType, columnTypes[c])).join(', ')})`,
+  )
+
+  return `INSERT INTO ${qualifiedTable} (${columnList}) VALUES\n${tuples.join(',\n')};`
 }
 
 export function generateDeleteSQL(change: StagedChange, dbType: DatabaseType): string {

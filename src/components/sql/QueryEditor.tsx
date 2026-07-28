@@ -956,6 +956,7 @@ export const QueryEditor = React.memo(function QueryEditor({
             result={result}
             onSort={handleSort}
             isLoading={isLoading}
+            dbType={dbType}
             clientSideSort
           />
         ) : (

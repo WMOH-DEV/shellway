@@ -1994,6 +1994,7 @@ export const DataTabView = React.memo(function DataTabView({
           onDeleteRows={handleDeleteRows}
           onSetCellValue={handleSetCellValue}
           tableName={buildFullTableName(table, schema, dbType)}
+          dbType={dbType}
         />
       </div>
 
