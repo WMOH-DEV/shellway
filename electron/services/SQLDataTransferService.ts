@@ -849,9 +849,19 @@ export class SQLDataTransferService extends EventEmitter {
       const schema = options.schema || (dbType === 'postgres' ? 'public' : undefined)
       const batchSize = options.batchSize ?? 100
 
+      // Row estimates can be absent or negative (pg reports -1 for a
+      // never-analyzed table), so fall back to counting finished tables.
+      const estimatedRows = options.includeData
+        ? tables.reduce((sum, t) => sum + Math.max(0, t.rowCount ?? 0), 0)
+        : 0
+      const percentage = () =>
+        estimatedRows > 0
+          ? Math.min(99, Math.round((totalRows / estimatedRows) * 100))
+          : Math.min(99, Math.round((tableCount / tables.length) * 100))
+
       this.updateProgress(operationId, {
         message: `Exporting ${tables.length} tables...`,
-        totalRows: tables.reduce((sum, t) => sum + (t.rowCount ?? 0), 0),
+        totalRows: estimatedRows,
       })
 
       const ws = createWriteStream(filePath, { encoding: 'utf-8' })
@@ -874,6 +884,7 @@ export class SQLDataTransferService extends EventEmitter {
           this.updateProgress(operationId, {
             currentTable: table,
             message: `Exporting ${table}...`,
+            percentage: percentage(),
           })
 
           // Structure
@@ -917,6 +928,7 @@ export class SQLDataTransferService extends EventEmitter {
                 batch = []
                 this.updateProgress(operationId, {
                   processedRows: totalRows,
+                  percentage: percentage(),
                 })
               }
             }
@@ -931,6 +943,10 @@ export class SQLDataTransferService extends EventEmitter {
           }
 
           tableCount++
+          this.updateProgress(operationId, {
+            processedRows: totalRows,
+            percentage: percentage(),
+          })
         }
 
         // Footer
