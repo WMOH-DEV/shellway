@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import type { TableFilter, FilterOperator, QueryField } from '@/types/sql'
+import { filtersForApplyAll, NO_VALUE_OPERATORS } from '@/utils/sqlFilterBuilder'
 
 // ── Operator definitions by column-type category ──
 
@@ -116,13 +117,6 @@ interface FilterBarProps {
   isDataFiltered?: boolean
 }
 
-const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
-
-function hasCriteria(filter: TableFilter): boolean {
-  if (NO_VALUE_OPERATORS.has(filter.operator)) return true
-  if (filter.value.trim() === '') return false
-  return filter.operator !== 'between' || (filter.value2 ?? '').trim() !== ''
-}
 
 // ── Individual filter row (TablePlus style) ──
 // Layout: [Column] [Operator] [Value ── fills remaining ──] [Apply] [+] [-]
@@ -415,7 +409,7 @@ export const FilterBar = React.memo(function FilterBar({
   }, [filters, onFiltersChange, onApply, isDataFiltered])
 
   const handleApplyAll = useCallback(() => {
-    onFiltersChange(filters.map((f) => ({ ...f, enabled: hasCriteria(f) })))
+    onFiltersChange(filtersForApplyAll(filters))
     onApply()
   }, [filters, onFiltersChange, onApply])
 

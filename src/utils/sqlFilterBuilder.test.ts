@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWhereClause } from './sqlFilterBuilder'
+import { buildWhereClause, filtersForApplyAll } from './sqlFilterBuilder'
 import type { TableFilter } from '@/types/sql'
 
 function filter(column: string, value: string, enabled = true): TableFilter {
@@ -28,5 +28,25 @@ describe('buildWhereClause', () => {
     )
     expect(where).toBe('WHERE "title" = $1')
     expect(params).toEqual(['a'])
+  })
+})
+
+describe('filtersForApplyAll', () => {
+  it('keeps unticked filters off and skips ticked ones with no value', () => {
+    const result = filtersForApplyAll([
+      filter('title', 'a'),
+      filter('status', 'open', false),
+      filter('owner', '')
+    ])
+    expect(result.map((f) => f.enabled)).toEqual([true, false, false])
+  })
+
+  it('keeps value-less operators and needs both between bounds', () => {
+    const result = filtersForApplyAll([
+      { id: 'n', enabled: true, column: 'deleted_at', operator: 'is_null', value: '' },
+      { id: 'b', enabled: true, column: 'age', operator: 'between', value: '18', value2: ' ' },
+      { id: 'w', enabled: true, column: 'name', operator: 'equals', value: '   ' }
+    ])
+    expect(result.map((f) => f.enabled)).toEqual([true, false, false])
   })
 })
