@@ -93,6 +93,7 @@ export function ExportTableDialog({
   const [resultMessage, setResultMessage] = useState<string | null>(null)
   const [savedFilePath, setSavedFilePath] = useState<string | null>(null)
   const operationIdRef = useRef<string | null>(null)
+  const isAwaitingOperationRef = useRef(false)
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -117,6 +118,7 @@ export function ExportTableDialog({
       setResultMessage(null)
       setSavedFilePath(null)
       operationIdRef.current = null
+      isAwaitingOperationRef.current = false
     }
   }, [open, table, selectedTables, initialFormat])
 
@@ -136,7 +138,12 @@ export function ExportTableDialog({
       (sid: string, rawProgress: unknown) => {
         if (sid !== sqlSessionId) return
         const p = rawProgress as TransferProgress
-        if (operationIdRef.current && p.operationId !== operationIdRef.current) return
+        if (!operationIdRef.current) {
+          if (!isAwaitingOperationRef.current || p.operation !== 'export') return
+          operationIdRef.current = p.operationId
+          isAwaitingOperationRef.current = false
+        }
+        if (p.operationId !== operationIdRef.current) return
 
         setProgress(p)
 
@@ -215,6 +222,8 @@ export function ExportTableDialog({
 
     setPhase('progress')
     setProgress(null)
+    operationIdRef.current = null
+    isAwaitingOperationRef.current = true
 
     try {
       const result = await window.novadeck.sql.exportData(
@@ -224,6 +233,7 @@ export function ExportTableDialog({
       )
 
       const typed = result as { success: boolean; operationId?: string; error?: string }
+      isAwaitingOperationRef.current = false
 
       if (!typed.success) {
         setError(typed.error || 'Export failed')
@@ -235,6 +245,7 @@ export function ExportTableDialog({
         operationIdRef.current = typed.operationId
       }
     } catch (err) {
+      isAwaitingOperationRef.current = false
       setError(err instanceof Error ? err.message : String(err))
       setPhase('done')
     }

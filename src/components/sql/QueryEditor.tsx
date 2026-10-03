@@ -26,7 +26,7 @@ self.MonacoEnvironment = {
     );
   },
 };
-import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Undo2, BookmarkPlus } from "lucide-react";
+import { Play, PlayCircle, History, Download, Loader2, Sparkles, Gauge, GitBranch, Check, Copy, Undo2, BookmarkPlus } from "lucide-react";
 import { format as formatSQL, type FormatOptionsWithLanguage } from "sql-formatter";
 import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
@@ -209,16 +209,35 @@ const ErrorBanner = React.memo(function ErrorBanner({
 }: {
   error: QueryError;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    const text = error.code ? `[${error.code}] ${error.message}` : error.message;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [error]);
+
   return (
-    <div className="px-3 py-2 bg-red-500/10 border-b border-red-500/30 text-xs text-red-400 font-mono whitespace-pre-wrap">
-      {error.code && <span className="font-semibold">[{error.code}] </span>}
-      {error.message}
-      {error.line && (
-        <span className="ml-2 text-red-500/60">
-          (line {error.line}
-          {error.position ? `, col ${error.position}` : ""})
-        </span>
-      )}
+    <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border-b border-red-500/30 text-xs text-red-400 font-mono">
+      <div className="flex-1 min-w-0 whitespace-pre-wrap break-words select-text cursor-text">
+        {error.code && <span className="font-semibold">[{error.code}] </span>}
+        {error.message}
+        {error.line && (
+          <span className="ml-2 text-red-500/60">
+            (line {error.line}
+            {error.position ? `, col ${error.position}` : ""})
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="shrink-0 p-0.5 rounded text-red-400/70 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+        title="Copy error"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
     </div>
   );
 });

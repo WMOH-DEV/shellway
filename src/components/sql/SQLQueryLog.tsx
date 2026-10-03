@@ -141,6 +141,7 @@ const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }
         entry.error ? 'text-red-400' : !syntaxHighlight ? 'text-nd-text-primary' : ''
       )}>
         {syntaxHighlight && !entry.error ? highlighted : displayQuery}
+        {entry.error && <span className="block mt-0.5 text-red-300/80">{entry.error}</span>}
       </pre>
 
       {/* Meta */}

@@ -118,6 +118,12 @@ interface FilterBarProps {
 
 const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
 
+function hasCriteria(filter: TableFilter): boolean {
+  if (NO_VALUE_OPERATORS.has(filter.operator)) return true
+  if (filter.value.trim() === '') return false
+  return filter.operator !== 'between' || (filter.value2 ?? '').trim() !== ''
+}
+
 // ── Individual filter row (TablePlus style) ──
 // Layout: [Column] [Operator] [Value ── fills remaining ──] [Apply] [+] [-]
 
@@ -210,11 +216,10 @@ const FilterRow = React.memo(function FilterRow({
           const newOps = OPERATORS_BY_CATEGORY[newCategory]
           // Default to 'contains' for string columns, first operator for others
           const defaultOp = newIsRaw ? 'raw_sql' : (newCategory === 'string' ? 'contains' : newOps[0])
+          const keepsOperator = newOps.includes(filter.operator)
           onUpdate(filter.id, {
             column: newCol,
-            operator: defaultOp,
-            value: '',
-            value2: undefined,
+            operator: keepsOperator ? filter.operator : defaultOp,
           })
         }}
         className="h-6 !w-36 shrink-0 text-xs"
@@ -409,6 +414,11 @@ export const FilterBar = React.memo(function FilterBar({
     if (isDataFiltered) onApply()
   }, [filters, onFiltersChange, onApply, isDataFiltered])
 
+  const handleApplyAll = useCallback(() => {
+    onFiltersChange(filters.map((f) => ({ ...f, enabled: hasCriteria(f) })))
+    onApply()
+  }, [filters, onFiltersChange, onApply])
+
   // Show nothing if no filters — just the Add Filter button in a minimal bar
   return (
     <div className="border-b border-nd-border bg-nd-bg-secondary">
@@ -467,7 +477,7 @@ export const FilterBar = React.memo(function FilterBar({
               variant="primary"
               size="sm"
               className="h-5 text-xs"
-              onClick={() => onApply()}
+              onClick={handleApplyAll}
             >
               Apply All
             </Button>

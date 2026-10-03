@@ -612,8 +612,10 @@ export class SQLDataTransferService extends EventEmitter {
       const schema = options.schema || (dbType === 'postgres' ? 'public' : undefined)
       const quotedTable = quoteIdentifier(table, dbType)
 
-      // Get estimated row count for progress tracking
-      const estimatedRows = await this.sqlService.getTableRowCount(sqlSessionId, table, schema)
+      this.updateProgress(operationId, { currentTable: table, message: `Counting rows in ${table}...` })
+      const exactRows = await this.countRows(sqlSessionId, table, dbType, schema, controller.signal)
+      this.checkCancelled(controller)
+      const estimatedRows = exactRows ?? await this.sqlService.getTableRowCount(sqlSessionId, table, schema)
       this.updateProgress(operationId, {
         totalRows: estimatedRows,
         currentTable: table,
@@ -651,6 +653,34 @@ export class SQLDataTransferService extends EventEmitter {
       this.completeOperation(operationId, status, err.message)
       if (status === 'failed') throw err
       return { operationId, rowCount }
+    }
+  }
+
+  /** Engine statistics (InnoDB TABLE_ROWS, pg reltuples) can be off by half, so progress needs a real count; null when counting fails. */
+  private async countRows(
+    sqlSessionId: string,
+    table: string,
+    dbType: DatabaseType,
+    schema: string | undefined,
+    signal: AbortSignal
+  ): Promise<number | null> {
+    const quotedTable = quoteIdentifier(table, dbType)
+    const target = schema && dbType === 'postgres'
+      ? `${quoteIdentifier(schema, dbType)}.${quotedTable}`
+      : quotedTable
+    if (signal.aborted) return null
+    const queryId = randomUUID()
+    const cancelCount = () => { this.sqlService.cancelQuery(queryId).catch(() => {}) }
+    signal.addEventListener('abort', cancelCount, { once: true })
+    try {
+      const result = await this.sqlService.executeQuery(
+        sqlSessionId, `SELECT COUNT(*) AS cnt FROM ${target}`, undefined, queryId, 'internal'
+      )
+      return Number((result.rows[0] as { cnt?: unknown })?.cnt ?? 0)
+    } catch {
+      return null
+    } finally {
+      signal.removeEventListener('abort', cancelCount)
     }
   }
 
@@ -849,11 +879,16 @@ export class SQLDataTransferService extends EventEmitter {
       const schema = options.schema || (dbType === 'postgres' ? 'public' : undefined)
       const batchSize = options.batchSize ?? 100
 
-      // Row estimates can be absent or negative (pg reports -1 for a
-      // never-analyzed table), so fall back to counting finished tables.
-      const estimatedRows = options.includeData
-        ? tables.reduce((sum, t) => sum + Math.max(0, t.rowCount ?? 0), 0)
-        : 0
+      let estimatedRows = 0
+      if (options.includeData) {
+        this.updateProgress(operationId, { message: `Counting rows in ${tables.length} tables...` })
+        for (const t of tables) {
+          this.checkCancelled(controller)
+          estimatedRows += (await this.countRows(sqlSessionId, t.name, dbType, schema, controller.signal))
+            ?? Math.max(0, t.rowCount ?? 0)
+        }
+        this.checkCancelled(controller)
+      }
       const percentage = () =>
         estimatedRows > 0
           ? Math.min(99, Math.round((totalRows / estimatedRows) * 100))
