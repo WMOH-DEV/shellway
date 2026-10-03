@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { FeatureWindowRef } from "../src/types/windowResources";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -40,6 +41,20 @@ const api = {
       return () =>
         ipcRenderer.removeListener("window:maximized-change", handler);
     },
+    open: (handoff?: unknown, resources?: string[], feature?: FeatureWindowRef, shellIds?: string[]) =>
+      ipcRenderer.invoke("window:open", handoff, resources, feature, shellIds) as Promise<void>,
+    focusFeature: (ref: FeatureWindowRef) =>
+      ipcRenderer.invoke("window:focusFeature", ref) as Promise<boolean>,
+    closeFeature: (ref: FeatureWindowRef) =>
+      ipcRenderer.invoke("window:closeFeature", ref) as Promise<void>,
+    onFeatureClosed: (callback: (ref: FeatureWindowRef) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ref: FeatureWindowRef) => callback(ref);
+      ipcRenderer.on("window:featureClosed", handler);
+      return () => ipcRenderer.removeListener("window:featureClosed", handler);
+    },
+    getHandoff: () => ipcRenderer.invoke("window:getHandoff") as Promise<unknown>,
+    setHeldResources: (resources: string[]) =>
+      ipcRenderer.send("window:setHeldResources", resources),
   },
 
   // ── System events ──
@@ -360,6 +375,8 @@ const api = {
     resize: (shellId: string, cols: number, rows: number) =>
       ipcRenderer.send("terminal:resize", shellId, cols, rows),
     close: (shellId: string) => ipcRenderer.invoke("terminal:close", shellId),
+    attach: (shellId: string) =>
+      ipcRenderer.invoke("terminal:attach", shellId) as Promise<string | null>,
     onData: (callback: (shellId: string, data: string) => void) => {
       const handler = (
         _e: Electron.IpcRendererEvent,
@@ -534,6 +551,17 @@ const api = {
       ) => callback(connId, item);
       ipcRenderer.on("sftp:transfer-update", handler);
       return () => ipcRenderer.removeListener("sftp:transfer-update", handler);
+    },
+    onTransferScan: (
+      callback: (connectionId: string, scan: unknown) => void,
+    ) => {
+      const handler = (
+        _e: Electron.IpcRendererEvent,
+        connId: string,
+        scan: unknown,
+      ) => callback(connId, scan);
+      ipcRenderer.on("sftp:transfer-scan", handler);
+      return () => ipcRenderer.removeListener("sftp:transfer-scan", handler);
     },
     onTransferComplete: (
       callback: (connectionId: string, item: unknown) => void,

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, shell } from 'electron'
+import { ipcMain, shell } from 'electron'
 import { promises as fsp } from 'fs'
 import { join, basename, parse as parsePath, posix } from 'path'
 import { homedir } from 'os'
@@ -6,10 +6,16 @@ import { getSSHService } from './ssh.ipc'
 import { getSettingsStore } from './settings.ipc'
 import { getSessionStore } from './session.ipc'
 import { SFTPService, type FileEntry } from '../services/SFTPService'
-import { TransferQueue, type TransferItem } from '../services/TransferQueue'
+import {
+  TransferQueue,
+  type TransferItem,
+  type TransferScan,
+  type TransferBatchSummary
+} from '../services/TransferQueue'
 import { getLogService, LogService } from '../services/LogService'
 import { getNotificationService } from '../services/NotificationService'
 import type { SFTPConflictResolution } from '../../src/types/settings'
+import { broadcast } from '../services/WindowManager'
 
 // ── Conflict resolution helpers ──
 
@@ -213,6 +219,15 @@ interface DirectoryTransferResult {
   conflicts: number
 }
 
+async function whileScanning<T>(queue: TransferQueue, group: Omit<TransferScan, 'scanning'>, work: () => Promise<T>): Promise<T> {
+  queue.announceScan({ ...group, scanning: true })
+  try {
+    return await work()
+  } finally {
+    queue.announceScan({ ...group, scanning: false })
+  }
+}
+
 /**
  * Mirror a remote directory tree locally, enqueueing one transfer per file.
  * Directories merge (the universal file-manager behaviour) rather than being
@@ -243,48 +258,54 @@ async function enqueueDirectoryDownload(opts: {
     )
   }
 
-  const tree = await sftp.walkTree(remotePath)
+  const group = { groupId: transferId, groupName: posix.basename(remotePath), direction: 'download' as const }
+  return whileScanning(queue, group, async () => {
+    const tree = await sftp.walkTree(remotePath)
 
-  await fsp.mkdir(localPath, { recursive: true })
-  for (const node of tree) {
-    if (node.isDirectory) {
-      await fsp.mkdir(join(localPath, ...node.relativePath.split('/')), { recursive: true })
+    await fsp.mkdir(localPath, { recursive: true })
+    for (const node of tree) {
+      if (node.isDirectory) {
+        await fsp.mkdir(join(localPath, ...node.relativePath.split('/')), { recursive: true })
+      }
     }
-  }
 
-  let enqueued = 0
-  let skipped = 0
-  let conflicts = 0
+    let enqueued = 0
+    let skipped = 0
+    let conflicts = 0
 
-  for (const node of tree) {
-    if (node.isDirectory) continue
+    for (const node of tree) {
+      if (node.isDirectory) continue
+      if (queue.isScanCancelled(group.groupId)) break
 
-    const destPath = join(localPath, ...node.relativePath.split('/'))
-    const conflict = await resolveTransferConflict({
-      policy,
-      direction: 'download',
-      sourcePath: node.path,
-      destinationPath: destPath,
-      sftp
-    })
+      const destPath = join(localPath, ...node.relativePath.split('/'))
+      const conflict = await resolveTransferConflict({
+        policy,
+        direction: 'download',
+        sourcePath: node.path,
+        destinationPath: destPath,
+        sftp
+      })
 
-    if (conflict.action === 'skip') { skipped++; continue }
-    // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
-    // mid-tree — leave the file alone and report the count instead.
-    if (conflict.action === 'conflict') { conflicts++; continue }
+      if (conflict.action === 'skip') { skipped++; continue }
+      // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
+      // mid-tree — leave the file alone and report the count instead.
+      if (conflict.action === 'conflict') { conflicts++; continue }
 
-    queue.enqueue({
-      id: `${transferId}-${enqueued}`,
-      fileName: node.relativePath,
-      sourcePath: node.path,
-      destinationPath: conflict.destinationPath ?? destPath,
-      direction: 'download',
-      totalBytes: node.size
-    })
-    enqueued++
-  }
+      queue.enqueue({
+        id: `${transferId}-${enqueued}`,
+        fileName: node.relativePath,
+        sourcePath: node.path,
+        destinationPath: conflict.destinationPath ?? destPath,
+        direction: 'download',
+        totalBytes: node.size,
+        groupId: group.groupId,
+        groupName: group.groupName
+      })
+      enqueued++
+    }
 
-  return { success: true, directory: true, enqueued, skipped, conflicts }
+    return { success: true, directory: true, enqueued, skipped, conflicts }
+  })
 }
 
 /** Walk a local directory tree, mirroring `SFTPService.walkTree`'s shape. */
@@ -341,48 +362,64 @@ async function enqueueDirectoryUpload(opts: {
     if (err instanceof Error && err.message.startsWith('A file named')) throw err
   }
 
-  const tree = await walkLocalTree(localPath)
+  const group = { groupId: transferId, groupName: basename(localPath), direction: 'upload' as const }
+  return whileScanning(queue, group, async () => {
+    const tree = await walkLocalTree(localPath)
 
-  await sftp.mkdirRecursive(remotePath)
-  for (const node of tree) {
-    if (node.isDirectory) {
-      await sftp.mkdirRecursive(posix.join(remotePath, node.relativePath))
+    await sftp.mkdirRecursive(remotePath)
+    for (const node of tree) {
+      if (node.isDirectory) {
+        await sftp.mkdirRecursive(posix.join(remotePath, node.relativePath))
+      }
     }
-  }
 
-  let enqueued = 0
-  let skipped = 0
-  let conflicts = 0
+    let enqueued = 0
+    let skipped = 0
+    let conflicts = 0
 
-  for (const node of tree) {
-    if (node.isDirectory) continue
+    for (const node of tree) {
+      if (node.isDirectory) continue
+      if (queue.isScanCancelled(group.groupId)) break
 
-    const destPath = posix.join(remotePath, node.relativePath)
-    const conflict = await resolveTransferConflict({
-      policy,
-      direction: 'upload',
-      sourcePath: node.path,
-      destinationPath: destPath,
-      sftp
-    })
+      const destPath = posix.join(remotePath, node.relativePath)
+      const conflict = await resolveTransferConflict({
+        policy,
+        direction: 'upload',
+        sourcePath: node.path,
+        destinationPath: destPath,
+        sftp
+      })
 
-    if (conflict.action === 'skip') { skipped++; continue }
-    // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
-    // mid-tree — leave the file alone and report the count instead.
-    if (conflict.action === 'conflict') { conflicts++; continue }
+      if (conflict.action === 'skip') { skipped++; continue }
+      // Only the 'ask' policy yields 'conflict', and nothing can prompt per-file
+      // mid-tree — leave the file alone and report the count instead.
+      if (conflict.action === 'conflict') { conflicts++; continue }
 
-    queue.enqueue({
-      id: `${transferId}-${enqueued}`,
-      fileName: node.relativePath,
-      sourcePath: node.path,
-      destinationPath: conflict.destinationPath ?? destPath,
-      direction: 'upload',
-      totalBytes: node.size
-    })
-    enqueued++
-  }
+      queue.enqueue({
+        id: `${transferId}-${enqueued}`,
+        fileName: node.relativePath,
+        sourcePath: node.path,
+        destinationPath: conflict.destinationPath ?? destPath,
+        direction: 'upload',
+        totalBytes: node.size,
+        groupId: group.groupId,
+        groupName: group.groupName
+      })
+      enqueued++
+    }
 
-  return { success: true, directory: true, enqueued, skipped, conflicts }
+    return { success: true, directory: true, enqueued, skipped, conflicts }
+  })
+}
+
+function countLabel(names: string[]): string {
+  return names.length === 1 ? names[0] : `${names.length} files`
+}
+
+function describeBatch({ completed, failed }: TransferBatchSummary): { title: string; body: string } {
+  if (failed.length === 0) return { title: 'Transfer Complete', body: countLabel(completed) }
+  if (completed.length === 0) return { title: 'Transfer Failed', body: `${countLabel(failed)} failed` }
+  return { title: 'Transfer Finished with Errors', body: `${completed.length} transferred, ${failed.length} failed` }
 }
 
 /** Active SFTP services by connectionId */
@@ -423,7 +460,7 @@ export function registerSFTPIPC(): void {
   const logService = getLogService()
 
   // ── Open SFTP session ──
-  ipcMain.handle('sftp:open', async (event, connectionId: string) => {
+  ipcMain.handle('sftp:open', async (_event, connectionId: string) => {
     try {
       // Idempotent: if already open and usable, return success.
       // Probe liveness to catch stale sessions (e.g., server closed the channel).
@@ -460,21 +497,24 @@ export function registerSFTPIPC(): void {
       queue.setSFTPService(sftpService)
       transferQueues.set(connectionId, queue)
 
-      const win = BrowserWindow.fromWebContents(event.sender)
       const sessionId = conn.sessionId
 
-      // Forward transfer updates to renderer + log transfers
       queue.on('update', (item: TransferItem) => {
-        win?.webContents.send('sftp:transfer-update', connectionId, item)
+        broadcast('sftp:transfer-update', connectionId, item)
 
         if (item.status === 'active' && item.transferredBytes === 0) {
           LogService.transferStarted(logService, sessionId, item.fileName, item.direction)
         }
       })
       queue.on('complete', (item: TransferItem) => {
-        win?.webContents.send('sftp:transfer-complete', connectionId, item)
+        broadcast('sftp:transfer-complete', connectionId, item)
         LogService.transferCompleted(logService, sessionId, item.fileName)
-        getNotificationService()?.notifyTransferComplete(item.fileName)
+      })
+      queue.on('scan', (scan: TransferScan) => {
+        broadcast('sftp:transfer-scan', connectionId, scan)
+      })
+      queue.on('drained', (summary: TransferBatchSummary) => {
+        getNotificationService()?.notifyTransferComplete(describeBatch(summary))
       })
       queue.on('error', (item: TransferItem) => {
         LogService.transferFailed(logService, sessionId, item.fileName, item.error || 'Unknown error')
@@ -611,17 +651,17 @@ export function registerSFTPIPC(): void {
   })
 
   // ── Read file content (with progress reporting) ──
-  ipcMain.handle('sftp:readFile', async (_event, connectionId: string, remotePath: string, maxSize?: number, readId?: string) => {
+  ipcMain.handle('sftp:readFile', async (event, connectionId: string, remotePath: string, maxSize?: number, readId?: string) => {
     const sftp = sftpServices.get(connectionId)
     if (!sftp) return { success: false, error: 'SFTP not open' }
 
     // Forward progress events to the renderer
     let progressListener: ((id: string, transferred: number, total: number) => void) | null = null
     if (readId) {
-      const win = BrowserWindow.getAllWindows()[0]
+      const requester = event.sender
       progressListener = (id: string, transferred: number, total: number) => {
-        if (id === readId) {
-          win?.webContents.send('sftp:readFile-progress', connectionId, readId, transferred, total)
+        if (id === readId && !requester.isDestroyed()) {
+          requester.send('sftp:readFile-progress', connectionId, readId, transferred, total)
         }
       }
       sftp.on('readProgress', progressListener)

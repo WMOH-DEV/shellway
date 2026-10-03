@@ -19,7 +19,6 @@ import {
 import Editor, { loader, type OnMount } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
 import type * as MonacoEditor from 'monaco-editor'
-import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/utils/cn'
 
@@ -198,6 +197,7 @@ const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', '
 // ---------------------------------------------------------------------------
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB — in-app editing limit (matches SFTPService default)
+const PARTIAL_THRESHOLD = 100 * 1024
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -449,6 +449,7 @@ export function FilePreview({
 
   // Track whether partial content is showing (full file still loading in background)
   const [isPartial, setIsPartial] = useState(false)
+  const [fullLoadError, setFullLoadError] = useState<string | null>(null)
 
   // ── Editable mode state ──
   const [saving, setSaving] = useState(false)
@@ -534,6 +535,7 @@ export function FilePreview({
       setLoading(false)
       setLoadProgress(0)
       setIsPartial(false)
+      setFullLoadError(null)
       setDirty(false)
       setSaveError(null)
       setSaveSuccess(false)
@@ -546,7 +548,6 @@ export function FilePreview({
 
     if (tooLarge) return
 
-    const PARTIAL_THRESHOLD = 100 * 1024 // 100 KB
     // Partial loading works for both read-only and editable mode.
     // In editable mode the editor stays read-only while partial content is shown,
     // then switches to editable once the full file arrives.
@@ -556,6 +557,7 @@ export function FilePreview({
     setLoading(true)
     setLoadProgress(0)
     setIsPartial(false)
+    setFullLoadError(null)
     setError(null)
     setContent(null)
 
@@ -570,6 +572,13 @@ export function FilePreview({
 
     if (usePartialLoading) {
       let hasPartial = false
+      let hasFull = false
+      let fullFailure: string | null = null
+      const reportFullFailure = (message: string) => {
+        fullFailure = message
+        if (hasPartial) setFullLoadError(message)
+        else setError(message)
+      }
 
       // ── Phase 1: instant partial content (first 100KB) ──
       // ── Phase 2: full content in background (starts simultaneously) ──
@@ -578,11 +587,15 @@ export function FilePreview({
       const headPromise = window.novadeck.sftp
         .readFileHead(connectionId, filePath, PARTIAL_THRESHOLD)
         .then((headResult) => {
-          if (cancelled) return
+          if (cancelled || hasFull) return
           if (headResult.success && headResult.data !== undefined) {
             hasPartial = true
             setContent(headResult.data)
             setIsPartial(true)
+            if (fullFailure) {
+              setError(null)
+              setFullLoadError(fullFailure)
+            }
             setLoading(false) // Editor becomes interactive immediately
           }
         })
@@ -594,6 +607,7 @@ export function FilePreview({
           if (cancelled) return
           setLoadProgress(100)
           if (result.success && result.data !== undefined) {
+            hasFull = true
             setContent(result.data)
             setIsPartial(false)
             // In editable mode, sync editorContentRef so save has full content.
@@ -601,19 +615,16 @@ export function FilePreview({
             if (editable) {
               editorContentRef.current = result.data
             }
-          } else if (!hasPartial) {
-            setError(result.error ?? 'Failed to read file')
+          } else {
+            reportFullFailure(result.error ?? 'Failed to read file')
           }
         })
         .catch((err: unknown) => {
-          if (!cancelled && !hasPartial) setError(String(err))
+          if (!cancelled) reportFullFailure(String(err))
         })
 
       Promise.allSettled([headPromise, fullPromise]).finally(() => {
-        if (!cancelled) {
-          setLoading(false)
-          setIsPartial(false)
-        }
+        if (!cancelled) setLoading(false)
         unsub()
       })
     } else {
@@ -678,27 +689,12 @@ export function FilePreview({
     }
   }, [content])
 
-  // Custom escape handling: don't close modal when Monaco's find widget is open
-  useEffect(() => {
-    if (!open) return
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-
-      // Check if Monaco's find widget is visible
-      const findWidget = document.querySelector('.monaco-editor .find-widget.visible')
-      if (findWidget) {
-        // Let Monaco handle closing its own find widget — don't close the modal
-        return
-      }
-
-      e.stopPropagation()
-      handleClose()
-    }
-
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [open, handleClose])
+  const handlePanelKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Escape') return
+    if (e.currentTarget.querySelector('.monaco-editor .find-widget.visible')) return
+    e.stopPropagation()
+    handleClose()
+  }, [handleClose])
 
   // Monaco editor mount
   const handleEditorMount: OnMount = useCallback(
@@ -951,17 +947,16 @@ export function FilePreview({
     name, language, editorOptions, handleEditorMount, fileSize, editable, dirty,
   ])
 
+  if (!open) return null
+
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title=""
-      maxWidth="max-w-[92vw]"
-      className="!max-h-[92vh]"
-      closeOnEscape={false}
+    <div
+      className="absolute inset-0 z-40 flex flex-col p-4 bg-nd-bg-secondary"
+      tabIndex={-1}
+      onKeyDown={handlePanelKeyDown}
     >
       {/* ─── Header bar ─── */}
-      <div className="flex items-center gap-3 -mt-2 mb-3">
+      <div className="flex items-center gap-3 mb-3 shrink-0">
         {/* File icon + name */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {isImage ? (
@@ -1007,7 +1002,7 @@ export function FilePreview({
 
       {/* ─── Toolbar (only for text content) ─── */}
       {!isImage && !tooLarge && content && !isBinary && (
-        <div className="flex items-center gap-1 mb-2 -mx-1">
+        <div className="flex items-center gap-1 mb-2 -mx-1 shrink-0">
           {/* Language badge */}
           <span className="px-2 py-0.5 text-2xs font-medium rounded bg-nd-accent/15 text-nd-accent border border-nd-accent/20 mr-1">
             {languageLabel}
@@ -1019,7 +1014,13 @@ export function FilePreview({
           </span>
 
           {/* Partial loading indicator — shown while full content streams in background */}
-          {isPartial && (
+          {isPartial && fullLoadError && (
+            <span className="flex items-center gap-1.5 text-2xs text-nd-error mr-auto truncate" title={fullLoadError}>
+              <AlertTriangle size={12} className="shrink-0" />
+              Showing only the first {formatFileSize(PARTIAL_THRESHOLD)} (read-only) — full load failed: {fullLoadError}
+            </span>
+          )}
+          {isPartial && !fullLoadError && (
             <span className="flex items-center gap-1.5 text-2xs text-nd-accent mr-auto animate-pulse">
               <Spinner size="sm" />
               Loading full file... {loadProgress > 0 ? `${loadProgress}%` : ''}
@@ -1101,15 +1102,9 @@ export function FilePreview({
       )}
 
       {/* ─── Main content area ─── */}
-      <div
-        className={cn(
-          'rounded-md border border-nd-border overflow-hidden',
-          'bg-[#0c0e14]',
-        )}
-        style={{ height: 'min(72vh, 800px)' }}
-      >
+      <div className="flex-1 min-h-0 rounded-md border border-nd-border overflow-hidden bg-[#0c0e14]">
         {renderContent()}
       </div>
-    </Modal>
+    </div>
   )
 }

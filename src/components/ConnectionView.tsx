@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink, AppWindow
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -17,6 +17,7 @@ import { ReconnectionOverlay } from '@/components/reconnection/ReconnectionOverl
 import { ConnectionHealthDashboard } from '@/components/connection/ConnectionHealthDashboard'
 import { TransferQueue } from '@/components/sftp/TransferQueue'
 import { DisconnectedSessionView } from '@/components/DisconnectedSessionView'
+import { closeFeatureWindow, focusFeatureWindow, openFeatureWindow } from '@/utils/windowHandoff'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -38,8 +39,15 @@ const SUB_TABS: TabItem[] = [
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
 ]
 
+type SubTab = ConnectionTab['activeSubTab']
+
 interface ConnectionViewProps {
   tab: ConnectionTab
+  soloSubTab?: SubTab
+}
+
+export function subTabLabel(id: string): string {
+  return SUB_TABS.find((t) => t.id === id)?.label ?? id
 }
 
 /**
@@ -49,22 +57,29 @@ interface ConnectionViewProps {
  * IMPORTANT: Terminal and SFTP are kept mounted (hidden via CSS) to preserve state
  * when switching between tabs. Only Info/Log/PortForwarding are conditionally rendered.
  */
-export function ConnectionView({ tab }: ConnectionViewProps) {
+export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
   const { updateTab } = useConnectionStore()
   const {
     bottomPanelTab, setBottomPanelTab, transferQueueOpen, toggleTransferQueue,
     splitViewLayout, splitViewRatio, setSplitView
   } = useUIStore()
 
+  const activeSubTab = soloSubTab ?? tab.activeSubTab
+  const detachedSubTabs = useMemo(() => new Set<string>(tab.detachedSubTabs ?? []), [tab.detachedSubTabs])
+  const isHere = (id: string) => !detachedSubTabs.has(id)
+
   // Split view applies when enabled AND both terminal + sftp are running
-  const showSplitView = !!tab.splitView
+  const showSplitView = !soloSubTab
+    && !!tab.splitView
     && (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp')
+    && isHere('terminal') && isHere('sftp')
     && (!tab.runningSubTabs || (tab.runningSubTabs.includes('terminal') && tab.runningSubTabs.includes('sftp')))
 
   // Running sub-tabs — undefined means all running (backward compat)
   const runningSubTabs = useMemo(() => {
+    if (soloSubTab) return new Set<string>([soloSubTab])
     return new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
-  }, [tab.runningSubTabs])
+  }, [soloSubTab, tab.runningSubTabs])
 
   // Sub-tab history for "switch to last" on shutdown
   const subTabHistoryRef = useRef<string[]>([tab.activeSubTab])
@@ -82,9 +97,10 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   const subTabsWithState = useMemo(() => {
     return SUB_TABS.map(t => ({
       ...t,
+      icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.icon,
       dimmed: !runningSubTabs.has(t.id)
     }))
-  }, [runningSubTabs])
+  }, [runningSubTabs, detachedSubTabs])
 
   // Tab change handler — re-activates shut-down tabs on click
   const handleSubTabChange = useCallback((id: string) => {
@@ -157,17 +173,18 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   }, [tab.id, tab.runningSubTabs, tab.splitView, updateTab, setSplitView])
 
   // Track which panels have been visited — lazy-mount on first visit, then keep alive
-  const [mountedPanels, setMountedPanels] = useState<Set<string>>(() => new Set([tab.activeSubTab]))
+  const [mountedPanels, setMountedPanels] = useState<Set<string>>(() => new Set([activeSubTab]))
 
   useEffect(() => {
     setMountedPanels((prev) => {
-      if (prev.has(tab.activeSubTab)) return prev
-      return new Set([...prev, tab.activeSubTab])
+      if (prev.has(activeSubTab)) return prev
+      return new Set([...prev, activeSubTab])
     })
-  }, [tab.activeSubTab])
+  }, [activeSubTab])
 
   // Persist active view for the "Remember Last" view preference
   useEffect(() => {
+    if (soloSubTab) return
     if (tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') {
       try {
         // Save 'both' when split view is active, otherwise save the active sub-tab
@@ -177,7 +194,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
         // localStorage may be unavailable — silently ignore
       }
     }
-  }, [tab.activeSubTab, tab.sessionId, tab.splitView])
+  }, [soloSubTab, tab.activeSubTab, tab.sessionId, tab.splitView])
 
   const isReconnecting = tab.status === 'reconnecting'
   const isOffline = tab.status === 'disconnected' || tab.status === 'error'
@@ -225,7 +242,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
     })
 
     // Reset mounted panels for fresh start
-    setMountedPanels(new Set([resolvedSubTab]))
+    setMountedPanels(new Set([soloSubTab ?? resolvedSubTab]))
     subTabHistoryRef.current = [resolvedSubTab]
 
     toast.info('Connecting...', `Establishing connection to ${session.host}`)
@@ -265,7 +282,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
         })
         toast.error('Connection failed', String(err))
       })
-  }, [tab.id, tab.sessionId, updateTab, setSplitView])
+  }, [tab.id, tab.sessionId, soloSubTab, updateTab, setSplitView])
 
   const handleRetryNow = useCallback(() => {
     window.novadeck.ssh.reconnectRetryNow?.(tab.id)
@@ -303,6 +320,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
   return (
     <div className="flex flex-col h-full relative">
       {/* Sub-tab navigation */}
+      {!soloSubTab && (
       <div className="px-3 shrink-0 bg-nd-bg-secondary border-b border-nd-border flex items-center overflow-hidden">
         <div className="flex-1 min-w-0 overflow-hidden">
           <Tabs
@@ -314,7 +332,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           />
         </div>
         {/* Split view toggle — only when both terminal and sftp are running */}
-        {(tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') && runningSubTabs.has('terminal') && runningSubTabs.has('sftp') && (
+        {(tab.activeSubTab === 'terminal' || tab.activeSubTab === 'sftp') && runningSubTabs.has('terminal') && runningSubTabs.has('sftp') && isHere('terminal') && isHere('sftp') && (
           <button
             onClick={() => {
               const next = !tab.splitView
@@ -333,7 +351,18 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
             <span>{tab.splitView ? 'Exit Split' : 'Split'}</span>
           </button>
         )}
+        {!isReconnecting && (
+          <button
+            onClick={() => openFeatureWindow(tab.id, tab.activeSubTab)}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface transition-colors"
+            title={`Open ${subTabLabel(tab.activeSubTab)} in its own window`}
+          >
+            <ExternalLink size={12} />
+            <span>Pop Out</span>
+          </button>
+        )}
       </div>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 overflow-hidden flex flex-col">
@@ -359,30 +388,30 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Terminal — mounted when visited AND running, hidden when not active */}
-          {!showSplitView && mountedPanels.has('terminal') && runningSubTabs.has('terminal') && (
+          {!showSplitView && mountedPanels.has('terminal') && runningSubTabs.has('terminal') && isHere('terminal') && (
             <div className={cn(
               'absolute inset-0',
-              tab.activeSubTab !== 'terminal' && 'hidden'
+              activeSubTab !== 'terminal' && 'hidden'
             )}>
               <TerminalTabs connectionId={tab.id} connectionStatus={tab.status} />
             </div>
           )}
 
           {/* SFTP — mounted when visited AND running, hidden when not active */}
-          {!showSplitView && mountedPanels.has('sftp') && runningSubTabs.has('sftp') && (
+          {!showSplitView && mountedPanels.has('sftp') && runningSubTabs.has('sftp') && isHere('sftp') && (
             <div className={cn(
               'absolute inset-0 flex flex-col',
-              tab.activeSubTab !== 'sftp' && 'hidden'
+              activeSubTab !== 'sftp' && 'hidden'
             )}>
               <SFTPView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
             </div>
           )}
 
           {/* SQL — mounted when visited AND running, hidden when not active */}
-          {mountedPanels.has('sql') && runningSubTabs.has('sql') && (
+          {mountedPanels.has('sql') && runningSubTabs.has('sql') && isHere('sql') && (
             <div className={cn(
               'absolute inset-0 flex flex-col',
-              tab.activeSubTab !== 'sql' && 'hidden'
+              activeSubTab !== 'sql' && 'hidden'
             )}>
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading SQL Client...</div>}>
                 <SQLView connectionId={tab.id} sessionId={tab.sessionId} />
@@ -391,12 +420,12 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Port Forwarding — conditionally rendered when running */}
-          {tab.activeSubTab === 'port-forwarding' && runningSubTabs.has('port-forwarding') && (
+          {activeSubTab === 'port-forwarding' && runningSubTabs.has('port-forwarding') && isHere('port-forwarding') && (
             <PortForwardingView connectionId={tab.id} />
           )}
 
           {/* Monitor — conditional render when running (unmounts to stop SSH polling) */}
-          {tab.activeSubTab === 'monitor' && runningSubTabs.has('monitor') && (
+          {activeSubTab === 'monitor' && runningSubTabs.has('monitor') && isHere('monitor') && (
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
                 <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
@@ -405,7 +434,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Services — conditional render (unmounts to stop polling) */}
-          {tab.activeSubTab === 'services' && runningSubTabs.has('services') && (
+          {activeSubTab === 'services' && runningSubTabs.has('services') && isHere('services') && (
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Services...</div>}>
                 <ServiceManagerView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
@@ -414,7 +443,7 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Info — Connection Health Dashboard */}
-          {tab.activeSubTab === 'info' && runningSubTabs.has('info') && (
+          {activeSubTab === 'info' && runningSubTabs.has('info') && isHere('info') && (
             <ConnectionHealthDashboard
               connectionId={tab.id}
               sessionName={tab.sessionName}
@@ -423,8 +452,16 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           )}
 
           {/* Log */}
-          {tab.activeSubTab === 'log' && runningSubTabs.has('log') && (
+          {activeSubTab === 'log' && runningSubTabs.has('log') && isHere('log') && (
             <ActivityLog sessionId={tab.id} />
+          )}
+
+          {detachedSubTabs.has(activeSubTab) && (
+            <DetachedFeaturePlaceholder
+              label={subTabLabel(activeSubTab)}
+              onShow={() => focusFeatureWindow(tab.id, activeSubTab)}
+              onBringBack={() => closeFeatureWindow(tab.id, activeSubTab)}
+            />
           )}
 
           {/* Reconnection overlay */}
@@ -447,6 +484,33 @@ export function ConnectionView({ tab }: ConnectionViewProps) {
           onToggle={toggleTransferQueue}
           connectionId={tab.id}
         />
+      </div>
+    </div>
+  )
+}
+
+function DetachedFeaturePlaceholder({ label, onShow, onBringBack }: {
+  label: string
+  onShow: () => void
+  onBringBack: () => void
+}) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-nd-text-muted">
+      <AppWindow size={28} className="opacity-60" />
+      <p className="text-sm">{label} is open in its own window</p>
+      <div className="flex gap-2">
+        <button
+          onClick={onShow}
+          className="px-3 py-1.5 rounded text-xs bg-nd-accent/15 text-nd-accent hover:bg-nd-accent/25 transition-colors"
+        >
+          Show Window
+        </button>
+        <button
+          onClick={onBringBack}
+          className="px-3 py-1.5 rounded text-xs text-nd-text-secondary hover:bg-nd-surface transition-colors"
+        >
+          Bring Back Here
+        </button>
       </div>
     </div>
   )
@@ -556,7 +620,7 @@ function BottomPanelSwitcher({
       {isOpen && (
         <div className="flex-1 overflow-y-auto min-h-0">
           {activeTab === 'transfers' ? (
-            <TransferQueue connectionId={connectionId} />
+            <TransferQueue />
           ) : (
             <div className="h-full">
               <ActivityLog sessionId={connectionId} />

@@ -18,18 +18,40 @@ export interface TransferItem {
   error?: string
   startedAt?: number
   completedAt?: number
+  /** Set on every file expanded from one folder transfer, so the UI can show the folder as a unit */
+  groupId?: string
+  groupName?: string
 }
+
+export interface TransferScan {
+  groupId: string
+  groupName: string
+  direction: TransferDirection
+  scanning: boolean
+}
+
+export interface TransferBatchSummary {
+  completed: string[]
+  failed: string[]
+}
+
+const PROGRESS_EMIT_INTERVAL_MS = 150
 
 /**
  * TransferQueue — manages file upload/download operations.
  * Supports concurrent transfers, pause/resume, cancellation.
- * Emits: 'update', 'complete', 'error'
+ * Emits: 'update', 'complete', 'error', 'scan', 'drained'
  */
 export class TransferQueue extends EventEmitter {
   private items: Map<string, TransferItem> = new Map()
   private activeCount = 0
   private maxConcurrent = 3
   private sftpService: SFTPService | null = null
+  private batch: TransferBatchSummary = { completed: [], failed: [] }
+  private openScans = new Set<string>()
+  private cancelledScans = new Set<string>()
+  private lastProgressEmit: Map<string, number> = new Map()
+  private running: Map<string, AbortController> = new Map()
 
   /** Bandwidth limits in KB/s (0 = unlimited) */
   bandwidthLimitUp: number = 0
@@ -52,6 +74,9 @@ export class TransferQueue extends EventEmitter {
       const item = this.items.get(transferId)
       if (item && item.status === 'active') {
         const now = Date.now()
+        const isFinalChunk = transferred >= total
+        if (!isFinalChunk && now - (this.lastProgressEmit.get(transferId) ?? 0) < PROGRESS_EMIT_INTERVAL_MS) return
+        this.lastProgressEmit.set(transferId, now)
         const elapsed = (now - (item.startedAt || now)) / 1000
         const speed = elapsed > 0 ? transferred / elapsed : 0
         const remaining = total - transferred
@@ -88,6 +113,7 @@ export class TransferQueue extends EventEmitter {
     const item = this.items.get(id)
     if (item && item.status === 'active') {
       item.status = 'paused'
+      this.running.get(id)?.abort()
       this.emit('update', this.getTransferState(id))
     }
   }
@@ -97,6 +123,7 @@ export class TransferQueue extends EventEmitter {
     const item = this.items.get(id)
     if (item && item.status === 'paused') {
       item.status = 'queued'
+      item.transferredBytes = 0
       this.emit('update', this.getTransferState(id))
       this.processQueue()
     }
@@ -106,11 +133,11 @@ export class TransferQueue extends EventEmitter {
   cancel(id: string): void {
     const item = this.items.get(id)
     if (item && (item.status === 'queued' || item.status === 'active' || item.status === 'paused')) {
-      const wasActive = item.status === 'active'
       item.status = 'cancelled'
-      if (wasActive) this.activeCount--
+      this.running.get(id)?.abort()
       this.emit('update', this.getTransferState(id))
       this.processQueue()
+      this.emitDrainedIfIdle()
     }
   }
 
@@ -119,10 +146,16 @@ export class TransferQueue extends EventEmitter {
     for (const [id, item] of this.items) {
       if (item.status === 'queued' || item.status === 'active' || item.status === 'paused') {
         item.status = 'cancelled'
+        this.running.get(id)?.abort()
         this.emit('update', this.getTransferState(id))
       }
     }
-    this.activeCount = 0
+    for (const groupId of this.openScans) this.cancelledScans.add(groupId)
+    this.emitDrainedIfIdle()
+  }
+
+  isScanCancelled(groupId: string): boolean {
+    return this.cancelledScans.has(groupId)
   }
 
   /** Retry a failed transfer */
@@ -137,6 +170,17 @@ export class TransferQueue extends EventEmitter {
       this.emit('update', this.getTransferState(id))
       this.processQueue()
     }
+  }
+
+  /** Tell listeners a folder is being walked and enqueued — the batch isn't finished until it closes */
+  announceScan(scan: TransferScan): void {
+    if (scan.scanning) this.openScans.add(scan.groupId)
+    else {
+      this.openScans.delete(scan.groupId)
+      this.cancelledScans.delete(scan.groupId)
+    }
+    this.emit('scan', scan)
+    if (!scan.scanning) this.emitDrainedIfIdle()
   }
 
   /** Remove a completed/failed/cancelled transfer from the list */
@@ -158,7 +202,9 @@ export class TransferQueue extends EventEmitter {
   private async processQueue(): Promise<void> {
     if (!this.sftpService || this.activeCount >= this.maxConcurrent) return
 
-    const queued = Array.from(this.items.values()).filter((i) => i.status === 'queued')
+    const queued = Array.from(this.items.values()).filter(
+      (i) => i.status === 'queued' && !this.running.has(i.id)
+    )
 
     for (const item of queued) {
       if (this.activeCount >= this.maxConcurrent) break
@@ -175,16 +221,18 @@ export class TransferQueue extends EventEmitter {
   }
 
   private async executeTransfer(item: TransferItem): Promise<void> {
+    const controller = new AbortController()
+    this.running.set(item.id, controller)
     try {
       if (item.direction === 'download') {
         await this.sftpService!.download(
           item.sourcePath, item.destinationPath, item.id,
-          this.bandwidthLimitDown, this.preserveTimestamps
+          this.bandwidthLimitDown, this.preserveTimestamps, controller.signal
         )
       } else {
         await this.sftpService!.upload(
           item.sourcePath, item.destinationPath, item.id,
-          this.bandwidthLimitUp, this.preserveTimestamps
+          this.bandwidthLimitUp, this.preserveTimestamps, controller.signal
         )
       }
 
@@ -194,6 +242,7 @@ export class TransferQueue extends EventEmitter {
         item.transferredBytes = item.totalBytes
         this.emit('update', this.getTransferState(item.id))
         this.emit('complete', item)
+        this.batch.completed.push(item.fileName)
       }
     } catch (err: unknown) {
       if (item.status === 'active') {
@@ -201,10 +250,27 @@ export class TransferQueue extends EventEmitter {
         item.error = err instanceof Error ? err.message : 'Transfer failed'
         this.emit('update', this.getTransferState(item.id))
         this.emit('error', item)
+        this.batch.failed.push(item.fileName)
       }
     } finally {
+      this.running.delete(item.id)
+      this.lastProgressEmit.delete(item.id)
       this.activeCount--
       this.processQueue()
+      this.emitDrainedIfIdle()
+    }
+  }
+
+  private emitDrainedIfIdle(): void {
+    if (this.openScans.size > 0) return
+    const hasPending = Array.from(this.items.values()).some(
+      (i) => i.status === 'queued' || i.status === 'active' || i.status === 'paused'
+    )
+    if (hasPending) return
+    const summary = this.batch
+    this.batch = { completed: [], failed: [] }
+    if (summary.completed.length > 0 || summary.failed.length > 0) {
+      this.emit('drained', summary)
     }
   }
 }

@@ -28,6 +28,7 @@ export interface KeybindingAction {
 /** All customizable keybinding actions, organized by scope */
 export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   // ── Global ──
+  { id: 'global:newWindow',       label: 'New Window',             scope: 'global',   defaultCombo: 'CmdOrCtrl+Alt+N' },
   { id: 'global:newTerminalTab',  label: 'New Terminal Tab',       scope: 'global',   defaultCombo: 'CmdOrCtrl+Shift+T' },
   { id: 'global:switchToSFTP',    label: 'Switch to SFTP',         scope: 'global',   defaultCombo: 'CmdOrCtrl+Shift+F' },
   { id: 'global:switchToSQL',     label: 'Switch to SQL',          scope: 'global',   defaultCombo: 'CmdOrCtrl+Shift+D' },

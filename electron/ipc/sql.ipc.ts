@@ -1,6 +1,6 @@
 // electron/ipc/sql.ipc.ts
 
-import { ipcMain, BrowserWindow, powerMonitor, app } from "electron";
+import { ipcMain, powerMonitor, app } from "electron";
 import { randomUUID } from "crypto";
 import { Client as SSHClient } from "ssh2";
 import { readFileSync } from "fs";
@@ -17,6 +17,7 @@ import {
   RestoreOptions,
 } from "../services/SQLDataTransferService";
 import { getSSHService } from "./ssh.ipc";
+import { broadcast } from "../services/WindowManager";
 import { listCheckpoints, deleteCheckpoint } from "../services/TransferCheckpointStore";
 import {
   SQLHistoryStore,
@@ -37,22 +38,14 @@ app.on("before-quit", () => historyStore.flush());
 
 // Forward progress events from the transfer service to all renderer windows
 transferService.on("progress", (sqlSessionId: string, progress: unknown) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:transfer:progress", sqlSessionId, progress);
-  }
+  broadcast("sql:transfer:progress", sqlSessionId, progress);
 });
 
 // Forward healing resolution-request events (paused import awaiting user decision)
 transferService.on(
   "resolution-request",
   (sqlSessionId: string, request: unknown) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(
-        "sql:transfer:needs-resolution",
-        sqlSessionId,
-        request,
-      );
-    }
+    broadcast("sql:transfer:needs-resolution", sqlSessionId, request);
   },
 );
 
@@ -71,9 +64,7 @@ sqlService.on(
       source?: "user" | "data" | "internal";
     },
   ) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:query-executed", sqlSessionId, info);
-    }
+    broadcast("sql:query-executed", sqlSessionId, info);
 
     if (info.source !== "user" && info.source !== "data") return;
     const scope = historyScopes.get(sqlSessionId);
@@ -96,46 +87,32 @@ sqlService.on(
 sqlService.on(
   "query-started",
   (queryId: string, sqlSessionId: string, query: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:query-started", queryId, sqlSessionId, query);
-    }
+    broadcast("sql:query-started", queryId, sqlSessionId, query);
   },
 );
 
 sqlService.on("query-completed", (queryId: string, sqlSessionId: string) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:query-completed", queryId, sqlSessionId);
-  }
+  broadcast("sql:query-completed", queryId, sqlSessionId);
 });
 
 // Forward DB connection errors (from sleep/wake, network drops, etc.) to the renderer
 sqlService.on(
   "connection-error",
   (sqlSessionId: string, errorMessage: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(
-        "sql:connection-error",
-        sqlSessionId,
-        errorMessage,
-      );
-    }
+    broadcast("sql:connection-error", sqlSessionId, errorMessage);
   },
 );
 
 // Forward successful reconnections to the renderer
 sqlService.on("connection-reconnected", (sqlSessionId: string) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send("sql:connection-reconnected", sqlSessionId);
-  }
+  broadcast("sql:connection-reconnected", sqlSessionId);
 });
 
 // Forward connection-lost (reconnect failed) to the renderer
 sqlService.on(
   "connection-lost",
   (sqlSessionId: string, errorMessage: string) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send("sql:connection-lost", sqlSessionId, errorMessage);
-    }
+    broadcast("sql:connection-lost", sqlSessionId, errorMessage);
   },
 );
 
@@ -431,12 +408,7 @@ export function registerSQLIPC(): void {
   );
 
   ipcMain.handle("sql:disconnect", async (_event, sqlSessionId: string) => {
-    await sqlService.disconnect(sqlSessionId);
-    await cleanupTunnel(sqlSessionId);
-    cleanupEphemeralSSH(sqlSessionId);
-    tunnelSpecs.delete(sqlSessionId);
-    historyScopes.delete(sqlSessionId);
-    historyStore.flush();
+    await disconnectSQLSession(sqlSessionId);
     return { success: true };
   });
 
@@ -1595,6 +1567,15 @@ function cleanupEphemeralSSH(sqlSessionId: string): void {
     /* ignore */
   }
   ephemeralSSH.delete(sqlSessionId);
+}
+
+export async function disconnectSQLSession(sqlSessionId: string): Promise<void> {
+  await sqlService.disconnect(sqlSessionId);
+  await cleanupTunnel(sqlSessionId);
+  cleanupEphemeralSSH(sqlSessionId);
+  tunnelSpecs.delete(sqlSessionId);
+  historyScopes.delete(sqlSessionId);
+  historyStore.flush();
 }
 
 export function getSQLService(): SQLService {

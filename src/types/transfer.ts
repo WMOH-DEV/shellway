@@ -19,6 +19,19 @@ export interface TransferItem {
   error?: string
   startedAt?: number
   completedAt?: number
+  groupId?: string
+  groupName?: string
+}
+
+export interface TrackedTransfer extends TransferItem {
+  connectionId: string
+}
+
+export interface TransferScan {
+  groupId: string
+  groupName: string
+  direction: TransferDirection
+  scanning: boolean
 }
 
 /** Transfer conflict resolution strategy */

@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Minus, Square, X, Copy } from 'lucide-react'
+import { Minus, Square, X, Copy, AppWindow } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { openEmptyWindow } from '@/utils/windowHandoff'
+import { formatCombo } from '@/utils/keybindings'
+import { getBinding } from '@/stores/keybindingStore'
 
 /**
  * Custom frameless title bar component.
  * - macOS: traffic lights on the left (handled by OS), app title centered
  * - Windows: custom minimize/maximize/close buttons on the right
  */
-export function TitleBar() {
+export function TitleBar({ title }: { title?: string }) {
   const [platform, setPlatform] = useState<NodeJS.Platform>('win32')
   const [maximized, setMaximized] = useState(false)
 
@@ -53,8 +56,18 @@ export function TitleBar() {
         </span>
       </div>
 
-      {/* Center — current tab name (placeholder) */}
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0 px-3 text-center truncate text-xs text-nd-text-secondary">{title}</div>
+
+      {!title && (
+        <button
+          onClick={() => openEmptyWindow()}
+          className="no-drag flex items-center gap-1.5 px-2 py-1 mr-2 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors"
+          title={`New Window (${formatCombo(getBinding('global:newWindow'))})`}
+        >
+          <AppWindow size={13} />
+          New Window
+        </button>
+      )}
 
       {/* Windows controls */}
       {!isMac && (

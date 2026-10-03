@@ -1,7 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTheme } from '@/hooks/useTheme'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useTransferEvents } from '@/hooks/useTransferEvents'
+import { useHeldResources } from '@/hooks/useHeldResources'
+import { useDetachedFeatures } from '@/hooks/useDetachedFeatures'
 import { AppShell } from '@/components/layout/AppShell'
+import { FeatureWindowShell } from '@/components/layout/FeatureWindowShell'
+import { ConnectionView, subTabLabel } from '@/components/ConnectionView'
+import { DatabaseView } from '@/components/DatabaseView'
+import { featureWindowSubTab } from '@/utils/windowHandoff'
+import type { ConnectionTab } from '@/types/session'
 import { ToastContainer } from '@/components/ui/Toast'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
 import { WorkspaceLayout } from '@/components/layout/WorkspaceLayout'
@@ -45,6 +53,9 @@ export default function App() {
   // Initialize theme listener and keyboard shortcuts
   useTheme()
   useKeyboardShortcuts()
+  useTransferEvents()
+  useHeldResources()
+  useDetachedFeatures()
 
   const { tabs, activeTabId, updateTab, setReconnectionState, addReconnectionEvent } =
     useConnectionStore()
@@ -325,8 +336,11 @@ export default function App() {
   const showDisconnectedPreview = !!selectedSession
     && !tabs.find((t) => t.sessionId === selectedSessionId)
 
-  return (
-    <AppShell>
+  const soloSubTab = featureWindowSubTab()
+  const content = soloSubTab ? (
+    tabs[0] && <FeatureContent tab={tabs[0]} subTab={soloSubTab} />
+  ) : (
+    <>
       {/* Welcome screen when no tabs and no selected session */}
       {tabs.length === 0 && !showDisconnectedPreview && <WelcomeScreen />}
 
@@ -346,7 +360,11 @@ export default function App() {
 
       {/* Workspace: renders all connection tabs via pane layout */}
       {tabs.length > 0 && <WorkspaceLayout />}
+    </>
+  )
 
+  const dialogs = (
+    <>
       {/* Settings modal */}
       <SettingsView open={settingsOpen} onClose={toggleSettings} />
 
@@ -388,6 +406,33 @@ export default function App() {
       <ToastContainer />
 
       {/* Update UI is now rendered inside StatusBar */}
+    </>
+  )
+
+  if (soloSubTab) {
+    return (
+      <FeatureWindowShell title={featureWindowTitle(tabs[0], soloSubTab)}>
+        {content}
+        {dialogs}
+      </FeatureWindowShell>
+    )
+  }
+
+  return (
+    <AppShell>
+      {content}
+      {dialogs}
     </AppShell>
   )
+}
+
+function featureWindowTitle(tab: ConnectionTab | undefined, subTab: ConnectionTab['activeSubTab']): string {
+  if (!tab) return 'Shellway'
+  if (tab.type === 'database') return tab.sessionName
+  return `${tab.sessionName} — ${subTabLabel(subTab)}`
+}
+
+function FeatureContent({ tab, subTab }: { tab: ConnectionTab; subTab: ConnectionTab['activeSubTab'] }) {
+  if (tab.type === 'database') return <DatabaseView tab={tab} />
+  return <ConnectionView tab={tab} soloSubTab={subTab} />
 }

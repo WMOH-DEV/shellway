@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Columns, Rows, ArrowRightLeft, X, XCircle } from 'lucide-react'
+import { Columns, Rows, ArrowRightLeft, X, XCircle, AppWindow, ExternalLink } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { moveTabToNewWindow, openFeatureWindow } from '@/utils/windowHandoff'
 import type { LucideIcon } from 'lucide-react'
 
 interface TabContextMenuProps {
@@ -27,6 +28,7 @@ export function TabContextMenu({ tabId, x, y, onClose }: TabContextMenuProps) {
   const moveTabToPane = useConnectionStore(s => s.moveTabToPane)
   const removeTab = useConnectionStore(s => s.removeTab)
   const closeOtherTabs = useConnectionStore(s => s.closeOtherTabs)
+  const tab = useConnectionStore(s => s.tabs.find(t => t.id === tabId))
 
   const totalTabs = panes.reduce((sum, p) => sum + p.tabIds.length, 0)
   const isSplit = panes.length >= 2
@@ -104,6 +106,19 @@ export function TabContextMenu({ tabId, x, y, onClose }: TabContextMenuProps) {
         },
       ]
 
+  const windowItems: MenuItem[] = [
+    {
+      label: tab?.type === 'database' ? 'Open in Own Window' : 'Pop Out Current View',
+      icon: ExternalLink,
+      onClick: () => handleAction(() => { if (tab) openFeatureWindow(tabId, tab.activeSubTab) }),
+    },
+    {
+      label: 'Move Connection to New Window',
+      icon: AppWindow,
+      onClick: () => handleAction(() => { moveTabToNewWindow(tabId) }),
+    },
+  ]
+
   const closeItems: MenuItem[] = [
     {
       label: 'Close Tab',
@@ -125,6 +140,10 @@ export function TabContextMenu({ tabId, x, y, onClose }: TabContextMenuProps) {
       style={{ left: position.x, top: position.y }}
     >
       {splitItems.map(item => (
+        <MenuItemButton key={item.label} item={item} />
+      ))}
+      <div className="h-px bg-nd-border my-1 mx-2" />
+      {windowItems.map(item => (
         <MenuItemButton key={item.label} item={item} />
       ))}
       <div className="h-px bg-nd-border my-1 mx-2" />

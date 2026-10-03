@@ -131,10 +131,6 @@ export function DatabasesPanel({
   const handleCloseTab = useCallback(
     (tabId: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      const sqlState = getSQLConnectionState(tabId);
-      if (sqlState.sqlSessionId) {
-        window.novadeck.sql.disconnect(sqlState.sqlSessionId).catch(() => {});
-      }
       useSQLStore.getState().removeConnection(tabId);
       removeTab(tabId);
     },

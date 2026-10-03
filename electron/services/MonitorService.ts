@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import { broadcast } from './WindowManager'
 import type { SSHConnection } from './SSHService'
 import type {
   MonitorRawData,
@@ -159,7 +159,6 @@ interface MonitorState {
   previousDiskCounters: Map<string, { reads: number; writes: number }> | null
   previousTimestamp: number | null
   history: MonitorSnapshot[]
-  win: BrowserWindow | null
   status: MonitorStatus
   probed: boolean
   /** Cached extended data from the last successful full poll */
@@ -192,11 +191,10 @@ export class MonitorService {
    * Start monitoring a connection.
    * First runs a probe command to verify the server supports monitoring.
    */
-  startMonitoring(conn: SSHConnection, win: BrowserWindow): void {
-    // If already monitoring this connection, just update the window reference
+  startMonitoring(conn: SSHConnection): void {
+    // Already monitoring — resume if it was stopped
     const existing = this.states.get(conn.id)
     if (existing) {
-      existing.win = win
       if (existing.status === 'stopped') {
         existing.status = 'active'
         this.sendStatus(conn.id)
@@ -219,7 +217,6 @@ export class MonitorService {
       previousDiskCounters: null,
       previousTimestamp: null,
       history: [],
-      win,
       status: 'active',
       probed: false,
       lastFullSnapshot: null
@@ -740,10 +737,7 @@ export class MonitorService {
       state.history.shift()
     }
 
-    // Send to renderer
-    if (state.win && !state.win.isDestroyed()) {
-      state.win.webContents.send('monitor:data', connectionId, snapshot)
-    }
+    broadcast('monitor:data', connectionId, snapshot)
 
     // Update status
     state.status = 'active'
@@ -752,13 +746,12 @@ export class MonitorService {
 
   private sendStatus(connectionId: string): void {
     const state = this.states.get(connectionId)
-    if (!state?.win || state.win.isDestroyed()) return
-    state.win.webContents.send('monitor:status', connectionId, state.status)
+    if (!state) return
+    broadcast('monitor:status', connectionId, state.status)
   }
 
   private sendError(connectionId: string, message: string): void {
-    const state = this.states.get(connectionId)
-    if (!state?.win || state.win.isDestroyed()) return
-    state.win.webContents.send('monitor:error', connectionId, message)
+    if (!this.states.has(connectionId)) return
+    broadcast('monitor:error', connectionId, message)
   }
 }

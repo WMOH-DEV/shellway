@@ -218,6 +218,7 @@ export interface ConnectionTab {
   runningSubTabs?: ConnectionTab['activeSubTab'][]
   /** Whether Terminal + SFTP split view is active for this tab */
   splitView?: boolean
+  detachedSubTabs?: ConnectionTab['activeSubTab'][]
   error?: string
   /** Reconnection state shown in UI overlay */
   reconnectionState?: {

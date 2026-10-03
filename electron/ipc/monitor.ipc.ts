@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { MonitorService } from '../services/MonitorService'
 import { getSSHService } from './ssh.ipc'
 
@@ -20,7 +20,7 @@ const monitorService = new MonitorService()
  *   monitor:error      → Error message
  */
 export function registerMonitorIPC(): void {
-  ipcMain.handle('monitor:start', (event, connectionId: string) => {
+  ipcMain.handle('monitor:start', (_event, connectionId: string) => {
     const sshService = getSSHService()
     const conn = sshService.get(connectionId)
     if (!conn) {
@@ -30,12 +30,7 @@ export function registerMonitorIPC(): void {
       return { success: false, error: 'Connection is not active' }
     }
 
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) {
-      return { success: false, error: 'Window not found' }
-    }
-
-    monitorService.startMonitoring(conn, win)
+    monitorService.startMonitoring(conn)
     return { success: true }
   })
 

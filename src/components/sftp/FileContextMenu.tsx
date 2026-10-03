@@ -21,10 +21,11 @@ import {
 import { cn } from '@/utils/cn'
 import { toast } from '@/components/ui/Toast'
 import type { FileEntry, PanelType } from '@/types/sftp'
-import { SftpDeleteConfirm, type SftpDeleteTarget } from './SftpDeleteConfirm'
+import { reportTransfers, type NamedTransferResult } from './transferReport'
 
 interface FileContextMenuProps {
   entry: FileEntry
+  selection: FileEntry[]
   position: { x: number; y: number }
   panelType: PanelType
   connectionId: string
@@ -36,6 +37,7 @@ interface FileContextMenuProps {
   onRefresh: () => void
   onRename: (path: string) => void
   onNavigate: (path: string) => void
+  onDelete: (entries: FileEntry[]) => void
   /** Register a temp file for auto-upload watching (View/Edit flow) */
   onWatchTempFile?: (tempPath: string, remotePath: string) => Promise<void>
   /** Open the permissions dialog for the entry */
@@ -57,6 +59,10 @@ interface MenuItem {
   separator?: boolean
   disabled?: boolean
 }
+
+const MULTI_SELECTION_ACTIONS = new Set([
+  'download', 'upload', 'sep2', 'copy', 'cut', 'sep6', 'copyPath', 'sep7', 'delete'
+])
 
 // In-memory clipboard for copy/cut within SFTP panels
 let clipboard: { entries: FileEntry[]; operation: 'copy' | 'cut'; panelType: PanelType; connectionId: string } | null = null
@@ -81,45 +87,9 @@ function joinPath(base: string, name: string): string {
   return base.endsWith(sep) ? base + name : base + sep + name
 }
 
-type TransferResult = Awaited<ReturnType<typeof window.novadeck.sftp.download>>
-
-/** Turn a transfer response into a toast — folders report per-file counts. */
-function reportTransfer(
-  res: TransferResult,
-  verb: 'Download' | 'Upload',
-  name: string,
-  destination: string
-): void {
-  if (!res?.success) {
-    toast.error(`${verb} failed`, res?.error || 'Unknown error')
-    return
-  }
-  if (res.directory) {
-    if (res.enqueued === 0) {
-      toast.warning(
-        `Nothing to ${verb.toLowerCase()}`,
-        res.conflicts
-          ? `${name}: every file already exists at the destination`
-          : `${name} is empty`
-      )
-      return
-    }
-    const skippedNote = res.conflicts ? `, ${res.conflicts} already existed` : ''
-    toast.info(
-      `${verb} started`,
-      `${name} — ${res.enqueued} file${res.enqueued === 1 ? '' : 's'}${skippedNote} → ${destination}`
-    )
-    return
-  }
-  if (res.skipped) {
-    toast.warning(`${verb} skipped`, `${name} already exists at the destination`)
-    return
-  }
-  toast.info(`${verb} started`, `${name} → ${destination}`)
-}
-
 export function FileContextMenu({
   entry,
+  selection,
   position,
   panelType,
   connectionId,
@@ -129,6 +99,7 @@ export function FileContextMenu({
   onRefresh,
   onRename,
   onNavigate,
+  onDelete,
   onWatchTempFile,
   onPermissions,
   onPreview,
@@ -137,7 +108,8 @@ export function FileContextMenu({
 }: FileContextMenuProps) {
   const isRemote = panelType === 'remote'
   const hasClipboard = clipboard !== null
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const isMulti = selection.length > 1
+  const countLabel = isMulti ? ` ${selection.length} items` : ''
 
   useEffect(() => {
     const handler = () => onClose()
@@ -145,7 +117,7 @@ export function FileContextMenu({
     return () => document.removeEventListener('click', handler)
   }, [onClose])
 
-  const items: MenuItem[] = [
+  const singleItems: MenuItem[] = [
     ...(entry.isDirectory
       ? [{ id: 'open', label: 'Open', icon: <ExternalLink size={13} /> }]
       : [
@@ -155,8 +127,8 @@ export function FileContextMenu({
         ]),
     { id: 'sep1', label: '', icon: null, separator: true },
     ...(isRemote
-      ? [{ id: 'download', label: 'Download', icon: <Download size={13} />, shortcut: 'Ctrl+D' }]
-      : [{ id: 'upload', label: 'Upload', icon: <Upload size={13} />, shortcut: 'Ctrl+U' }]),
+      ? [{ id: 'download', label: 'Download' + countLabel, icon: <Download size={13} />, shortcut: 'Ctrl+D' }]
+      : [{ id: 'upload', label: 'Upload' + countLabel, icon: <Upload size={13} />, shortcut: 'Ctrl+U' }]),
     { id: 'sep2', label: '', icon: null, separator: true },
     { id: 'copy', label: 'Copy', icon: <Copy size={13} />, shortcut: 'Ctrl+C' },
     { id: 'cut', label: 'Cut', icon: <Scissors size={13} />, shortcut: 'Ctrl+X' },
@@ -179,8 +151,9 @@ export function FileContextMenu({
     { id: 'sep6', label: '', icon: null, separator: true },
     { id: 'copyPath', label: 'Copy Full Path', icon: <Copy size={13} /> },
     { id: 'sep7', label: '', icon: null, separator: true },
-    { id: 'delete', label: 'Delete', icon: <Trash2 size={13} />, danger: true, shortcut: 'Del' }
+    { id: 'delete', label: 'Delete' + countLabel, icon: <Trash2 size={13} />, danger: true, shortcut: 'Del' }
   ]
+  const items = isMulti ? singleItems.filter((item) => MULTI_SELECTION_ACTIONS.has(item.id)) : singleItems
 
   const handleAction = useCallback(
     async (id: string) => {
@@ -248,12 +221,15 @@ export function FileContextMenu({
               toast.error('Download failed', 'Local panel path not available')
               break
             }
-            const destPath = joinPath(localPath, fileName(entry.path))
-            const transferId = crypto.randomUUID()
-            const res = await window.novadeck.sftp.download(
-              connectionId, transferId, entry.path, destPath, entry.size || 0
-            )
-            reportTransfer(res, 'Download', fileName(entry.path), localPath)
+            const results: NamedTransferResult[] = []
+            for (const item of selection) {
+              const name = fileName(item.path)
+              const res = await window.novadeck.sftp.download(
+                connectionId, crypto.randomUUID(), item.path, joinPath(localPath, name), item.size || 0
+              )
+              results.push({ name, res })
+            }
+            reportTransfers(results, 'Download', localPath)
             onRefresh()
             break
           }
@@ -264,24 +240,27 @@ export function FileContextMenu({
               toast.error('Upload failed', 'Remote panel path not available')
               break
             }
-            const destPath = joinPath(remotePath, fileName(entry.path))
-            const transferId = crypto.randomUUID()
-            const res = await window.novadeck.sftp.upload(
-              connectionId, transferId, entry.path, destPath, entry.size || 0
-            )
-            reportTransfer(res, 'Upload', fileName(entry.path), remotePath)
+            const results: NamedTransferResult[] = []
+            for (const item of selection) {
+              const name = fileName(item.path)
+              const res = await window.novadeck.sftp.upload(
+                connectionId, crypto.randomUUID(), item.path, joinPath(remotePath, name), item.size || 0
+              )
+              results.push({ name, res })
+            }
+            reportTransfers(results, 'Upload', remotePath)
             break
           }
 
           // ── Copy / Cut / Paste ──
           case 'copy':
-            clipboard = { entries: [entry], operation: 'copy', panelType, connectionId }
-            toast.info('Copied', fileName(entry.path))
+            clipboard = { entries: selection, operation: 'copy', panelType, connectionId }
+            toast.info('Copied', isMulti ? `${selection.length} items` : fileName(entry.path))
             break
 
           case 'cut':
-            clipboard = { entries: [entry], operation: 'cut', panelType, connectionId }
-            toast.info('Cut', fileName(entry.path))
+            clipboard = { entries: selection, operation: 'cut', panelType, connectionId }
+            toast.info('Cut', isMulti ? `${selection.length} items` : fileName(entry.path))
             break
 
           case 'paste': {
@@ -432,29 +411,24 @@ export function FileContextMenu({
 
           // ── Copy Path ──
           case 'copyPath':
-            navigator.clipboard.writeText(entry.path)
-            toast.success('Copied', 'Path copied to clipboard')
+            navigator.clipboard.writeText(selection.map((item) => item.path).join('\n'))
+            toast.success('Copied', isMulti ? `${selection.length} paths copied to clipboard` : 'Path copied to clipboard')
             break
 
-          // ── Delete (opens confirmation dialog; actual delete runs on confirm) ──
-          case 'delete': {
-            setConfirmOpen(true)
+          case 'delete':
+            onDelete(selection)
             break
-          }
         }
       } catch (err) {
         toast.error('Action failed', String(err))
       }
     },
-    [entry, isRemote, connectionId, panelType, localPath, remotePath, onRefresh, onRename, onNavigate, onWatchTempFile, onPermissions, onPreview, onEdit, onOpenWithComplete]
+    [entry, selection, isMulti, isRemote, connectionId, panelType, localPath, remotePath, onRefresh, onRename, onNavigate, onDelete, onWatchTempFile, onPermissions, onPreview, onEdit, onOpenWithComplete]
   )
 
-  // Wrap handleAction to close the menu first, then execute async work.
-  // For 'delete' we don't close — the confirm dialog lives inside this component
-  // and needs the menu to stay mounted; it is closed explicitly when the dialog resolves.
   const handleActionAndClose = useCallback(
     (id: string) => {
-      if (id !== 'delete') onClose()
+      onClose()
       setTimeout(() => handleAction(id), 0)
     },
     [onClose, handleAction]
@@ -492,83 +466,43 @@ export function FileContextMenu({
     setAdjustedPos({ x, y })
   }, [position])
 
-  const deleteTargets: SftpDeleteTarget[] = [
-    { path: entry.path, name: fileName(entry.path) || entry.path, isDirectory: entry.isDirectory }
-  ]
-
-  const runDelete = useCallback(
-    async (targets: SftpDeleteTarget[]) => {
-      const t = targets[0]
-      let res: { success: boolean; error?: string }
-      if (isRemote) {
-        res = t.isDirectory
-          ? await window.novadeck.sftp.rmdir(connectionId, t.path, true)
-          : await window.novadeck.sftp.unlink(connectionId, t.path)
-      } else {
-        res = await window.novadeck.sftp.localTrash(t.path)
-      }
-      if (!res?.success) {
-        throw new Error(res?.error || 'Unknown error')
-      }
-      toast.success(isRemote ? 'Deleted' : 'Moved to Trash', t.name)
-      onRefresh()
-    },
-    [connectionId, isRemote, onRefresh]
-  )
-
   return (
-    <>
-      {!confirmOpen && (
-        <motion.div
-          ref={menuRef}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.1 }}
-          className="fixed z-[200] min-w-[220px] rounded-lg bg-nd-bg-secondary border border-nd-border shadow-xl py-1"
-          style={{
-            left: adjustedPos?.x ?? position.x,
-            top: adjustedPos?.y ?? position.y,
-            // Hide until layout effect has resolved the correct position
-            visibility: adjustedPos ? 'visible' : 'hidden'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {items.map((item) =>
-            item.separator ? (
-              <div key={item.id} className="my-1 border-t border-nd-border" />
-            ) : (
-              <button
-                key={item.id}
-                disabled={item.disabled}
-                onClick={() => handleActionAndClose(item.id)}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
-                  'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
-                  item.danger ? 'text-nd-error' : 'text-nd-text-primary'
-                )}
-              >
-                <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>
-                <span className="flex-1">{item.label}</span>
-                {item.shortcut && (
-                  <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
-                )}
-              </button>
-            )
-          )}
-        </motion.div>
+    <motion.div
+      ref={menuRef}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.1 }}
+      className="fixed z-[200] min-w-[220px] rounded-lg bg-nd-bg-secondary border border-nd-border shadow-xl py-1"
+      style={{
+        left: adjustedPos?.x ?? position.x,
+        top: adjustedPos?.y ?? position.y,
+        visibility: adjustedPos ? 'visible' : 'hidden'
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {items.map((item) =>
+        item.separator ? (
+          <div key={item.id} className="my-1 border-t border-nd-border" />
+        ) : (
+          <button
+            key={item.id}
+            disabled={item.disabled}
+            onClick={() => handleActionAndClose(item.id)}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
+              'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
+              item.danger ? 'text-nd-error' : 'text-nd-text-primary'
+            )}
+          >
+            <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>
+            <span className="flex-1">{item.label}</span>
+            {item.shortcut && (
+              <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
+            )}
+          </button>
+        )
       )}
-
-      <SftpDeleteConfirm
-        open={confirmOpen}
-        onClose={() => {
-          setConfirmOpen(false)
-          onClose()
-        }}
-        targets={deleteTargets}
-        onConfirm={runDelete}
-        toTrash={!isRemote}
-      />
-    </>
+    </motion.div>
   )
 }

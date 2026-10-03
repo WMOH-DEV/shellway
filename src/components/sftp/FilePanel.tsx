@@ -27,12 +27,14 @@ import { useSessionStore } from '@/stores/sessionStore'
 import type { FileEntry, PanelType, ViewMode } from '@/types/sftp'
 import type { SFTPAutocompleteMode, SFTPDoubleClickAction } from '@/types/settings'
 import { SftpDeleteConfirm, type SftpDeleteTarget } from './SftpDeleteConfirm'
+import { reportTransfer, reportTransfers, type NamedTransferResult } from './transferReport'
 
 export interface FilePanelHandle {
   refresh: () => void
   navigate: (path: string) => void
   startRename: (path: string) => void
   getCurrentPath: () => string
+  requestDelete: (entries: FileEntry[]) => void
 }
 
 interface FilePanelProps {
@@ -41,7 +43,12 @@ interface FilePanelProps {
   /** Session ID — used for path persistence across reconnects */
   sessionId: string
   className?: string
-  onFileContextMenu?: (entry: FileEntry, e: React.MouseEvent, panelType: PanelType) => void
+  onFileContextMenu?: (
+    entry: FileEntry,
+    selection: FileEntry[],
+    e: React.MouseEvent,
+    panelType: PanelType
+  ) => void
   onEmptyContextMenu?: (e: React.MouseEvent, panelType: PanelType) => void
   onReady?: (handle: FilePanelHandle) => void
 }
@@ -341,19 +348,30 @@ export function FilePanel({
     [entries, selectedPaths]
   )
 
-  /** Open the delete-confirmation dialog for the currently selected files/directories */
-  const handleDeleteSelected = useCallback(() => {
-    if (selectedPaths.size === 0) return
-    const allEntries = sortedEntriesRef.current
-    const targets: SftpDeleteTarget[] = []
-    for (const p of selectedPaths) {
-      const entry = allEntries.find((e) => e.path === p)
-      if (!entry) continue
-      targets.push({ path: entry.path, name: entry.name, isDirectory: entry.isDirectory })
-    }
-    if (targets.length === 0) return
-    setDeleteTargets(targets)
+  const selectedEntries = useCallback((): FileEntry[] => {
+    return sortedEntriesRef.current.filter((e) => selectedPaths.has(e.path))
   }, [selectedPaths])
+
+  const requestDelete = useCallback((targets: FileEntry[]) => {
+    if (targets.length === 0) return
+    setDeleteTargets(targets.map((e) => ({ path: e.path, name: e.name, isDirectory: e.isDirectory })))
+  }, [])
+
+  const handleDeleteSelected = useCallback(() => {
+    requestDelete(selectedEntries())
+  }, [requestDelete, selectedEntries])
+
+  const handleRowContextMenu = useCallback(
+    (entry: FileEntry, e: React.MouseEvent) => {
+      if (selectedPaths.has(entry.path)) {
+        onFileContextMenu?.(entry, selectedEntries(), e, type)
+        return
+      }
+      setSelectedPaths(new Set([entry.path]))
+      onFileContextMenu?.(entry, [entry], e, type)
+    },
+    [selectedPaths, selectedEntries, onFileContextMenu, type]
+  )
 
   /** Actual deletion — called after confirmation */
   const runDelete = useCallback(
@@ -469,9 +487,10 @@ export function FilePanel({
           setRenameValue(entry.name)
         }
       },
-      getCurrentPath: () => currentPath
+      getCurrentPath: () => currentPath,
+      requestDelete
     })
-  }, [onReady, loadDirectory, currentPath, navigateTo, entries])
+  }, [onReady, loadDirectory, currentPath, navigateTo, entries, requestDelete])
 
   /** Join two path segments */
   const joinPath = useCallback((base: string, name: string) => {
@@ -529,17 +548,15 @@ export function FilePanel({
           const transferId = crypto.randomUUID()
 
           if (type === 'remote') {
-            // Dropped on remote panel → upload from local
-            await window.novadeck.sftp.upload(
+            const res = await window.novadeck.sftp.upload(
               connectionId, transferId, data.path, destPath, data.size || 0
             )
-            toast.info('Upload started', `${data.name} → ${currentPath}`)
+            reportTransfer(res, 'Upload', data.name, currentPath)
           } else {
-            // Dropped on local panel → download from remote
-            await window.novadeck.sftp.download(
+            const res = await window.novadeck.sftp.download(
               connectionId, transferId, data.path, destPath, data.size || 0
             )
-            toast.info('Download started', `${data.name} → ${currentPath}`)
+            reportTransfer(res, 'Download', data.name, currentPath)
           }
 
           // Refresh after a short delay for the transfer to begin
@@ -553,18 +570,16 @@ export function FilePanel({
       // Check for desktop file drops
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         if (type === 'remote') {
-          // Upload desktop files to remote
+          const results: NamedTransferResult[] = []
           for (const file of Array.from(e.dataTransfer.files)) {
             const filePath = (file as any).path as string
             if (!filePath) continue
-            const name = file.name
-            const destPath = joinPath(currentPath, name)
-            const transferId = crypto.randomUUID()
-            await window.novadeck.sftp.upload(
-              connectionId, transferId, filePath, destPath, file.size || 0
+            const res = await window.novadeck.sftp.upload(
+              connectionId, crypto.randomUUID(), filePath, joinPath(currentPath, file.name), file.size || 0
             )
-            toast.info('Upload started', `${name} → ${currentPath}`)
+            results.push({ name: file.name, res })
           }
+          if (results.length > 0) reportTransfers(results, 'Upload', currentPath)
           setTimeout(() => loadDirectory(currentPath), 500)
         } else {
           toast.info('Local panel', 'Desktop files can only be dropped on the remote panel')
@@ -807,7 +822,7 @@ export function FilePanel({
           showHidden={showHidden}
           onSelect={handleSelect}
           onOpen={handleOpen}
-          onContextMenu={(entry, e) => onFileContextMenu?.(entry, e, type)}
+          onContextMenu={handleRowContextMenu}
           onEmptyContextMenu={(e) => onEmptyContextMenu?.(e, type)}
           onRenameChange={setRenameValue}
           onRenameSubmit={handleRenameSubmit}

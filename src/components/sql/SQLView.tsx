@@ -612,15 +612,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     return () => window.removeEventListener('sql:navigate-fk', handleNavigateFK)
   }, [connectionId, tabs, setActiveTab, addTab, setSelectedTable, currentDatabase])
 
-  // ── Cleanup on unmount — disconnect SQL session ──
   useEffect(() => {
-    return () => {
-      const sid = getSQLConnectionState(connectionId).sqlSessionId
-      if (sid) {
-        window.novadeck.sql.disconnect(sid).catch(() => {})
-      }
-      reset()
-    }
+    return () => reset()
   }, [connectionId, reset])
 
   // ── When selectedTable changes in sidebar, open/focus a data tab for it ──

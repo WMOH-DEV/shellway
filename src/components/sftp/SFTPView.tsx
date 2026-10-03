@@ -34,6 +34,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
   const [sftpReady, setSftpReady] = useState(false)
   const [contextMenu, setContextMenu] = useState<{
     entry: FileEntry
+    selection: FileEntry[]
     x: number
     y: number
     panelType: PanelType
@@ -156,10 +157,10 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
   )
 
   const handleContextMenu = useCallback(
-    (entry: FileEntry, e: React.MouseEvent, panelType: PanelType) => {
+    (entry: FileEntry, selection: FileEntry[], e: React.MouseEvent, panelType: PanelType) => {
       e.preventDefault()
       setEmptyContextMenu(null) // close empty space menu if open
-      setContextMenu({ entry, x: e.clientX, y: e.clientY, panelType })
+      setContextMenu({ entry, selection, x: e.clientX, y: e.clientY, panelType })
     },
     []
   )
@@ -230,6 +231,12 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
     }
   }, [contextMenu, getPanelHandle])
 
+  const handleDelete = useCallback((entries: FileEntry[]) => {
+    if (contextMenu) {
+      getPanelHandle(contextMenu.panelType)?.requestDelete(entries)
+    }
+  }, [contextMenu, getPanelHandle])
+
   const handleNavigate = useCallback((path: string) => {
     if (contextMenu) {
       getPanelHandle(contextMenu.panelType)?.navigate(path)
@@ -248,7 +255,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
   }
 
   return (
-    <div className="flex flex-col flex-1 h-full" onClick={closeContextMenu}>
+    <div className="relative flex flex-col flex-1 h-full" onClick={closeContextMenu}>
       {/* Dual pane file manager */}
       <div className="flex-1 overflow-hidden">
         <Splitter
@@ -283,6 +290,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
       {contextMenu && (
         <FileContextMenu
           entry={contextMenu.entry}
+          selection={contextMenu.selection}
           position={{ x: contextMenu.x, y: contextMenu.y }}
           panelType={contextMenu.panelType}
           connectionId={connectionId}
@@ -292,6 +300,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
           onRefresh={handleRefresh}
           onRename={handleRename}
           onNavigate={handleNavigate}
+          onDelete={handleDelete}
           onWatchTempFile={watchTempFile}
           onPermissions={handlePermissions}
           onPreview={handlePreview}

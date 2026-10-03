@@ -7,6 +7,8 @@ import { getHealthService } from './health.ipc'
 import { getMonitorService } from './monitor.ipc'
 import { getSettingsStore } from './settings.ipc'
 import { cleanupSFTP, cleanupAllSFTP } from './sftp.ipc'
+import { broadcast, windowHolding } from '../services/WindowManager'
+import { sshResource } from '../../src/types/windowResources'
 
 const sshService = new SSHService()
 
@@ -184,7 +186,7 @@ export function registerSSHIPC(): void {
 
         // Forward status changes to renderer
         conn.on('status', (status) => {
-          win?.webContents.send('ssh:status-change', connectionId, status)
+          broadcast('ssh:status-change', connectionId, status)
 
           // Notify on unexpected disconnect
           if (status === 'disconnected') {
@@ -193,41 +195,42 @@ export function registerSSHIPC(): void {
           }
         })
         conn.on('error', (error) => {
-          win?.webContents.send('ssh:error', connectionId, error)
+          broadcast('ssh:error', connectionId, error)
         })
         conn.on('banner', (message) => {
-          win?.webContents.send('ssh:banner', connectionId, message)
+          broadcast('ssh:banner', connectionId, message)
         })
 
         // Forward reconnection events to renderer
         conn.on('reconnect-attempt', (connId: string, attempt: number, maxAttempts: number) => {
-          win?.webContents.send('ssh:reconnect-attempt', connId, attempt, maxAttempts)
+          broadcast('ssh:reconnect-attempt', connId, attempt, maxAttempts)
         })
         conn.on('reconnect-waiting', (connId: string, delayMs: number, nextAttempt: number, nextRetryAt: number) => {
-          win?.webContents.send('ssh:reconnect-waiting', connId, delayMs, nextAttempt, nextRetryAt)
+          broadcast('ssh:reconnect-waiting', connId, delayMs, nextAttempt, nextRetryAt)
         })
         conn.on('reconnect-success', (connId: string, attempt: number) => {
           // Reconnection creates a new SSH client, invalidating the old SFTP wrapper.
           // Clean up stale SFTP so the next sftp:open creates a fresh session.
           cleanupSFTP(connId)
-          win?.webContents.send('ssh:reconnect-success', connId, attempt)
+          broadcast('ssh:reconnect-success', connId, attempt)
         })
         conn.on('reconnect-failed', (connId: string, attempt: number, error: string) => {
-          win?.webContents.send('ssh:reconnect-failed', connId, attempt, error)
+          broadcast('ssh:reconnect-failed', connId, attempt, error)
         })
         conn.on('reconnect-exhausted', (connId: string, totalAttempts: number) => {
-          win?.webContents.send('ssh:reconnect-exhausted', connId, totalAttempts)
+          broadcast('ssh:reconnect-exhausted', connId, totalAttempts)
         })
         conn.on('reconnect-paused', (connId: string) => {
-          win?.webContents.send('ssh:reconnect-paused', connId)
+          broadcast('ssh:reconnect-paused', connId)
         })
         conn.on('reconnect-resumed', (connId: string) => {
-          win?.webContents.send('ssh:reconnect-resumed', connId)
+          broadcast('ssh:reconnect-resumed', connId)
         })
 
         // Forward KBDI prompts to renderer
         conn.on('kbdi-prompt', (connId: string, prompt: unknown, respond: (responses: string[]) => void) => {
-          if (!win) return
+          const target = windowHolding(sshResource(connId)) ?? (win && !win.isDestroyed() ? win : null)
+          if (!target) return
 
           const responseChannel = `ssh:kbdi-response:${connId}`
           const handler = (_e: Electron.IpcMainEvent, responses: string[]) => {
@@ -235,7 +238,7 @@ export function registerSSHIPC(): void {
             respond(responses)
           }
           ipcMain.on(responseChannel, handler)
-          win.webContents.send('ssh:kbdi-prompt', connId, prompt)
+          target.webContents.send('ssh:kbdi-prompt', connId, prompt)
         })
 
         // Now attempt the connection
@@ -253,14 +256,7 @@ export function registerSSHIPC(): void {
   )
 
   ipcMain.handle('ssh:disconnect', (_event, connectionId: string) => {
-    const conn = sshService.get(connectionId)
-    if (conn) {
-      LogService.disconnectedByUser(logService, conn.sessionId)
-    }
-    getHealthService().stopMonitoring(connectionId)
-    getMonitorService().removeMonitoring(connectionId)
-    cleanupSFTP(connectionId)
-    sshService.disconnect(connectionId)
+    disconnectConnection(connectionId)
   })
 
   ipcMain.handle('ssh:isConnected', (_event, connectionId: string) => {
@@ -294,6 +290,17 @@ export function registerSSHIPC(): void {
     const conn = sshService.get(connectionId)
     conn?.cancelReconnection()
   })
+}
+
+export function disconnectConnection(connectionId: string): void {
+  const conn = sshService.get(connectionId)
+  if (conn) {
+    LogService.disconnectedByUser(getLogService(), conn.sessionId)
+  }
+  getHealthService().stopMonitoring(connectionId)
+  getMonitorService().removeMonitoring(connectionId)
+  cleanupSFTP(connectionId)
+  sshService.disconnect(connectionId)
 }
 
 /** Get the SSH service singleton (for use by other IPC modules) */

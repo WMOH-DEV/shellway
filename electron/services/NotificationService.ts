@@ -30,15 +30,12 @@ export class NotificationService {
   }
 
   /** Show a transfer complete notification. */
-  notifyTransferComplete(filename: string): void {
+  notifyTransferComplete({ title, body }: { title: string; body: string }): void {
     const settings = this.settingsStore.getAll()
     if (!settings.notificationsEnabled || !settings.notifyOnTransferComplete) return
     if (this.isWindowFocused()) return
 
-    this.show({
-      title: 'Transfer Complete',
-      body: `Transfer complete: ${filename}`
-    })
+    this.show({ title, body })
   }
 
   private isWindowFocused(): boolean {

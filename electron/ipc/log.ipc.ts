@@ -1,5 +1,6 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import { getLogService } from '../services/LogService'
+import { broadcast } from '../services/WindowManager'
 
 /**
  * Register log-related IPC handlers.
@@ -17,12 +18,7 @@ export function registerLogIPC(): void {
 
   // Forward log entries to all renderer windows in real time
   logService.on('entry', (sessionId: string, entry: unknown) => {
-    const windows = BrowserWindow.getAllWindows()
-    for (const win of windows) {
-      if (!win.isDestroyed()) {
-        win.webContents.send('log:entry', sessionId, entry)
-      }
-    }
+    broadcast('log:entry', sessionId, entry)
   })
 
   ipcMain.handle('log:getEntries', (_event, sessionId: string) => {

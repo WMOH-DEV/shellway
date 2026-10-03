@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { matchesBinding } from '@/stores/keybindingStore'
+import { openEmptyWindow } from '@/utils/windowHandoff'
 
 /**
  * Global keyboard shortcuts for quick-launch actions.
@@ -9,6 +10,12 @@ import { matchesBinding } from '@/stores/keybindingStore'
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (matchesBinding(e, 'global:newWindow')) {
+        e.preventDefault()
+        openEmptyWindow()
+        return
+      }
+
       // ── New terminal tab ──
       if (matchesBinding(e, 'global:newTerminalTab')) {
         e.preventDefault()

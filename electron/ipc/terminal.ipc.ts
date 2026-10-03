@@ -1,10 +1,69 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { getSSHService } from './ssh.ipc'
 import { getLogService, LogService } from '../services/LogService'
 import type { ClientChannel } from 'ssh2'
 
 /** Active shell channels by shellId */
 const activeShells = new Map<string, ClientChannel>()
+/** Window currently showing each shell — changes when a tab moves to another window */
+const shellOwners = new Map<string, WebContents>()
+
+function sendToOwner(shellId: string, channel: string, ...args: unknown[]): void {
+  const owner = shellOwners.get(shellId)
+  if (owner && !owner.isDestroyed()) owner.send(channel, ...args)
+}
+
+const MAX_DETACHED_OUTPUT = 256 * 1024
+const detachedOutput = new Map<string, string>()
+
+function deliverOutput(shellId: string, data: string): void {
+  const backlog = detachedOutput.get(shellId)
+  if (backlog === undefined) {
+    sendToOwner(shellId, 'terminal:data', shellId, data)
+    return
+  }
+  detachedOutput.set(shellId, (backlog + data).slice(-MAX_DETACHED_OUTPUT))
+}
+
+function forgetShell(shellId: string): void {
+  activeShells.delete(shellId)
+  shellOwners.delete(shellId)
+  detachedOutput.delete(shellId)
+}
+
+const watchedOwners = new WeakSet<WebContents>()
+
+function closeShellsOwnedBy(owner: WebContents): void {
+  for (const [shellId, shellOwner] of shellOwners) {
+    if (shellOwner !== owner) continue
+    activeShells.get(shellId)?.end()
+    forgetShell(shellId)
+  }
+}
+
+export function detachShells(shellIds: string[]): string[] {
+  const detached = shellIds.filter((shellId) => activeShells.has(shellId))
+  for (const shellId of detached) {
+    shellOwners.delete(shellId)
+    if (!detachedOutput.has(shellId)) detachedOutput.set(shellId, '')
+  }
+  return detached
+}
+
+export function closeUnattachedShells(shellIds: string[]): void {
+  for (const shellId of shellIds) {
+    if (!detachedOutput.has(shellId) || shellOwners.has(shellId)) continue
+    activeShells.get(shellId)?.end()
+    forgetShell(shellId)
+  }
+}
+
+function setShellOwner(shellId: string, owner: WebContents): void {
+  shellOwners.set(shellId, owner)
+  if (watchedOwners.has(owner)) return
+  watchedOwners.add(owner)
+  owner.once('destroyed', () => closeShellsOwnedBy(owner))
+}
 
 /**
  * Register terminal IPC handlers.
@@ -14,6 +73,7 @@ const activeShells = new Map<string, ClientChannel>()
  *   terminal:write   → void (write data to shell)
  *   terminal:resize  → void (resize terminal)
  *   terminal:close   → void (close shell)
+ *   terminal:attach  → string | null (route an existing shell's output to the calling window; returns held output)
  *
  * Events sent to renderer:
  *   terminal:data    → (shellId, data) — shell output
@@ -44,10 +104,14 @@ export function registerTerminalIPC(): void {
           term: 'xterm-256color'
         })
 
-        activeShells.set(shellId, shell)
-        LogService.shellOpened(logService, conn.sessionId, shellId)
+        if (event.sender.isDestroyed()) {
+          shell.end()
+          return { success: false, error: 'Window closed' }
+        }
 
-        const win = BrowserWindow.fromWebContents(event.sender)
+        activeShells.set(shellId, shell)
+        setShellOwner(shellId, event.sender)
+        LogService.shellOpened(logService, conn.sessionId, shellId)
 
         // Forward shell output to renderer — batch rapid data chunks into a single
         // IPC message per tick. High-throughput output (e.g. `cat largefile.txt`)
@@ -60,9 +124,7 @@ export function registerTerminalIPC(): void {
           if (!flushScheduled) {
             flushScheduled = true
             process.nextTick(() => {
-              if (pendingData && win && !win.isDestroyed()) {
-                win.webContents.send('terminal:data', shellId, pendingData)
-              }
+              if (pendingData) deliverOutput(shellId, pendingData)
               pendingData = ''
               flushScheduled = false
             })
@@ -74,16 +136,16 @@ export function registerTerminalIPC(): void {
         // receives two terminal:exit events and LogService logs close twice).
         shell.on('close', () => {
           if (!activeShells.has(shellId)) return
-          activeShells.delete(shellId)
+          sendToOwner(shellId, 'terminal:exit', shellId, 0)
+          forgetShell(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
-          win?.webContents.send('terminal:exit', shellId, 0)
         })
 
         shell.on('exit', (code: number) => {
           if (!activeShells.has(shellId)) return
-          activeShells.delete(shellId)
+          sendToOwner(shellId, 'terminal:exit', shellId, code)
+          forgetShell(shellId)
           LogService.shellClosed(logService, conn.sessionId, shellId)
-          win?.webContents.send('terminal:exit', shellId, code)
         })
 
         return { success: true }
@@ -118,7 +180,15 @@ export function registerTerminalIPC(): void {
     const shell = activeShells.get(shellId)
     if (shell) {
       shell.end()
-      activeShells.delete(shellId)
+      forgetShell(shellId)
     }
+  })
+
+  ipcMain.handle('terminal:attach', (event, shellId: string) => {
+    if (!activeShells.has(shellId)) return null
+    setShellOwner(shellId, event.sender)
+    const backlog = detachedOutput.get(shellId) ?? ''
+    detachedOutput.delete(shellId)
+    return backlog
   })
 }

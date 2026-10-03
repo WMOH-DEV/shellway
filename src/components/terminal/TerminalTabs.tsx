@@ -17,15 +17,27 @@ import { resolveTerminalSettings, type ResolvedTerminalSettings } from '@/utils/
 import { formatCombo } from '@/utils/keybindings'
 import { getBinding } from '@/stores/keybindingStore'
 import type { AppSettings } from '@/types/settings'
+import {
+  adoptedShellsFor,
+  clearAdoptedShells,
+  forgetLiveShells,
+  recordLiveShells,
+  type TerminalShell
+} from '@/utils/terminalShells'
 
 interface TerminalTabsProps {
   connectionId: string
   connectionStatus?: string
 }
 
-interface TerminalTab {
-  id: string
-  name: string
+interface TerminalTab extends TerminalShell {
+  attachExisting?: boolean
+}
+
+function initialTabs(connectionId: string): TerminalTab[] {
+  const adopted = adoptedShellsFor(connectionId)
+  if (adopted && adopted.length > 0) return adopted.map((shell) => ({ ...shell, attachExisting: true }))
+  return [{ id: uuid(), name: 'Shell 1' }]
 }
 
 /**
@@ -50,10 +62,17 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
     })
   }, [session?.overrides?.terminal])
 
-  const [tabs, setTabs] = useState<TerminalTab[]>(() => [
-    { id: uuid(), name: 'Shell 1' }
-  ])
+  const [tabs, setTabs] = useState<TerminalTab[]>(() => initialTabs(connectionId))
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0].id)
+
+  useEffect(() => {
+    clearAdoptedShells(connectionId)
+    return () => forgetLiveShells(connectionId)
+  }, [connectionId])
+
+  useEffect(() => {
+    recordLiveShells(connectionId, tabs.map(({ id, name }) => ({ id, name })))
+  }, [connectionId, tabs])
   // Handler maps — stored as refs (not state) because they are lookup tables for
   // imperative callbacks, not drivers of UI rendering. Using useState caused 4
   // unnecessary re-renders per terminal tab creation.
@@ -277,6 +296,7 @@ export function TerminalTabs({ connectionId, connectionStatus }: TerminalTabsPro
           >
             <TerminalView
               shellId={tab.id}
+              attachExisting={tab.attachExisting}
               connectionId={connectionId}
               connectionStatus={connectionStatus}
               isActive={tab.id === activeTabId}

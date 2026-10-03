@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, Check, AlertCircle, Columns, ExternalLink } from 'lucide-react'
-import { cn } from '@/utils/cn'
+import { useEffect, useMemo, useState } from 'react'
+import { Wifi, WifiOff, Upload, Download, ArrowDownToLine, ArrowUpDown, Check, AlertCircle, Columns, ExternalLink, Loader2 } from 'lucide-react'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUpdateStore } from '@/stores/updateStore'
+import { useTransferStore } from '@/stores/transferStore'
+import { useUIStore } from '@/stores/uiStore'
 import { formatSpeed } from '@/utils/fileSize'
+import { summarizeTransfers, summaryPercent, type TransferSummary } from '@/utils/transferSummary'
 
 /**
  * Bottom status bar showing connection info, transfer progress, encoding,
@@ -181,11 +183,7 @@ export function StatusBar() {
       {/* Separator */}
       <div className="w-px h-3 bg-nd-border" />
 
-      {/* Transfer summary (placeholder) */}
-      <div className="flex items-center gap-1.5">
-        <Upload size={11} className="text-nd-text-muted" />
-        <span className="text-2xs text-nd-text-muted">No transfers</span>
-      </div>
+      <TransferStatus />
 
       {/* Split view indicator */}
       {isSplit && (
@@ -217,6 +215,106 @@ export function StatusBar() {
       {/* App info */}
       <span className="text-2xs text-nd-text-muted">Shellway v{__APP_VERSION__}</span>
     </footer>
+  )
+}
+
+const VERB = {
+  download: { running: 'Downloading', done: 'downloaded' },
+  upload: { running: 'Uploading', done: 'uploaded' },
+  mixed: { running: 'Transferring', done: 'transferred' }
+} as const
+
+function DirectionIcon({ direction, className }: { direction: TransferSummary['direction']; className: string }) {
+  if (direction === 'download') return <Download size={11} className={className} />
+  if (direction === 'upload') return <Upload size={11} className={className} />
+  return <ArrowUpDown size={11} className={className} />
+}
+
+function fileCount(count: number): string {
+  return `${count.toLocaleString()} file${count === 1 ? '' : 's'}`
+}
+
+function TransferStatus() {
+  const transfers = useTransferStore((s) => s.transfers)
+  const batchIds = useTransferStore((s) => s.batchIds)
+  const scans = useTransferStore((s) => s.scans)
+
+  const summary = useMemo(
+    () => summarizeTransfers(transfers.filter((t) => batchIds.has(t.id))),
+    [transfers, batchIds]
+  )
+
+  const openTransfersPanel = () => {
+    const ui = useUIStore.getState()
+    ui.setBottomPanelTab('transfers')
+    if (!ui.transferQueueOpen) ui.toggleTransferQueue()
+  }
+
+  const scanLabel = scans.length > 0 ? `Scanning ${scans.map((s) => s.groupName).join(', ')}…` : null
+
+  if (summary.totalFiles === 0 && !scanLabel) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Upload size={11} className="text-nd-text-muted" />
+        <span className="text-2xs text-nd-text-muted">No transfers</span>
+      </div>
+    )
+  }
+
+  if (summary.totalFiles === 0 && scanLabel) {
+    return (
+      <button onClick={openTransfersPanel} className="flex items-center gap-1.5 text-2xs text-nd-text-secondary hover:text-nd-text-primary">
+        <Loader2 size={11} className="animate-spin text-nd-accent" />
+        {scanLabel}
+      </button>
+    )
+  }
+
+  const verb = VERB[summary.direction]
+
+  if (!summary.isRunning) {
+    const outcome = [
+      `${fileCount(summary.doneFiles)} ${verb.done}`,
+      summary.failedFiles > 0 && `${summary.failedFiles.toLocaleString()} failed`,
+      summary.cancelledFiles > 0 && `${summary.cancelledFiles.toLocaleString()} cancelled`
+    ].filter(Boolean).join(', ')
+    const hasFailures = summary.failedFiles > 0
+    return (
+      <button onClick={openTransfersPanel} className="flex items-center gap-1.5 text-2xs hover:text-nd-text-primary">
+        {hasFailures
+          ? <AlertCircle size={11} className="text-nd-error" />
+          : <Check size={11} className="text-nd-success" />}
+        <span className={hasFailures ? 'text-nd-error' : 'text-nd-text-muted'}>{outcome}</span>
+      </button>
+    )
+  }
+
+  const percent = summaryPercent(summary)
+  return (
+    <button
+      onClick={openTransfersPanel}
+      className="flex items-center gap-1.5 text-2xs text-nd-text-secondary hover:text-nd-text-primary"
+      title="Show transfers"
+    >
+      <DirectionIcon direction={summary.direction} className="text-nd-accent shrink-0" />
+      <span className="whitespace-nowrap">
+        {verb.running} {summary.doneFiles.toLocaleString()} / {fileCount(summary.totalFiles)}
+      </span>
+      <div className="w-28 h-1.5 rounded-full bg-nd-surface overflow-hidden shrink-0">
+        <div
+          className="h-full rounded-full bg-nd-accent transition-all duration-300 ease-out"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className="text-nd-text-muted tabular-nums w-8 text-right shrink-0">{percent}%</span>
+      {summary.speed > 0 && (
+        <span className="text-nd-text-muted tabular-nums shrink-0">{formatSpeed(summary.speed)}</span>
+      )}
+      {summary.failedFiles > 0 && (
+        <span className="text-nd-error shrink-0">{summary.failedFiles.toLocaleString()} failed</span>
+      )}
+      {scanLabel && <span className="text-nd-text-muted truncate max-w-48">{scanLabel}</span>}
+    </button>
   )
 }
 

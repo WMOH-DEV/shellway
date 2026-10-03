@@ -1,5 +1,7 @@
-import { useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
+  ChevronRight,
+  Folder,
   Pause,
   Play,
   X,
@@ -11,35 +13,45 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { useTransferStore } from '@/stores/transferStore'
+import { cn } from '@/utils/cn'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { formatFileSize, formatSpeed } from '@/utils/fileSize'
-import type { TransferItem } from '@/types/transfer'
+import { summarizeTransfers, summaryPercent } from '@/utils/transferSummary'
+import type { TrackedTransfer } from '@/types/transfer'
 
-interface TransferQueueProps {
-  connectionId: string
+type QueueEntry =
+  | { kind: 'file'; transfer: TrackedTransfer }
+  | { kind: 'group'; groupId: string; name: string; transfers: TrackedTransfer[] }
+
+function groupTransfers(transfers: TrackedTransfer[]): QueueEntry[] {
+  const entries: QueueEntry[] = []
+  const groups = new Map<string, Extract<QueueEntry, { kind: 'group' }>>()
+  for (const transfer of transfers) {
+    if (!transfer.groupId) {
+      entries.push({ kind: 'file', transfer })
+      continue
+    }
+    let group = groups.get(transfer.groupId)
+    if (!group) {
+      group = { kind: 'group', groupId: transfer.groupId, name: transfer.groupName ?? transfer.groupId, transfers: [] }
+      groups.set(transfer.groupId, group)
+      entries.push(group)
+    }
+    group.transfers.push(transfer)
+  }
+  return entries
 }
 
 /**
  * Transfer queue panel — shows active, queued, completed, and failed transfers.
  */
-export function TransferQueue({ connectionId }: TransferQueueProps) {
-  const { transfers, updateTransfer, clearCompleted } = useTransferStore()
-
-  // Listen for transfer updates from main process
-  useEffect(() => {
-    const unsubUpdate = window.novadeck.sftp.onTransferUpdate((_connId, item) => {
-      updateTransfer(item as TransferItem)
-    })
-    const unsubComplete = window.novadeck.sftp.onTransferComplete((_connId, item) => {
-      updateTransfer(item as TransferItem)
-    })
-    return () => {
-      unsubUpdate()
-      unsubComplete()
-    }
-  }, [updateTransfer])
+export function TransferQueue() {
+  const transfers = useTransferStore((s) => s.transfers)
+  const scans = useTransferStore((s) => s.scans)
+  const clearCompleted = useTransferStore((s) => s.clearCompleted)
+  const entries = useMemo(() => groupTransfers(transfers), [transfers])
 
   return (
     <div className="h-full flex flex-col">
@@ -61,27 +73,84 @@ export function TransferQueue({ connectionId }: TransferQueueProps) {
 
       {/* Transfer list */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {transfers.length === 0 ? (
+        {scans.map((scan) => (
+          <div key={scan.groupId} className="flex items-center gap-2 px-3 py-1.5 text-xs text-nd-text-secondary">
+            <Spinner size={10} />
+            <Folder size={12} className="text-nd-text-muted shrink-0" />
+            <span className="truncate">Scanning {scan.groupName}…</span>
+          </div>
+        ))}
+        {entries.length === 0 && scans.length === 0 ? (
           <div className="flex items-center justify-center h-full text-xs text-nd-text-muted">
             No transfers
           </div>
         ) : (
-          transfers.map((transfer) => (
-            <TransferRow key={transfer.id} transfer={transfer} connectionId={connectionId} />
-          ))
+          entries.map((entry) =>
+            entry.kind === 'group' ? (
+              <TransferGroupRow key={entry.groupId} name={entry.name} transfers={entry.transfers} />
+            ) : (
+              <TransferRow key={entry.transfer.id} transfer={entry.transfer} />
+            )
+          )
         )}
       </div>
     </div>
   )
 }
 
-function TransferRow({
-  transfer,
-  connectionId
-}: {
-  transfer: TransferItem
-  connectionId: string
-}) {
+function TransferGroupRow({ name, transfers }: { name: string; transfers: TrackedTransfer[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const summary = useMemo(() => summarizeTransfers(transfers), [transfers])
+  const percent = summaryPercent(summary)
+  const DirectionIcon = summary.direction === 'upload' ? Upload : Download
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-nd-surface/50 transition-colors text-left"
+      >
+        <ChevronRight
+          size={12}
+          className={cn('text-nd-text-muted shrink-0 transition-transform', expanded && 'rotate-90')}
+        />
+        <DirectionIcon size={12} className={summary.direction === 'upload' ? 'text-nd-accent shrink-0' : 'text-nd-success shrink-0'} />
+        <Folder size={12} className="text-nd-text-muted shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-nd-text-primary truncate">{name}</span>
+            <span className="text-2xs text-nd-text-muted shrink-0 tabular-nums">
+              {summary.doneFiles} / {summary.totalFiles} files · {formatFileSize(summary.transferredBytes)} / {formatFileSize(summary.totalBytes)}
+            </span>
+            {summary.failedFiles > 0 && (
+              <span className="text-2xs text-nd-error shrink-0">{summary.failedFiles} failed</span>
+            )}
+          </div>
+          {summary.isRunning && <ProgressBar value={percent} size="sm" className="mt-1" />}
+        </div>
+        {summary.isRunning ? (
+          <span className="text-2xs text-nd-text-muted shrink-0 tabular-nums w-16 text-right">
+            {formatSpeed(summary.speed)}
+          </span>
+        ) : summary.failedFiles > 0 ? (
+          <AlertCircle size={10} className="text-nd-error shrink-0" />
+        ) : (
+          <Check size={10} className="text-nd-success shrink-0" />
+        )}
+      </button>
+      {expanded && (
+        <div className="pl-5">
+          {transfers.map((transfer) => (
+            <TransferRow key={transfer.id} transfer={transfer} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TransferRow({ transfer }: { transfer: TrackedTransfer }) {
+  const { connectionId } = transfer
   const progress = transfer.totalBytes > 0
     ? (transfer.transferredBytes / transfer.totalBytes) * 100
     : 0

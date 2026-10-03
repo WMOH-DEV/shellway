@@ -53,8 +53,8 @@ export function matchesKeyCombo(e: KeyboardEvent, combo: string): boolean {
   if (e.shiftKey !== hasShift) return false
   if (e.altKey !== hasAlt) return false
 
-  // Compare key (case-insensitive)
-  return e.key.toLowerCase() === key
+  if (e.key.toLowerCase() === key) return true
+  return hasAlt && /^[a-z]$/.test(key) && e.code === `Key${key.toUpperCase()}`
 }
 
 /**

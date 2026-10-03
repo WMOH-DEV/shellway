@@ -57,6 +57,8 @@ import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
 import { initNotificationService } from "./services/NotificationService";
 import { getLogService } from "./services/LogService";
+import { createAppWindow, broadcast } from "./services/WindowManager";
+import { registerWindowIPC } from "./ipc/window.ipc";
 
 // ──── Global error handlers ────
 // Prevent unhandled errors from crashing the app with an ugly Electron dialog.
@@ -114,41 +116,7 @@ process.on("unhandledRejection", (reason) => {
 
 /** Create the main application window */
 function createWindow(): BrowserWindow {
-  const mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 960,
-    minHeight: 600,
-    show: false,
-    frame: false,
-    titleBarStyle: "hidden",
-    backgroundColor: "#0f1117",
-    icon: join(__dirname, "../../resources/icon.png"),
-    webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  mainWindow.on("ready-to-show", () => {
-    mainWindow.show();
-  });
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
-    return { action: "deny" };
-  });
-
-  // Load the renderer
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-  } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  }
-
-  return mainWindow;
+  return createAppWindow();
 }
 
 // ──── Window control IPC handlers ────
@@ -450,6 +418,7 @@ app.whenReady().then(() => {
   registerExportIPC();
   registerMonitorIPC();
   registerServiceManagerIPC();
+  registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)
   initNotificationService(getSettingsStore());
@@ -460,14 +429,6 @@ app.whenReady().then(() => {
   });
 
   const mainWindow = createWindow();
-
-  // Notify renderer on maximize/unmaximize
-  mainWindow.on("maximize", () => {
-    mainWindow.webContents.send("window:maximized-change", true);
-  });
-  mainWindow.on("unmaximize", () => {
-    mainWindow.webContents.send("window:maximized-change", false);
-  });
 
   // Ensure isQuitting is set for all quit paths (Cmd+Q, taskbar close, etc.)
   app.on("before-quit", () => {
@@ -525,12 +486,7 @@ app.whenReady().then(() => {
       debug: (msg: unknown) => console.log("[auto-updater:debug]", msg),
     };
 
-    /** Safely send IPC to renderer (window may be destroyed during async updater events) */
-    const sendUpdaterEvent = (channel: string, ...args: unknown[]) => {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(channel, ...args);
-      }
-    };
+    const sendUpdaterEvent = broadcast;
 
     autoUpdater.on("checking-for-update", () => {
       sendUpdaterEvent("updater:checking-for-update");
@@ -624,7 +580,7 @@ app.whenReady().then(() => {
     try {
       getLogService().log("__system__", "info", "system", "System resumed from sleep — checking connections");
     } catch { /* ignore */ }
-    mainWindow.webContents.send("system:resume");
+    broadcast("system:resume");
   });
 
   powerMonitor.on("suspend", () => {

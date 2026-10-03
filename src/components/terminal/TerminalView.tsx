@@ -14,6 +14,7 @@ import type { ResolvedTerminalSettings } from '@/utils/resolveSettings'
 interface TerminalViewProps {
   /** Unique ID for this shell */
   shellId: string
+  attachExisting?: boolean
   /** Connection ID this terminal belongs to */
   connectionId: string
   /** Current SSH connection status — shell only opens when 'connected' */
@@ -56,6 +57,7 @@ const DEFAULTS = {
 
 export function TerminalView({
   shellId,
+  attachExisting,
   connectionId,
   connectionStatus,
   isActive,
@@ -358,6 +360,16 @@ export function TerminalView({
     const terminal = terminalRef.current
     const openShell = async () => {
       const { cols, rows } = terminal
+      const backlog = attachExisting ? await window.novadeck.terminal.attach(shellId) : null
+      if (backlog !== null) {
+        terminal.write('\x1b[2m[session moved from another window]\x1b[0m\r\n')
+        if (backlog) terminal.write(backlog)
+        window.novadeck.terminal.resize(shellId, cols, Math.max(1, rows - 1))
+        window.novadeck.terminal.resize(shellId, cols, rows)
+        setIsReady(true)
+        return
+      }
+      if (attachExisting) terminal.write('\x1b[2m[previous session ended — started a new shell]\x1b[0m\r\n')
       const result = await window.novadeck.terminal.open(connectionId, shellId, { cols, rows })
       if (!result.success) {
         terminal.write(`\x1b[31mFailed to open shell: ${result.error}\x1b[0m\r\n`)
@@ -365,7 +377,7 @@ export function TerminalView({
       setIsReady(true)
     }
     openShell()
-  }, [connectionStatus, connectionId, shellId, isReady])
+  }, [connectionStatus, connectionId, shellId, isReady, attachExisting])
 
   // Re-fit when becoming active — wait for the container to be visible before fitting
   useEffect(() => {
