@@ -13,7 +13,8 @@ import {
   Github,
   Shield,
   Cpu,
-  Bell
+  Bell,
+  Database
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
@@ -29,6 +30,7 @@ import { KeybindingsSection } from '@/components/settings/KeybindingsSection'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
 import { useUpdateStore } from '@/stores/updateStore'
+import type { FilterMatch } from '@/types/sql'
 import type { AppSettings, Theme, CursorStyle, BellBehavior, InterfaceDensity, SFTPViewMode, SFTPAutocompleteMode, SFTPDoubleClickAction, SFTPConflictResolution } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
@@ -51,6 +53,7 @@ const SECTIONS: TabItem[] = [
   { id: 'appearance', label: 'Appearance', icon: <Palette size={13} /> },
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
+  { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'connection', label: 'Connection', icon: <Wifi size={13} /> },
   { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={13} /> },
   { id: 'about', label: 'About', icon: <Info size={13} /> }
@@ -466,6 +469,23 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 </SettingsSection>
               </div>
             </>
+          )}
+
+          {activeSection === 'sql' && (
+            <SettingsSection title="Table Filters">
+              <Select
+                label="Default Filter Match"
+                value={settings.sqlDefaultFilterMatch}
+                onChange={(e) => update('sqlDefaultFilterMatch', e.target.value as FilterMatch)}
+                options={[
+                  { value: 'all', label: 'All filters must match (AND)' },
+                  { value: 'any', label: 'Any filter can match (OR)' }
+                ]}
+              />
+              <p className="text-2xs text-nd-text-muted">
+                Used for tables where you haven't picked All or Any yourself.
+              </p>
+            </SettingsSection>
           )}
 
           {activeSection === 'connection' && (

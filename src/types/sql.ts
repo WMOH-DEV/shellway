@@ -196,6 +196,8 @@ export type FilterOperator =
   | "between"
   | "raw_sql";
 
+export type FilterMatch = 'all' | 'any';
+
 export interface TableFilter {
   id: string;
   enabled: boolean;

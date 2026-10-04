@@ -1,4 +1,4 @@
-import type { TableFilter, DatabaseType, FilterOperator } from '@/types/sql'
+import type { TableFilter, DatabaseType, FilterOperator, FilterMatch } from '@/types/sql'
 
 export const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
 
@@ -48,7 +48,8 @@ function parseInValues(raw: string): string[] {
 
 export function buildWhereClause(
   filters: TableFilter[],
-  dbType: DatabaseType
+  dbType: DatabaseType,
+  match: FilterMatch = 'all'
 ): FilterBuildResult {
   const enabledFilters = filters.filter((f) => f.enabled)
 
@@ -212,6 +213,10 @@ export function buildWhereClause(
 
   if (built.length === 0) {
     return { where: '', params: [] }
+  }
+
+  if (match === 'any') {
+    return { where: `WHERE ${built.map((b) => b.sql).join(' OR ')}`, params }
   }
 
   // Group clauses by column — same-column filters are OR'd, different columns

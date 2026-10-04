@@ -31,6 +31,18 @@ describe('buildWhereClause', () => {
   })
 })
 
+describe('buildWhereClause with match any', () => {
+  it('ORs every active filter, across and within columns', () => {
+    const { where, params } = buildWhereClause(
+      [filter('id', '1'), filter('title', 'naruto'), filter('title', 'bleach'), filter('status', 'x', false)],
+      'mysql',
+      'any'
+    )
+    expect(where).toBe('WHERE `id` = ? OR `title` = ? OR `title` = ?')
+    expect(params).toEqual(['1', 'naruto', 'bleach'])
+  })
+})
+
 describe('filtersForApplyAll', () => {
   it('keeps unticked filters off and skips ticked ones with no value', () => {
     const result = filtersForApplyAll([

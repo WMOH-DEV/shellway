@@ -38,6 +38,7 @@ import type {
   SchemaIndex,
   SchemaForeignKey,
   SafeMode,
+  FilterMatch,
 } from "@/types/sql";
 
 // Lazy-load StructureTabView — only needed when user toggles to structure mode
@@ -84,6 +85,7 @@ function buildDataQuery(opts: {
   pageSize: number;
   sortKeys?: SortKey[];
   filters: TableFilter[];
+  filterMatch: FilterMatch;
   /** Primary key columns — used as default ORDER BY when no explicit sort is set */
   primaryKeyColumns?: string[];
 }): { query: string; params: unknown[] } {
@@ -95,11 +97,12 @@ function buildDataQuery(opts: {
     pageSize,
     sortKeys,
     filters,
+    filterMatch,
     primaryKeyColumns,
   } = opts;
 
   const fullTable = buildFullTableName(table, schema, dbType);
-  const { where, params } = buildWhereClause(filters, dbType);
+  const { where, params } = buildWhereClause(filters, dbType, filterMatch);
 
   let query = `SELECT * FROM ${fullTable}`;
 
@@ -136,14 +139,47 @@ function buildDataQuery(opts: {
   return { query, params };
 }
 
+function filterMatchKey(filtersKey: string): string {
+  return `${filtersKey}:match`;
+}
+
+function isFilterMatch(value: unknown): value is FilterMatch {
+  return value === "all" || value === "any";
+}
+
+function readSavedFilterMatch(filtersKey: string | undefined): FilterMatch | null {
+  if (!filtersKey) return null;
+  try {
+    const saved = localStorage.getItem(filterMatchKey(filtersKey));
+    return isFilterMatch(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveFilterMatch(filtersKey: string | undefined, match: FilterMatch): void {
+  if (!filtersKey) return;
+  try {
+    localStorage.setItem(filterMatchKey(filtersKey), match);
+  } catch {
+    return;
+  }
+}
+
+async function loadDefaultFilterMatch(): Promise<FilterMatch> {
+  const settings = await window.novadeck.settings.getAll();
+  return isFilterMatch(settings?.sqlDefaultFilterMatch) ? settings.sqlDefaultFilterMatch : "all";
+}
+
 function buildCountQuery(
   table: string,
   schema: string | undefined,
   dbType: DatabaseType,
   filters: TableFilter[],
+  filterMatch: FilterMatch,
 ): { query: string; params: unknown[] } {
   const fullTable = buildFullTableName(table, schema, dbType);
-  const { where, params } = buildWhereClause(filters, dbType);
+  const { where, params } = buildWhereClause(filters, dbType, filterMatch);
   let query = `SELECT COUNT(*) AS count FROM ${fullTable}`;
   if (where) query += ` ${where}`;
   return { query, params };
@@ -289,6 +325,9 @@ export const DataTabView = React.memo(function DataTabView({
     useState<PaginationState>(defaultPagination);
   const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
   const [filters, setFilters] = useState<TableFilter[]>([]);
+  const [filterMatch, setFilterMatch] = useState<FilterMatch>("all");
+  const filterMatchRef = useRef<FilterMatch>("all");
+  const hasChosenFilterMatchRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [executionTimeMs, setExecutionTimeMs] = useState<number | undefined>();
@@ -424,6 +463,7 @@ export const DataTabView = React.memo(function DataTabView({
           pageSize,
           sortKeys: sortKeysArg,
           filters: currentFilters,
+          filterMatch: filterMatchRef.current,
           primaryKeyColumns: primaryKeyColumnsRef.current,
         });
 
@@ -558,7 +598,7 @@ export const DataTabView = React.memo(function DataTabView({
               });
             } else if (estimatedRows <= EXACT_COUNT_THRESHOLD) {
               // Small table — run exact COUNT(*) automatically (includes filters).
-              const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, currentFilters);
+              const { query: countQuery, params: countParams } = buildCountQuery(table, schema, dbType, currentFilters, filterMatchRef.current);
               const exactCountQid = crypto.randomUUID();
               countQueryIdRef.current = exactCountQid;
               const countResponse = await (window as any).novadeck.sql.query(
@@ -910,6 +950,36 @@ export const DataTabView = React.memo(function DataTabView({
       discardPendingChanges,
       filtersKey,
     ],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const applyMatch = (match: FilterMatch) => {
+      setFilterMatch(match);
+      filterMatchRef.current = match;
+    };
+    hasChosenFilterMatchRef.current = false;
+    const saved = readSavedFilterMatch(filtersKey);
+    applyMatch(saved ?? "all");
+    if (!saved) {
+      loadDefaultFilterMatch()
+        .then((match) => {
+          if (!cancelled && !hasChosenFilterMatchRef.current) applyMatch(match);
+        })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [filtersKey]);
+
+  const handleFilterMatchChange = useCallback(
+    (match: FilterMatch) => {
+      hasChosenFilterMatchRef.current = true;
+      setFilterMatch(match);
+      filterMatchRef.current = match;
+      saveFilterMatch(filtersKey, match);
+      if (isDataFiltered) handleFiltersApply();
+    },
+    [filtersKey, isDataFiltered, handleFiltersApply],
   );
 
   // ── Staged insert rows (computed early — used by handleCellEdit) ──
@@ -1868,6 +1938,7 @@ export const DataTabView = React.memo(function DataTabView({
         schema,
         dbType,
         filters,
+        filterMatchRef.current,
       );
       const countResponse = await (window as any).novadeck.sql.query(
         sqlSessionId,
@@ -1951,6 +2022,8 @@ export const DataTabView = React.memo(function DataTabView({
           onApply={handleFiltersApply}
           externalFocusFilterId={focusFilterId}
           isDataFiltered={isDataFiltered}
+          match={filterMatch}
+          onMatchChange={handleFilterMatchChange}
         />
       )}
 

@@ -4,7 +4,7 @@ import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import type { TableFilter, FilterOperator, QueryField } from '@/types/sql'
+import type { TableFilter, FilterOperator, FilterMatch, QueryField } from '@/types/sql'
 import { filtersForApplyAll, NO_VALUE_OPERATORS } from '@/utils/sqlFilterBuilder'
 
 // ── Operator definitions by column-type category ──
@@ -115,6 +115,8 @@ interface FilterBarProps {
   /** Whether the currently displayed data was fetched with active filters.
    *  Used to decide whether removing all filters should auto-refresh. */
   isDataFiltered?: boolean
+  match: FilterMatch
+  onMatchChange: (match: FilterMatch) => void
 }
 
 
@@ -341,6 +343,37 @@ function createEmptyFilter(columns: QueryField[], sourceFilter?: TableFilter): T
   }
 }
 
+const MATCH_OPTIONS: { value: FilterMatch; label: string; title: string }[] = [
+  { value: 'all', label: 'All', title: 'Rows must match every filter' },
+  { value: 'any', label: 'Any', title: 'Rows can match any filter' },
+]
+
+function MatchToggle({ match, onChange }: { match: FilterMatch; onChange: (match: FilterMatch) => void }) {
+  return (
+    <div className="flex items-center gap-1 mr-2 text-xs text-nd-text-muted">
+      <span>Match</span>
+      <div className="flex rounded border border-nd-border overflow-hidden">
+        {MATCH_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            title={option.title}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'px-1.5 h-5 transition-colors',
+              match === option.value
+                ? 'bg-nd-accent/20 text-nd-accent'
+                : 'hover:bg-nd-surface hover:text-nd-text-secondary'
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export const FilterBar = React.memo(function FilterBar({
   filters,
   columns,
@@ -348,6 +381,8 @@ export const FilterBar = React.memo(function FilterBar({
   onApply,
   externalFocusFilterId,
   isDataFiltered,
+  match,
+  onMatchChange,
 }: FilterBarProps) {
   const activeCount = filters.filter((f) => f.enabled).length
 
@@ -457,6 +492,7 @@ export const FilterBar = React.memo(function FilterBar({
         <div className="flex-1" />
 
         {/* Right: Clear + Apply All */}
+        {filters.length > 1 && <MatchToggle match={match} onChange={onMatchChange} />}
         {filters.length > 0 && (
           <>
             <Button

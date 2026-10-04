@@ -1,4 +1,5 @@
 import { DEFAULT_KEYBINDINGS } from './keybindings'
+import type { FilterMatch } from './sql'
 
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system'
@@ -59,6 +60,8 @@ export interface AppSettings {
   sftpBandwidthLimitDown: number       // 0 = unlimited, in KB/s (download)
   sftpDefaultApps: Record<string, string>  // Maps file extension (e.g. '.log') → app path
   sftpAutocompleteMode: SFTPAutocompleteMode  // 'content' = fetch dir listings, 'history' = visited paths only
+
+  sqlDefaultFilterMatch: FilterMatch
 
   // Connection
   connectionKeepAliveInterval: number  // seconds
@@ -122,6 +125,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpBandwidthLimitDown: 0,
   sftpDefaultApps: {},
   sftpAutocompleteMode: 'content',
+
+  sqlDefaultFilterMatch: 'all',
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

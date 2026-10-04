@@ -37,6 +37,9 @@ export interface AppSettings {
   sftpDefaultApps: Record<string, string>  // Maps file extension (e.g. '.log') → app path
   sftpAutocompleteMode: 'content' | 'history'
 
+  // SQL
+  sqlDefaultFilterMatch: 'all' | 'any'
+
   // Connection
   connectionKeepAliveInterval: number
   connectionTimeout: number
@@ -98,6 +101,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   sftpBandwidthLimitDown: 0,
   sftpDefaultApps: {},
   sftpAutocompleteMode: 'content',
+
+  sqlDefaultFilterMatch: 'all',
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,
