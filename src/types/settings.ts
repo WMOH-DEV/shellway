@@ -126,7 +126,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpDefaultApps: {},
   sftpAutocompleteMode: 'content',
 
-  sqlDefaultFilterMatch: 'all',
+  sqlDefaultFilterMatch: 'any',
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

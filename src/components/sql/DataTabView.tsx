@@ -168,7 +168,7 @@ function saveFilterMatch(filtersKey: string | undefined, match: FilterMatch): vo
 
 async function loadDefaultFilterMatch(): Promise<FilterMatch> {
   const settings = await window.novadeck.settings.getAll();
-  return isFilterMatch(settings?.sqlDefaultFilterMatch) ? settings.sqlDefaultFilterMatch : "all";
+  return isFilterMatch(settings?.sqlDefaultFilterMatch) ? settings.sqlDefaultFilterMatch : "any";
 }
 
 function buildCountQuery(
@@ -325,8 +325,8 @@ export const DataTabView = React.memo(function DataTabView({
     useState<PaginationState>(defaultPagination);
   const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
   const [filters, setFilters] = useState<TableFilter[]>([]);
-  const [filterMatch, setFilterMatch] = useState<FilterMatch>("all");
-  const filterMatchRef = useRef<FilterMatch>("all");
+  const [filterMatch, setFilterMatch] = useState<FilterMatch>("any");
+  const filterMatchRef = useRef<FilterMatch>("any");
   const hasChosenFilterMatchRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -960,7 +960,7 @@ export const DataTabView = React.memo(function DataTabView({
     };
     hasChosenFilterMatchRef.current = false;
     const saved = readSavedFilterMatch(filtersKey);
-    applyMatch(saved ?? "all");
+    applyMatch(saved ?? "any");
     if (!saved) {
       loadDefaultFilterMatch()
         .then((match) => {

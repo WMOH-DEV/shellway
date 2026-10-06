@@ -27,12 +27,6 @@ function placeholder(dbType: DatabaseType, index: number): string {
   return `$${index}`
 }
 
-/** One successfully-built SQL fragment paired with the column it filters. */
-interface BuiltClause {
-  column: string
-  sql: string
-}
-
 /**
  * Parse a comma-separated list for `IN` / `NOT IN`, trimming whitespace and
  * dropping empty entries. Returns an empty array when no valid values remain,
@@ -57,17 +51,13 @@ export function buildWhereClause(
     return { where: '', params: [] }
   }
 
-  // Keep (column, sql) pairs together so that filters which get skipped
-  // (e.g. a raw_sql with a forbidden keyword, or an `IN` with no valid
-  // values) don't desync a parallel clauses[]/enabledFilters[] index map
-  // downstream. The grouping step at the bottom reads from built[] directly.
-  const built: BuiltClause[] = []
+  const built: string[] = []
   const params: unknown[] = []
   let paramIndex = 1
 
   for (const filter of enabledFilters) {
     const col = quoteColumn(filter.column, dbType)
-    const push = (sql: string) => built.push({ column: filter.column, sql })
+    const push = (sql: string) => built.push(sql)
 
     switch (filter.operator) {
       case 'equals': {
@@ -215,31 +205,6 @@ export function buildWhereClause(
     return { where: '', params: [] }
   }
 
-  if (match === 'any') {
-    return { where: `WHERE ${built.map((b) => b.sql).join(' OR ')}`, params }
-  }
-
-  // Group clauses by column — same-column filters are OR'd, different columns
-  // are AND'd. This makes "id = 1, id = 2" produce "WHERE (id = 1 OR id = 2)"
-  // instead of "WHERE id = 1 AND id = 2". Iteration order of the built[]
-  // array is preserved in the Map, which preserves the original filter order
-  // across different columns for deterministic SQL output.
-  const clausesByColumn = new Map<string, string[]>()
-  for (const { column, sql } of built) {
-    const existing = clausesByColumn.get(column)
-    if (existing) {
-      existing.push(sql)
-    } else {
-      clausesByColumn.set(column, [sql])
-    }
-  }
-
-  const grouped = [...clausesByColumn.values()].map((group) =>
-    group.length === 1 ? group[0] : `(${group.join(' OR ')})`
-  )
-
-  return {
-    where: `WHERE ${grouped.join(' AND ')}`,
-    params,
-  }
+  const joiner = match === 'any' ? ' OR ' : ' AND '
+  return { where: `WHERE ${built.join(joiner)}`, params }
 }

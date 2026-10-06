@@ -16,9 +16,9 @@ describe('buildWhereClause', () => {
     expect(params).toEqual(['a', 'open'])
   })
 
-  it('ORs filters on the same column', () => {
+  it('ANDs filters on the same column', () => {
     const { where } = buildWhereClause([filter('title', 'a'), filter('title', 'b')], 'mysql')
-    expect(where).toBe('WHERE (`title` = ? OR `title` = ?)')
+    expect(where).toBe('WHERE `title` = ? AND `title` = ?')
   })
 
   it('ignores disabled filters', () => {
