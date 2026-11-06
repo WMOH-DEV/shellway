@@ -99,6 +99,11 @@ describe('summary strip', () => {
     })
     expect(liveCaption(summary)).toBe('from PC · 2 h ago · release d2')
     expect(liveCaption(makeSummary({ config: { layout: 'inplace' } }))).toBe('')
+    const afterEnvChange = makeSummary({
+      state: { current: 'aaa', currentRelease: 'd2', now: 7400 },
+      history: [makeRecord({ id: 'e1', commit: 'aaa', trigger: 'env', finished: 7300 }), makeRecord({ id: 'd2', commit: 'aaa', trigger: 'auto', finished: 200 })]
+    })
+    expect(liveCaption(afterEnvChange)).toBe('auto · 2 h ago · release d2')
   })
 
   it('describes the newest commit on the branch', () => {

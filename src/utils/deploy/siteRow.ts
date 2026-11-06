@@ -98,7 +98,7 @@ export function runsCaption(summary: SiteSummary): string {
 
 export function liveRecord(summary: SiteSummary): DeployRecord | undefined {
   const { current } = summary.state
-  return summary.history.find((r) => r.commit === current && (r.status === 'success' || r.status === 'warning'))
+  return summary.history.find((r) => r.commit === current && r.trigger !== 'env' && (r.status === 'success' || r.status === 'warning'))
 }
 
 export function triggerLabel(trigger: string): string {
