@@ -24,7 +24,7 @@ function OutputLines({ output }: { output: string }) {
   return (
     <>
       {lines.map((line) => (
-        <div key={line.n} data-tone={line.tone} className={cn('-mx-3 whitespace-pre-wrap break-words px-3', line.tone === 'error' ? 'bg-nd-error/10 text-nd-error' : line.tone === 'warning' ? 'text-nd-warning' : 'text-nd-text-secondary')}>
+        <div key={line.n} data-tone={line.tone} className={cn('-mx-3 whitespace-pre-wrap break-words px-3', line.tone === 'error' ? 'bg-nd-error/10 text-nd-error-fg' : line.tone === 'warning' ? 'text-nd-warning-fg' : 'text-nd-text-secondary')}>
           {line.text}
         </div>
       ))}
@@ -35,7 +35,7 @@ function OutputLines({ output }: { output: string }) {
 function Hint({ text }: { text: string }) {
   return (
     <div className="flex items-start gap-2.5 text-[13px] text-nd-text-secondary">
-      <Info size={15} className="mt-px shrink-0 text-nd-info" />
+      <Info size={15} className="mt-px shrink-0 text-nd-info-fg" />
       <span>{text}</span>
     </div>
   )
@@ -58,7 +58,7 @@ export function RenewalCard({ renewal }: { renewal: RenewalInfo }) {
         </>
       }
     >
-      <div className="max-h-72 overflow-auto rounded-lg border border-nd-border bg-nd-bg-primary px-3 py-2.5 font-mono text-xs leading-[1.7]">
+      <div className="max-h-72 overflow-auto rounded-lg border border-nd-border bg-nd-bg-sunken px-3 py-2.5 font-mono text-xs leading-[1.7]">
         <OutputLines output={renewal.output} />
       </div>
       {hint && <Hint text={hint} />}

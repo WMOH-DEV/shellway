@@ -16,14 +16,13 @@ export function IssueOptions({ issue }: { issue: Issue }) {
   const locked = issue.run.running
   const invalid = issue.email.trim() !== '' && !isValidEmail(issue.email.trim())
   return (
-    <section aria-label="Options" className="flex flex-wrap items-start gap-x-7 gap-y-4 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-4">
+    <section aria-label="Options" className="flex flex-wrap items-start gap-x-7 gap-y-4 rounded-[10px] border border-nd-border bg-nd-surface p-4">
       <div className="min-w-[260px] flex-1">
         <Input
           label="Email for Let's Encrypt"
           type="email"
           autoComplete="email"
           spellCheck={false}
-          className="bg-nd-bg-primary"
           placeholder="admin@example.com"
           value={issue.email}
           disabled={locked}

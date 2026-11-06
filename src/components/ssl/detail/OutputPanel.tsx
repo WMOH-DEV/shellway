@@ -21,7 +21,7 @@ interface OutputPanelProps {
 function OutcomeLine({ outcome }: { outcome: PanelOutcome }) {
   const Icon = outcome.success ? Check : X
   return (
-    <span role="status" className={cn('flex items-center gap-1.5 text-xs font-medium', outcome.success ? 'text-nd-success' : 'text-nd-error')}>
+    <span role="status" className={cn('flex items-center gap-1.5 text-xs font-medium', outcome.success ? 'text-nd-success-fg' : 'text-nd-error-fg')}>
       <Icon size={13} /> {outcome.message}
     </span>
   )
@@ -33,7 +33,7 @@ export function OutputPanel({ command, output, running, outcome }: OutputPanelPr
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-nd-text-muted">{command}</span>
-        {running && <span className="flex items-center gap-1.5 text-xs text-nd-info"><Loader2 size={13} className="animate-spin" /> Running…</span>}
+        {running && <span className="flex items-center gap-1.5 text-xs text-nd-info-fg"><Loader2 size={13} className="animate-spin" /> Running…</span>}
         {outcome && <OutcomeLine outcome={outcome} />}
         <Button size="icon" variant="ghost" aria-label="Copy output" className="h-7 w-7" disabled={!output} onClick={() => copyText(output, 'Output copied')}>
           <Copy size={13} />

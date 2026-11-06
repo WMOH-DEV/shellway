@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import type { HostnameStatus, ServerFacts } from '@/types/ssl'
 import { isMissingServerCertificate } from '@/utils/ssl/addHttps/issueView'
 import { certView, edgeView, renewalView, verdictBadge } from '@/utils/ssl/hostRow'
-import { CLOUDFLARE_ORANGE, TONE_FILL, TONE_INK } from './tones'
+import { TONE_FILL, TONE_INK } from './tones'
 import { VerdictBadge } from './VerdictBadge'
 
 export const SSL_COLUMNS =
@@ -58,7 +58,7 @@ function CertCell({ host, now }: { host: HostnameStatus; now: number }) {
         <span className={cn('ml-auto shrink-0 text-xs', TONE_INK[view.tone])}>{view.daysText}</span>
       </div>
       <div
-        className="flex h-1 rounded-sm bg-nd-bg-tertiary"
+        className="flex h-1 rounded-sm bg-nd-surface-raised"
         {...(view.daysText === '—' ? { 'aria-hidden': true } : { role: 'img', 'aria-label': `${Math.round(view.life * 100)}% of the certificate lifetime left` })}
       >
         <span className={cn('rounded-sm', TONE_FILL[view.tone])} style={{ width: `${view.life * 100}%` }} />
@@ -72,7 +72,7 @@ function CloudflareCell({ host }: { host: HostnameStatus }) {
   return (
     <div className="hidden min-w-0 flex-col gap-0.5 lg:flex">
       <span className="flex items-center gap-1.5 text-[13px] text-nd-text-primary">
-        <Cloud size={15} className="shrink-0 text-nd-text-muted" style={view.proxied ? { color: CLOUDFLARE_ORANGE } : undefined} aria-hidden />
+        <Cloud size={15} className={cn('shrink-0', view.proxied ? 'text-nd-cloudflare' : 'text-nd-text-muted')} aria-hidden />
         <span className="truncate">{view.label}</span>
       </span>
       <span className="truncate text-xs text-nd-text-muted">{view.detail}</span>
@@ -96,7 +96,7 @@ export function HostRow({ host, facts, now, onOpen, onAddHttps }: HostRowProps) 
     <div
       onClick={open}
       className={cn(
-        'grid cursor-pointer items-center px-4 py-3 transition-colors hover:bg-nd-bg-tertiary',
+        'grid cursor-pointer items-center px-4 py-3 transition-colors hover:bg-nd-surface-hover',
         SSL_COLUMNS
       )}
     >

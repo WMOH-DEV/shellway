@@ -5,7 +5,7 @@ import { CardLabel } from '../Card'
 
 export function CommandsCard({ rows }: { rows: CommandRow[] | null }) {
   return (
-    <section aria-label="Commands" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
+    <section aria-label="Commands" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-surface">
       <div className="flex items-center gap-2.5 border-b border-nd-border px-4 py-3">
         <CardLabel>Will run</CardLabel>
         <span className="text-xs text-nd-text-muted">in order, stops at the first failure</span>
@@ -30,7 +30,7 @@ export function CommandsCard({ rows }: { rows: CommandRow[] | null }) {
                   <span className="break-all font-mono text-[12.5px] text-nd-text-primary">{row.command}</span>
                   <span className="text-xs text-nd-text-muted">{row.why}</span>
                 </div>
-                <span className="rounded bg-nd-bg-tertiary px-1.5 py-0.5 text-[11px] font-medium text-nd-text-muted">{row.tag}</span>
+                <span className="rounded bg-nd-surface-raised px-1.5 py-0.5 text-[11px] font-medium text-nd-text-muted">{row.tag}</span>
               </li>
             ))}
           </ol>

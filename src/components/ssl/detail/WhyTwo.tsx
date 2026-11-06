@@ -29,7 +29,7 @@ export function WhyTwo() {
         Why two?
       </button>
       {open && (
-        <div role="dialog" aria-label="Why two certificates" className="absolute right-0 top-full z-20 mt-2 w-80 rounded-lg border border-nd-border bg-nd-bg-secondary p-3.5 text-xs leading-relaxed text-nd-text-secondary shadow-2xl">
+        <div role="dialog" aria-label="Why two certificates" className="absolute right-0 top-full z-20 mt-2 w-80 rounded-lg border border-nd-border bg-nd-surface p-3.5 text-xs leading-relaxed text-nd-text-secondary shadow-2xl">
           <p>
             With Cloudflare in front, a visitor&apos;s browser only checks the certificate Cloudflare shows. Cloudflare then opens a second connection to your server and checks the certificate it finds there.
           </p>

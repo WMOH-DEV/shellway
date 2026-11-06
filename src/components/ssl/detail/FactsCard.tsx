@@ -27,7 +27,7 @@ function PathValue({ path, label }: { path: string; label: string }) {
         type="button"
         aria-label={`Copy ${label}`}
         onClick={() => copyText(path, `${label} copied`)}
-        className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
+        className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
       >
         <Copy size={12} />
       </button>

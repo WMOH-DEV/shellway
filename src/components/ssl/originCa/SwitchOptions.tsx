@@ -19,7 +19,7 @@ function Choice({ on, onClick, children }: ChoiceProps) {
       onClick={onClick}
       className={cn(
         'flex min-w-[96px] flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nd-accent',
-        on ? 'border-nd-accent/70 bg-nd-accent/[.07]' : 'border-nd-border bg-nd-bg-primary hover:bg-nd-bg-tertiary'
+        on ? 'border-nd-accent/70 bg-nd-accent/[.07]' : 'border-nd-border bg-nd-surface hover:border-nd-border-hover hover:bg-nd-surface-hover'
       )}
     >
       {children}
@@ -63,7 +63,7 @@ function KeyType({ keyType, onChange }: { keyType: OriginKeyType; onChange: (key
 
 export function SwitchOptions({ flow }: { flow: SwitchFlow }) {
   return (
-    <section aria-label="Certificate options" className="flex flex-wrap items-start gap-x-10 gap-y-4 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-4">
+    <section aria-label="Certificate options" className="flex flex-wrap items-start gap-x-10 gap-y-4 rounded-[10px] border border-nd-border bg-nd-surface p-4">
       <Validity years={flow.years} onChange={flow.setYears} />
       <KeyType keyType={flow.keyType} onChange={flow.setKeyType} />
     </section>

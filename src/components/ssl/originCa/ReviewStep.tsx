@@ -24,16 +24,16 @@ function Summary({ flow, report, prepared }: { flow: SwitchFlow; report: SslRepo
           <ul className="flex flex-col gap-1.5">
             {nameRows(report, flow.check).map((row) => (
               <li key={row.name} className="flex items-center gap-2">
-                {row.ok ? <Check size={13} strokeWidth={2.4} className="shrink-0 text-nd-success" aria-label="ok" /> : <X size={13} strokeWidth={2.4} className="shrink-0 text-nd-error" aria-label="blocked" />}
+                {row.ok ? <Check size={13} strokeWidth={2.4} className="shrink-0 text-nd-success-fg" aria-label="ok" /> : <X size={13} strokeWidth={2.4} className="shrink-0 text-nd-error-fg" aria-label="blocked" />}
                 <span className="font-mono text-[12.5px] text-nd-text-primary">{row.name}</span>
-                <span className={cn('text-xs', row.ok ? 'text-nd-text-muted' : 'text-nd-error')}>{row.detail}</span>
+                <span className={cn('text-xs', row.ok ? 'text-nd-text-muted' : 'text-nd-error-fg')}>{row.detail}</span>
               </li>
             ))}
           </ul>
         </dd>
       </dl>
       <span className="flex items-center gap-1.5 text-xs text-nd-text-secondary">
-        <Lock size={12} className="text-nd-success" aria-hidden /> Private key made on the server, never left it
+        <Lock size={12} className="text-nd-success-fg" aria-hidden /> Private key made on the server, never left it
       </span>
     </Card>
   )
@@ -41,8 +41,8 @@ function Summary({ flow, report, prepared }: { flow: SwitchFlow; report: SslRepo
 
 const ROW_TONE: Record<DiffLine['kind'], string> = {
   same: 'text-nd-text-secondary',
-  add: 'bg-nd-success/[.09] text-nd-success',
-  remove: 'bg-nd-error/[.09] text-nd-error'
+  add: 'bg-nd-success/10 text-nd-success-fg',
+  remove: 'bg-nd-error/10 text-nd-error-fg'
 }
 
 const ROW_SIGN: Record<DiffLine['kind'], string> = { same: ' ', add: '+', remove: '-' }
@@ -53,17 +53,17 @@ function DiffCard({ prepared }: { prepared: SwitchPrepared }) {
     <Card
       label="nginx change"
       ariaLabel="nginx change"
-      aside={<span className="flex gap-2 text-xs"><span className="text-nd-success">+{added}</span><span className="text-nd-error">-{removed}</span></span>}
+      aside={<span className="flex gap-2 text-xs"><span className="text-nd-success-fg">+{added}</span><span className="text-nd-error-fg">-{removed}</span></span>}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-nd-text-muted">
         <span className="break-all font-mono text-nd-text-secondary">{prepared.file}</span>
         <span>server block at line {prepared.blockLine}</span>
       </div>
-      <div className="flex flex-col rounded-lg bg-nd-bg-primary py-2 font-mono text-[11.5px] leading-[1.75]">
+      <div className="flex flex-col rounded-lg bg-nd-bg-sunken py-2 font-mono text-[11.5px] leading-[1.75]">
         {prepared.diff.map((line, index) => (
           <div key={index} data-kind={line.kind} className={cn('grid grid-cols-[40px_40px_16px_minmax(0,1fr)] px-2', ROW_TONE[line.kind])}>
-            <span className="select-none text-right text-nd-text-muted">{line.oldLine ?? ''}</span>
-            <span className="select-none text-right text-nd-text-muted">{line.newLine ?? ''}</span>
+            <span className="select-none text-right text-nd-text-faint">{line.oldLine ?? ''}</span>
+            <span className="select-none text-right text-nd-text-faint">{line.newLine ?? ''}</span>
             <span className="select-none text-center">{ROW_SIGN[line.kind]}</span>
             <span className="whitespace-pre-wrap break-all">{line.text}</span>
           </div>
@@ -94,7 +94,7 @@ function RootSteps({ prepared }: { prepared: SwitchPrepared }) {
           doesn't return 525/526. If not, restore and reload.
         </li>
       </ol>
-      {showScript && <pre aria-label="Script" className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-nd-bg-primary p-3 font-mono text-[11.5px] leading-[1.7] text-nd-text-secondary">{prepared.script}</pre>}
+      {showScript && <pre aria-label="Script" className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-nd-bg-sunken p-3 font-mono text-[11.5px] leading-[1.7] text-nd-text-secondary">{prepared.script}</pre>}
     </Card>
   )
 }

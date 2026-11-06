@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/Button'
 import { cn } from '@/utils/cn'
 import { isDnsBlocked, leftOutByDns, readinessFor } from '@/utils/ssl/addHttps/names'
 import { CardLabel } from '../Card'
-import { CLOUDFLARE_ORANGE } from '../tones'
 import { CheckText } from './CheckText'
 import type { SiteSelection } from './useSiteSelection'
 
@@ -12,7 +11,7 @@ const COLUMNS = 'grid grid-cols-[28px_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1
 function CloudflareCell({ note }: { note: string | null | undefined }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-nd-text-secondary">
-      <Cloud size={14} className="shrink-0 text-nd-text-muted" style={note ? { color: CLOUDFLARE_ORANGE } : undefined} aria-hidden />
+      <Cloud size={14} className={cn('shrink-0', note ? 'text-nd-cloudflare' : 'text-nd-text-muted')} aria-hidden />
       <span className="truncate" title={note ?? undefined}>{note ?? '—'}</span>
     </span>
   )
@@ -46,8 +45,8 @@ function LeftOutNotice({ site }: { site: SiteSelection }) {
   const rows = leftOutByDns(site.choices, site.readiness.data ?? [])
   if (rows.length === 0) return null
   return (
-    <div role="status" className="flex items-start gap-2.5 bg-nd-warning/5 px-4 py-2.5 text-[12.5px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-warning" aria-hidden />
+    <div role="status" className="flex items-start gap-2.5 bg-nd-warning/[0.07] px-4 py-2.5 text-[12.5px] text-nd-text-secondary">
+      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-warning-fg" aria-hidden />
       <span>
         {rows.map((row) => (
           <span key={row.name} className="block">
@@ -62,7 +61,7 @@ function LeftOutNotice({ site }: { site: SiteSelection }) {
 export function NamesCard({ site, fileName }: { site: SiteSelection; fileName: string }) {
   const { readiness } = site
   return (
-    <section aria-label="Names" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
+    <section aria-label="Names" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-surface">
       <div className="flex items-center gap-2.5 border-b border-nd-border px-4 py-3">
         <CardLabel>Names</CardLabel>
         <span className="text-xs text-nd-text-muted">from <span className="font-mono">server_name</span> in {fileName}</span>
@@ -75,7 +74,7 @@ export function NamesCard({ site, fileName }: { site: SiteSelection; fileName: s
         <span />
         {['Name', 'DNS', 'Port 80', 'Cloudflare'].map((title) => <CardLabel key={title}>{title}</CardLabel>)}
       </div>
-      {readiness.error && <p role="alert" className="px-4 py-2.5 text-[12.5px] text-nd-error">{readiness.error}</p>}
+      {readiness.error && <p role="alert" className="px-4 py-2.5 text-[12.5px] text-nd-error-fg">{readiness.error}</p>}
       {site.choices.map(({ name, issuable }) => <NameRow key={name} site={site} name={name} issuable={issuable} />)}
       <LeftOutNotice site={site} />
     </section>

@@ -14,14 +14,14 @@ interface PlanCardProps {
 }
 
 const TAG_STYLE: Record<InstallStep['status'], string> = {
-  run: 'bg-nd-accent/[.12] text-nd-accent',
-  skip: 'bg-nd-bg-tertiary text-nd-text-muted',
-  check: 'bg-nd-success/[.12] text-nd-success'
+  run: 'bg-nd-accent/12 text-nd-accent-hover',
+  skip: 'bg-nd-surface-raised text-nd-text-muted',
+  check: 'bg-nd-success/12 text-nd-success-fg'
 }
 
 function RouteToggle({ plan, busy, onRoute }: Pick<PlanCardProps, 'plan' | 'busy' | 'onRoute'>) {
   return (
-    <div role="group" aria-label="Install route" className="flex gap-0.5 rounded-md border border-nd-border p-0.5">
+    <div role="group" aria-label="Install route" className="flex gap-0.5 rounded-md border border-nd-border bg-nd-bg-sunken p-0.5">
       {plan.routes.map((route) => (
         <button
           key={route}
@@ -31,7 +31,7 @@ function RouteToggle({ plan, busy, onRoute }: Pick<PlanCardProps, 'plan' | 'busy
           onClick={() => onRoute(route)}
           className={cn(
             'h-[26px] rounded px-2.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50',
-            plan.route === route ? 'bg-nd-bg-tertiary text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
+            plan.route === route ? 'bg-nd-surface-raised text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
           )}
         >
           {ROUTE_LABELS[route]}
@@ -61,7 +61,7 @@ function SudoNote({ fullSudo }: { fullSudo: boolean }) {
   const Icon = fullSudo ? Check : Info
   return (
     <span className="flex items-center gap-2 text-xs text-nd-text-muted">
-      <Icon size={14} className={fullSudo ? 'text-nd-success' : 'text-nd-warning'} aria-hidden />
+      <Icon size={14} className={fullSudo ? 'text-nd-success-fg' : 'text-nd-warning-fg'} aria-hidden />
       {fullSudo
         ? 'Needs full passwordless sudo · available.'
         : 'Needs full passwordless sudo · not available. Run these commands by hand, then Check again.'}
@@ -71,7 +71,7 @@ function SudoNote({ fullSudo }: { fullSudo: boolean }) {
 
 export function PlanCard({ plan, manual, fullSudo, busy, onRoute }: PlanCardProps) {
   return (
-    <section aria-label="Install plan" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
+    <section aria-label="Install plan" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-surface">
       <div className="flex flex-wrap items-center gap-2.5 border-b border-nd-border px-4 py-3">
         <CardLabel>Install plan</CardLabel>
         <span className="text-xs text-nd-text-muted">{manual ? 'run these on the server, as root' : 'runs once, as root, output shown live'}</span>

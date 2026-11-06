@@ -12,7 +12,7 @@ import type { Verify } from './useVerify'
 export function NameRows({ names }: { names: VerifyName[] }) {
   const now = nowSeconds()
   return (
-    <section aria-label="Names" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
+    <section aria-label="Names" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-surface">
       <div className="border-b border-nd-border px-4 py-3"><CardLabel>Served certificate</CardLabel></div>
       {names.map((row) => (
         <div key={row.name} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-3.5 border-b border-nd-border px-4 py-2.5 last:border-b-0">
@@ -27,7 +27,7 @@ export function NameRows({ names }: { names: VerifyName[] }) {
 
 function RenewalRows({ result }: { result: VerifyResult }) {
   return (
-    <section aria-label="Renewal" className="flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-4">
+    <section aria-label="Renewal" className="flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-surface p-4">
       <CardLabel>Renewal</CardLabel>
       <div className="flex items-center gap-3 text-[13px] text-nd-text-primary">
         <span className="w-32 shrink-0">Renewal test</span>
@@ -43,8 +43,8 @@ function RenewalRows({ result }: { result: VerifyResult }) {
 
 function Problems({ problems }: { problems: string[] }) {
   return (
-    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error" aria-hidden />
+    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error-fg" aria-hidden />
       <div className="flex flex-col gap-1">
         {problems.map((problem) => <span key={problem}>{problem}</span>)}
         <span className="text-nd-text-primary">The certificate itself is issued and installed. Fix this, then press Verify again.</span>
@@ -55,8 +55,8 @@ function Problems({ problems }: { problems: string[] }) {
 
 function Success() {
   return (
-    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/35 bg-nd-success/5 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <Check size={15} className="text-nd-success" aria-hidden /> HTTPS is on and renewal works. The hostnames now show the new certificate.
+    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/30 bg-nd-success/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <Check size={15} className="text-nd-success-fg" aria-hidden /> HTTPS is on and renewal works. The hostnames now show the new certificate.
     </div>
   )
 }

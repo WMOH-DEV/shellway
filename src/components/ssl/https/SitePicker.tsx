@@ -5,8 +5,8 @@ import { CardLabel } from '../Card'
 import { OTHER_SITE, type SiteSelection } from './useSiteSelection'
 
 const KIND_CHIP = {
-  deploy: { label: 'Deploy site', style: 'bg-nd-accent/[.12] text-nd-accent' },
-  nginx: { label: 'nginx', style: 'bg-nd-bg-tertiary text-nd-text-muted' }
+  deploy: { label: 'Deploy site', style: 'bg-nd-accent/12 text-nd-accent-hover' },
+  nginx: { label: 'nginx', style: 'bg-nd-surface-raised text-nd-text-muted' }
 } as const
 
 function Radio({ on }: { on: boolean }) {
@@ -25,7 +25,7 @@ function OptionButton({ on, onClick, children }: { on: boolean; onClick: () => v
       onClick={onClick}
       className={cn(
         'flex items-start gap-3 rounded-[10px] border px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nd-accent',
-        on ? 'border-nd-accent/70 bg-nd-accent/[.07]' : 'border-nd-border bg-nd-bg-secondary hover:bg-nd-bg-tertiary'
+        on ? 'border-nd-accent/70 bg-nd-accent/[.07]' : 'border-nd-border bg-nd-surface hover:border-nd-border-hover hover:bg-nd-surface-hover'
       )}
     >
       <Radio on={on} />
@@ -60,7 +60,7 @@ export function SitePicker({ site }: { site: SiteSelection }) {
         <div className="max-w-sm">
           <Input
             label="Hostname"
-            className="bg-nd-bg-primary font-mono text-xs"
+            className="font-mono text-xs"
             placeholder="blog.example.com"
             spellCheck={false}
             autoComplete="off"

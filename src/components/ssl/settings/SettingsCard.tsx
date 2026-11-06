@@ -2,12 +2,11 @@ import type { ReactNode } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { cn } from '@/utils/cn'
 import type { ChipTone } from '@/utils/ssl/settingsPermissions'
 
 export function SettingsCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section aria-label={label} className="flex flex-col gap-3.5 rounded-xl border border-nd-border bg-nd-bg-secondary p-[18px]">
+    <section aria-label={label} className="flex flex-col gap-3.5 rounded-xl border border-nd-border bg-nd-surface p-[18px]">
       {children}
     </section>
   )
@@ -27,7 +26,7 @@ const TONE_VARIANT = { success: 'success', warning: 'warning', error: 'error', n
 
 export function StatusChip({ tone, children, className }: { tone: ChipTone; children: ReactNode; className?: string }) {
   return (
-    <Badge variant={TONE_VARIANT[tone]} className={cn(tone === 'neutral' && 'bg-nd-bg-tertiary', className)}>
+    <Badge variant={TONE_VARIANT[tone]} className={className}>
       {children}
     </Badge>
   )
@@ -44,7 +43,7 @@ export function LoadingLine({ text }: { text: string }) {
 
 export function ErrorLine({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-nd-error">
+    <div className="flex items-center gap-3 text-xs text-nd-error-fg">
       {message}
       <Button size="sm" variant="ghost" onClick={onRetry}>Try again</Button>
     </div>

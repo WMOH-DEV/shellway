@@ -10,8 +10,8 @@ interface ServerStripProps {
 
 export function ServerStrip({ facts, now, onOpenSettings }: ServerStripProps) {
   return (
-    <section aria-label="Server" className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[10px] border border-nd-border bg-nd-bg-secondary px-3.5 py-2.5 text-[13px] text-nd-text-secondary">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-muted">Server</span>
+    <section aria-label="Server" className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[10px] border border-nd-border bg-nd-surface px-3.5 py-2.5 text-[13px] text-nd-text-secondary">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-dim">Server</span>
       {serverStrip(facts, now).map((item) => (
         <span key={item.key} className="flex items-center gap-1.5">
           {item.tone !== 'neutral' && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_FILL[item.tone]}`} />}

@@ -9,10 +9,10 @@ import { renewalOutputOf, serverCheckRows, SSL_SUDOERS_FILE, type CheckTone, typ
 import { CardHeading, SettingsCard } from './SettingsCard'
 
 const DOT_STYLE: Record<CheckTone, string> = {
-  ok: 'bg-nd-success/[.14] text-nd-success',
-  bad: 'bg-nd-error/[.14] text-nd-error',
-  warn: 'bg-nd-warning/[.14] text-nd-warning',
-  muted: 'bg-nd-bg-tertiary text-nd-text-muted'
+  ok: 'bg-nd-success/12 text-nd-success-fg',
+  bad: 'bg-nd-error/12 text-nd-error-fg',
+  warn: 'bg-nd-warning/12 text-nd-warning-fg',
+  muted: 'bg-nd-surface-raised text-nd-text-muted'
 }
 
 const DOT_ICON: Record<CheckTone, JSX.Element> = {
@@ -43,7 +43,7 @@ function RenewalOutput({ output }: { output: string }) {
         {open ? 'Hide last renewal output' : 'Show last renewal output'}
       </button>
       {open && (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-nd-border bg-nd-bg-primary p-3 font-mono text-xs text-nd-text-secondary">{output}</pre>
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-nd-border bg-nd-bg-sunken p-3 font-mono text-xs text-nd-text-secondary">{output}</pre>
       )}
     </div>
   )
@@ -55,7 +55,7 @@ function CheckRow({ row, renewalOutput }: { row: ServerCheckRow; renewalOutput: 
       <div className="flex items-center gap-2.5">
         <CheckDot tone={row.tone} />
         <span className="flex-1 text-[13px] text-nd-text-primary">{row.name}</span>
-        <span className={cn('min-w-0 truncate text-right font-mono text-xs', row.tone === 'bad' ? 'text-nd-error' : 'text-nd-text-muted')} title={row.detail}>{row.detail}</span>
+        <span className={cn('min-w-0 truncate text-right font-mono text-xs', row.tone === 'bad' ? 'text-nd-error-fg' : 'text-nd-text-muted')} title={row.detail}>{row.detail}</span>
       </div>
       {row.sudoers && <SudoersFix line={row.sudoers} />}
       {row.id === 'renewal' && renewalOutput && <RenewalOutput output={renewalOutput} />}

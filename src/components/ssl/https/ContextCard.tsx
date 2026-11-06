@@ -13,7 +13,7 @@ const OUTCOMES = ['HTTPS on every name you pick', 'HTTP redirected to HTTPS', 'R
 
 function Frame({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section aria-label={label} className="mt-auto flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-3.5">
+    <section aria-label={label} className="mt-auto flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-surface p-3.5">
       <CardLabel>{label}</CardLabel>
       {children}
     </section>

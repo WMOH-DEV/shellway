@@ -5,7 +5,7 @@ import { TONE_FILL } from '../tones'
 
 export function FactsStrip({ facts }: { facts: PrepFacts }) {
   return (
-    <section aria-label="What Shellway found" className="flex flex-wrap gap-x-7 gap-y-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-4">
+    <section aria-label="What Shellway found" className="flex flex-wrap gap-x-7 gap-y-3 rounded-[10px] border border-nd-border bg-nd-surface p-4">
       {factViews(facts).map((fact) => (
         <div key={fact.label} className="flex min-w-[120px] flex-col gap-1">
           <CardLabel>{fact.label}</CardLabel>

@@ -3,8 +3,8 @@ import type { NginxNotice as NginxNoticeData } from '@/utils/ssl/header'
 
 export function PartialNotice({ notice }: { notice: NginxNoticeData }) {
   return (
-    <div role="status" className="flex items-center gap-3 rounded-[10px] border border-nd-warning/30 bg-nd-warning/10 px-3.5 py-2.5 text-[13px] text-nd-text-secondary">
-      <Info size={15} className="shrink-0 text-nd-warning" />
+    <div role="status" className="flex items-center gap-3 rounded-[10px] border border-nd-warning/30 bg-nd-warning/[0.07] px-3.5 py-2.5 text-[13px] text-nd-text-secondary">
+      <Info size={15} className="shrink-0 text-nd-warning-fg" />
       {notice.text}
     </div>
   )

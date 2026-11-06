@@ -25,7 +25,7 @@ export function TokenForm({ busy, submitLabel, onSubmit, onCancel }: TokenFormPr
           label="API token"
           autoComplete="off"
           spellCheck={false}
-          className="bg-nd-bg-primary font-mono text-xs"
+          className="font-mono text-xs"
           placeholder="Paste the token Cloudflare shows once"
           value={token}
           onChange={(e) => setToken(e.target.value)}

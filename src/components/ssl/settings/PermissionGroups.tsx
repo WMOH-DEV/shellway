@@ -4,8 +4,8 @@ import { groupChipText, groupChipTone, groupMeta, lineMark, permissionExplanatio
 import { StatusChip } from './SettingsCard'
 
 const MARK_ICON = {
-  granted: <Check size={13} strokeWidth={2.4} className="text-nd-success" />,
-  missing: <X size={13} strokeWidth={2.4} className="text-nd-error" />,
+  granted: <Check size={13} strokeWidth={2.4} className="text-nd-success-fg" />,
+  missing: <X size={13} strokeWidth={2.4} className="text-nd-error-fg" />,
   unchecked: <Minus size={13} strokeWidth={2.4} className="text-nd-text-muted" />
 } satisfies Record<LineMark, JSX.Element>
 
@@ -38,7 +38,7 @@ function GroupBlock({ group, showState }: { group: PermissionGroup; showState: b
 
 export function PermissionGroups({ groups, showState }: { groups: PermissionGroup[]; showState: boolean }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-primary">
+    <div className="flex flex-col overflow-hidden rounded-[10px] border border-nd-border bg-nd-surface">
       {groups.map((group) => <GroupBlock key={group.id} group={group} showState={showState} />)}
     </div>
   )

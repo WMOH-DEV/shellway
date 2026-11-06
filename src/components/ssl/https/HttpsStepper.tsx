@@ -11,9 +11,9 @@ interface HttpsStepperProps {
 }
 
 const DOT_TONE: Record<StepState, string> = {
-  done: 'bg-nd-success/[.14] text-nd-success',
-  current: 'bg-nd-accent text-white',
-  todo: 'bg-nd-bg-tertiary text-nd-text-muted'
+  done: 'bg-nd-success/12 text-nd-success-fg',
+  current: 'bg-nd-accent-solid text-white',
+  todo: 'bg-nd-surface-raised text-nd-text-muted'
 }
 
 export function StepDot({ index, state }: { index: number; state: StepState }) {
@@ -34,7 +34,7 @@ export function HttpsStepper({ current, details, prepareSkipped, canNavigate, on
           <li key={id} className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-3" aria-current={state === 'current' ? 'step' : undefined}>
             <div className="flex flex-col items-center">
               <StepDot index={index} state={state} />
-              {!isLast && <span className={cn('my-1 min-h-[18px] w-px flex-1', state === 'done' ? 'bg-nd-success/35' : 'bg-nd-border')} />}
+              {!isLast && <span className={cn('my-1 min-h-[18px] w-px flex-1', state === 'done' ? 'bg-nd-success/35' : 'bg-nd-border-hover')} />}
             </div>
             <button
               type="button"

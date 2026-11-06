@@ -7,10 +7,10 @@ import type { SwitchFlow } from './useSwitchFlow'
 type RowState = 'done' | 'working' | 'waiting' | 'failed'
 
 const ROW_ICON = {
-  done: <Check size={14} className="text-nd-success" aria-hidden />,
-  working: <Loader2 size={14} className="animate-spin text-nd-info" aria-hidden />,
+  done: <Check size={14} className="text-nd-success-fg" aria-hidden />,
+  working: <Loader2 size={14} className="animate-spin text-nd-info-fg" aria-hidden />,
   waiting: <Circle size={14} className="text-nd-text-muted" aria-hidden />,
-  failed: <AlertTriangle size={14} className="text-nd-error" aria-hidden />
+  failed: <AlertTriangle size={14} className="text-nd-error-fg" aria-hidden />
 } as const
 
 function Row({ state, label }: { state: RowState; label: string }) {
@@ -34,15 +34,15 @@ export function PrepareStep({ flow }: { flow: SwitchFlow }) {
   return (
     <div className="flex flex-col gap-4">
       <StepHeading title="Create the certificate" subtitle="The private key is made on the server and never leaves it. Only a signing request goes to Cloudflare." />
-      <ol aria-label="Progress" className="flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-4">
+      <ol aria-label="Progress" className="flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-surface p-4">
         <Row state={key} label="Make the key and signing request on the server" />
         <Row state={sign} label="Cloudflare signs the certificate" />
       </ol>
       {prepareError && (
-        <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-          <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error" aria-hidden />
+        <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+          <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error-fg" aria-hidden />
           <div className="flex flex-col gap-1">
-            <span className="font-medium text-nd-error">The certificate could not be created</span>
+            <span className="font-medium text-nd-error-fg">The certificate could not be created</span>
             <span>{prepareError}</span>
             <span className="text-nd-text-primary">Nothing in nginx was changed.</span>
           </div>

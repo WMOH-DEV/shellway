@@ -10,10 +10,10 @@ interface NginxChangesCardProps {
 export function NginxChangesCard({ fileName, request }: NginxChangesCardProps) {
   const lines = nginxChangeLines(request)
   return (
-    <Card label={`What certbot changes in ${fileName}`} ariaLabel="nginx changes" aside={<span className="text-xs text-nd-success">+{lines.length}</span>}>
-      <div className="flex flex-col rounded-lg bg-nd-bg-primary py-2 font-mono text-[11.5px] leading-[1.75]">
+    <Card label={`What certbot changes in ${fileName}`} ariaLabel="nginx changes" aside={<span className="text-xs text-nd-success-fg">+{lines.length}</span>}>
+      <div className="flex flex-col rounded-lg bg-nd-bg-sunken py-2 font-mono text-[11.5px] leading-[1.75]">
         {lines.map((line) => (
-          <span key={line} className="break-all bg-nd-success/[.09] px-3 text-nd-success">+ {line}</span>
+          <span key={line} className="break-all bg-nd-success/10 px-3 text-nd-success-fg">+ {line}</span>
         ))}
       </div>
       {request.redirect && <span className="text-xs text-nd-text-secondary">Plus a small server block that redirects port 80 to HTTPS.</span>}

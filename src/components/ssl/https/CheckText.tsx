@@ -3,7 +3,7 @@ import type { CheckState, ReadinessCheck } from '@/types/ssl'
 import { cn } from '@/utils/cn'
 
 const ICON: Record<CheckState, typeof Check> = { ok: Check, fail: X, unknown: Minus }
-const INK: Record<CheckState, string> = { ok: 'text-nd-success', fail: 'text-nd-error', unknown: 'text-nd-text-muted' }
+const INK: Record<CheckState, string> = { ok: 'text-nd-success-fg', fail: 'text-nd-error-fg', unknown: 'text-nd-text-muted' }
 
 interface CheckTextProps {
   check: ReadinessCheck | undefined

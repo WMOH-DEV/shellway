@@ -12,8 +12,8 @@ export function LoadingState() {
 
 export function ErrorBanner({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-2.5 text-[13px] text-nd-error">
-      <AlertTriangle size={15} className="shrink-0" />
+    <div role="alert" className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-2.5 text-[13px] text-nd-text-primary">
+      <AlertTriangle size={15} className="shrink-0 text-nd-error-fg" />
       <span className="flex-1">{message}</span>
       <Button size="sm" onClick={onRetry} disabled={retrying}>Try again</Button>
     </div>

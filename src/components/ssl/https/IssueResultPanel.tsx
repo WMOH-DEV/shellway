@@ -12,10 +12,10 @@ function outcomeOf(result: IssueResult | null, error: string | null) {
 function FailureNotes({ result }: { result: IssueResult }) {
   const view = issueFailureView(result)
   return (
-    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error" aria-hidden />
+    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error-fg" aria-hidden />
       <div className="flex flex-col gap-1">
-        <span className="font-medium text-nd-error">{view.title}</span>
+        <span className="font-medium text-nd-error-fg">{view.title}</span>
         {view.notes.map((note) => <span key={note}>{note}</span>)}
         {view.hint && <span className="text-nd-text-primary">{view.hint}</span>}
       </div>

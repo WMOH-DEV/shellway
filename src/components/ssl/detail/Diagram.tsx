@@ -3,7 +3,6 @@ import { cn } from '@/utils/cn'
 import type { HostnameStatus, ServerFacts } from '@/types/ssl'
 import { diagramView } from '@/utils/ssl/diagram'
 import { Card } from '../Card'
-import { CLOUDFLARE_ORANGE } from '../tones'
 import { Connector } from './Connector'
 import { DiagramCard } from './DiagramCard'
 import { WhyTwo } from './WhyTwo'
@@ -30,7 +29,7 @@ export function Diagram({ host, facts, now }: { host: HostnameStatus; facts: Ser
         <Connector view={view.visitorLeg} />
         {view.cloudflare ? (
           <>
-            <DiagramCard title="Cloudflare" icon={<Cloud size={16} style={host.edge.state === 'proxied' ? { color: CLOUDFLARE_ORANGE } : undefined} className="text-nd-text-muted" />} view={view.cloudflare} />
+            <DiagramCard title="Cloudflare" icon={<Cloud size={16} className={host.edge.state === 'proxied' ? 'text-nd-cloudflare' : 'text-nd-text-muted'} />} view={view.cloudflare} />
             {view.originLeg && <Connector view={view.originLeg} />}
             <DiagramCard title="Your server" icon={serverIcon} view={view.server} />
           </>

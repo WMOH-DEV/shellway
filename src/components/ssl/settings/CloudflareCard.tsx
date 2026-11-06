@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/Button'
 import type { CloudflareStatus, HostnameStatus } from '@/types/ssl'
 import { placeholderGroups, tokenChip } from '@/utils/ssl/settingsPermissions'
 import { CLOUDFLARE_TOKEN_DOCS_URL, cloudflareTokenUrl } from '@/utils/ssl/settingsToken'
-import { CLOUDFLARE_ORANGE } from './cloudflareColor'
 import { PermissionGroups } from './PermissionGroups'
 import { CardHeading, ErrorLine, LoadingLine, SettingsCard, StatusChip } from './SettingsCard'
 import { TokenForm } from './TokenForm'
@@ -37,13 +36,13 @@ function SavedToken({ status, token }: { status: CloudflareStatus; token: Cloudf
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <div className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-nd-border bg-nd-bg-primary px-3 font-mono text-xs text-nd-text-secondary">
+        <div className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-nd-border bg-nd-bg-sunken px-3 font-mono text-xs text-nd-text-secondary">
           ••••••••••••••••{status.tokenHint.replace('…', '')}
         </div>
         <Button disabled={token.busy} onClick={() => setReplacing(true)}>Replace</Button>
-        <Button variant="ghost" className="text-nd-error hover:text-nd-error" disabled={token.busy} onClick={() => void token.remove()}>Remove</Button>
+        <Button variant="ghost" className="text-nd-error-fg hover:text-nd-error-fg" disabled={token.busy} onClick={() => void token.remove()}>Remove</Button>
       </div>
-      {status.error && <span className="text-xs text-nd-error">{status.error}</span>}
+      {status.error && <span className="text-xs text-nd-error-fg">{status.error}</span>}
     </div>
   )
 }
@@ -88,7 +87,7 @@ export function CloudflareCard({ hostnames, onChanged, onSetZoneStrict }: Cloudf
   const { data, error, loading, reload } = token.status
   return (
     <SettingsCard label="Cloudflare token">
-      <CardHeading title="Cloudflare API token" icon={<Cloud size={18} style={{ color: CLOUDFLARE_ORANGE }} aria-hidden />}>
+      <CardHeading title="Cloudflare API token" icon={<Cloud size={18} className="text-nd-cloudflare" aria-hidden />}>
         {data && <TokenChip status={data} />}
         <a className="ml-auto text-xs text-nd-accent hover:underline" href={cloudflareTokenUrl()} target="_blank" rel="noreferrer">Create a token</a>
       </CardHeading>

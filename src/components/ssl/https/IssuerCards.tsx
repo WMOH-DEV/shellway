@@ -20,17 +20,17 @@ export function IssuerCards({ certbotMissing }: IssuerCardsProps) {
           <span className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
               <span className="text-[13px] font-semibold text-nd-text-primary">Let's Encrypt with certbot</span>
-              <span className="rounded bg-nd-success/[.12] px-1.5 py-px text-[11px] font-medium text-nd-success">Recommended</span>
+              <span className="rounded bg-nd-success/12 px-1.5 py-px text-[11px] font-medium text-nd-success-fg">Recommended</span>
             </span>
             <span className="text-[12.5px] text-nd-text-secondary">Free. Renews by itself every ~60 days. Works with or without Cloudflare.</span>
-            {certbotMissing && <span className="text-xs text-nd-warning">certbot isn't installed yet. Shellway will set it up next.</span>}
+            {certbotMissing && <span className="text-xs text-nd-warning-fg">certbot isn't installed yet. Shellway will set it up next.</span>}
           </span>
         </button>
         <button
           type="button"
           aria-pressed={false}
           disabled
-          className="flex items-start gap-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-3.5 text-left opacity-60"
+          className="flex items-start gap-3 rounded-[10px] border border-nd-border bg-nd-surface p-3.5 text-left opacity-60"
         >
           <span aria-hidden className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-[1.5px] border-nd-text-muted" />
           <span className="flex flex-col gap-1">

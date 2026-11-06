@@ -7,10 +7,10 @@ import type { SwitchFlow } from './useSwitchFlow'
 
 function Failure({ title, note }: { title: string; note: string }) {
   return (
-    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error" aria-hidden />
+    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-error-fg" aria-hidden />
       <div className="flex flex-col gap-1">
-        <span className="font-medium text-nd-error">{title}</span>
+        <span className="font-medium text-nd-error-fg">{title}</span>
         <span>{note}</span>
       </div>
     </div>
@@ -19,8 +19,8 @@ function Failure({ title, note }: { title: string; note: string }) {
 
 function Notice({ children }: { children: string }) {
   return (
-    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/35 bg-nd-success/5 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <Check size={15} className="text-nd-success" aria-hidden /> {children}
+    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/30 bg-nd-success/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <Check size={15} className="text-nd-success-fg" aria-hidden /> {children}
     </div>
   )
 }

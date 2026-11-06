@@ -16,8 +16,8 @@ function subtitle(facts: PrepFacts, ready: boolean): string {
 
 function Blocked({ reason, docsUrl }: { reason: string; docsUrl: string }) {
   return (
-    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-warning/30 bg-nd-warning/10 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-warning" aria-hidden />
+    <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-nd-warning/30 bg-nd-warning/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <AlertTriangle size={15} className="mt-px shrink-0 text-nd-warning-fg" aria-hidden />
       <span>
         {reason}{' '}
         <a className="text-nd-accent hover:underline" href={docsUrl} target="_blank" rel="noreferrer">Open certbot's instructions</a>
@@ -28,8 +28,8 @@ function Blocked({ reason, docsUrl }: { reason: string; docsUrl: string }) {
 
 function ReadyNotice() {
   return (
-    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/35 bg-nd-success/5 px-3.5 py-3 text-[13px] text-nd-text-secondary">
-      <Check size={15} className="text-nd-success" aria-hidden /> certbot is ready. Continue to review the commands.
+    <div role="status" className="flex items-center gap-2.5 rounded-[10px] border border-nd-success/30 bg-nd-success/[0.07] px-3.5 py-3 text-[13px] text-nd-text-secondary">
+      <Check size={15} className="text-nd-success-fg" aria-hidden /> certbot is ready. Continue to review the commands.
     </div>
   )
 }
