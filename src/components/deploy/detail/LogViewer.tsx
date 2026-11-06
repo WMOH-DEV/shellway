@@ -29,7 +29,7 @@ const LINE_TONE: Record<LogLine['tone'], string> = {
 
 function sectionTitle(section: LogSection): string {
   if (section.kind === 'step') return section.command || 'Command'
-  return section.stage ? STAGE_LABELS[section.stage] : 'Starting'
+  return section.stage ? STAGE_LABELS[section.stage] : 'Output'
 }
 
 function sectionTime(section: LogSection): string {
