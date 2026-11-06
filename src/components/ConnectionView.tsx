@@ -25,6 +25,7 @@ import { useMonitorStore } from '@/stores/monitorStore'
 import { useServiceManagerStore } from '@/stores/serviceManagerStore'
 import type { ConnectionTab } from '@/types/session'
 import { useSslCritical } from '@/hooks/useSslCritical'
+import { useHttpsIntentStore } from '@/stores/httpsIntentStore'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
@@ -126,6 +127,11 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
       updateTab(tab.id, { activeSubTab: subTab })
     }
   }, [tab.id, tab.runningSubTabs, updateTab])
+
+  const httpsRequested = useHttpsIntentStore(s => s.pending[tab.id] !== undefined)
+  useEffect(() => {
+    if (httpsRequested && tab.activeSubTab !== 'ssl') handleSubTabChange('ssl')
+  }, [httpsRequested, tab.activeSubTab, handleSubTabChange])
 
   // Shut down a sub-tab: go to last visited tab, or disconnect if none was visited
   const handleShutdownSubTab = useCallback((subTabId: string) => {

@@ -1,7 +1,9 @@
 import type { MouseEvent } from 'react'
 import { ChevronRight, Cloud } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { Button } from '@/components/ui/Button'
 import type { HostnameStatus, ServerFacts } from '@/types/ssl'
+import { isMissingServerCertificate } from '@/utils/ssl/addHttps/issueView'
 import { certView, edgeView, renewalView, verdictBadge } from '@/utils/ssl/hostRow'
 import { CLOUDFLARE_ORANGE, TONE_FILL, TONE_INK } from './tones'
 import { VerdictBadge } from './VerdictBadge'
@@ -14,9 +16,10 @@ interface HostRowProps {
   facts: ServerFacts
   now: number
   onOpen: (name: string) => void
+  onAddHttps: (blockId: string) => void
 }
 
-function HostCell({ host, onOpen }: { host: HostnameStatus; onOpen: () => void }) {
+function HostCell({ host, onOpen, onAddHttps }: { host: HostnameStatus; onOpen: () => void; onAddHttps: (blockId: string) => void }) {
   const open = (e: MouseEvent) => { e.stopPropagation(); onOpen() }
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -29,6 +32,11 @@ function HostCell({ host, onOpen }: { host: HostnameStatus; onOpen: () => void }
           {host.name}
         </button>
         <VerdictBadge view={verdictBadge(host)} className="shrink-0" />
+        {isMissingServerCertificate(host) && (
+          <Button size="sm" className="shrink-0" aria-label={`Add HTTPS to ${host.name}`} onClick={(e) => { e.stopPropagation(); onAddHttps(host.blockId) }}>
+            Add HTTPS
+          </Button>
+        )}
       </div>
       <span className="truncate text-xs text-nd-text-muted">{host.reason}</span>
     </div>
@@ -76,7 +84,7 @@ function RenewalCell({ host, facts, now }: { host: HostnameStatus; facts: Server
   )
 }
 
-export function HostRow({ host, facts, now, onOpen }: HostRowProps) {
+export function HostRow({ host, facts, now, onOpen, onAddHttps }: HostRowProps) {
   const open = () => onOpen(host.name)
   return (
     <div
@@ -86,7 +94,7 @@ export function HostRow({ host, facts, now, onOpen }: HostRowProps) {
         SSL_COLUMNS
       )}
     >
-      <HostCell host={host} onOpen={open} />
+      <HostCell host={host} onOpen={open} onAddHttps={onAddHttps} />
       <CertCell host={host} now={now} />
       <CloudflareCell host={host} />
       <RenewalCell host={host} facts={facts} now={now} />

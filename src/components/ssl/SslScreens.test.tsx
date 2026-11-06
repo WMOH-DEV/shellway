@@ -43,7 +43,7 @@ function renderList(overrides: Partial<SslReport> = {}) {
   const onOpen = vi.fn()
   const onOpenSettings = vi.fn()
   render(
-    <HostnamesScreen report={report(overrides)} serverName="Test server" now={NOW} loading={false} error={null} onRefresh={vi.fn()} onOpen={onOpen} onOpenSettings={onOpenSettings} />
+    <HostnamesScreen report={report(overrides)} serverName="Test server" now={NOW} loading={false} error={null} onRefresh={vi.fn()} onOpen={onOpen} onOpenSettings={onOpenSettings} onAddHttps={vi.fn()} />
   )
   return { onOpen, onOpenSettings }
 }
@@ -133,7 +133,7 @@ function DetailHarness({ host, sslReport, onBack, onRefresh }: DetailHarnessProp
   const [open, setOpen] = useState(true)
   if (!open) return <button type="button" onClick={() => setOpen(true)}>Reopen</button>
   const back = () => { onBack(); setOpen(false) }
-  return <HostnameDetail host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onRefresh={onRefresh} />
+  return <HostnameDetail host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onAddHttps={vi.fn()} onRefresh={onRefresh} />
 }
 
 function renderDetail(host: HostnameStatus, overrides: Partial<SslReport> = {}, api: Record<string, unknown> = {}) {

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import type { CertbotAction, HostnameStatus, ServerFacts } from '@/types/ssl'
 import { ACTION_COPY, actionAvailability, FORCE_COPY, shouldEmphasizeTest } from '@/utils/ssl/certbotActions'
 import { certbotCommand } from '@/utils/ssl/commands'
+import { isMissingServerCertificate } from '@/utils/ssl/addHttps/issueView'
 import { Card } from '../Card'
 import { OutputPanel } from './OutputPanel'
 import type { CertbotRun } from './useCertbotRun'
@@ -14,6 +15,7 @@ interface ActionsCardProps {
   facts: ServerFacts
   run: CertbotRun
   onForce: () => void
+  onAddHttps: (blockId: string) => void
 }
 
 interface ActionRowProps {
@@ -61,6 +63,14 @@ function CertbotRows({ host, facts, run }: Pick<ActionsCardProps, 'host' | 'fact
   )
 }
 
+function AddHttpsRow({ host, onAddHttps }: { host: HostnameStatus; onAddHttps: (blockId: string) => void }) {
+  return (
+    <ActionRow title="Add HTTPS" note="This server does not serve a certificate for this name. Get a free Let's Encrypt certificate with certbot.">
+      <Button variant="primary" onClick={() => onAddHttps(host.blockId)}>Add HTTPS</Button>
+    </ActionRow>
+  )
+}
+
 function OriginCaRow() {
   return (
     <ActionRow
@@ -75,7 +85,7 @@ function OriginCaRow() {
   )
 }
 
-export function ActionsCard({ host, facts, run, onForce }: ActionsCardProps) {
+export function ActionsCard({ host, facts, run, onForce, onAddHttps }: ActionsCardProps) {
   const availability = actionAvailability(host, facts)
   const isThisCertificate = run.lineage !== null && run.lineage === host.lineage
   const shownAction = run.running ?? run.outcome?.action ?? null
@@ -85,7 +95,9 @@ export function ActionsCard({ host, facts, run, onForce }: ActionsCardProps) {
       <div className="flex flex-col">
         {availability.allowed
           ? <CertbotRows host={host} facts={facts} run={run} />
-          : <p className="py-2 text-[13px] text-nd-text-secondary">{availability.reason}</p>}
+          : host.lineage === null && isMissingServerCertificate(host)
+            ? <AddHttpsRow host={host} onAddHttps={onAddHttps} />
+            : <p className="py-2 text-[13px] text-nd-text-secondary">{availability.reason}</p>}
         <OriginCaRow />
       </div>
       {availability.allowed && (
