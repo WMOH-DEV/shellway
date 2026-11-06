@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, Copy, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import type { DoctorReport, SiteConfig } from '@/types/deploy'
+import type { SiteConfig } from '@/types/deploy'
 import { readyItems, type ReadyItem } from '@/utils/deploy/readyCheck'
 import { copyText } from './copyText'
-import { deployApi } from './useDeploySites'
+import type { ServerCheckState } from './useServerCheck'
 
 function StatusIcon({ item }: { item: ReadyItem }) {
   if (item.status === 'pass') return <Check size={13} className="mt-0.5 text-nd-success" />
@@ -31,20 +30,8 @@ function CheckRow({ item }: { item: ReadyItem }) {
   )
 }
 
-export function ServerCheck({ connectionId, site }: { connectionId: string; site: SiteConfig }) {
-  const [report, setReport] = useState<DoctorReport | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const run = useCallback(async () => {
-    setReport(null)
-    setError(null)
-    const result = await deployApi().doctor(connectionId, site.name)
-    if (result.success && result.data) setReport(result.data)
-    else setError(result.error ?? 'Could not check the server')
-  }, [connectionId, site.name])
-
-  useEffect(() => { void run() }, [run])
-
+export function ServerCheck({ site, check }: { site: SiteConfig; check: ServerCheckState }) {
+  const { report, error, run } = check
   if (error) {
     return (
       <div className="flex items-center gap-3 p-4 text-xs text-nd-error">

@@ -15,6 +15,7 @@ import { EnvEditor } from './EnvEditor'
 import { ServerCheck } from './ServerCheck'
 import { SiteForm } from './SiteForm'
 import { deployApi } from './useDeploySites'
+import { useServerCheck } from './useServerCheck'
 
 export type DetailTab = 'history' | 'env' | 'check' | 'settings'
 
@@ -40,7 +41,7 @@ interface SiteDetailProps {
   onRemoved: () => void
 }
 
-function TabBar({ tab, onChange }: { tab: DetailTab; onChange: (tab: DetailTab) => void }) {
+function TabBar({ tab, onChange, flagged }: { tab: DetailTab; onChange: (tab: DetailTab) => void; flagged: DetailTab | null }) {
   return (
     <div role="tablist" className="flex gap-5 border-b border-nd-border">
       {TABS.map((t) => (
@@ -56,6 +57,7 @@ function TabBar({ tab, onChange }: { tab: DetailTab; onChange: (tab: DetailTab) 
           )}
         >
           {t.label}
+          {flagged === t.id && <span aria-label="has a problem" className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-nd-warning align-middle" />}
         </button>
       ))}
     </div>
@@ -88,6 +90,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [rollbackTo, setRollbackTo] = useState<DeployRecord | null>(null)
   const selected = history.find((r) => r.id === selectedId) ?? history[0]
+  const serverCheck = useServerCheck(connectionId, config)
 
   const runAndSelect = async (action: Promise<DeployResult<string>>, failure: string) => {
     const result = await action
@@ -137,7 +140,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
       <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 flex-col gap-4 px-7 pb-5 pt-5">
         <DetailHeader summary={summary} pcDrift={pcDrift} starting={starting} rollbackTo={rollbackTarget(summary)} actions={actions} />
         <SummaryStrip summary={summary} pcDrift={pcDrift} user={user} />
-        <TabBar tab={tab} onChange={setTab} />
+        <TabBar tab={tab} onChange={setTab} flagged={serverCheck.hasProblem ? 'check' : null} />
         <div className="min-h-0 flex-1">
           {tab === 'history' && (
             <Splitter
@@ -153,7 +156,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
           {tab === 'env' && (
             <EnvEditor connectionId={connectionId} site={config.name} canApply={Boolean(state.current) && !state.busy} onApply={() => void runAndSelect(deployApi().apply(connectionId, config.name), 'Could not apply the change')} />
           )}
-          {tab === 'check' && <ServerCheck connectionId={connectionId} site={config} />}
+          {tab === 'check' && <ServerCheck site={config} check={serverCheck} />}
           {tab === 'settings' && (
             <div className="h-full overflow-y-auto">
               <SiteForm connectionId={connectionId} initial={config} existingNames={[]} onSaved={(site) => onSaved(site)} onCancel={() => setTab('history')} />
