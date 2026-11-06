@@ -52,6 +52,7 @@ import { registerSQLIPC } from "./ipc/sql.ipc";
 import { registerExportIPC } from "./ipc/export.ipc";
 import { registerMonitorIPC, getMonitorService } from "./ipc/monitor.ipc";
 import { registerServiceManagerIPC } from "./ipc/servicemanager.ipc";
+import { registerDeployIPC } from "./ipc/deploy.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
 import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
@@ -418,6 +419,7 @@ app.whenReady().then(() => {
   registerExportIPC();
   registerMonitorIPC();
   registerServiceManagerIPC();
+  registerDeployIPC();
   registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)

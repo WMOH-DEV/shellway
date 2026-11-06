@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
+import type { DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, SiteConfig, SiteSummary } from "../src/types/deploy";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1115,6 +1116,67 @@ const api = {
       lines?: number,
       since?: string,
     ) => ipcRenderer.invoke("services:logs", connectionId, unit, lines, since),
+  },
+
+  // ── Deployments ──
+  deploy: {
+    runnerInfo: (connectionId: string) =>
+      ipcRenderer.invoke("deploy:runner-info", connectionId) as Promise<DeployResult<RunnerInfo>>,
+    installRunner: (connectionId: string) =>
+      ipcRenderer.invoke("deploy:install-runner", connectionId) as Promise<DeployResult>,
+    list: (connectionId: string, sessionId: string) =>
+      ipcRenderer.invoke("deploy:list", connectionId, sessionId) as Promise<DeployResult<SiteSummary[]>>,
+    save: (connectionId: string, config: SiteConfig) =>
+      ipcRenderer.invoke("deploy:save", connectionId, config) as Promise<DeployResult>,
+    remove: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:remove", connectionId, name) as Promise<DeployResult>,
+    deploy: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:deploy", connectionId, name) as Promise<DeployResult<string>>,
+    rollback: (connectionId: string, name: string, targetId: string) =>
+      ipcRenderer.invoke("deploy:rollback", connectionId, name, targetId) as Promise<DeployResult<string>>,
+    approve: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:approve", connectionId, name) as Promise<DeployResult<string>>,
+    apply: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:apply", connectionId, name) as Promise<DeployResult<string>>,
+    cancel: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:cancel", connectionId, name) as Promise<DeployResult>,
+    resume: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:resume", connectionId, name) as Promise<DeployResult>,
+    log: (connectionId: string, name: string, id: string, offset: number) =>
+      ipcRenderer.invoke("deploy:log", connectionId, name, id, offset) as Promise<DeployResult<{ text: string; offset: number }>>,
+    doctor: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:doctor", connectionId, name) as Promise<DeployResult<DoctorReport>>,
+    keygen: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:keygen", connectionId, name) as Promise<DeployResult<string>>,
+    checkRemote: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:check-remote", connectionId, name) as Promise<DeployResult<string>>,
+    readEnv: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:env-read", connectionId, name) as Promise<DeployResult<{ exists: boolean; content: string; path: string }>>,
+    writeEnv: (connectionId: string, name: string, content: string) =>
+      ipcRenderer.invoke("deploy:env-write", connectionId, name, content) as Promise<DeployResult>,
+    detect: (connectionId: string, path: string) =>
+      ipcRenderer.invoke("deploy:detect", connectionId, path) as Promise<DeployResult<DetectResult>>,
+    registerKey: (connectionId: string, name: string, token: string | null, remember: boolean) =>
+      ipcRenderer.invoke("deploy:register-key", connectionId, name, token, remember) as Promise<DeployResult<{ alreadyAdded: boolean }>>,
+    githubTokenSaved: () =>
+      ipcRenderer.invoke("deploy:github-token-saved") as Promise<DeployResult<boolean>>,
+    clearGithubToken: () =>
+      ipcRenderer.invoke("deploy:github-token-clear") as Promise<DeployResult>,
+    localGitAvailable: () =>
+      ipcRenderer.invoke("deploy:local-git") as Promise<DeployResult<boolean>>,
+    drift: (repoUrl: string, branch: string, live: string) =>
+      ipcRenderer.invoke("deploy:drift", repoUrl, branch, live) as Promise<DeployResult<RemoteDrift>>,
+    onChanged: (callback: (connectionId: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string) => callback(connectionId);
+      ipcRenderer.on("deploy:changed", handler);
+      return () => ipcRenderer.removeListener("deploy:changed", handler);
+    },
+    onFinished: (callback: (connectionId: string, site: string, record: DeployRecord) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string, site: string, record: DeployRecord) =>
+        callback(connectionId, site, record);
+      ipcRenderer.on("deploy:finished", handler);
+      return () => ipcRenderer.removeListener("deploy:finished", handler);
+    },
   },
 
   // ── Host Key Management ──

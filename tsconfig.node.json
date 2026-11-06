@@ -20,6 +20,7 @@
     "electron/**/*.ts",
     "electron.vite.config.ts",
     "src/types/**/*.ts",
+    "src/utils/deploy/githubRepo.ts",
     "package.json"
   ]
 }

@@ -1,13 +1,11 @@
 import type { SSHConnection } from './SSHService'
+import { sshExec as execCommand } from '../utils/sshExec'
 import type {
   SystemdService,
   ServiceDetails,
   ServiceLogEntry,
   ServiceAction
 } from '../../src/types/serviceManager'
-
-/** Timeout for all SSH commands (ms) */
-const COMMAND_TIMEOUT = 10_000
 
 /** Allowed service actions for validation */
 const VALID_ACTIONS: ReadonlySet<ServiceAction> = new Set([
@@ -29,63 +27,6 @@ const PRIORITY_MAP: Record<string, ServiceLogEntry['priority']> = {
   '5': 'notice',
   '6': 'info',
   '7': 'debug'
-}
-
-/**
- * Executes a command over SSH with a timeout.
- * Returns stdout/stderr and exit code.
- * Uses a `settled` flag to prevent double-resolution from timeout/close/error races.
- */
-function execCommand(
-  conn: SSHConnection,
-  command: string,
-  timeoutMs: number = COMMAND_TIMEOUT
-): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve, reject) => {
-    if (conn.status !== 'connected') {
-      return reject(new Error('SSH connection is not active'))
-    }
-
-    conn._client.exec(command, (err: Error | undefined, stream: any) => {
-      if (err) return reject(err)
-
-      let stdout = ''
-      let stderr = ''
-      let settled = false
-
-      const settle = (fn: () => void) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        fn()
-      }
-
-      const timer = setTimeout(() => {
-        settle(() => {
-          stream.destroy()
-          reject(new Error(`Command timed out after ${timeoutMs}ms`))
-        })
-      }, timeoutMs)
-
-      stream.on('data', (d: Buffer) => {
-        if (!settled) stdout += d.toString()
-      })
-
-      stream.stderr.on('data', (d: Buffer) => {
-        if (!settled) stderr += d.toString()
-      })
-
-      // Prevent unhandled 'error' events from crashing the main process
-      stream.on('error', (streamErr: Error) => {
-        settle(() => reject(streamErr))
-      })
-      stream.stderr.on('error', () => {})
-
-      stream.on('close', (code: number) => {
-        settle(() => resolve({ stdout, stderr, code }))
-      })
-    })
-  })
 }
 
 /**
