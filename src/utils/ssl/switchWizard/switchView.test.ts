@@ -59,8 +59,11 @@ describe('switchView', () => {
     expect(unrestored.note).toContain('/etc/ssl/shellway/backups/app.example.com-20261106.conf')
   })
 
-  it('does not name a backup path that does not exist', () => {
-    expect(switchFailureView(switchFailed({ restored: false, backupPath: null })).note).not.toContain('Your original file')
+  it('says nothing was changed when there is no backup and nothing was restored', () => {
+    const note = switchFailureView(switchFailed({ restored: false, failedStage: 'apply', backupPath: null })).note
+    expect(note).toContain('Nothing on the server was changed.')
+    expect(note).not.toContain('Your original file')
+    expect(note).not.toContain('not restored automatically')
   })
 
   it('builds run outcomes for apply, undo and removal', () => {

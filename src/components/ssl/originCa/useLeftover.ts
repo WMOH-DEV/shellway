@@ -18,7 +18,7 @@ export interface Leftover {
   removeLineage: () => Promise<void>
 }
 
-export function useLeftover(connectionId: string, sessionId: string, name: string, enabled: boolean, onChanged: () => void): Leftover {
+export function useLeftover(connectionId: string, sessionId: string, name: string, enabled: boolean, onChanged: () => void | Promise<void>): Leftover {
   const [leftover, setLeftover] = useState<SwitchLeftover | null>(null)
   const [last, setLast] = useState<LeftoverAction | null>(null)
   const [removeResult, setRemoveResult] = useState<ActionResult | null>(null)
@@ -40,12 +40,16 @@ export function useLeftover(connectionId: string, sessionId: string, name: strin
     return () => { latest.current += 1 }
   }, [reload])
 
-  const afterRun = () => {
-    void reload()
-    onChanged()
+  const afterRun = async (succeeded: boolean) => {
+    if (succeeded) {
+      latest.current += 1
+      setLeftover(null)
+    }
+    await onChanged()
+    if (!succeeded && mounted.current) await reload()
   }
 
-  const undo = useUndoSwitch(connectionId, sessionId, name, afterRun)
+  const undo = useUndoSwitch(connectionId, sessionId, name, (result) => afterRun(result?.ok === true))
 
   const removeLineage = async () => {
     if (!leftover) return
@@ -56,7 +60,7 @@ export function useLeftover(connectionId: string, sessionId: string, name: strin
     if (!mounted.current) return
     setRemoveResult(outcome.data)
     setRemoveError(outcome.error)
-    afterRun()
+    await afterRun(outcome.data?.code === 0)
   }
 
   const startUndo = async () => {

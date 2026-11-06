@@ -69,7 +69,7 @@ export function HostnameDetail({ connectionId, sessionId, host, report, now, loa
           sessionId={sessionId}
           name={host.name}
           enabled={host.origin?.kind === 'cloudflare-origin'}
-          onChanged={() => void onRefresh()}
+          onChanged={onRefresh}
         />
         {facts.certbot && <RenewalCard renewal={facts.renewal} />}
       </div>

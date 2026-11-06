@@ -192,6 +192,22 @@ describe('Switch to Origin CA steps 2 and 3', () => {
     expect(screen.getByRole('heading', { name: 'Explain and confirm' })).toBeInTheDocument()
   })
 
+  it('does not prepare again from Try again when the report now blocks the switch', async () => {
+    const u = user()
+    const backend = setupBackend({ prepareError: 'Cloudflare refused the request' })
+    const { rerenderWith } = renderWizard()
+    await u.click(screen.getByRole('button', { name: /Continue/ }))
+    await screen.findByRole('alert')
+    rerenderWith(switchReport({
+      hostnames: [
+        makeHost({ name: 'app.example.com', blockId: switchBlock.id }),
+        makeHost({ name: 'www.app.example.com', blockId: switchBlock.id, edge: edgeOf({ state: 'dns-only' }) })
+      ]
+    }))
+    expect(screen.getByRole('button', { name: /Try again/ })).toBeDisabled()
+    expect(backend.prepare).toHaveBeenCalledTimes(1)
+  })
+
   it('cancels a switch that finished preparing after the wizard was closed', async () => {
     const u = user()
     let finish: (value: unknown) => void = () => undefined
@@ -400,18 +416,75 @@ describe('Switch to Origin CA step 5', () => {
     expect(alert).not.toHaveTextContent('Shellway restored the backup')
   })
 
-  it('offers Try again when the apply call itself fails, and cancels the switch on Cancel', async () => {
+  it('says nothing was changed when the script refused before touching the file', async () => {
+    const u = user()
+    setupBackend({ applied: switchFailed({ restored: false, failedStage: 'apply', backupPath: null }) })
+    renderWizard()
+    await toApplied(u)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Nothing on the server was changed.')
+    expect(alert).not.toHaveTextContent('not restored automatically')
+  })
+
+  it('does not offer Try again or cancel the consumed switch when the apply call drops', async () => {
     const u = user()
     const backend = setupBackend({ applyError: 'Connection lost' })
-    const { onCancel } = renderWizard()
+    const { onFinished, onCancel } = renderWizard()
     await toReview(u)
     await u.click(screen.getByRole('button', { name: /Apply and verify/ }))
     expect(await screen.findByText('The switch could not run: Connection lost')).toBeInTheDocument()
-    await u.click(screen.getByRole('button', { name: /Try again/ }))
-    await waitFor(() => expect(backend.apply).toHaveBeenCalledTimes(2))
-    await u.click(await screen.findByRole('button', { name: 'Cancel' }))
-    expect(backend.cancel).toHaveBeenCalledWith('conn-1', 'switch-1')
-    expect(onCancel).toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('The connection dropped while applying.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Check the site before trying again.')
+    expect(screen.queryByRole('button', { name: /Try again/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    await u.click(screen.getByRole('button', { name: 'Back to hostnames' }))
+    expect(onFinished).toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(backend.apply).toHaveBeenCalledTimes(1)
+    expect(backend.cancel).not.toHaveBeenCalled()
+  })
+
+  it('re-checks when leaving through the header arrow after the apply call dropped', async () => {
+    const u = user()
+    const backend = setupBackend({ applyError: 'Connection lost' })
+    const { onFinished, onCancel, unmount } = renderWizard()
+    await toReview(u)
+    await u.click(screen.getByRole('button', { name: /Apply and verify/ }))
+    await screen.findByRole('button', { name: 'Back to hostnames' })
+    await u.click(screen.getByRole('button', { name: 'Leave the switch' }))
+    expect(onFinished).toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+    unmount()
+    expect(backend.cancel).not.toHaveBeenCalled()
+  })
+
+  it('re-checks when leaving after a failed apply', async () => {
+    const u = user()
+    setupBackend({ applied: switchFailed() })
+    const { onFinished, onCancel } = renderWizard()
+    await toApplied(u)
+    await u.click(screen.getByRole('button', { name: 'Leave the switch' }))
+    expect(onFinished).toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('stops claiming the switch is done while the undo runs and after it succeeded', async () => {
+    const u = user()
+    let finish: (value: unknown) => void = () => undefined
+    const backend = setupBackend()
+    renderWizard()
+    await toApplied(u)
+    expect(screen.getByText(/The switch is done/)).toBeInTheDocument()
+    backend.undo.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    await u.click(screen.getByRole('button', { name: /Undo switch/ }))
+    expect(screen.queryByText(/The switch is done/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/nginx now presents/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Names' })).not.toBeInTheDocument()
+    await act(async () => finish({ success: true, data: switchApplied({ output: 'Restored the site file' }) }))
+    expect(await screen.findByText(/The old site file is back/)).toBeInTheDocument()
+    expect(screen.queryByText(/The switch is done/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/nginx now presents/)).not.toBeInTheDocument()
+    expect(screen.getByText(/The switch was undone/)).toBeInTheDocument()
   })
 
   it('does not cancel an applying switch when the wizard unmounts mid-run', async () => {

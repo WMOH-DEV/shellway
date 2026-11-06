@@ -34,7 +34,7 @@ export interface SwitchFlow {
   applyError: string | null
   undo: UndoSwitch
   busy: boolean
-  finished: boolean
+  applyAttempted: boolean
   prepare: () => Promise<void>
   apply: () => Promise<void>
   back: () => void
@@ -49,6 +49,7 @@ export function useSwitchFlow({ connectionId, sessionId, report, hostName, block
   const [prepareError, setPrepareError] = useState<string | null>(null)
   const [applyResult, setApplyResult] = useState<SwitchResult | null>(null)
   const [applyError, setApplyError] = useState<string | null>(null)
+  const [applyAttempted, setApplyAttempted] = useState(false)
   const prepareRun = useStreamedRun()
   const applyRun = useStreamedRun()
   const undo = useUndoSwitch(connectionId, sessionId, hostName)
@@ -88,6 +89,7 @@ export function useSwitchFlow({ connectionId, sessionId, report, hostName, block
   }
 
   const prepare = async () => {
+    if (check.blockedReason !== null) return
     if (prepared) return setPhase('review')
     const ticket = ++generation.current
     setPrepareError(null)
@@ -107,12 +109,12 @@ export function useSwitchFlow({ connectionId, sessionId, report, hostName, block
     if (!prepared || check.blockedReason !== null) return
     const { switchId } = prepared
     pending.current = null
+    setApplyAttempted(true)
     setApplyError(null)
     setApplyResult(null)
     setPhase('apply')
     const outcome = await applyRun.start((runId) => sslApi().originApply(connectionId, sessionId, switchId, runId))
     if (!mounted.current) return
-    if (!outcome.data) pending.current = switchId
     setApplyResult(outcome.data)
     setApplyError(outcome.error)
   }
@@ -140,7 +142,7 @@ export function useSwitchFlow({ connectionId, sessionId, report, hostName, block
     applyError,
     undo,
     busy: prepareRun.running || applyRun.running || undo.run.running,
-    finished: applyResult !== null,
+    applyAttempted,
     prepare,
     apply,
     back,

@@ -98,6 +98,41 @@ describe('LeftoverCard', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument())
   })
 
+  it('drops the removed lineage even when the backend keeps reporting it', async () => {
+    const u = userEvent.setup()
+    const backend = setupBackend({ leftovers: [leftoverOf()] })
+    const { onChanged } = renderCard()
+    await u.click(await screen.findByRole('button', { name: 'Remove' }))
+    expect(await screen.findByText('certbot certificate removed')).toBeInTheDocument()
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  })
+
+  it('drops the lineage after a successful undo even when the backend keeps reporting it', async () => {
+    const u = userEvent.setup()
+    setupBackend({ leftovers: [leftoverOf()] })
+    renderCard()
+    await u.click(await screen.findByRole('button', { name: 'Undo' }))
+    expect(await screen.findByText('Switch undone')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+  })
+
+  it('looks again after the parent re-check when the removal failed', async () => {
+    const u = userEvent.setup()
+    const order: string[] = []
+    const backend = setupBackend({ removeCode: 1 })
+    backend.leftover.mockImplementation(async () => {
+      order.push('reload')
+      return { success: true, data: leftoverOf() }
+    })
+    render(<LeftoverCard connectionId="conn-1" sessionId="session-1" name="app.example.com" enabled onChanged={async () => { order.push('changed') }} />)
+    await u.click(await screen.findByRole('button', { name: 'Remove' }))
+    await screen.findByText('The removal failed (exit 1)')
+    await waitFor(() => expect(order).toEqual(['reload', 'changed', 'reload']))
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled()
+  })
+
   it('shows a failed removal', async () => {
     const u = userEvent.setup()
     setupBackend({ removeCode: 1 })

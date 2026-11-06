@@ -41,13 +41,15 @@ export interface SwitchFailureView {
   note: string
 }
 
+function failureNote(result: SwitchResult): string {
+  if (result.restored) return `Shellway restored the backup${result.backupPath ? ` (${result.backupPath})` : ''} and reloaded nginx. The site is back on its old certificate.`
+  if (result.backupPath === null) return 'Nothing on the server was changed. Check the output below.'
+  return `The backup was not restored automatically. Your original file is at ${result.backupPath}. Check the output below.`
+}
+
 export function switchFailureView(result: SwitchResult): SwitchFailureView {
   const title = FAILURE_TITLES[result.failedStage ?? 'apply']
-  const where = result.backupPath ? ` (${result.backupPath})` : ''
-  const note = result.restored
-    ? `Shellway restored the backup${where} and reloaded nginx. The site is back on its old certificate.`
-    : `The backup was not restored automatically.${result.backupPath ? ` Your original file is at ${result.backupPath}.` : ''} Check the output below.`
-  return { title, note }
+  return { title, note: failureNote(result) }
 }
 
 export interface RunOutcomeView {

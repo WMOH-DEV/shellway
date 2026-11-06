@@ -33,7 +33,7 @@ function PrepareActions({ flow }: { flow: SwitchFlow }) {
       <Button onClick={flow.back} disabled={flow.busy}>Back</Button>
       <div className="flex-1" />
       {failed
-        ? <Button variant="primary" onClick={() => void flow.prepare()}><RotateCcw size={13} /> Try again</Button>
+        ? <Button variant="primary" onClick={() => void flow.prepare()} disabled={flow.check.blockedReason !== null}><RotateCcw size={13} /> Try again</Button>
         : <Hint>Working on the server and Cloudflare</Hint>}
     </>
   )
@@ -70,17 +70,26 @@ function FinishedActions({ flow, onFinished }: { flow: SwitchFlow; onFinished: (
   )
 }
 
-function ApplyActions({ flow, onCancel, onFinished }: SwitchFooterProps) {
-  if (flow.applyResult) return <FinishedActions flow={flow} onFinished={onFinished} />
+function DroppedActions({ onFinished }: { onFinished: () => void }) {
   return (
     <>
-      <Button onClick={flow.back} disabled={flow.busy}>Back</Button>
       <div className="flex-1" />
-      {flow.applyRun.running && <Hint>Applying. Leaving is disabled until it finishes.</Hint>}
-      <Button onClick={onCancel} disabled={flow.busy}>Cancel</Button>
-      <Button variant="primary" onClick={() => void flow.apply()} disabled={flow.busy}>
-        {flow.applyRun.running ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-        {flow.applyRun.running ? 'Applying…' : 'Try again'}
+      <Button variant="primary" onClick={onFinished}>Back to hostnames</Button>
+    </>
+  )
+}
+
+function ApplyActions({ flow, onCancel, onFinished }: SwitchFooterProps) {
+  if (flow.applyResult) return <FinishedActions flow={flow} onFinished={onFinished} />
+  if (flow.applyError !== null) return <DroppedActions onFinished={onFinished} />
+  return (
+    <>
+      <Button disabled>Back</Button>
+      <div className="flex-1" />
+      <Hint>Applying. Leaving is disabled until it finishes.</Hint>
+      <Button onClick={onCancel} disabled>Cancel</Button>
+      <Button variant="primary" disabled>
+        <Loader2 size={13} className="animate-spin" /> Applying…
       </Button>
     </>
   )

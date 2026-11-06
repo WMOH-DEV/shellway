@@ -30,13 +30,13 @@ export function SwitchWizard({ connectionId, sessionId, report, host, onCancel, 
   const flow = useSwitchFlow({ connectionId, sessionId, report, hostName: host.name, blockId: host.blockId })
   const leave = () => {
     flow.abandon()
-    onCancel()
+    if (flow.applyAttempted) onFinished()
+    else onCancel()
   }
-  const changed = flow.finished || flow.undo.result !== null
   return (
     <div className="flex h-full flex-col bg-nd-bg-primary">
       <header className="flex items-center gap-2.5 border-b border-nd-border px-7 py-4">
-        <Button size="icon" variant="ghost" aria-label="Leave the switch" disabled={flow.busy} onClick={changed ? onFinished : leave}>
+        <Button size="icon" variant="ghost" aria-label="Leave the switch" disabled={flow.busy} onClick={leave}>
           <ArrowLeft size={16} />
         </Button>
         <h1 className="text-lg font-semibold text-nd-text-primary">Switch to Cloudflare Origin CA</h1>

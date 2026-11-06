@@ -26,6 +26,10 @@ function Notice({ children }: { children: string }) {
 }
 
 function subtitle(flow: SwitchFlow): string {
+  const { undo } = flow
+  if (undo.run.running) return 'Putting the old site file back, testing nginx, reloading it and checking the result.'
+  if (undo.result?.ok) return 'The switch was undone. certbot\'s certificate is in use again.'
+  if (undo.result || undo.error !== null) return 'Undoing the switch did not finish. Check the output below.'
   if (flow.applyRun.running) return 'Backing up the site file, replacing the certificate lines, reloading nginx and checking the result.'
   if (flow.applyResult?.ok) return 'nginx now presents the Cloudflare Origin CA certificate.'
   return 'Shellway runs the script once and checks what visitors get.'
@@ -35,12 +39,14 @@ export function ApplyStep({ flow }: { flow: SwitchFlow }) {
   const { applyRun, applyResult, applyError, undo } = flow
   const undone = undo.result?.ok === true
   const hasUndo = undo.run.running || undo.result !== null || undo.error !== null
+  const switchStands = applyResult?.ok === true && !hasUndo
   return (
     <div className="flex flex-col gap-4">
       <StepHeading title="Apply and verify" subtitle={subtitle(flow)} />
-      {applyResult?.ok && !undone && <Notice>The switch is done. Every name now presents the Cloudflare Origin CA certificate.</Notice>}
+      {switchStands && <Notice>The switch is done. Every name now presents the Cloudflare Origin CA certificate.</Notice>}
+      {!applyResult && applyError !== null && !applyRun.running && <Failure title="The connection dropped while applying." note="Check the site before trying again." />}
       {applyResult && !applyResult.ok && <Failure {...switchFailureView(applyResult)} />}
-      {applyResult?.ok && !undone && <NameRows names={applyResult.verify} />}
+      {switchStands && <NameRows names={applyResult.verify} />}
       {(applyRun.running || applyRun.output || applyResult || applyError) && (
         <OutputPanel
           command="sudo -n sh -s"

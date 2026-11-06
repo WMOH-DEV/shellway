@@ -11,7 +11,7 @@ export interface UndoSwitch {
   undo: () => Promise<void>
 }
 
-export function useUndoSwitch(connectionId: string, sessionId: string, name: string, onFinished?: () => void): UndoSwitch {
+export function useUndoSwitch(connectionId: string, sessionId: string, name: string, onFinished?: (result: SwitchResult | null) => void | Promise<void>): UndoSwitch {
   const [result, setResult] = useState<SwitchResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const run = useStreamedRun()
@@ -24,7 +24,7 @@ export function useUndoSwitch(connectionId: string, sessionId: string, name: str
     if (!mounted.current) return
     setResult(outcome.data)
     setError(outcome.error)
-    onFinished?.()
+    await onFinished?.(outcome.data)
   }
 
   return { run, result, error, undo }
