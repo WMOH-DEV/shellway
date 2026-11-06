@@ -9,6 +9,7 @@ import { getSettingsStore } from './settings.ipc'
 import { cleanupSFTP, cleanupAllSFTP } from './sftp.ipc'
 import { broadcast, windowHolding } from '../services/WindowManager'
 import { notifyDeployConnectionClosed, notifyDeployConnectionReady } from './deploy.ipc'
+import { notifySslConnectionClosed, notifySslConnectionReady } from './ssl.ipc'
 import { sshResource } from '../../src/types/windowResources'
 
 const sshService = new SSHService()
@@ -191,11 +192,13 @@ export function registerSSHIPC(): void {
 
           if (status === 'connected') {
             notifyDeployConnectionReady(connectionId, savedSessionId, config.host || connectionId)
+            notifySslConnectionReady(connectionId, savedSessionId, config.host || connectionId)
           }
 
           // Notify on unexpected disconnect
           if (status === 'disconnected') {
             notifyDeployConnectionClosed(connectionId)
+            notifySslConnectionClosed(connectionId)
             const sessionName = config.host || connectionId
             getNotificationService()?.notifyDisconnect(sessionName)
           }

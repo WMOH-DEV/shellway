@@ -1192,6 +1192,12 @@ const api = {
     removeCloudflareToken: () => ipcRenderer.invoke("ssl:cf-remove") as Promise<SslResult>,
     alerts: () => ipcRenderer.invoke("ssl:alerts") as Promise<SslResult<AlertSettings>>,
     setAlertsEnabled: (enabled: boolean) => ipcRenderer.invoke("ssl:alerts-enable", enabled) as Promise<SslResult<AlertSettings>>,
+    criticalCount: (connectionId: string) => ipcRenderer.invoke("ssl:critical-count", connectionId) as Promise<SslResult<number>>,
+    onCritical: (callback: (connectionId: string, count: number) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string, count: number) => callback(connectionId, count);
+      ipcRenderer.on("ssl:critical", handler);
+      return () => ipcRenderer.removeListener("ssl:critical", handler);
+    },
     onOutput: (callback: (runId: string, chunk: string) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, runId: string, chunk: string) => callback(runId, chunk);
       ipcRenderer.on("ssl:output", handler);

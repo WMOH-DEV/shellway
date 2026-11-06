@@ -24,6 +24,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useMonitorStore } from '@/stores/monitorStore'
 import { useServiceManagerStore } from '@/stores/serviceManagerStore'
 import type { ConnectionTab } from '@/types/session'
+import { useSslCritical } from '@/hooks/useSslCritical'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
@@ -98,13 +99,15 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
   }, [tab.activeSubTab])
 
   // Build tabs with dimming for shut-down tabs
+  const sslCritical = useSslCritical(tab.id, tab.status === 'connected')
   const subTabsWithState = useMemo(() => {
     return SUB_TABS.map(t => ({
       ...t,
       icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.icon,
-      dimmed: !runningSubTabs.has(t.id)
+      dimmed: !runningSubTabs.has(t.id),
+      alert: t.id === 'ssl' && sslCritical
     }))
-  }, [runningSubTabs, detachedSubTabs])
+  }, [runningSubTabs, detachedSubTabs, sslCritical])
 
   // Tab change handler — re-activates shut-down tabs on click
   const handleSubTabChange = useCallback((id: string) => {

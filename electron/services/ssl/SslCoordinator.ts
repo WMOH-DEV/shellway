@@ -1,5 +1,5 @@
 import type { RemoteExec } from '../deploy/DeployService'
-import type { ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, ServerScan, SslReport } from '../../../src/types/ssl'
+import type { ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, ServerScan, SslReport } from '../../../src/types/ssl'
 import { CloudflareClient } from './CloudflareClient'
 import { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
@@ -9,8 +9,18 @@ export interface SslDeps {
   execFor: (connectionId: string) => RemoteExec | null
   store: SslLocalStore
   cloudflare: (token: string) => CloudflareClient
+  serviceFor?: (exec: RemoteExec) => SslService
   broadcast: (channel: string, ...args: unknown[]) => void
+  notify: (title: string, body: string) => void
   now: () => number
+}
+
+const isCritical = (host: HostnameStatus) => host.verdict === 'broken' || host.verdict === 'will-break'
+
+function criticalSummary(label: string, critical: HostnameStatus[]): [string, string] {
+  const [worst, ...rest] = critical
+  const more = rest.length === 0 ? '' : rest.length === 1 ? '\n1 more hostname needs attention' : `\n${rest.length} more hostnames need attention`
+  return [`SSL problem on ${label}`, `${worst.name}: ${worst.reason}${more}`]
 }
 
 const tokenHint = (token: string) => (token.length > 8 ? `…${token.slice(-4)}` : '…')
@@ -24,13 +34,33 @@ function probeTarget(address: string, fallbackHost: string): Pick<KnownHost, 'ad
 
 export class SslCoordinator {
   private readonly checks = new Map<string, Promise<SslReport>>()
+  private readonly criticalCounts = new Map<string, number>()
 
   constructor(private readonly deps: SslDeps) {}
 
   service(connectionId: string): SslService {
     const exec = this.deps.execFor(connectionId)
     if (!exec) throw new Error('Not connected')
-    return new SslService(exec)
+    return this.deps.serviceFor ? this.deps.serviceFor(exec) : new SslService(exec)
+  }
+
+  async onConnected(connectionId: string, sessionId: string, label: string): Promise<void> {
+    if (!(sessionId in this.deps.store.knownHosts())) return
+    try {
+      const report = await this.check(connectionId, sessionId)
+      const critical = report.hostnames.filter(isCritical)
+      if (critical.length > 0) this.deps.notify(...criticalSummary(label, critical))
+    } catch {
+      this.criticalCounts.delete(connectionId)
+    }
+  }
+
+  forget(connectionId: string): void {
+    this.criticalCounts.delete(connectionId)
+  }
+
+  criticalCount(connectionId: string): number {
+    return this.criticalCounts.get(connectionId) ?? 0
   }
 
   check(connectionId: string, sessionId: string): Promise<SslReport> {
@@ -76,6 +106,9 @@ export class SslCoordinator {
     const edges = await this.edgesFor(scan, cloudflare)
     const report = buildReport(scan, edges, cloudflare, Math.floor(this.deps.now() / 1000))
     this.rememberHosts(sessionId, scan)
+    const critical = report.hostnames.filter(isCritical).length
+    this.criticalCounts.set(connectionId, critical)
+    this.deps.broadcast('ssl:critical', connectionId, critical)
     return report
   }
 

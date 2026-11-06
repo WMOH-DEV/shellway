@@ -46,6 +46,11 @@ export class NotificationService {
     this.show({ title, body })
   }
 
+  notifySsl({ title, body }: { title: string; body: string }): void {
+    if (!this.settingsStore.getAll().notificationsEnabled) return
+    this.show({ title, body })
+  }
+
   private isWindowFocused(): boolean {
     const windows = BrowserWindow.getAllWindows()
     return windows.some((w) => w.isFocused())
