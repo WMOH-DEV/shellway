@@ -16,16 +16,18 @@ interface ActionsCardProps {
   run: CertbotRun
   onForce: () => void
   onAddHttps: (blockId: string) => void
+  originBlockedReason: string | null
+  onSwitchOrigin: () => void
 }
 
-interface ActionRowProps {
+export interface ActionRowProps {
   title: ReactNode
   command?: string
   note: string
   children?: ReactNode
 }
 
-function ActionRow({ title, command, note, children }: ActionRowProps) {
+export function ActionRow({ title, command, note, children }: ActionRowProps) {
   return (
     <div className="flex items-center gap-3 border-b border-nd-border py-2.5 last:border-b-0">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -71,21 +73,21 @@ function AddHttpsRow({ host, onAddHttps }: { host: HostnameStatus; onAddHttps: (
   )
 }
 
-function OriginCaRow() {
+function OriginCaRow({ blockedReason, onStart }: { blockedReason: string | null; onStart: () => void }) {
   return (
     <ActionRow
       title={<>Switch to Cloudflare Origin CA <Badge>valid up to 15 years</Badge></>}
       note="Removes the renewal risk. The hostname must stay proxied. Undo available."
     >
-      <div className="flex flex-col items-end gap-1">
-        <Button disabled>Start</Button>
-        <span className="text-[11px] text-nd-text-muted">Coming in a later step</span>
+      <div className="flex max-w-[240px] flex-col items-end gap-1">
+        <Button variant="secondary" disabled={blockedReason !== null} onClick={onStart}>Start</Button>
+        {blockedReason && <span className="text-right text-[11px] text-nd-text-muted">{blockedReason}</span>}
       </div>
     </ActionRow>
   )
 }
 
-export function ActionsCard({ host, facts, run, onForce, onAddHttps }: ActionsCardProps) {
+export function ActionsCard({ host, facts, run, onForce, onAddHttps, originBlockedReason, onSwitchOrigin }: ActionsCardProps) {
   const availability = actionAvailability(host, facts)
   const isThisCertificate = run.lineage !== null && run.lineage === host.lineage
   const shownAction = run.running ?? run.outcome?.action ?? null
@@ -98,7 +100,7 @@ export function ActionsCard({ host, facts, run, onForce, onAddHttps }: ActionsCa
           : host.lineage === null && isMissingServerCertificate(host)
             ? <AddHttpsRow host={host} onAddHttps={onAddHttps} />
             : <p className="py-2 text-[13px] text-nd-text-secondary">{availability.reason}</p>}
-        <OriginCaRow />
+        <OriginCaRow blockedReason={originBlockedReason} onStart={onSwitchOrigin} />
       </div>
       {availability.allowed && (
         <button

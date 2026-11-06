@@ -16,7 +16,7 @@ const DOT_TONE: Record<StepState, string> = {
   todo: 'bg-nd-bg-tertiary text-nd-text-muted'
 }
 
-function StepDot({ index, state }: { index: number; state: StepState }) {
+export function StepDot({ index, state }: { index: number; state: StepState }) {
   return (
     <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold', DOT_TONE[state])}>
       {state === 'done' ? <Check size={12} strokeWidth={2.6} /> : index + 1}
