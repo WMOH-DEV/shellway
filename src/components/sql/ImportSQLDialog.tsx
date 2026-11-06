@@ -425,9 +425,9 @@ export function ImportSQLDialog({
       <div className="flex flex-col gap-4">
         {/* Production warning */}
         {isProduction && (
-          <div className="flex items-start gap-2.5 rounded-md bg-red-500/10 border border-red-500/30 px-3 py-2.5">
-            <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
-            <p className="text-xs font-medium text-red-400">
+          <div className="flex items-start gap-2.5 rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2.5">
+            <AlertTriangle size={16} className="text-nd-error mt-0.5 shrink-0" />
+            <p className="text-xs font-medium text-nd-error-fg">
               You are importing into a PRODUCTION database. Proceed with extreme caution.
             </p>
           </div>
@@ -509,7 +509,7 @@ export function ImportSQLDialog({
 
             {/* Scan error */}
             {scanError && (
-              <p className="text-xs text-red-400 bg-red-500/10 rounded-md px-3 py-2">
+              <p className="text-xs text-nd-error-fg border border-nd-error/30 bg-nd-error/[0.07] rounded-md px-3 py-2">
                 {scanError}
               </p>
             )}
@@ -555,17 +555,17 @@ export function ImportSQLDialog({
                     </label>
                     <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2 text-[11px] space-y-0.5">
                       <p className="text-nd-text-primary">
-                        <span className="text-emerald-400 font-medium">{preflight.present.length}</span>
+                        <span className="text-nd-success font-medium">{preflight.present.length}</span>
                         <span className="text-nd-text-muted"> already present</span>
                         {'  ·  '}
-                        <span className={preflight.missing.length > 0 ? 'text-amber-400 font-medium' : 'text-nd-text-primary'}>
+                        <span className={preflight.missing.length > 0 ? 'text-nd-warning font-medium' : 'text-nd-text-primary'}>
                           {preflight.missing.length}
                         </span>
                         <span className="text-nd-text-muted"> missing</span>
                       </p>
                       {preflight.missing.length > 0 && (
                         <p className="text-nd-text-muted break-all">
-                          <span className="text-amber-400/80">Missing: </span>
+                          <span className="text-nd-warning/80">Missing: </span>
                           {preflight.missing.slice(0, 8).join(', ')}
                           {preflight.missing.length > 8 && <span> … (+{preflight.missing.length - 8} more)</span>}
                         </p>
@@ -580,15 +580,15 @@ export function ImportSQLDialog({
 
                 {/* Dangerous statements warning */}
                 {hasDangerousStatements && (
-                  <div className="rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 space-y-2">
+                  <div className="rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2.5 space-y-2">
                     <div className="flex items-start gap-2">
-                      <AlertTriangle size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                      <AlertTriangle size={14} className="text-nd-warning mt-0.5 shrink-0" />
                       <div className="space-y-1">
-                        <p className="text-xs font-medium text-amber-400">
+                        <p className="text-xs font-medium text-nd-warning-fg">
                           This file contains {scanResult.dangerousStatements.length} potentially
                           dangerous statement {scanResult.dangerousStatements.length === 1 ? 'type' : 'types'}
                         </p>
-                        <ul className="text-xs text-amber-300/80 space-y-0.5 list-disc list-inside">
+                        <ul className="text-xs text-nd-warning-fg/80 space-y-0.5 list-disc list-inside">
                           {scanResult.dangerousStatements.map((stmt) => (
                             <li key={stmt}>{stmt}</li>
                           ))}
@@ -699,7 +699,7 @@ export function ImportSQLDialog({
 
             {/* Current statement preview (monospace, separate from status) */}
             {progress?.currentStatement && (
-              <div className="rounded-md bg-black/20 border border-nd-border px-3 py-2">
+              <div className="rounded-md bg-nd-bg-sunken border border-nd-border px-3 py-2">
                 <p className="text-[10px] uppercase tracking-wider text-nd-text-muted mb-1">Currently executing</p>
                 <p className="text-[11px] font-mono text-nd-text-primary break-all">
                   {progress.currentStatement}
@@ -716,7 +716,7 @@ export function ImportSQLDialog({
               {importErrors.length > 0 && (
                 <button
                   onClick={() => setErrorsExpanded((v) => !v)}
-                  className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors"
+                  className="flex items-center gap-1 text-nd-error hover:text-nd-error-fg transition-colors"
                 >
                   {importErrors.length} error{importErrors.length !== 1 ? 's' : ''}
                   <ChevronDown
@@ -731,10 +731,10 @@ export function ImportSQLDialog({
             {importErrors.length > 0 && errorsExpanded && (
               <div
                 ref={errorListRef}
-                className="max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1"
+                className="max-h-32 overflow-y-auto rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2 space-y-1"
               >
                 {importErrors.map((err, i) => (
-                  <p key={i} className="text-[11px] font-mono text-red-400 break-all">
+                  <p key={i} className="text-[11px] font-mono text-nd-error-fg break-all">
                     {err}
                   </p>
                 ))}
@@ -757,22 +757,22 @@ export function ImportSQLDialog({
             <div className="flex items-center gap-2">
               {isCompleted && importErrors.length === 0 && (
                 <>
-                  <CheckCircle size={16} className="text-green-400" />
-                  <span className="text-sm font-medium text-green-400">Import completed</span>
+                  <CheckCircle size={16} className="text-nd-success" />
+                  <span className="text-sm font-medium text-nd-success">Import completed</span>
                 </>
               )}
               {isCompleted && importErrors.length > 0 && (
                 <>
-                  <AlertTriangle size={16} className="text-amber-400" />
-                  <span className="text-sm font-medium text-amber-400">
+                  <AlertTriangle size={16} className="text-nd-warning" />
+                  <span className="text-sm font-medium text-nd-warning">
                     Import completed with errors
                   </span>
                 </>
               )}
               {isFailed && (
                 <>
-                  <XCircle size={16} className="text-red-400" />
-                  <span className="text-sm font-medium text-red-400">Import failed</span>
+                  <XCircle size={16} className="text-nd-error" />
+                  <span className="text-sm font-medium text-nd-error">Import failed</span>
                 </>
               )}
               {isCancelled && (
@@ -795,19 +795,19 @@ export function ImportSQLDialog({
                 <>
                   <p>
                     Healed:{' '}
-                    <span className="text-emerald-400 font-medium">
+                    <span className="text-nd-success font-medium">
                       {progress.stats.healed.toLocaleString()}
                     </span>
                   </p>
                   <p>
                     Skipped:{' '}
-                    <span className={cn('font-medium', progress.stats.skipped > 0 ? 'text-amber-400' : 'text-nd-text-primary')}>
+                    <span className={cn('font-medium', progress.stats.skipped > 0 ? 'text-nd-warning' : 'text-nd-text-primary')}>
                       {progress.stats.skipped.toLocaleString()}
                     </span>
                   </p>
                   <p>
                     Quarantined:{' '}
-                    <span className={cn('font-medium', progress.stats.quarantined > 0 ? 'text-amber-400' : 'text-nd-text-primary')}>
+                    <span className={cn('font-medium', progress.stats.quarantined > 0 ? 'text-nd-warning' : 'text-nd-text-primary')}>
                       {progress.stats.quarantined.toLocaleString()}
                     </span>
                   </p>
@@ -841,10 +841,10 @@ export function ImportSQLDialog({
                 {errorsExpanded && (
                   <div
                     ref={errorListRef}
-                    className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1"
+                    className="mt-1.5 max-h-32 overflow-y-auto rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2 space-y-1"
                   >
                     {importErrors.map((err, i) => (
-                      <p key={i} className="text-[11px] font-mono text-red-400 break-all">
+                      <p key={i} className="text-[11px] font-mono text-nd-error-fg break-all">
                         {err}
                       </p>
                     ))}

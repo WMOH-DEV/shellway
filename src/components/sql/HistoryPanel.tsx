@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
+import { STAR } from '@/components/ui/decorativeColors'
 import type { HistorySource, PersistedHistoryEntry } from '@/types/sql'
 
 interface HistoryPanelProps {
@@ -206,7 +207,7 @@ export function HistoryPanel({
             className={cn(
               'p-1 rounded transition-colors',
               favoritesOnly
-                ? 'text-yellow-400'
+                ? STAR.text
                 : 'text-nd-text-muted hover:text-nd-text-primary'
             )}
           >
@@ -258,7 +259,7 @@ export function HistoryPanel({
                       title="Click to open in a new query tab"
                       className={cn(
                         'group px-2.5 py-2 cursor-pointer border-b border-nd-border/60 transition-colors hover:bg-nd-surface',
-                        entry.error && 'border-l-2 border-l-red-500/40'
+                        entry.error && 'border-l-2 border-l-nd-error/40'
                       )}
                     >
                       <p className="text-[11px] font-mono text-nd-text-primary break-all leading-relaxed line-clamp-3">
@@ -268,7 +269,7 @@ export function HistoryPanel({
                       <div className="flex items-center gap-1.5 mt-1 text-[10px] text-nd-text-muted">
                         <span>{timeLabel(entry.executedAt)}</span>
                         {entry.error ? (
-                          <span className="flex items-center gap-1 text-red-400">
+                          <span className="flex items-center gap-1 text-nd-error">
                             <AlertCircle size={9} />
                             ERROR
                           </span>
@@ -296,8 +297,8 @@ export function HistoryPanel({
                           className={cn(
                             'p-0.5 rounded transition-colors',
                             entry.isFavorite
-                              ? 'text-yellow-400'
-                              : 'text-nd-text-muted/40 hover:text-yellow-400 opacity-0 group-hover:opacity-100'
+                              ? STAR.text
+                              : ['text-nd-text-muted/40 opacity-0 group-hover:opacity-100', STAR.hoverText]
                           )}
                         >
                           <Star

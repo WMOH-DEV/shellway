@@ -49,10 +49,10 @@ const TAG_OPTIONS = [
 
 const TAG_COLORS: Record<string, string> = {
   none: '',
-  development: 'bg-blue-500',
-  staging: 'bg-yellow-500',
-  production: 'bg-red-500',
-  testing: 'bg-green-500',
+  development: 'bg-nd-info',
+  staging: 'bg-nd-warning',
+  production: 'bg-nd-error',
+  testing: 'bg-nd-success',
 }
 
 const DEFAULT_PORTS: Record<DatabaseType, string> = {
@@ -554,12 +554,12 @@ export function SQLConnectDialog({
             disabled={testStatus === 'testing' || isConnecting}
           >
             {testStatus === 'testing' && <Loader2 size={14} className="animate-spin" />}
-            {testStatus === 'success' && <CheckCircle2 size={14} className="text-green-500" />}
+            {testStatus === 'success' && <CheckCircle2 size={14} className="text-nd-success" />}
             {testStatus === 'error' && <XCircle size={14} className="text-nd-error" />}
             Test Connection
           </Button>
           {testStatus === 'success' && (
-            <span className="text-xs text-green-500">Connected successfully</span>
+            <span className="text-xs text-nd-success">Connected successfully</span>
           )}
           {testStatus === 'error' && testError && (
             <span className="text-xs text-nd-error truncate max-w-[200px]" title={testError}>
