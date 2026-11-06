@@ -1,0 +1,39 @@
+subject=CN=app.example.com
+issuer=C=US, O=Let's Encrypt, CN=R11
+notBefore=Nov  6 19:08:20 2026 GMT
+notAfter=Feb  4 19:08:20 2027 GMT
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            3a:5b:75:70:0b:72:65:15:ce:cf:74:63:30:20:49:95:35:30:0e:8a
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C=US, O=Let's Encrypt, CN=R11
+        Validity
+            Not Before: Nov  6 19:08:20 2026 GMT
+            Not After : Feb  4 19:08:20 2027 GMT
+        Subject: CN=app.example.com
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:60:00:50:6e:b6:e4:07:47:f2:c9:e1:ea:7f:ec:
+                    14:6a:b1:e1:2a:65:84:52:9d:a4:15:3a:95:48:67:
+                    01:44:5a:3c:81:5a:af:35:74:f2:31:80:71:85:26:
+                    69:b3:13:04:89:8c:cf:c4:11:ff:7d:2f:29:6f:c9:
+                    52:9c:3b:25:40
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Subject Alternative Name: 
+                DNS:app.example.com, DNS:www.example.com
+            X509v3 Subject Key Identifier: 
+                8A:0E:67:6F:9A:FC:2F:6B:78:E8:E6:72:5C:17:7E:B7:18:E1:1E:EE
+            X509v3 Authority Key Identifier: 
+                E5:B8:33:CE:6C:C3:A3:BE:9D:BE:FC:6C:BB:CD:1E:CB:36:09:87:8C
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:44:02:20:4c:bc:c3:9b:06:ae:66:f2:6f:a0:57:02:a4:b0:
+        b9:61:1c:b5:4c:6c:52:b7:0f:1d:b4:a1:ee:5d:da:18:1b:87:
+        02:20:4d:b1:0c:cb:8e:7b:73:66:2e:7e:db:47:bd:2a:37:56:
+        33:d8:9d:ca:e8:df:1d:72:63:ea:f9:60:a3:42:18:7e

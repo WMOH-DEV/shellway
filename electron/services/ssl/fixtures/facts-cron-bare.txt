@@ -1,0 +1,26 @@
+@@SW@@ USER
+deploy
+@@SW@@ ADDRESSES
+@@SW@@ SSH
+server=
+@@SW@@ NGINX_V
+sh: 1: nginx: not found
+@@SW@@ OPENSSL_V
+OpenSSL 3.0.2 15 Mar 2022 (Library: OpenSSL 3.0.2 15 Mar 2022)
+@@SW@@ CERTBOT_V
+sh: 1: certbot: not found
+@@SW@@ PATHS
+certbot=
+nginx=
+@@SW@@ SUDO
+certbot=0
+nginx=0
+full=0
+@@SW@@ ACTIVE
+apache2=inactive
+httpd=
+caddy=active
+@@SW@@ RENEWAL
+timer=
+cron=1
+@@SW@@ JOURNAL

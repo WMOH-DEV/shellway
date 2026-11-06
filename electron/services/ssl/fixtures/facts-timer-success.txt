@@ -1,0 +1,32 @@
+@@SW@@ USER
+deploy
+@@SW@@ ADDRESSES
+203.0.113.10 198.51.100.7 2001:db8::10
+@@SW@@ SSH
+server=203.0.113.10
+@@SW@@ NGINX_V
+nginx version: nginx/1.24.0 (Ubuntu)
+@@SW@@ OPENSSL_V
+OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)
+@@SW@@ CERTBOT_V
+certbot 2.9.0
+@@SW@@ PATHS
+certbot=/usr/bin/certbot
+nginx=/usr/sbin/nginx
+@@SW@@ SUDO
+certbot=1
+nginx=1
+full=0
+@@SW@@ ACTIVE
+apache2=inactive
+httpd=
+caddy=inactive
+@@SW@@ RENEWAL
+timer=certbot.timer
+Result=success
+ExecMainExitTimestamp=Mon 2026-11-02 03:14:07 UTC
+ExitEpoch=1793589247
+@@SW@@ JOURNAL
+Nov 02 03:14:01 web1 systemd[1]: Starting certbot.service - Certbot...
+Nov 02 03:14:07 web1 certbot[1234]: Certificate not yet due for renewal
+Nov 02 03:14:07 web1 systemd[1]: certbot.service: Deactivated successfully.

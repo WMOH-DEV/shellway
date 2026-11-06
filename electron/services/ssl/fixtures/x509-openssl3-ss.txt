@@ -1,0 +1,6 @@
+subject=CN=localhost
+issuer=CN=localhost
+notBefore=Nov  6 19:08:20 2026 GMT
+notAfter=Nov  6 19:08:20 2027 GMT
+X509v3 Subject Alternative Name: 
+    DNS:localhost

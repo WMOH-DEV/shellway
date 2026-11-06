@@ -1,0 +1,30 @@
+@@SW@@ USER
+deploy
+@@SW@@ ADDRESSES
+198.51.100.7
+@@SW@@ SSH
+server=198.51.100.7
+@@SW@@ NGINX_V
+nginx version: nginx/1.18.0 (Ubuntu)
+@@SW@@ OPENSSL_V
+OpenSSL 1.1.1f  31 Mar 2020
+@@SW@@ CERTBOT_V
+certbot 1.21.0
+@@SW@@ PATHS
+certbot=/snap/bin/certbot
+nginx=/usr/sbin/nginx
+@@SW@@ SUDO
+certbot=0
+nginx=0
+full=0
+@@SW@@ ACTIVE
+apache2=active
+httpd=
+caddy=inactive
+@@SW@@ RENEWAL
+timer=snap.certbot.renew.timer
+Result=exit-code
+ExecMainExitTimestamp=Sat 2026-10-31 02:41:55 UTC
+ExitEpoch=1793414515
+@@SW@@ JOURNAL
+-- No entries --
