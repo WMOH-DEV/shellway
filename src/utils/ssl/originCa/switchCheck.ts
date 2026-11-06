@@ -1,4 +1,5 @@
 import type { HostnameStatus, ServerBlock, SslReport, SwitchCheck, SwitchName } from '../../../types/ssl'
+import { CHANGE_NEEDS_FULL_READ, isFullyRead } from './nginxRead'
 
 function nameCheck(name: string, host: HostnameStatus | undefined): SwitchName {
   if (name.includes('*') || name.startsWith('~')) return { name, ok: false, reason: 'wildcard and pattern names are not supported' }
@@ -10,6 +11,7 @@ function nameCheck(name: string, host: HostnameStatus | undefined): SwitchName {
 
 function blockedReason(report: SslReport, block: ServerBlock, names: SwitchName[], hosts: HostnameStatus[]): string | null {
   if (!block.tls || !block.certPath) return 'This site has no HTTPS server block to switch.'
+  if (!isFullyRead(report.facts)) return CHANGE_NEEDS_FULL_READ
   if (!report.cloudflare.saved) return 'Add a Cloudflare token first.'
   const permission = report.cloudflare.permissions.find((group) => group.id === 'origin-ca')
   if (!permission || permission.state === 'missing' || permission.state === 'not-granted') return 'The Cloudflare token needs SSL and Certificates · Edit.'

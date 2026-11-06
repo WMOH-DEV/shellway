@@ -6,6 +6,7 @@ import type {
 } from '../../../src/types/ssl'
 import { isIssuableName } from '../../../src/utils/ssl/https/issueCommands'
 import { LINEAGE_NAME } from '../../../src/utils/ssl/commands'
+import { CHANGE_NEEDS_FULL_READ, REMOVE_NEEDS_FULL_READ, isFullyRead } from '../../../src/utils/ssl/originCa/nginxRead'
 import { removeFilesCommand } from '../../../src/utils/ssl/originCa/scripts'
 import { CloudflareClient } from './CloudflareClient'
 import { edgesWithoutZone, resolveAddresses } from './dnsEdge'
@@ -84,6 +85,7 @@ export class SslCoordinator {
   private readonly connectionHosts = new Map<string, string>()
   private readonly warnedAt = new Map<string, number>()
   private readonly switches = new PreparedSwitches()
+  private readonly checkedSessions = new Map<string, string>()
 
   constructor(private readonly deps: SslDeps) {}
 
@@ -115,6 +117,7 @@ export class SslCoordinator {
     this.connectionHosts.delete(connectionId)
     this.reports.delete(connectionId)
     this.switches.forget(connectionId)
+    this.checkedSessions.delete(connectionId)
   }
 
   lastReport(connectionId: string): SslReport | null {
@@ -126,6 +129,7 @@ export class SslCoordinator {
   }
 
   check(connectionId: string, sessionId: string): Promise<SslReport> {
+    this.checkedSessions.set(connectionId, sessionId)
     const running = this.checks.get(connectionId)
     if (running) return running
     const started = this.runCheck(connectionId, sessionId).finally(() => this.checks.delete(connectionId))
@@ -183,9 +187,10 @@ export class SslCoordinator {
   originCancel(connectionId: string, switchId: string): Promise<void> {
     const exec = this.exec(connectionId)
     return this.exclusive(connectionId, async () => {
-      const prepared = this.switches.take(connectionId, switchId)
+      const prepared = this.switches.peek(connectionId, switchId)
       const removed = await exec(removeFilesCommand(prepared.keyPath, prepared.certPath), { timeoutMs: SHORT_TIMEOUT_MS })
       if (removed.code !== 0) throw new Error('Could not remove the unused private key from the server.')
+      this.switches.take(connectionId, switchId)
     })
   }
 
@@ -199,6 +204,7 @@ export class SslCoordinator {
     const exec = this.exec(connectionId)
     return this.exclusive(connectionId, async () => {
       const report = await this.check(connectionId, sessionId)
+      if (!isFullyRead(report.facts)) throw new Error(CHANGE_NEEDS_FULL_READ)
       const leftover = await readLeftover(exec, report, name, Math.floor(this.deps.now() / 1000))
       const refusal = undoRefusal(leftover)
       const target = leftoverTarget(report, name)
@@ -217,9 +223,12 @@ export class SslCoordinator {
     return this.exclusive(connectionId, async () => {
       const config = await service.readConfig()
       if (!config.facts.sudo.full) throw new Error(NEEDS_FULL_SUDO)
+      if (!isFullyRead(config.facts)) throw new Error(REMOVE_NEEDS_FULL_READ)
       const users = blocksUsingLineage(config.blocks, lineage)
       if (users.length > 0) throw new Error(`${lineage} is still used by ${users.map((b) => b.names[0] ?? b.id).join(', ')}. Switch those sites first.`)
-      return runLineageRemoval(exec, lineage, this.outputTo(runId))
+      const result = await runLineageRemoval(exec, lineage, this.outputTo(runId))
+      await this.refreshRemembered(connectionId)
+      return result
     })
   }
 
@@ -230,6 +239,11 @@ export class SslCoordinator {
       httpGet: this.deps.httpGet ?? httpGet,
       sleep: this.deps.sleep ?? pause
     }
+  }
+
+  private async refreshRemembered(connectionId: string): Promise<void> {
+    const sessionId = this.checkedSessions.get(connectionId)
+    if (sessionId !== undefined) await this.refresh(connectionId, sessionId)
   }
 
   private async refresh(connectionId: string, sessionId: string): Promise<void> {

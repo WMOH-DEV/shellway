@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OriginCert, ServerBlock, SslReport, SwitchRequest } from '../../../src/types/ssl'
+import type { CertbotLineage, OriginCert, ServerBlock, SslReport, SwitchRequest } from '../../../src/types/ssl'
 import { makeBlock, makeFacts } from '../../../src/utils/ssl/testReport'
 import { SslCoordinator } from './SslCoordinator'
 import type { SslLocalStore } from './SslLocalStore'
@@ -17,22 +17,27 @@ let probed: OriginCert['kind']
 let token: string | null
 let broadcast: ReturnType<typeof vi.fn>
 let ssl: SslCoordinator
+let lineagesOnServer: CertbotLineage[]
 
 const responder = (call: Call): Answer | undefined => {
   if (call.stdin?.includes('openssl req')) return { code: 0, stdout: CSR }
   if (call.command === `sudo -n cat '${FILE}'`) return { code: 0, stdout: SITE }
   if (call.stdin?.includes('for f in')) return { code: 0, stdout: `${BACKUP_PATH}\n` }
+  if (call.command === `sudo -n cat '${BACKUP_PATH}'`) return { code: 0, stdout: SITE }
+  if (call.command.includes('certbot delete')) lineagesOnServer = []
   return undefined
 }
 
-function build(answer = responder): void {
+function build(answer: (call: Call, attempt: number) => Answer | undefined = responder): void {
   rec = recorder(answer)
   createOriginCert = vi.fn(async () => ({ certificate: PEM, notAfter: 2_300_000_000 }))
   config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, full: true } }), blocks: [] }
+  lineagesOnServer = switchedReport().lineages
   broadcast = vi.fn()
-  const store = { cloudflareToken: () => token } as unknown as SslLocalStore
+  const store = { cloudflareToken: () => token, setKnownHosts: () => {} } as unknown as SslLocalStore
   const service = {
     readConfig: async () => config,
+    scan: async () => ({ facts: config.facts, blocks: config.blocks, lineages: lineagesOnServer, origins: {} }),
     probeNames: async (names: string[]) => Object.fromEntries(names.map((name) => [name, originCert(probed)]))
   } as unknown as SslService
   ssl = new SslCoordinator({
@@ -103,6 +108,28 @@ describe('SslCoordinator Origin CA switch', () => {
     await expect(ssl.originCancel('c1', 'switch-1')).rejects.toThrow('no longer prepared')
   })
 
+  it('keeps the prepared switch when the key cannot be removed, so cancel can be tried again', async () => {
+    build((call, attempt) => (call.command === REMOVE && attempt === 1 ? { code: 1 } : responder(call)))
+    reportIs(readyReport())
+    await ssl.originPrepare('c1', 's1', request, 'run-1')
+
+    await expect(ssl.originCancel('c1', 'switch-1')).rejects.toThrow('Could not remove the unused private key')
+    await ssl.originCancel('c1', 'switch-1')
+
+    expect(rec.calls.filter((c) => c.command === REMOVE)).toHaveLength(2)
+    await expect(ssl.originCancel('c1', 'switch-1')).rejects.toThrow('no longer prepared')
+  })
+
+  it('keeps the prepared switch when the connection drops during cancel', async () => {
+    build((call, attempt) => (call.command === REMOVE && attempt === 1 ? new Error('SSH connection is not active') : responder(call)))
+    reportIs(readyReport())
+    await ssl.originPrepare('c1', 's1', request, 'run-1')
+
+    await expect(ssl.originCancel('c1', 'switch-1')).rejects.toThrow('not active')
+    await ssl.originCancel('c1', 'switch-1')
+    await expect(ssl.originApply('c1', 's1', 'switch-1', 'run-2')).rejects.toThrow('no longer prepared')
+  })
+
   it('removes the key when Cloudflare says no during prepare', async () => {
     reportIs(readyReport())
     createOriginCert.mockRejectedValueOnce(new Error('Cloudflare refused to create the certificate.'))
@@ -160,6 +187,33 @@ describe('SslCoordinator Origin CA switch', () => {
     config.blocks = [makeBlock({ id: 'api.conf:3', names: ['api.example.com'] })]
     await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('still used by api.example.com')
     expect(rec.calls).toEqual([])
+  })
+
+  it('refuses to remove a certbot certificate when nginx was not fully read, even if no site is listed', async () => {
+    for (const nginxParse of ['partial', 'unavailable'] as const) {
+      config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      config.blocks = []
+      await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
+    }
+    expect(rec.calls).toEqual([])
+  })
+
+  it('refuses to undo when nginx was not fully read', async () => {
+    const report = switchedReport()
+    report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, full: true } })
+    reportIs(report)
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
+    expect(rec.calls).toEqual([])
+  })
+
+  it('refreshes the report after removing a certbot certificate so it is no longer offered', async () => {
+    config.blocks = [makeBlock({ names: NAMES, certPath: CERT_PATH, keyPath: KEY_PATH })]
+    await ssl.check('c1', 's1')
+    expect(ssl.lastReport('c1')?.lineages).toHaveLength(1)
+
+    await ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')
+
+    expect(ssl.lastReport('c1')?.lineages).toEqual([])
   })
 
   it('refuses to remove a certbot certificate without full sudo or with a bad name', async () => {

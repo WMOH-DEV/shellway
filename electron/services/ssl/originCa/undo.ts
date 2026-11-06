@@ -1,6 +1,6 @@
 import type { ActionResult, SwitchLeftover, SwitchResult, SwitchStage, SwitchVerifyName } from '../../../../src/types/ssl'
 import { undonePath } from '../../../../src/utils/ssl/originCa/originPaths'
-import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, undoScript } from '../../../../src/utils/ssl/originCa/scripts'
+import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED, restoreIfChangedScript, undoScript } from '../../../../src/utils/ssl/originCa/scripts'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink } from '../SslService'
 import { RemoteRunner, SCRIPT_TIMEOUT_MS, SUDO_SCRIPT } from './remoteRun'
@@ -22,26 +22,50 @@ export interface UndoTarget {
 
 const REMOVE_TIMEOUT_MS = 120_000
 
-export async function runUndo(deps: UndoDeps, target: UndoTarget): Promise<SwitchResult> {
-  const runner = new RemoteRunner(deps.exec, deps.onOutput)
-  const backupPath = target.leftover.backupPath!
-  const savePath = undonePath(target.prefix, Math.floor(deps.now() / 1000))
-  const script = undoScript({ file: target.file, backupPath, savePath })
-  const ran = await runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${backupPath} back as ${target.file}, test and reload nginx` })
-  const finish = (ok: boolean, failedStage: SwitchStage | null, restored: boolean, verify: SwitchVerifyName[] = []): SwitchResult =>
-    ({ ok, failedStage, restored, backupPath, output: runner.log.text(), verify })
+class UndoRun {
+  private readonly runner: RemoteRunner
+  private readonly backupPath: string
+  private readonly savePath: string
 
-  if (ran.code === EXIT_REFUSED) return finish(false, 'apply', false)
-  if (ran.code === EXIT_NGINX_TEST) return finish(false, 'nginx-test', true)
-  if (ran.code === EXIT_RELOAD) return finish(false, 'apply', true)
-  if (ran.code !== 0) {
-    runner.note(`Could not confirm the state of ${target.file}. Your copy from before the undo is at ${savePath}.`)
-    return finish(false, 'apply', false)
+  constructor(private readonly deps: UndoDeps, private readonly target: UndoTarget) {
+    this.runner = new RemoteRunner(deps.exec, deps.onOutput)
+    this.backupPath = target.leftover.backupPath!
+    this.savePath = undonePath(target.prefix, Math.floor(deps.now() / 1000))
   }
-  const verify = await verifyServed(deps, target.names, false)
-  if (servedAsExpected(verify, false)) return finish(true, null, false, verify)
-  runner.note('nginx is still serving the Cloudflare Origin CA certificate.')
-  return finish(false, 'verify', false, verify)
+
+  async execute(): Promise<SwitchResult> {
+    const script = undoScript({ file: this.target.file, backupPath: this.backupPath, savePath: this.savePath })
+    const ran = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.backupPath} back as ${this.target.file}, test and reload nginx` })
+    if (ran.code === 0) return this.verify()
+    if (ran.code === EXIT_REFUSED) return this.finish(false, 'apply', false)
+    if (ran.code === EXIT_NGINX_TEST) return this.finish(false, 'nginx-test', true)
+    if (ran.code === EXIT_RELOAD) return this.finish(false, 'apply', true)
+    return this.settle()
+  }
+
+  private async verify(): Promise<SwitchResult> {
+    const verify = await verifyServed(this.deps, this.target.names, false)
+    if (servedAsExpected(verify, false)) return this.finish(true, null, false, verify)
+    this.runner.note('nginx is still serving the Cloudflare Origin CA certificate.')
+    return this.finish(false, 'verify', false, verify)
+  }
+
+  private async settle(): Promise<SwitchResult> {
+    const script = restoreIfChangedScript({ file: this.target.file, backupPath: this.savePath })
+    const settled = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: 'check whether the site file was changed and put the version from before the undo back if so' })
+    if (settled.code === EXIT_RESTORED) return this.finish(false, 'apply', true)
+    if (settled.code === 0) return this.finish(false, 'apply', false)
+    this.runner.note(`Could not confirm the state of ${this.target.file}. Your copy from before the undo is at ${this.savePath}.`)
+    return this.finish(false, 'apply', false)
+  }
+
+  private finish(ok: boolean, failedStage: SwitchStage | null, restored: boolean, verify: SwitchVerifyName[] = []): SwitchResult {
+    return { ok, failedStage, restored, backupPath: this.backupPath, output: this.runner.log.text(), verify }
+  }
+}
+
+export function runUndo(deps: UndoDeps, target: UndoTarget): Promise<SwitchResult> {
+  return new UndoRun(deps, target).execute()
 }
 
 export async function runLineageRemoval(exec: RemoteExec, lineage: string, onOutput: OutputSink): Promise<ActionResult> {

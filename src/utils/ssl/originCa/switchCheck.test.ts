@@ -53,4 +53,11 @@ describe('switchCheck', () => {
     const report = ready({ hostnames: [makeHost({ origin }), makeHost({ name: 'www.example.com', origin })] })
     expect(switchCheck(report, 'app.conf:9').blockedReason).toBe('This site already uses a Cloudflare Origin CA certificate.')
   })
+
+  it('refuses when nginx was not fully read, because the site list may be incomplete', () => {
+    for (const nginxParse of ['partial', 'unavailable'] as const) {
+      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      expect(switchCheck(ready({ facts }), 'app.conf:9').blockedReason).toBe('Shellway could not read the whole nginx configuration, so it cannot safely change this site.')
+    }
+  })
 })

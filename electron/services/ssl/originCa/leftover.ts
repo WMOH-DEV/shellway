@@ -1,12 +1,15 @@
-import type { CertbotLineage, ServerBlock, SslReport, SwitchLeftover } from '../../../../src/types/ssl'
+import type { ServerBlock, SslReport, SwitchLeftover } from '../../../../src/types/ssl'
 import { isIssuableName } from '../../../../src/utils/ssl/https/issueCommands'
-import { backupGlob, newestBackup } from '../../../../src/utils/ssl/originCa/originPaths'
+import { isFullyRead } from '../../../../src/utils/ssl/originCa/nginxRead'
+import { backupGlob, isShellwayCertPath, lineageOfPaths, newestBackup } from '../../../../src/utils/ssl/originCa/originPaths'
+import { blockIdentity } from '../../../../src/utils/ssl/originCa/swapCertLines'
+import { shellEscape } from '../../../utils/shellEscape'
 import type { RemoteExec } from '../../deploy/DeployService'
 import { RemoteRunner, SHORT_TIMEOUT_MS, SUDO_SHELL } from './remoteRun'
 
 export interface LeftoverTarget {
   block: ServerBlock
-  lineage: CertbotLineage
+  hostLineage: string | null
   prefix: string
 }
 
@@ -17,12 +20,11 @@ export const blocksUsingLineage = (blocks: ServerBlock[], lineage: string): Serv
 
 export function leftoverTarget(report: SslReport, name: string): LeftoverTarget | null {
   const host = report.hostnames.find((h) => h.name.toLowerCase() === name.toLowerCase())
-  if (!host || host.origin?.kind !== 'cloudflare-origin' || host.lineage === null) return null
+  if (!host || host.origin?.kind !== 'cloudflare-origin') return null
   const block = report.blocks.find((b) => b.id === host.blockId)
-  const lineage = report.lineages.find((l) => l.name === host.lineage)
   const prefix = block?.names[0]?.toLowerCase() ?? ''
-  if (!block || !lineage || !isIssuableName(prefix)) return null
-  return { block, lineage, prefix }
+  if (!block || !isShellwayCertPath(block.certPath) || !isIssuableName(prefix)) return null
+  return { block, hostLineage: host.lineage, prefix }
 }
 
 async function newestBackupOnServer(exec: RemoteExec, prefix: string): Promise<string | null> {
@@ -32,17 +34,33 @@ async function newestBackupOnServer(exec: RemoteExec, prefix: string): Promise<s
   return listed.code === 0 ? newestBackup(listed.stdout, prefix) : null
 }
 
+async function lineageInBackup(exec: RemoteExec, backupPath: string, block: ServerBlock): Promise<string | null> {
+  const runner = new RemoteRunner(exec, () => {})
+  const read = await runner.run(`sudo -n cat ${shellEscape(backupPath)}`, SHORT_TIMEOUT_MS, { stream: false })
+  if (read.code !== 0) return null
+  try {
+    const original = blockIdentity(read.stdout, block.line)
+    const sameSite = original.names.join(' ') === block.names.map((name) => name.toLowerCase()).join(' ')
+    return sameSite ? lineageOfPaths(original.certPath, original.keyPath) : null
+  } catch {
+    return null
+  }
+}
+
 export async function readLeftover(exec: RemoteExec, report: SslReport, name: string, nowSeconds: number): Promise<SwitchLeftover | null> {
   const target = leftoverTarget(report, name)
   if (!target) return null
-  const { block, lineage, prefix } = target
+  const { block, prefix } = target
   const backupPath = await newestBackupOnServer(exec, prefix)
+  const lineageName = backupPath === null ? target.hostLineage : await lineageInBackup(exec, backupPath, block)
+  const lineage = report.lineages.find((l) => l.name === lineageName)
+  if (!lineage) return null
   const stillValid = lineage.notAfter !== null && lineage.notAfter > nowSeconds
   return {
     name,
     blockId: block.id,
     lineage: lineage.name,
-    lineageShared: blocksUsingLineage(report.blocks.filter((b) => b.id !== block.id), lineage.name).length > 0,
+    lineageShared: !isFullyRead(report.facts) || blocksUsingLineage(report.blocks.filter((b) => b.id !== block.id), lineage.name).length > 0,
     backupPath,
     undoable: backupPath !== null && stillValid
   }
