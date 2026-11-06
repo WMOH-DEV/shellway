@@ -25,7 +25,7 @@ const TONE_ICON: Record<RunTone, { icon: ReactNode; style: string }> = {
   failed: { icon: <X size={13} />, style: 'bg-nd-error/[.14] text-nd-error' },
   running: { icon: <Loader2 size={13} className="animate-spin" />, style: 'bg-nd-info/[.14] text-nd-info' },
   waiting: { icon: <Clock size={13} />, style: 'bg-nd-warning/[.14] text-nd-warning' },
-  cancelled: { icon: <Minus size={13} />, style: 'bg-nd-surface-hover text-nd-text-muted' }
+  cancelled: { icon: <Minus size={13} />, style: 'bg-nd-bg-tertiary text-nd-text-muted' }
 }
 
 function noteStyle(tone: RunTone): string {
@@ -61,7 +61,7 @@ function HistoryItem({ record, summary, selected, onSelect, onRollback }: ItemPr
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
       className={cn(
         'group flex cursor-pointer items-start gap-2.5 border-b border-l-2 border-b-nd-border px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-nd-accent',
-        selected ? 'border-l-nd-accent bg-nd-surface' : 'border-l-transparent hover:bg-nd-surface/60'
+        selected ? 'border-l-nd-accent bg-nd-bg-tertiary' : 'border-l-transparent hover:bg-nd-bg-tertiary/50'
       )}
     >
       <span className={cn('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md', icon.style)}>{icon.icon}</span>
@@ -87,7 +87,7 @@ function HistoryItem({ record, summary, selected, onSelect, onRollback }: ItemPr
           aria-label={`Roll back to ${shortSha(record.commit)}`}
           disabled={state.busy}
           onClick={(e) => { e.stopPropagation(); onRollback() }}
-          className="shrink-0 rounded p-1 text-nd-text-muted opacity-0 transition-opacity hover:bg-nd-surface-hover hover:text-nd-text-primary focus-visible:opacity-100 disabled:hidden group-hover:opacity-100"
+          className="shrink-0 rounded p-1 text-nd-text-muted opacity-0 transition-opacity hover:bg-nd-bg-tertiary hover:text-nd-text-primary focus-visible:opacity-100 disabled:hidden group-hover:opacity-100"
         >
           <RotateCcw size={13} />
         </button>
@@ -116,7 +116,7 @@ export function HistoryList({ summary, selectedId, onSelect, onRollback }: Histo
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); setSearching(false) } }}
-            className="h-[26px] min-w-0 flex-1 rounded-md border border-nd-border bg-nd-bg-secondary px-2 text-xs text-nd-text-primary outline-none focus:border-nd-accent"
+            className="h-[26px] min-w-0 flex-1 rounded-md border border-nd-border bg-nd-bg-primary px-2 text-xs text-nd-text-primary outline-none focus:border-nd-accent"
           />
         ) : FILTERS.map((f) => (
           <button
@@ -124,7 +124,7 @@ export function HistoryList({ summary, selectedId, onSelect, onRollback }: Histo
             type="button"
             aria-pressed={filter === f.id}
             onClick={() => setFilter(f.id)}
-            className={cn('h-[26px] rounded-md px-2.5 text-xs transition-colors', filter === f.id ? 'bg-nd-surface-hover text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary')}
+            className={cn('h-[26px] rounded-md px-2.5 text-xs transition-colors', filter === f.id ? 'bg-nd-bg-tertiary text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary')}
           >
             {f.label}
           </button>
@@ -134,7 +134,7 @@ export function HistoryList({ summary, selectedId, onSelect, onRollback }: Histo
           type="button"
           aria-label={searching ? 'Close search' : 'Search history'}
           onClick={() => { setSearching(!searching); setQuery('') }}
-          className="rounded-md p-1.5 text-nd-text-muted hover:bg-nd-surface-hover hover:text-nd-text-primary"
+          className="rounded-md p-1.5 text-nd-text-muted hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
         >
           {searching ? <X size={14} /> : <Search size={14} />}
         </button>

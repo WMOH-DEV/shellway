@@ -98,7 +98,7 @@ const OUTCOME_STYLE: Record<Exclude<AwayOutcome['tone'], 'plain'>, string> = {
 function AwayBanner({ summary, onReview, onDismiss }: { summary: AwaySummary; onReview: () => void; onDismiss: () => void }) {
   const { runs, outcomes } = awayParts(summary)
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-nd-border bg-nd-surface py-2.5 pl-3.5 pr-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary py-2.5 pl-3.5 pr-3">
       <Clock size={16} className="shrink-0 text-nd-text-muted" />
       <span className="text-[13px] text-nd-text-secondary">
         While you were away, <b className="font-semibold text-nd-text-primary">{runs}</b> ran on this server
@@ -131,7 +131,7 @@ function FilterBar({ value, counts, onChange }: { value: SiteFilter; counts: Rec
           onClick={() => onChange(f.id)}
           className={cn(
             'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
-            value === f.id ? 'bg-nd-surface-hover text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
+            value === f.id ? 'bg-nd-bg-tertiary text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
           )}
         >
           {f.label}

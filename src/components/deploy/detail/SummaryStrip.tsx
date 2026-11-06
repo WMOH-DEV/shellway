@@ -39,7 +39,7 @@ export function SummaryStrip({ summary, pcDrift, user }: { summary: SiteSummary;
   const source = sourceView(summary)
   const SourceIcon = config.sourceMode === 'auto' ? Server : Laptop
   return (
-    <section aria-label="Site summary" className="grid grid-cols-2 divide-nd-border rounded-[10px] border border-nd-border bg-nd-surface lg:grid-cols-4 lg:divide-x">
+    <section aria-label="Site summary" className="grid grid-cols-2 divide-nd-border rounded-[10px] border border-nd-border bg-nd-bg-secondary lg:grid-cols-4 lg:divide-x">
       <Cell label="Live now" caption={liveCaption(summary)}>
         {state.current ? <Commit sha={state.current} subject={state.currentSubject} /> : <span className="text-nd-text-muted">Nothing live yet</span>}
       </Cell>
@@ -58,7 +58,7 @@ export function SummaryStrip({ summary, pcDrift, user }: { summary: SiteSummary;
           type="button"
           aria-label="Copy full path"
           onClick={() => copyText(config.path, 'Path copied')}
-          className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
+          className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
         >
           <Copy size={12} />
         </button>

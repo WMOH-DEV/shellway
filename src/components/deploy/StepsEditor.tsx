@@ -51,7 +51,7 @@ function ServicePicker({ connectionId, onPick }: { connectionId: string; onPick:
   }
   return (
     <select
-      className="h-7 rounded border border-nd-border bg-nd-surface px-2 text-xs text-nd-text-primary"
+      className="h-7 rounded border border-nd-border bg-nd-bg-primary px-2 text-xs text-nd-text-primary"
       value=""
       onChange={(e) => e.target.value && onPick(e.target.value)}
     >
@@ -77,7 +77,7 @@ export function StepsEditor({ connectionId, title, hint, steps, onChange }: Step
         <div key={index} className="flex items-center gap-1.5">
           <span className="w-5 text-right text-2xs text-nd-text-muted">{index + 1}</span>
           <input
-            className="h-7 flex-1 rounded border border-nd-border bg-nd-surface px-2 font-mono text-xs text-nd-text-primary focus:border-nd-accent focus:outline-none"
+            className="h-7 flex-1 rounded border border-nd-border bg-nd-bg-primary px-2 font-mono text-xs text-nd-text-primary focus:border-nd-accent focus:outline-none"
             value={step.command}
             placeholder="php artisan migrate --force"
             spellCheck={false}

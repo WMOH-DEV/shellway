@@ -33,7 +33,7 @@ export function KeySetup({ connectionId, site, onDone }: KeySetupProps) {
           <span className="text-xs font-medium text-nd-text-secondary">Server public key</span>
           <Button size="sm" variant="ghost" onClick={() => void deployKey.copyKey()} disabled={!publicKey}><Copy size={12} /> Copy</Button>
         </div>
-        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-nd-border bg-nd-surface p-2 font-mono text-2xs text-nd-text-primary">
+        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-nd-border bg-nd-bg-primary p-2 font-mono text-2xs text-nd-text-primary">
           {keyError ?? (publicKey || 'Creating key…')}
         </pre>
       </div>

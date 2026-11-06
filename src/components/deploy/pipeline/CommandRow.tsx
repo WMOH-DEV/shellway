@@ -49,7 +49,7 @@ function ModeSwitch({ optional, onChange }: { optional: boolean; onChange: (opti
   )
   return (
     <div className="flex gap-0.5 rounded-md border border-nd-border p-0.5">
-      {option(false, 'Required', 'bg-nd-surface-hover text-nd-text-primary')}
+      {option(false, 'Required', 'bg-nd-bg-tertiary text-nd-text-primary')}
       {option(true, 'Optional', 'bg-nd-warning/15 text-nd-warning')}
     </div>
   )
@@ -92,7 +92,7 @@ export function CommandRow({ step, index, count, label, flag, otherStageLabel, d
       <div className="flex min-w-0 items-center gap-2">
         <input
           aria-label={`${label} command ${index + 1}`}
-          className="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-nd-text-primary placeholder:text-nd-text-muted hover:bg-nd-surface focus:bg-nd-surface focus:outline-none focus:ring-1 focus:ring-nd-accent"
+          className="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-nd-text-primary placeholder:text-nd-text-muted hover:bg-nd-bg-tertiary focus:bg-nd-bg-tertiary focus:outline-none focus:ring-1 focus:ring-nd-accent"
           value={step.command}
           placeholder="php artisan migrate --force"
           spellCheck={false}

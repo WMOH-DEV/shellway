@@ -78,7 +78,7 @@ function SiteCell({ summary, pcDrift, user, onOpen }: SiteCellProps) {
           type="button"
           aria-label="Copy full path"
           onClick={(e) => { stop(e); copyText(path, 'Path copied') }}
-          className="shrink-0 rounded p-1 transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
+          className="shrink-0 rounded p-1 transition-colors hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
         >
           <Copy size={12} />
         </button>
@@ -228,7 +228,7 @@ export function SiteRow({ summary, pcDrift, user, nowMs, starting, actions }: Si
     <div
       onClick={open}
       className={cn(
-        'grid cursor-pointer items-center rounded-[10px] border border-nd-border bg-nd-surface px-4 py-3.5 transition-colors hover:border-nd-border-hover',
+        'grid cursor-pointer items-center rounded-[10px] border border-nd-border bg-nd-bg-secondary px-4 py-3.5 transition-colors hover:border-nd-border-hover',
         SITE_COLUMNS
       )}
     >

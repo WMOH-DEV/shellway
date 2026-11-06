@@ -26,7 +26,7 @@ export const TONE_CHIP: Record<RunStatusTone, string> = {
   warning: 'bg-nd-warning/[.12] text-nd-warning',
   error: 'bg-nd-error/[.12] text-nd-error',
   info: 'bg-nd-info/[.12] text-nd-info',
-  muted: 'bg-nd-surface-hover text-nd-text-muted'
+  muted: 'bg-nd-bg-tertiary text-nd-text-muted'
 }
 
 const STAGE_STYLE: Record<StageState, { bar: string; text: string; icon: ReactNode }> = {

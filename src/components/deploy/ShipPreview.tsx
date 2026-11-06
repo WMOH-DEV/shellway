@@ -73,7 +73,7 @@ function MigrationChip() {
 
 function Hash({ sha, fresh }: { sha: string; fresh?: boolean }) {
   return (
-    <span className={cn('rounded px-1.5 py-px font-mono text-xs', fresh ? 'bg-nd-info/[.12] text-nd-info' : 'bg-nd-surface text-nd-text-secondary')}>
+    <span className={cn('rounded px-1.5 py-px font-mono text-xs', fresh ? 'bg-nd-info/[.12] text-nd-info' : 'bg-nd-bg-tertiary text-nd-text-secondary')}>
       {shortSha(sha)}
     </span>
   )
@@ -204,7 +204,7 @@ function WhatWillRun({ summary }: { summary: SiteSummary }) {
 
 function UpToDate({ preview }: { preview: ShipPreviewData }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-nd-border bg-nd-surface px-3.5 py-3 text-sm text-nd-text-secondary">
+    <div className="flex items-center gap-3 rounded-lg border border-nd-border bg-nd-bg-secondary px-3.5 py-3 text-sm text-nd-text-secondary">
       <span>
         The branch has nothing new. <Hash sha={preview.to} /> is already live. Redeploying runs the same steps again on this commit.
       </span>

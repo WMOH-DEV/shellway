@@ -46,7 +46,7 @@ export function ReadyCheck({ model }: { model: ReadyCheckModel }) {
         <div className="flex-1" />
         <Progress model={model} />
       </div>
-      <div className="flex flex-col divide-y divide-nd-border overflow-hidden rounded-xl border border-nd-border bg-nd-surface">
+      <div className="flex flex-col divide-y divide-nd-border overflow-hidden rounded-xl border border-nd-border bg-nd-bg-secondary">
         <Checklist model={model} />
       </div>
     </div>

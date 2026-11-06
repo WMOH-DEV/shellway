@@ -12,7 +12,7 @@ function StepDot({ index, state }: { index: number; state: 'done' | 'current' | 
   const tone = {
     done: 'bg-nd-success/[.14] text-nd-success',
     current: 'bg-nd-accent text-white',
-    todo: 'bg-nd-surface text-nd-text-muted'
+    todo: 'bg-nd-bg-tertiary text-nd-text-muted'
   }[state]
   return (
     <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold', tone)}>
@@ -64,7 +64,7 @@ function PlanText({ line }: { line: PlanLine }) {
 
 export function FirstDeployCard({ plan }: { plan: FirstDeployPlan }) {
   return (
-    <section aria-label="First deploy will" className="mt-auto flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-surface p-3.5">
+    <section aria-label="First deploy will" className="mt-auto flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-3.5">
       <span className="text-[11px] font-semibold uppercase tracking-wider text-nd-text-muted">First deploy will</span>
       <ol className="flex list-decimal flex-col gap-1.5 pl-[18px] text-[12.5px] text-nd-text-secondary">
         {plan.lines.map((line, index) => <li key={index}><PlanText line={line} /></li>)}

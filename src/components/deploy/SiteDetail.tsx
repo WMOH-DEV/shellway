@@ -146,7 +146,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
             <Splitter
               defaultSplit={30}
               minSize={280}
-              className="h-full rounded-[10px] border border-nd-border bg-nd-surface"
+              className="h-full rounded-[10px] border border-nd-border bg-nd-bg-secondary"
               left={<HistoryList summary={summary} selectedId={selected?.id} onSelect={setSelectedId} onRollback={setRollbackTo} />}
               right={selected
                 ? <RunPanel connectionId={connectionId} summary={summary} record={selected} retry={{ allowed: canRetry(selected, summary), disabled: starting || state.busy, onRetry: actions.deployNow }} />

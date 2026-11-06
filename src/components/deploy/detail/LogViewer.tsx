@@ -48,7 +48,7 @@ function ToolbarToggle({ active, onClick, children }: { active: boolean; onClick
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={cn('h-[26px] rounded-md px-2.5 text-xs transition-colors', active ? 'bg-nd-surface-hover text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary')}
+      className={cn('h-[26px] rounded-md px-2.5 text-xs transition-colors', active ? 'bg-nd-bg-tertiary text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary')}
     >
       {children}
     </button>
@@ -84,7 +84,7 @@ function Section({ section, open, onToggle, timestamps }: SectionProps) {
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className={cn('flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-nd-surface-hover/60', open && 'bg-nd-surface/60')}
+        className={cn('flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-nd-bg-tertiary/60', open && 'bg-nd-bg-tertiary/40')}
       >
         {open ? <ChevronDown size={13} className="shrink-0 text-nd-text-muted" /> : <ChevronRight size={13} className="shrink-0 text-nd-text-muted" />}
         {result ? RESULT_ICON[result] : <span className="w-[13px]" />}
@@ -132,7 +132,7 @@ export function LogViewer({ sections, skipped, live, focusKey, focusRequest, emp
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-primary">
       <div className="flex items-center gap-1 border-b border-nd-border px-2 py-1.5">
         <label className="flex h-[26px] min-w-0 flex-1 items-center gap-2 px-1.5 text-nd-text-muted">
           <Search size={13} className="shrink-0" />
