@@ -13,7 +13,7 @@ export function makeOrigin(overrides: Partial<OriginCert> = {}): OriginCert {
   return {
     kind: 'letsencrypt',
     subject: 'CN=app.example.com',
-    issuer: 'C=US, O=Let\'s Encrypt, CN=E6',
+    issuer: 'Let\'s Encrypt · E6',
     names: ['app.example.com'],
     notBefore: NOW - 80 * DAY,
     notAfter: NOW + 10 * DAY,

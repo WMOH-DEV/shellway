@@ -56,7 +56,7 @@ describe('diagramView with Cloudflare in front', () => {
   })
 
   it('describes Origin CA certificates as not needing renewal', () => {
-    const origin = makeOrigin({ kind: 'cloudflare-origin', issuer: 'CN=CloudFlare Origin SSL Certificate Authority', notBefore: NOW, notAfter: NOW + 5000 * DAY })
+    const origin = makeOrigin({ kind: 'cloudflare-origin', issuer: 'CloudFlare, Inc. · CloudFlare Origin SSL Certificate Authority', notBefore: NOW, notAfter: NOW + 5000 * DAY })
     expect(diagramView(makeHost({ origin, lineage: null }), makeFacts(), NOW).server.sentence).toContain('It does not need renewing.')
   })
 })
@@ -98,8 +98,8 @@ describe('server card when the server side was not read', () => {
 })
 
 describe('issuerLabel', () => {
-  it('shows the common name, prefixed for Let\'s Encrypt', () => {
+  it('shows the issuer as the server scan named it, or the kind when it has none', () => {
     expect(issuerLabel(makeOrigin())).toBe("Let's Encrypt · E6")
-    expect(issuerLabel(makeOrigin({ kind: 'other', issuer: 'CN=Corp CA, O=Corp' }))).toBe('Corp CA')
+    expect(issuerLabel(makeOrigin({ kind: 'self-signed', issuer: '' }))).toBe('Self-signed')
   })
 })

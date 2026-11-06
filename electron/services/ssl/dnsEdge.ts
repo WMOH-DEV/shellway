@@ -48,13 +48,17 @@ export function isCloudflareAddress(address: string): boolean {
   return RANGES.check(address, isIPv6(address) ? 'ipv6' : 'ipv4')
 }
 
+const LOOKUP_TIMEOUT_MS = 5_000
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(Object.assign(new Error('DNS lookup timed out'), { code: 'ETIMEOUT' })), ms).unref()
+  })
+}
+
 async function resolveAddresses(host: string): Promise<string[]> {
-  const [v4, v6] = await Promise.allSettled([dns.resolve4(host), dns.resolve6(host)])
-  const settled = [v4, v6]
-  const found = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-  const failure = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (found.length === 0 && failure) throw failure.reason
-  return found
+  const found = await Promise.race([dns.lookup(host, { all: true }), timeout(LOOKUP_TIMEOUT_MS)])
+  return found.map((entry) => entry.address)
 }
 
 function lookupFailure(err: unknown): string {

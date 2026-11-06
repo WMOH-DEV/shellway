@@ -258,7 +258,7 @@ describe('HostnameDetail', () => {
   })
 
   it('describes an Origin CA certificate without renewal actions', () => {
-    const host = makeHost({ origin: makeOrigin({ kind: 'cloudflare-origin', notAfter: NOW + 5000 * DAY, issuer: 'CN=CloudFlare Origin SSL Certificate Authority' }), lineage: null })
+    const host = makeHost({ origin: makeOrigin({ kind: 'cloudflare-origin', notAfter: NOW + 5000 * DAY, issuer: 'CloudFlare, Inc. · CloudFlare Origin SSL Certificate Authority' }), lineage: null })
     renderDetail(host)
     expect(screen.getByText(/It does not need renewing/)).toBeInTheDocument()
   })

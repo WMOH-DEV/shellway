@@ -78,7 +78,7 @@ describe('AlertProbe', () => {
     await alerts.runOnce()
     await alerts.runOnce()
     expect(probe).toHaveBeenCalledTimes(1)
-    expect(store.failures.get('app.example.com')).toBe("can't connect from this PC (connect ETIMEDOUT)")
+    expect(store.failures.get('app.example.com')).toBe('connect ETIMEDOUT')
     expect(notify).not.toHaveBeenCalled()
   })
 

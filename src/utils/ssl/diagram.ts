@@ -34,9 +34,7 @@ const BROWSER_CHECKS = 'browser checks'
 const CLOUDFLARE_CHECKS = 'Cloudflare checks'
 
 export function issuerLabel(origin: OriginCert): string {
-  const name = (/(?:^|[,/\s])CN\s*=\s*([^,/]+)/.exec(origin.issuer)?.[1] ?? origin.issuer).trim()
-  if (origin.kind === 'letsencrypt') return name ? `${KIND_LABELS.letsencrypt} · ${name}` : KIND_LABELS.letsencrypt
-  return name || KIND_LABELS[origin.kind]
+  return origin.issuer || KIND_LABELS[origin.kind]
 }
 
 function renewalClause(host: HostnameStatus, facts: ServerFacts): string {

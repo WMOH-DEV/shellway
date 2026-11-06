@@ -101,7 +101,7 @@ export class AlertProbe {
       store.markProbed(host.host, now(), null)
       this.alertIfNeeded(host.host, daysLeft(notAfter, Math.floor(now() / 1000)))
     } catch (err) {
-      store.markProbed(host.host, now(), `can't connect from this PC (${(err as Error).message})`)
+      store.markProbed(host.host, now(), (err as Error).message)
     }
   }
 
