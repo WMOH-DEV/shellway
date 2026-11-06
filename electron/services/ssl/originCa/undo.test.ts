@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OriginCert, SwitchLeftover } from '../../../../src/types/ssl'
 import { backupGlob } from '../../../../src/utils/ssl/originCa/originPaths'
-import { undoScript } from '../../../../src/utils/ssl/originCa/scripts'
-import { NOW, makeBlock, makeHost } from '../../../../src/utils/ssl/testReport'
+import { restoreIfChangedScript, undoScript } from '../../../../src/utils/ssl/originCa/scripts'
+import { NOW, makeBlock, makeFacts, makeHost } from '../../../../src/utils/ssl/testReport'
 import { blocksUsingLineage, readLeftover, undoRefusal } from './leftover'
 import { runLineageRemoval, runUndo } from './undo'
 import type { UndoDeps } from './undo'
-import { BACKUP_PATH, CERT_PATH, FILE, KEY_PATH, NAMES, originCert, readyReport, recorder, switchedReport } from './testKit'
+import { BACKUP_PATH, CERT_PATH, FILE, KEY_PATH, NAMES, SITE, originCert, readyReport, recorder, switchedReport } from './testKit'
 import type { Answer, Call } from './testKit'
 
 const NEWER = '/etc/ssl/shellway/backups/app.example.com-1800005000.conf'
 const SAVE = '/etc/ssl/shellway/backups/undone/app.example.com-1800000000.conf'
 const SWITCH = 'sudo -n timeout -k 10 60 sh -s'
-const lister = (stdout: string) => (call: Call): Answer | undefined => (call.stdin?.includes(backupGlob('app.example.com')) ? { code: 0, stdout } : undefined)
+const lister = (stdout: string, backupText = SITE) => (call: Call): Answer | undefined => {
+  if (call.stdin?.includes(backupGlob('app.example.com'))) return { code: 0, stdout }
+  if (call.command.startsWith("sudo -n cat '/etc/ssl/shellway/backups/")) return { code: 0, stdout: backupText }
+  return undefined
+}
 
 describe('readLeftover', () => {
   it('finds the newest backup and says the switch can be undone while the old certificate is valid', async () => {
@@ -23,14 +27,38 @@ describe('readLeftover', () => {
     expect(calls[0].command).toBe('sudo -n sh -s')
   })
 
-  it('is null for a site that is not on an Origin CA certificate or has no certbot lineage', async () => {
+  it('is null for a site that is not on an Origin CA certificate that Shellway wrote', async () => {
     const { exec, calls } = recorder(lister(BACKUP_PATH))
     expect(await readLeftover(exec, readyReport(), 'app.example.com', NOW)).toBeNull()
     expect(await readLeftover(exec, switchedReport(), 'other.example.com', NOW)).toBeNull()
-    const noLineage = switchedReport()
-    noLineage.hostnames = NAMES.map((name) => makeHost({ name, origin: originCert(), lineage: null }))
-    expect(await readLeftover(exec, noLineage, 'app.example.com', NOW)).toBeNull()
+    const foreign = switchedReport()
+    foreign.blocks = [makeBlock({ names: NAMES, certPath: '/etc/ssl/private/manual.pem', keyPath: '/etc/ssl/private/manual.key' })]
+    expect(await readLeftover(exec, foreign, 'app.example.com', NOW)).toBeNull()
     expect(calls).toEqual([])
+  })
+
+  it('takes the certbot certificate from the backup, not from which names it covers', async () => {
+    const report = switchedReport()
+    report.hostnames = NAMES.map((name) => makeHost({ name, origin: originCert(), lineage: 'wide.example.com' }))
+    report.lineages = [{ ...report.lineages[0], name: 'wide.example.com' }, ...report.lineages]
+    const leftover = await readLeftover(recorder(lister(BACKUP_PATH)).exec, report, 'app.example.com', NOW)
+    expect(leftover).toMatchObject({ lineage: 'app.example.com', backupPath: BACKUP_PATH, undoable: true })
+  })
+
+  it('uses the covering certificate only when there is no backup, and is null when none covers it', async () => {
+    const report = switchedReport()
+    report.hostnames = NAMES.map((name) => makeHost({ name, origin: originCert(), lineage: 'app.example.com' }))
+    expect(await readLeftover(recorder(lister('')).exec, report, 'app.example.com', NOW)).toMatchObject({ lineage: 'app.example.com', backupPath: null })
+    report.hostnames = NAMES.map((name) => makeHost({ name, origin: originCert(), lineage: null }))
+    expect(await readLeftover(recorder(lister('')).exec, report, 'app.example.com', NOW)).toBeNull()
+  })
+
+  it('is null when the backup does not describe this site or does not point at a certbot certificate', async () => {
+    const otherSite = SITE.replace('server_name app.example.com www.example.com', 'server_name other.example.com')
+    expect(await readLeftover(recorder(lister(BACKUP_PATH, otherSite)).exec, switchedReport(), 'app.example.com', NOW)).toBeNull()
+    const manual = SITE.replace(/\/etc\/letsencrypt\/live\/app.example.com\//g, '/etc/ssl/private/')
+    expect(await readLeftover(recorder(lister(BACKUP_PATH, manual)).exec, switchedReport(), 'app.example.com', NOW)).toBeNull()
+    expect(await readLeftover(recorder(lister(BACKUP_PATH, '')).exec, switchedReport(), 'app.example.com', NOW)).toBeNull()
   })
 
   it('cannot undo without a backup or once the certbot certificate has expired', async () => {
@@ -58,6 +86,15 @@ describe('readLeftover', () => {
     report.blocks.push(makeBlock({ id: 'api.conf:3', names: ['api.example.com'], certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem' }))
     const leftover = await readLeftover(recorder(lister(BACKUP_PATH)).exec, report, 'app.example.com', NOW)
     expect(leftover?.lineageShared).toBe(true)
+  })
+
+  it('treats the certbot certificate as shared when nginx was not fully read', async () => {
+    for (const nginxParse of ['partial', 'unavailable'] as const) {
+      const report = switchedReport()
+      report.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      const leftover = await readLeftover(recorder(lister(BACKUP_PATH)).exec, report, 'app.example.com', NOW)
+      expect(leftover?.lineageShared).toBe(true)
+    }
   })
 })
 
@@ -130,10 +167,39 @@ describe('runUndo', () => {
     expect(result.output).toContain('still serving')
   })
 
-  it('names the saved copy when the connection drops mid-script', async () => {
-    const result = await undo((call) => (call.stdin === SCRIPT ? new Error('SSH connection is not active') : undefined)).done
-    expect(result).toMatchObject({ ok: false, failedStage: 'apply', restored: false })
-    expect(result.output).toContain(SAVE)
+  describe('when the script stops part-way', () => {
+    const SETTLE = restoreIfChangedScript({ file: FILE, backupPath: SAVE })
+    const dropped = (settle: Answer | undefined) => (call: Call): Answer | undefined => {
+      if (call.stdin === SCRIPT) return new Error('SSH connection is not active')
+      return call.stdin === SETTLE ? settle : undefined
+    }
+
+    it('puts the version from before the undo back when the file was already changed', async () => {
+      const { rec, done } = undo(dropped({ code: 6 }))
+      const result = await done
+      expect(rec.calls.map((c) => c.stdin)).toEqual([SCRIPT, SETTLE])
+      expect(result).toMatchObject({ ok: false, failedStage: 'apply', restored: true })
+      expect(probe).not.toHaveBeenCalled()
+    })
+
+    it('says nothing was restored when the file was never changed', async () => {
+      const result = await undo(dropped({ code: 0 })).done
+      expect(result).toMatchObject({ ok: false, failedStage: 'apply', restored: false })
+    })
+
+    it('settles after a timeout or a failing step too', async () => {
+      for (const code of [1, 124, 137]) {
+        const { rec, done } = undo((call) => (call.stdin === SCRIPT ? { code } : call.stdin === SETTLE ? { code: 6 } : undefined))
+        expect(await done).toMatchObject({ failedStage: 'apply', restored: true })
+        expect(rec.calls).toHaveLength(2)
+      }
+    })
+
+    it('names the saved copy when even the check cannot be confirmed', async () => {
+      const result = await undo(dropped(new Error('SSH connection is not active'))).done
+      expect(result).toMatchObject({ ok: false, failedStage: 'apply', restored: false })
+      expect(result.output).toContain(SAVE)
+    })
   })
 })
 

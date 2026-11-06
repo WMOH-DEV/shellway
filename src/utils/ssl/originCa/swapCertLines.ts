@@ -77,23 +77,34 @@ function openingBrace(tokens: Token[], blockLine: number): number {
   return at + 1
 }
 
-function certificateEdits(tokens: Token[], open: number): Edit[] {
-  const edits: Edit[] = []
+interface Directive {
+  words: Token[]
+  end: number
+}
+
+function topDirectives(tokens: Token[], open: number): Directive[] {
+  const found: Directive[] = []
   let depth = 1
   let words: Token[] = []
   for (let i = open + 1; i < tokens.length; i++) {
     const token = tokens[i]
     if (token.kind === 'word') words.push(token)
     else if (token.kind === ';') {
-      if (depth === 1 && (words[0]?.value === CERT || words[0]?.value === KEY)) edits.push({ name: words[0].value, start: words[0].start, end: token.end })
+      if (depth === 1 && words.length > 0) found.push({ words, end: token.end })
       words = []
     } else {
       depth += token.kind === '{' ? 1 : -1
       words = []
-      if (depth === 0) return edits
+      if (depth === 0) return found
     }
   }
   throw new Error('The site block is not closed in this file.')
+}
+
+function certificateEdits(directives: Directive[]): Edit[] {
+  return directives
+    .filter(({ words }) => words[0].value === CERT || words[0].value === KEY)
+    .map(({ words, end }) => ({ name: words[0].value, start: words[0].start, end }))
 }
 
 function onlyEdit(edits: Edit[], name: string): Edit {
@@ -116,8 +127,25 @@ export function swapCertLines(fileText: string, blockLine: number, certPath: str
   assertSafe(certPath)
   assertSafe(keyPath)
   const tokens = tokenize(fileText)
-  const edits = certificateEdits(tokens, openingBrace(tokens, blockLine))
+  const edits = certificateEdits(topDirectives(tokens, openingBrace(tokens, blockLine)))
   const targets = [{ edit: onlyEdit(edits, CERT), path: certPath }, { edit: onlyEdit(edits, KEY), path: keyPath }]
   const text = targets.sort((a, b) => b.edit.start - a.edit.start).reduce((current, { edit, path }) => replaced(current, edit, path), fileText)
   return { text, diff: changedLines(fileText, text) }
+}
+
+export interface BlockIdentity {
+  names: string[]
+  certPath: string
+  keyPath: string
+}
+
+export function blockIdentity(fileText: string, blockLine: number): BlockIdentity {
+  const tokens = tokenize(fileText)
+  const directives = topDirectives(tokens, openingBrace(tokens, blockLine))
+  const argsOf = (name: string) => directives.filter(({ words }) => words[0].value === name).map(({ words }) => words.slice(1).map((word) => word.value))
+  return {
+    names: [...new Set(argsOf('server_name').flat().filter(Boolean).map((name) => name.toLowerCase()))],
+    certPath: argsOf(CERT)[0]?.[0] ?? '',
+    keyPath: argsOf(KEY)[0]?.[0] ?? ''
+  }
 }

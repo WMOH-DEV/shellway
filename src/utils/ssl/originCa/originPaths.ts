@@ -8,6 +8,15 @@ export interface OriginPaths {
   backupPath: string
 }
 
+export const isShellwayCertPath = (path: string): boolean => path.startsWith(`${ORIGIN_DIR}/`)
+
+const LIVE_PATH = /^\/etc\/letsencrypt\/live\/([A-Za-z0-9][A-Za-z0-9._-]*)\//
+
+export function lineageOfPaths(certPath: string, keyPath: string): string | null {
+  const cert = LIVE_PATH.exec(certPath)?.[1]
+  return cert !== undefined && LIVE_PATH.exec(keyPath)?.[1] === cert ? cert : null
+}
+
 export function originPaths(firstName: string, epochSeconds: number): OriginPaths {
   const stem = `${firstName}-${epochSeconds}`
   return { keyPath: `${ORIGIN_DIR}/${stem}.key`, certPath: `${ORIGIN_DIR}/${stem}.pem`, backupPath: `${BACKUP_DIR}/${stem}.conf` }
