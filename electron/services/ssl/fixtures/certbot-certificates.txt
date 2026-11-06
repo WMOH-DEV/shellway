@@ -1,0 +1,19 @@
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Found the following certs:
+  Certificate Name: app.example.com
+    Serial Number: 4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b
+    Key Type: ECDSA
+    Domains: app.example.com www.example.com
+    Expiry Date: 2027-01-12 08:15:22+00:00 (VALID: 66 days)
+    Certificate Path: /etc/letsencrypt/live/app.example.com/fullchain.pem
+    Private Key Path: /etc/letsencrypt/live/app.example.com/privkey.pem
+  Certificate Name: shop.example.net
+    Serial Number: 5b2c3d4e5f60718293a4b5c6d7e8f90a1b2c
+    Key Type: RSA
+    Domains: shop.example.net *.shop.example.net
+    Expiry Date: 2026-11-20 21:04:10+00:00 (VALID: 14 days)
+    Certificate Path: /etc/letsencrypt/live/shop.example.net/fullchain.pem
+    Private Key Path: /etc/letsencrypt/live/shop.example.net/privkey.pem
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

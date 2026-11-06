@@ -1,0 +1,107 @@
+# configuration file /etc/nginx/nginx.conf:
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 768;
+}
+
+http {
+    sendfile on;
+    # server { listen 443 ssl; server_name commented.example.com; }
+    include /etc/nginx/mime.types;
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+
+# configuration file /etc/nginx/mime.types:
+types {
+    text/html html htm;
+    text/css css;
+}
+
+# configuration file /etc/nginx/conf.d/status.conf:
+server {
+    listen 127.0.0.1:8080;
+    server_name localhost;
+    location /nginx_status { stub_status; }
+}
+
+# configuration file /etc/nginx/sites-enabled/app.example.com:
+# Redirect and TLS for app.example.com
+server {
+    listen 80;
+    listen [::]:80;
+    server_name app.example.com www.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2; # managed by Certbot
+    listen [::]:443 ssl http2;
+    server_name app.example.com
+                www.example.com;
+    ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem; # managed by Certbot
+
+    location / {
+        if ($request_uri ~ "\{x\}") { return 404; }
+        proxy_pass http://127.0.0.1:8080;
+    }
+    location ~ ^/(a|b)/ {
+        root /var/www/html;
+    }
+}
+
+# configuration file /etc/nginx/sites-enabled/example.net:
+server {
+    listen 203.0.113.10:443 ssl;
+    listen [2001:db8::10]:443 ssl;
+    server_name example.net "*.example.net";
+    ssl_certificate /etc/ssl/shellway/example.net.pem;
+    ssl_certificate_key /etc/ssl/shellway/example.net.key;
+}
+
+server {
+    listen [2001:db8::20]:443 ssl;
+    server_name v6only.example.net;
+    ssl_certificate /etc/ssl/shellway/v6only.pem;
+    ssl_certificate_key /etc/ssl/shellway/v6only.key;
+}
+
+# configuration file /etc/nginx/sites-enabled/catchall:
+server {
+    listen 443 ssl default_server;
+    server_name _ ~^(?<sub>.+)\.example\.org$ "~^www\d{2}\.example\.org$" *.example.org;
+    ssl_certificate /etc/ssl/catchall.pem;
+    ssl_certificate_key /etc/ssl/catchall.key;
+}
+
+# configuration file /etc/nginx/sites-enabled/misc:
+server {
+    listen 443 quic reuseport;
+    listen 443 ssl;
+    server_name quic.example.com;
+    ssl_certificate /etc/ssl/quic.pem;
+    ssl_certificate_key /etc/ssl/quic.key;
+}
+
+server {
+    listen 443;
+    server_name bare443.example.com;
+    ssl_certificate /etc/ssl/bare.pem;
+    ssl_certificate_key /etc/ssl/bare.key;
+}
+
+server {
+    listen 8443 ssl;
+    server_name alt.example.com;
+    ssl_certificate /etc/ssl/alt.pem;
+    ssl_certificate_key /etc/ssl/alt.key;
+}
+
+server {
+    listen 80;
+    server_name plain.example.com;
+}
