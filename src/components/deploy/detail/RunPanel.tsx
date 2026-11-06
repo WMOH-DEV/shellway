@@ -112,7 +112,7 @@ export function RunPanel({ connectionId, summary, record, retry }: RunPanelProps
           <Button size="sm" onClick={retry.onRetry} disabled={retry.disabled}><RotateCcw size={13} /> Retry</Button>
         )}
         <Tooltip content="Copy log">
-          <Button size="icon" variant="ghost" aria-label="Copy log" disabled={!text} onClick={() => copyText(plain(), 'Log')}><Copy size={14} /></Button>
+          <Button size="icon" variant="ghost" aria-label="Copy log" disabled={!text} onClick={() => copyText(plain(), 'Log copied')}><Copy size={14} /></Button>
         </Tooltip>
         <Tooltip content="Download log">
           <Button size="icon" variant="ghost" aria-label="Download log" disabled={!text} onClick={() => void downloadLog(`${config.name}-${record.id}.log`, plain())}><Download size={14} /></Button>

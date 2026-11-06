@@ -1,8 +1,10 @@
 import { toast } from '@/components/ui/Toast'
 
-export function copyText(text: string, what: string): void {
-  navigator.clipboard.writeText(text).then(
-    () => toast.success(`${what} copied`),
-    () => toast.error(`Could not copy the ${what.toLowerCase()}`)
-  )
+export async function copyText(text: string, message = 'Copied'): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(message)
+  } catch {
+    toast.error('Could not copy to the clipboard')
+  }
 }

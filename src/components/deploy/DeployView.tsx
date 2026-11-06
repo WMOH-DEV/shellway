@@ -6,6 +6,7 @@ import type { DeployResult, SiteConfig } from '@/types/deploy'
 import type { SiteFilter } from '@/utils/deploy/siteRow'
 import { KeySetup } from './KeySetup'
 import { SiteDetail, type DetailTab } from './SiteDetail'
+import { SetupWizard } from './setup/SetupWizard'
 import { SiteForm } from './SiteForm'
 import type { SiteActions } from './SiteRow'
 import { SitesOverview } from './SitesOverview'
@@ -86,10 +87,16 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
     }
   }
 
-  const saved = (site: SiteConfig, isNew: boolean) => {
+  const saved = (site: SiteConfig) => {
     toast.success(`${site.name} saved`)
     void refresh()
-    setScreen(isNew && site.sourceMode === 'auto' ? { kind: 'key', site } : { kind: 'detail', name: site.name })
+    setScreen({ kind: 'detail', name: site.name })
+  }
+
+  const setupFinished = (site: SiteConfig) => {
+    toast.info(`Deploying ${site.name}…`)
+    void refresh()
+    setScreen({ kind: 'detail', name: site.name })
   }
 
   if (!connected) {
@@ -97,6 +104,18 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
   }
 
   const detailSite = screen.kind === 'detail' ? sites.find((s) => s.config.name === screen.name) : undefined
+
+  if (screen.kind === 'form' && screen.site === null) {
+    return frame(
+      <SetupWizard
+        connectionId={connectionId}
+        existingNames={sites.map((s) => s.config.name)}
+        onCancel={() => setScreen({ kind: 'list' })}
+        onSiteSaved={() => void refresh()}
+        onFinished={setupFinished}
+      />
+    )
+  }
 
   if (screen.kind === 'form') {
     return frame(

@@ -77,7 +77,7 @@ function SiteCell({ summary, pcDrift, user, onOpen }: SiteCellProps) {
         <button
           type="button"
           aria-label="Copy full path"
-          onClick={(e) => { stop(e); copyText(path, 'Path') }}
+          onClick={(e) => { stop(e); copyText(path, 'Path copied') }}
           className="shrink-0 rounded p-1 transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
         >
           <Copy size={12} />
@@ -182,7 +182,7 @@ function RowActions({ summary, badge, starting, actions }: RowActionsProps) {
     open: () => actions.open(name),
     edit: () => actions.edit(name),
     key: () => actions.keySetup(name),
-    copy: () => copyText(path, 'Path'),
+    copy: () => copyText(path, 'Path copied'),
     resume: () => actions.resume(name)
   }
   const blocked = action === 'cancel' && !canCancel(summary)

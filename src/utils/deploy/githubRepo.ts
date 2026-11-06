@@ -14,6 +14,10 @@ export function githubSshUrl({ owner, repo }: GitHubRepo): string {
   return `git@github.com:${owner}/${repo}.git`
 }
 
+export function githubDeployKeysUrl({ owner, repo }: GitHubRepo): string {
+  return `https://github.com/${owner}/${repo}/settings/keys/new`
+}
+
 export function isHttpUrl(url: string): boolean {
   return /^https?:\/\//.test(url.trim())
 }

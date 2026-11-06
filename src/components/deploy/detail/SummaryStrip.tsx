@@ -57,7 +57,7 @@ export function SummaryStrip({ summary, pcDrift, user }: { summary: SiteSummary;
         <button
           type="button"
           aria-label="Copy full path"
-          onClick={() => copyText(config.path, 'Path')}
+          onClick={() => copyText(config.path, 'Path copied')}
           className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
         >
           <Copy size={12} />
