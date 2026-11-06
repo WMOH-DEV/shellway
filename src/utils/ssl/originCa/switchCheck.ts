@@ -12,7 +12,7 @@ function blockedReason(report: SslReport, block: ServerBlock, names: SwitchName[
   if (!block.tls || !block.certPath) return 'This site has no HTTPS server block to switch.'
   if (!report.cloudflare.saved) return 'Add a Cloudflare token first.'
   const permission = report.cloudflare.permissions.find((group) => group.id === 'origin-ca')
-  if (permission?.state !== 'granted') return 'The Cloudflare token needs SSL and Certificates · Edit.'
+  if (!permission || permission.state === 'missing' || permission.state === 'not-granted') return 'The Cloudflare token needs SSL and Certificates · Edit.'
   if (!report.facts.sudo.full) return 'Needs full passwordless sudo on this server.'
   if (hosts.length > 0 && hosts.every((host) => host.origin?.kind === 'cloudflare-origin')) return 'This site already uses a Cloudflare Origin CA certificate.'
   const broken = names.filter((name) => !name.ok).map((name) => name.name)

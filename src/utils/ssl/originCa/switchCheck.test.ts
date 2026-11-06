@@ -20,6 +20,11 @@ describe('switchCheck', () => {
     })
   })
 
+  it('allows the switch when the token can read certificates but Edit cannot be confirmed without trying', () => {
+    const unconfirmed = { ...connectedCloudflare, permissions: [{ id: 'origin-ca' as const, state: 'unknown' as const, lines: [] }] }
+    expect(switchCheck(ready({ cloudflare: unconfirmed }), 'app.conf:9').blockedReason).toBeNull()
+  })
+
   it('lists the names that would break', () => {
     const report = ready({ hostnames: [makeHost(), makeHost({ name: 'www.example.com', edge: edgeOf({ state: 'dns-only' }) })] })
     const check = switchCheck(report, 'app.conf:9')
@@ -38,6 +43,8 @@ describe('switchCheck', () => {
     expect(switchCheck(ready({ blocks: [makeBlock({ tls: false, certPath: '' })] }), 'app.conf:9').blockedReason).toBe('This site has no HTTPS server block to switch.')
     expect(switchCheck(ready({ cloudflare: { ...connectedCloudflare, saved: false } }), 'app.conf:9').blockedReason).toBe('Add a Cloudflare token first.')
     expect(switchCheck(ready({ cloudflare: connectedCloudflare }), 'app.conf:9').blockedReason).toBe('The Cloudflare token needs SSL and Certificates · Edit.')
+    const notGranted = { ...connectedCloudflare, permissions: [{ id: 'origin-ca' as const, state: 'not-granted' as const, lines: [] }] }
+    expect(switchCheck(ready({ cloudflare: notGranted }), 'app.conf:9').blockedReason).toBe('The Cloudflare token needs SSL and Certificates · Edit.')
     expect(switchCheck(ready({ facts: makeFacts() }), 'app.conf:9').blockedReason).toBe('Needs full passwordless sudo on this server.')
   })
 
