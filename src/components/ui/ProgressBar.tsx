@@ -10,6 +10,7 @@ interface ProgressBarProps {
   /** Color variant */
   variant?: 'accent' | 'success' | 'warning' | 'error'
   className?: string
+  trackClassName?: string
 }
 
 const variantColors: Record<string, string> = {
@@ -24,7 +25,8 @@ export function ProgressBar({
   showLabel = false,
   size = 'md',
   variant = 'accent',
-  className
+  className,
+  trackClassName
 }: ProgressBarProps) {
   const clamped = Math.max(0, Math.min(100, value))
 
@@ -33,7 +35,8 @@ export function ProgressBar({
       <div
         className={cn(
           'flex-1 overflow-hidden rounded-full bg-nd-surface',
-          size === 'sm' ? 'h-1.5' : 'h-2.5'
+          size === 'sm' ? 'h-1.5' : 'h-2.5',
+          trackClassName
         )}
       >
         <div

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink, AppWindow
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink, AppWindow, Rocket
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -27,6 +27,7 @@ import type { ConnectionTab } from '@/types/session'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
+const DeployView = lazy(() => import('@/components/deploy/DeployView').then(m => ({ default: m.DeployView })))
 
 const SUB_TABS: TabItem[] = [
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
@@ -34,6 +35,7 @@ const SUB_TABS: TabItem[] = [
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'monitor', label: 'Monitor', icon: <Activity size={13} /> },
   { id: 'services', label: 'Services', icon: <Cog size={13} /> },
+  { id: 'deploy', label: 'Deploy', icon: <Rocket size={13} /> },
   { id: 'port-forwarding', label: 'Port Forwarding', icon: <ArrowRightLeft size={13} /> },
   { id: 'info', label: 'Info', icon: <Info size={13} /> },
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
@@ -438,6 +440,14 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Services...</div>}>
                 <ServiceManagerView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+              </Suspense>
+            </div>
+          )}
+
+          {activeSubTab === 'deploy' && runningSubTabs.has('deploy') && isHere('deploy') && (
+            <div className="absolute inset-0 flex flex-col">
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Deploy...</div>}>
+                <DeployView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
               </Suspense>
             </div>
           )}
