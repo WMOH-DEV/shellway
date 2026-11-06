@@ -16,7 +16,7 @@ const TLS_FAILURES: Record<string, string> = {
   [TIMEOUT_CODE]: 'no answer on port 443 within 10 seconds'
 }
 
-const CLOUDFLARE_FAILURES: Record<number, string> = {
+export const CLOUDFLARE_FAILURES: Record<number, string> = {
   525: 'Cloudflare could not complete a secure connection to the server (525)',
   526: "Cloudflare does not trust the server's certificate (526)"
 }

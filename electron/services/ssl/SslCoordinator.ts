@@ -1,10 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import type { RemoteExec } from '../deploy/DeployService'
 import type {
   ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, InstallRoute, IssueRequest, IssueResult,
-  NameReadiness, PrepFacts, ServerScan, SslReport, VerifyResult
+  NameReadiness, OriginCert, PrepFacts, ServerScan, SslReport, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult
 } from '../../../src/types/ssl'
 import { isIssuableName } from '../../../src/utils/ssl/https/issueCommands'
 import { LINEAGE_NAME } from '../../../src/utils/ssl/commands'
+import { removeFilesCommand } from '../../../src/utils/ssl/originCa/scripts'
 import { CloudflareClient } from './CloudflareClient'
 import { edgesWithoutZone, resolveAddresses } from './dnsEdge'
 import { httpGet } from './https/httpGet'
@@ -14,6 +16,13 @@ import { runIssue } from './https/issue'
 import { detectPrep } from './https/prepFacts'
 import { checkReadiness } from './https/readiness'
 import { verifyHttps } from './https/verify'
+import { runApply } from './originCa/apply'
+import { blocksUsingLineage, leftoverTarget, readLeftover, undoRefusal } from './originCa/leftover'
+import { runPrepare } from './originCa/prepare'
+import { PreparedSwitches } from './originCa/preparedSwitches'
+import { SHORT_TIMEOUT_MS } from './originCa/remoteRun'
+import { runLineageRemoval, runUndo } from './originCa/undo'
+import type { VerifyDeps } from './originCa/verifyServed'
 import { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
@@ -26,6 +35,8 @@ export interface SslDeps {
   edgesWithoutToken?: typeof edgesWithoutZone
   resolveHost?: (host: string) => Promise<string[]>
   httpGet?: HttpGet
+  newId?: () => string
+  sleep?: (ms: number) => Promise<void>
   broadcast: (channel: string, ...args: unknown[]) => void
   notify: (title: string, body: string) => void
   now: () => number
@@ -48,6 +59,10 @@ function issuableNames(names: string[]): string[] {
   return names
 }
 
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+const NEEDS_FULL_SUDO = 'This needs full passwordless sudo on the server.'
+
 const WARN_AGAIN_AFTER_MS = 12 * 60 * 60 * 1000
 
 const isLoopback = (address: string) => address.startsWith('127.') || address === '::1'
@@ -68,6 +83,7 @@ export class SslCoordinator {
   private readonly criticalCounts = new Map<string, number>()
   private readonly connectionHosts = new Map<string, string>()
   private readonly warnedAt = new Map<string, number>()
+  private readonly switches = new PreparedSwitches()
 
   constructor(private readonly deps: SslDeps) {}
 
@@ -98,6 +114,7 @@ export class SslCoordinator {
     this.criticalCounts.delete(connectionId)
     this.connectionHosts.delete(connectionId)
     this.reports.delete(connectionId)
+    this.switches.forget(connectionId)
   }
 
   lastReport(connectionId: string): SslReport | null {
@@ -138,6 +155,89 @@ export class SslCoordinator {
       onOutput: this.outputTo(runId)
     }
     return this.exclusive(connectionId, () => runIssue(exec, () => service.readConfig(), request, hooks))
+  }
+
+  originPrepare(connectionId: string, sessionId: string, request: SwitchRequest, runId: string): Promise<SwitchPrepared> {
+    const exec = this.exec(connectionId)
+    return this.exclusive(connectionId, async () => {
+      const report = await this.check(connectionId, sessionId)
+      const token = this.deps.store.cloudflareToken()
+      if (!token) throw new Error('Add a Cloudflare token first.')
+      const hooks = { now: this.deps.now, newId: this.deps.newId ?? randomUUID, onOutput: this.outputTo(runId) }
+      const prepared = await runPrepare({ exec, cloudflare: this.deps.cloudflare(token), report, request }, hooks)
+      this.switches.add(connectionId, prepared)
+      return prepared
+    })
+  }
+
+  originApply(connectionId: string, sessionId: string, switchId: string, runId: string): Promise<SwitchResult> {
+    const exec = this.exec(connectionId)
+    return this.exclusive(connectionId, async () => {
+      const prepared = this.switches.take(connectionId, switchId)
+      const result = await runApply({ exec, onOutput: this.outputTo(runId), ...this.verifyDeps(connectionId) }, prepared)
+      await this.refresh(connectionId, sessionId)
+      return result
+    })
+  }
+
+  originCancel(connectionId: string, switchId: string): Promise<void> {
+    const exec = this.exec(connectionId)
+    return this.exclusive(connectionId, async () => {
+      const prepared = this.switches.take(connectionId, switchId)
+      const removed = await exec(removeFilesCommand(prepared.keyPath, prepared.certPath), { timeoutMs: SHORT_TIMEOUT_MS })
+      if (removed.code !== 0) throw new Error('Could not remove the unused private key from the server.')
+    })
+  }
+
+  async originLeftover(connectionId: string, name: string): Promise<SwitchLeftover | null> {
+    const report = this.lastReport(connectionId)
+    if (!report) return null
+    return readLeftover(this.exec(connectionId), report, name, Math.floor(this.deps.now() / 1000))
+  }
+
+  originUndo(connectionId: string, sessionId: string, name: string, runId: string): Promise<SwitchResult> {
+    const exec = this.exec(connectionId)
+    return this.exclusive(connectionId, async () => {
+      const report = await this.check(connectionId, sessionId)
+      const leftover = await readLeftover(exec, report, name, Math.floor(this.deps.now() / 1000))
+      const refusal = undoRefusal(leftover)
+      const target = leftoverTarget(report, name)
+      if (refusal || !leftover || !target) throw new Error(refusal ?? 'This site is no longer in the nginx configuration.')
+      const deps = { exec, onOutput: this.outputTo(runId), now: this.deps.now, ...this.verifyDeps(connectionId) }
+      const result = await runUndo(deps, { file: target.block.file, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover })
+      await this.refresh(connectionId, sessionId)
+      return result
+    })
+  }
+
+  originRemoveLineage(connectionId: string, lineage: string, runId: string): Promise<ActionResult> {
+    if (!LINEAGE_NAME.test(lineage)) throw new Error('Invalid certificate name')
+    const exec = this.exec(connectionId)
+    const service = this.service(connectionId)
+    return this.exclusive(connectionId, async () => {
+      const config = await service.readConfig()
+      if (!config.facts.sudo.full) throw new Error(NEEDS_FULL_SUDO)
+      const users = blocksUsingLineage(config.blocks, lineage)
+      if (users.length > 0) throw new Error(`${lineage} is still used by ${users.map((b) => b.names[0] ?? b.id).join(', ')}. Switch those sites first.`)
+      return runLineageRemoval(exec, lineage, this.outputTo(runId))
+    })
+  }
+
+  private verifyDeps(connectionId: string): VerifyDeps {
+    const service = this.service(connectionId)
+    return {
+      probe: async (names): Promise<Record<string, OriginCert>> => service.probeNames(names, await service.readConfig()),
+      httpGet: this.deps.httpGet ?? httpGet,
+      sleep: this.deps.sleep ?? pause
+    }
+  }
+
+  private async refresh(connectionId: string, sessionId: string): Promise<void> {
+    try {
+      await this.check(connectionId, sessionId)
+    } catch {
+      this.criticalCounts.delete(connectionId)
+    }
   }
 
   httpsEmail(sessionId: string): string {
