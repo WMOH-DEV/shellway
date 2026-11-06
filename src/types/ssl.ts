@@ -55,6 +55,7 @@ export interface ServerFacts {
   nginxParse: NginxParse
   renewal: RenewalInfo
   sudo: { certbot: boolean; nginx: boolean; full: boolean }
+  paths: { certbot: string | null; nginx: string | null }
   user: string
   addresses: string[]
 }
