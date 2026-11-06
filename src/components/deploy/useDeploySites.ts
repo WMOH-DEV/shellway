@@ -38,12 +38,20 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
   const mounted = useRef(true)
   const driftCheckedAt = useRef(0)
   const inFlight = useRef<Promise<void> | null>(null)
+  const queued = useRef<Promise<void> | null>(null)
+  const driftRunning = useRef(false)
 
   const refreshDrift = useCallback(async (listed: SiteSummary[], force: boolean) => {
+    if (driftRunning.current) return
     if (!force && Date.now() - driftCheckedAt.current < DRIFT_MIN_INTERVAL_MS) return
+    driftRunning.current = true
     driftCheckedAt.current = Date.now()
-    const drift = await fetchPcDrift(listed)
-    if (mounted.current) setPcDrift(drift)
+    try {
+      const drift = await fetchPcDrift(listed)
+      if (mounted.current) setPcDrift(drift)
+    } finally {
+      driftRunning.current = false
+    }
   }, [])
 
   const loadOnce = useCallback(async (forceDrift: boolean) => {
@@ -72,7 +80,7 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
     }
     setError(null)
     setSites(listed.data)
-    await refreshDrift(listed.data, forceDrift)
+    void refreshDrift(listed.data, forceDrift)
   }, [connectionId, sessionId, refreshDrift])
 
   const load = useCallback((forceDrift: boolean): Promise<void> => {
@@ -82,7 +90,14 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
     return running
   }, [loadOnce])
 
-  const refresh = useCallback(() => load(true), [load])
+  const refresh = useCallback((): Promise<void> => {
+    if (!inFlight.current) return load(true)
+    queued.current ??= inFlight.current.then(() => {
+      queued.current = null
+      return load(true)
+    })
+    return queued.current
+  }, [load])
 
   const installRunner = useCallback(async () => {
     setInstalling(true)
@@ -119,7 +134,7 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
     return () => { offChanged(); offFinished() }
   }, [connectionId, load])
 
-  const pollMs = isBusy(sites) ? BUSY_POLL_MS : hasAutoSites(sites) ? IDLE_POLL_MS : null
+  const pollMs = error ? IDLE_POLL_MS : isBusy(sites) ? BUSY_POLL_MS : hasAutoSites(sites) ? IDLE_POLL_MS : null
 
   useEffect(() => {
     if (!connected || pollMs === null) return

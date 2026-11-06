@@ -157,7 +157,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
         onPipelineSaved={() => void refresh()}
         onKeySetup={() => actions.keySetup(name)}
         onDeploy={() => actions.deploy(name)}
-        onDeployNow={() => deployNow(name)}
+        onDeployNow={(options) => deployNow(name, options)}
         onCancel={() => actions.cancel(name)}
         onRemoved={() => { setScreen({ kind: 'list' }); void refresh() }}
       />

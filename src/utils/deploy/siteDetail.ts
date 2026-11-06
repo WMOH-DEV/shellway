@@ -27,9 +27,16 @@ export function recordTitle(record: DeployRecord): string {
   return record.commit ? `Commit ${shortSha(record.commit)}` : 'Deploy'
 }
 
+function isReleaseKept(summary: SiteSummary, record: DeployRecord): boolean {
+  const releases = summary.history.filter((r) => r.trigger !== 'env' && r.trigger !== 'rollback')
+  const index = releases.findIndex((r) => r.id === record.id)
+  return index >= 0 && index < summary.config.keepReleases
+}
+
 export function canRollBackTo(summary: SiteSummary, record: DeployRecord): boolean {
-  if (record.trigger === 'env' || (record.status !== 'success' && record.status !== 'warning')) return false
-  if (summary.config.layout === 'releases') return record.id !== summary.state.currentRelease
+  if (record.trigger === 'env' || !record.commit) return false
+  if (record.status !== 'success' && record.status !== 'warning') return false
+  if (summary.config.layout === 'releases') return record.id !== summary.state.currentRelease && isReleaseKept(summary, record)
   return record.commit !== summary.state.current
 }
 
@@ -39,7 +46,7 @@ export function rollbackTarget(summary: SiteSummary): DeployRecord | undefined {
 
 export function canRetry(record: DeployRecord, summary: SiteSummary): boolean {
   const latest = summary.history.find((r) => r.trigger !== 'env')
-  return latest?.id === record.id && UNSUCCESSFUL.has(runTone(record, summary))
+  return latest?.id === record.id && record.trigger !== 'rollback' && UNSUCCESSFUL.has(runTone(record, summary))
 }
 
 export function deployLabel(summary: SiteSummary, pcDrift?: RemoteDrift): string {

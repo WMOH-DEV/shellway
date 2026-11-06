@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Splitter } from '@/components/ui/Splitter'
 import { toast } from '@/components/ui/Toast'
-import type { DeployRecord, DeployResult, RemoteDrift, SiteConfig, SiteSummary } from '@/types/deploy'
+import type { DeployOptions, DeployRecord, DeployResult, RemoteDrift, SiteConfig, SiteSummary } from '@/types/deploy'
 import { shortSha } from '@/utils/deploy/siteStatus'
 import { canRetry, recordTitle, rollbackTarget } from '@/utils/deploy/siteDetail'
 import { DetailHeader, type DetailActions } from './detail/DetailHeader'
@@ -38,7 +38,7 @@ interface SiteDetailProps {
   onBack: () => void
   onKeySetup: () => void
   onDeploy: () => void
-  onDeployNow: () => void
+  onDeployNow: (options?: DeployOptions) => void
   onCancel: () => void
   onSaved: (site: SiteConfig) => void
   onPipelineSaved: () => void
@@ -118,8 +118,8 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
   }
 
   const remove = async () => {
-    const result = await deployApi().remove(connectionId, config.name)
     setConfirmRemove(false)
+    const result = await deployApi().remove(connectionId, config.name)
     if (!result.success) {
       toast.error('Could not remove the site', result.error)
       return
@@ -128,10 +128,15 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
     onRemoved()
   }
 
+  const pipelineSaved = () => {
+    onPipelineSaved()
+    void serverCheck.run()
+  }
+
   const actions: DetailActions = {
     back: onBack,
     deploy: followNewest(onDeploy),
-    deployNow: followNewest(onDeployNow),
+    deployNow: followNewest(() => onDeployNow()),
     cancel: onCancel,
     rollback: setRollbackTo,
     keySetup: onKeySetup,
@@ -152,12 +157,12 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
               className="h-full rounded-[10px] border border-nd-border bg-nd-bg-secondary"
               left={<HistoryList summary={summary} selectedId={selected?.id} onSelect={setSelectedId} onRollback={setRollbackTo} />}
               right={selected
-                ? <RunPanel connectionId={connectionId} summary={summary} record={selected} retry={{ allowed: canRetry(selected, summary), disabled: starting || state.busy, onRetry: actions.deployNow }} />
+                ? <RunPanel key={selected.id} connectionId={connectionId} summary={summary} record={selected} retry={{ allowed: canRetry(selected, summary), disabled: starting || state.busy, onRetry: followNewest(() => onDeployNow(selected.commit ? { commit: selected.commit } : undefined)) }} />
                 : <div className="flex h-full items-center justify-center text-sm text-nd-text-muted">Deploy this site to see its first run here</div>}
             />
           )}
           {tab === 'pipeline' && (
-            <PipelineEditor connectionId={connectionId} summary={summary} onSaved={onPipelineSaved} onOpenServerCheck={() => setTab('check')} />
+            <PipelineEditor connectionId={connectionId} summary={summary} onSaved={pipelineSaved} onOpenServerCheck={() => setTab('check')} />
           )}
           {tab === 'env' && (
             <EnvEditor connectionId={connectionId} site={config.name} canApply={Boolean(state.current) && !state.busy} onApply={() => void runAndSelect(deployApi().apply(connectionId, config.name), 'Could not apply the change')} />

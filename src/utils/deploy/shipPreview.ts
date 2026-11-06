@@ -1,4 +1,5 @@
-import type { DeployRecord, ShipFile, ShipFileStatus, ShipPreview, SiteConfig, SiteSummary } from '@/types/deploy'
+import type { ShipFile, ShipFileStatus, ShipPreview, SiteConfig, SiteSummary } from '@/types/deploy'
+import { rollbackTarget } from './siteDetail'
 import { commitCount } from './siteRow'
 
 export const COLLAPSED_FILE_ROWS = 6
@@ -91,17 +92,9 @@ export const FILE_STATUS_LABELS: Record<ShipFileStatus, string> = {
   R: 'Renamed'
 }
 
-function isRollbackCandidate(summary: SiteSummary, record: DeployRecord): boolean {
-  if (record.trigger === 'env' || !record.commit) return false
-  if (record.status !== 'success' && record.status !== 'warning') return false
-  if (summary.config.layout === 'releases') return record.id !== summary.state.currentRelease
-  return record.commit !== summary.state.current
-}
-
 export function rollbackCommit(summary: SiteSummary): string {
   if (!summary.state.current) return ''
-  if (summary.config.layout === 'releases' && summary.config.keepReleases < 2) return ''
-  return summary.history.find((r) => isRollbackCandidate(summary, r))?.commit ?? ''
+  return rollbackTarget(summary)?.commit ?? ''
 }
 
 function healthDetail(config: SiteConfig): string {

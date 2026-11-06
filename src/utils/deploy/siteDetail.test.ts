@@ -70,6 +70,16 @@ describe('rollback and retry', () => {
     expect(rollbackTarget(makeSummary({ history: [history[1]], state: { currentRelease: 'd2' } }))).toBeUndefined()
   })
 
+  it('never offers a rollback record or a release that was already pruned', () => {
+    const rolledBack = makeSummary({
+      state: { current: 'bbb', currentRelease: 'd1' },
+      history: [makeRecord({ id: 'r1', trigger: 'rollback', commit: 'bbb' }), ...history]
+    })
+    expect(rollbackTarget(rolledBack)?.id).toBe('d2')
+    const keepTwo = makeSummary({ config: { keepReleases: 2 }, state: { current: 'aaa', currentRelease: 'd2' }, history })
+    expect(rollbackTarget(keepTwo)).toBeUndefined()
+  })
+
   it('compares commits for in-place sites', () => {
     const summary = makeSummary({ config: { layout: 'inplace' }, state: { current: 'bbb' }, history })
     expect(rollbackTarget(summary)?.id).toBe('d2')
@@ -82,6 +92,11 @@ describe('rollback and retry', () => {
     const cancelled = makeSummary({ history: [makeRecord({ id: 'e2', trigger: 'env', status: 'failed' }), makeRecord({ id: 'd4', status: 'cancelled' })] })
     expect(canRetry(cancelled.history[1], cancelled)).toBe(true)
     expect(canRetry(cancelled.history[0], cancelled)).toBe(false)
+  })
+
+  it('does not offer retry on a failed rollback', () => {
+    const summary = makeSummary({ history: [makeRecord({ id: 'r1', trigger: 'rollback', status: 'failed' }), ...history] })
+    expect(canRetry(summary.history[0], summary)).toBe(false)
   })
 })
 
