@@ -52,7 +52,7 @@ export function AddHttpsWizard({ connectionId, sessionId, serverName, report, bl
             />
             <ContextCard step={flow.step} certbotDocsUrl={flow.prepare.plan?.docsUrl ?? null} route={flow.prepare.plan?.route ?? null} />
           </aside>
-          <main className="min-w-0 max-w-4xl flex-1">
+          <main className="min-w-0 flex-1">
             <StepBody flow={flow} report={report} />
           </main>
         </div>
