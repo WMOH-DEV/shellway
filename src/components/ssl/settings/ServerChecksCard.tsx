@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Minus, X } from 'lucide-react'
+import { AlertTriangle, Check, Loader2, Minus, X } from 'lucide-react'
 import { useState } from 'react'
 import { CodeBox } from '@/components/deploy/setup/CodeBox'
 import { useNowMs } from '@/components/deploy/useNowMs'
@@ -72,13 +72,16 @@ function Rows({ facts, now }: { facts: ServerFacts; now: number }) {
   )
 }
 
-export function ServerChecksCard({ report, onRecheck }: { report: SslReport | null; onRecheck: () => void }) {
+export function ServerChecksCard({ report, checking, onRecheck }: { report: SslReport | null; checking: boolean; onRecheck: () => void }) {
   const nowSeconds = Math.floor(useNowMs(false) / 1000)
   return (
     <SettingsCard label="Server checks">
       <CardHeading title="Server checks">
         {report && <span className="text-xs text-nd-text-muted">as {report.facts.user}</span>}
-        <Button size="sm" className="ml-auto" onClick={onRecheck}>Run again</Button>
+        <Button size="sm" className="ml-auto" disabled={checking} onClick={onRecheck}>
+          {checking && <Loader2 size={14} className="animate-spin" />}
+          Run again
+        </Button>
       </CardHeading>
       {report ? <Rows facts={report.facts} now={nowSeconds} /> : <span className="text-xs text-nd-text-muted">No server check yet. Run it to see what this server can do.</span>}
     </SettingsCard>

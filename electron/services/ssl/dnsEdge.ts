@@ -56,7 +56,7 @@ function timeout(ms: number): Promise<never> {
   })
 }
 
-async function resolveAddresses(host: string): Promise<string[]> {
+export async function resolveAddresses(host: string): Promise<string[]> {
   const found = await Promise.race([dns.lookup(host, { all: true }), timeout(LOOKUP_TIMEOUT_MS)])
   return found.map((entry) => entry.address)
 }

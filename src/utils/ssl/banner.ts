@@ -12,7 +12,10 @@ const isCritical = (host: HostnameStatus): boolean => host.verdict === 'broken' 
 
 function impact(host: HostnameStatus, now: number): string {
   const notAfter = host.origin?.notAfter ?? null
-  if (host.verdict === 'will-break' && notAfter !== null) return `will stop working for visitors in ${pluralize(Math.max(0, daysLeft(notAfter, now)), 'day')}`
+  if (host.verdict === 'will-break' && notAfter !== null) {
+    const days = daysLeft(notAfter, now)
+    return days < 0 ? 'has an expired server certificate' : `will stop working for visitors in ${pluralize(days, 'day')}`
+  }
   if (/526/.test(host.reason)) return 'is down for visitors (error 526)'
   if (/certificate error/i.test(host.reason)) return 'shows visitors a certificate error'
   return 'is down for visitors'

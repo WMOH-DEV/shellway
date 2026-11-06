@@ -43,7 +43,10 @@ function CertCell({ host, now }: { host: HostnameStatus; now: number }) {
         <span className="truncate">{view.kindLabel}</span>
         <span className={cn('ml-auto shrink-0 text-xs', TONE_INK[view.tone])}>{view.daysText}</span>
       </div>
-      <div className="flex h-1 rounded-sm bg-nd-bg-tertiary" role="img" aria-label={`${Math.round(view.life * 100)}% of the certificate lifetime left`}>
+      <div
+        className="flex h-1 rounded-sm bg-nd-bg-tertiary"
+        {...(view.daysText === '—' ? { 'aria-hidden': true } : { role: 'img', 'aria-label': `${Math.round(view.life * 100)}% of the certificate lifetime left` })}
+      >
         <span className={cn('rounded-sm', TONE_FILL[view.tone])} style={{ width: `${view.life * 100}%` }} />
       </div>
     </div>

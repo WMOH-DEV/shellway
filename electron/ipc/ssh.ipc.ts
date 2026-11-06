@@ -192,7 +192,7 @@ export function registerSSHIPC(): void {
 
           if (status === 'connected') {
             notifyDeployConnectionReady(connectionId, savedSessionId, config.host || connectionId)
-            notifySslConnectionReady(connectionId, savedSessionId, config.host || connectionId)
+            notifySslConnectionReady(connectionId, savedSessionId, config.host || connectionId, config.host ?? '')
           }
 
           // Notify on unexpected disconnect

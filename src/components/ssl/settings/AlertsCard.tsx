@@ -34,7 +34,7 @@ export function AlertsCard() {
   return (
     <SettingsCard label="Background alerts">
       <CardHeading title="Alerts">
-        {data && <Toggle className="ml-auto" checked={data.probeEnabled} onChange={(enabled) => void setEnabled(enabled)} />}
+        {data && <Toggle className="ml-auto" ariaLabel="Background certificate alerts" checked={data.probeEnabled} onChange={(enabled) => void setEnabled(enabled)} />}
       </CardHeading>
       <span className="text-[13px] text-nd-text-secondary">
         While Shellway is open, this PC checks each hostname's server certificate every 12 hours, even for servers you have not opened today.

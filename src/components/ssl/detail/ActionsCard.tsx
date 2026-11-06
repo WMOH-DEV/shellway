@@ -77,8 +77,9 @@ function OriginCaRow() {
 
 export function ActionsCard({ host, facts, run, onForce }: ActionsCardProps) {
   const availability = actionAvailability(host, facts)
+  const isThisCertificate = run.lineage !== null && run.lineage === host.lineage
   const shownAction = run.running ?? run.outcome?.action ?? null
-  const showOutput = run.running !== null || run.outcome !== null
+  const showOutput = isThisCertificate && (run.running !== null || run.outcome !== null)
   return (
     <Card label="Actions" ariaLabel="Fix it">
       <div className="flex flex-col">

@@ -51,9 +51,9 @@ describe('verdictFor', () => {
     expect(verdictFor(input()).uncheckedSide).toBeNull()
   })
 
-  it('keeps an expired certificate behind an unknown edge out of the OK bucket', () => {
+  it('treats an expired certificate behind an unknown edge as critical', () => {
     const result = verdictFor(input({ origin: cert({ notAfter: NOW - 2 * DAY }), edge: edge({ state: 'unknown', sslMode: null, unknownReason: 'no token' }) }))
-    expect(result).toMatchObject({ verdict: 'expiring', reason: 'Expired 2 days ago' })
+    expect(result).toMatchObject({ verdict: 'will-break', reason: 'Expired 2 days ago' })
   })
 
   it('accepts full mode with a self-signed certificate', () => {

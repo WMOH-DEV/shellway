@@ -69,7 +69,7 @@ function expiryVerdict(input: VerdictInput): VerdictResult | null {
   if (!origin || origin.notAfter === null || origin.kind === 'none') return null
   const days = daysLeft(origin.notAfter, now)
   if (days > WARNING_DAYS) return null
-  if (days < 0) return { verdict: 'expiring', reason: `Expired ${plural(-days, 'day')} ago`, uncheckedSide: null }
+  if (days < 0) return { verdict: 'will-break', reason: `Expired ${plural(-days, 'day')} ago`, uncheckedSide: null }
   if (!certbotManaged) return { verdict: 'will-break', reason: `Expires in ${plural(days, 'day')} and nothing renews it`, uncheckedSide: null }
   if (!renewalHealthy) return { verdict: 'will-break', reason: `Expires in ${plural(days, 'day')} and renewal is not working`, uncheckedSide: null }
   return { verdict: 'expiring', reason: 'certbot should have renewed at 30 days left', uncheckedSide: null }

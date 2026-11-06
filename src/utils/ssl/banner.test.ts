@@ -26,6 +26,14 @@ describe('criticalBanner', () => {
     })
   })
 
+  it('says an expired host has an expired certificate instead of a day count', () => {
+    const expired = makeHost({ name: 'old.example.com', verdict: 'will-break', reason: 'Expired 3 days ago', origin: originExpiringIn(-3) })
+    expect(criticalBanner([expired], NOW)).toMatchObject({
+      title: 'old.example.com has an expired server certificate.',
+      detail: 'Expired 3 days ago.'
+    })
+  })
+
   it('explains a certificate error for a direct host with an Origin CA certificate', () => {
     const host = makeHost({
       name: 'mail.example.com',

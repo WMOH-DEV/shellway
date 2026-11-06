@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { ConnectionStatus } from '@/types/session'
 import { HostnameDetail } from './HostnameDetail'
+import { useCertbotRun } from './detail/useCertbotRun'
 import { HostnamesScreen } from './HostnamesScreen'
 import { ErrorState, LoadingState } from './LoadState'
 import { SslSettings } from './settings/SslSettings'
@@ -24,13 +25,14 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
   const backToList = () => setScreen({ kind: 'list' })
   const recheck = () => void refresh()
+  const run = useCertbotRun(connectionId, recheck)
 
   if (!connected) {
     return <div className="flex h-full items-center justify-center bg-nd-bg-primary text-sm text-nd-text-muted">Connect to this server to check its certificates</div>
   }
 
   if (screen.kind === 'settings') {
-    return <SslSettings connectionId={connectionId} report={report} onBack={backToList} onRecheck={recheck} onCloudflareChanged={recheck} />
+    return <SslSettings connectionId={connectionId} report={report} checking={loading} onBack={backToList} onRecheck={recheck} onCloudflareChanged={recheck} />
   }
 
   if (!report) return error ? <ErrorState message={error} retrying={loading} onRetry={recheck} /> : <LoadingState />
@@ -40,12 +42,12 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
     return (
       <HostnameDetail
         key={detailHost.name}
-        connectionId={connectionId}
         host={detailHost}
         report={report}
         now={now}
         loading={loading}
         error={error}
+        run={run}
         onBack={backToList}
         onRefresh={refresh}
       />

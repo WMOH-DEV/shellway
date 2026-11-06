@@ -1,7 +1,7 @@
 import type { RemoteExec } from '../deploy/DeployService'
 import type { ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, ServerScan, SslReport } from '../../../src/types/ssl'
 import { CloudflareClient } from './CloudflareClient'
-import { edgesWithoutZone } from './dnsEdge'
+import { edgesWithoutZone, resolveAddresses } from './dnsEdge'
 import { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
@@ -12,6 +12,7 @@ export interface SslDeps {
   cloudflare: (token: string) => CloudflareClient
   serviceFor?: (exec: RemoteExec) => SslService
   edgesWithoutToken?: typeof edgesWithoutZone
+  resolveHost?: (host: string) => Promise<string[]>
   broadcast: (channel: string, ...args: unknown[]) => void
   notify: (title: string, body: string) => void
   now: () => number
@@ -25,6 +26,10 @@ function criticalSummary(label: string, critical: HostnameStatus[]): [string, st
   return [`SSL problem on ${label}`, `${worst.name}: ${worst.reason}${more}`]
 }
 
+const WARN_AGAIN_AFTER_MS = 12 * 60 * 60 * 1000
+
+const isLoopback = (address: string) => address.startsWith('127.') || address === '::1'
+
 const tokenHint = (token: string) => (token.length > 8 ? `…${token.slice(-4)}` : '…')
 
 function probeTarget(address: string, fallbackHost: string): Pick<KnownHost, 'address' | 'port'> {
@@ -36,7 +41,10 @@ function probeTarget(address: string, fallbackHost: string): Pick<KnownHost, 'ad
 
 export class SslCoordinator {
   private readonly checks = new Map<string, Promise<SslReport>>()
+  private readonly certbotRuns = new Set<string>()
   private readonly criticalCounts = new Map<string, number>()
+  private readonly connectionHosts = new Map<string, string>()
+  private readonly warnedAt = new Map<string, number>()
 
   constructor(private readonly deps: SslDeps) {}
 
@@ -46,12 +54,13 @@ export class SslCoordinator {
     return this.deps.serviceFor ? this.deps.serviceFor(exec) : new SslService(exec)
   }
 
-  async onConnected(connectionId: string, sessionId: string, label: string): Promise<void> {
+  async onConnected(connectionId: string, sessionId: string, label: string, host: string): Promise<void> {
+    if (host) this.connectionHosts.set(connectionId, host)
     if (!(sessionId in this.deps.store.knownHosts())) return
     try {
       const report = await this.check(connectionId, sessionId)
       const critical = report.hostnames.filter(isCritical)
-      if (critical.length > 0) this.deps.notify(...criticalSummary(label, critical))
+      if (critical.length > 0 && this.shouldWarn(sessionId)) this.deps.notify(...criticalSummary(label, critical))
     } catch {
       this.criticalCounts.delete(connectionId)
     }
@@ -59,6 +68,7 @@ export class SslCoordinator {
 
   forget(connectionId: string): void {
     this.criticalCounts.delete(connectionId)
+    this.connectionHosts.delete(connectionId)
   }
 
   criticalCount(connectionId: string): number {
@@ -73,8 +83,14 @@ export class SslCoordinator {
     return started
   }
 
-  runCertbot(connectionId: string, lineage: string, action: CertbotAction, runId: string): Promise<ActionResult> {
-    return this.service(connectionId).runCertbot(lineage, action, (chunk) => this.deps.broadcast('ssl:output', runId, chunk))
+  async runCertbot(connectionId: string, lineage: string, action: CertbotAction, runId: string): Promise<ActionResult> {
+    if (this.certbotRuns.has(connectionId)) throw new Error('certbot is already running on this server. Wait for it to finish.')
+    this.certbotRuns.add(connectionId)
+    try {
+      return await this.service(connectionId).runCertbot(lineage, action, (chunk) => this.deps.broadcast('ssl:output', runId, chunk))
+    } finally {
+      this.certbotRuns.delete(connectionId)
+    }
   }
 
   async cloudflareStatus(): Promise<CloudflareStatus> {
@@ -85,6 +101,7 @@ export class SslCoordinator {
 
   async saveCloudflareToken(token: string): Promise<CloudflareStatus> {
     const status = await this.statusFor(token)
+    if (status.error) throw new Error(status.error)
     this.deps.store.setCloudflareToken(token)
     return status
   }
@@ -102,32 +119,48 @@ export class SslCoordinator {
     }
   }
 
+  private shouldWarn(sessionId: string): boolean {
+    const now = this.deps.now()
+    const last = this.warnedAt.get(sessionId)
+    if (last !== undefined && now - last < WARN_AGAIN_AFTER_MS) return false
+    this.warnedAt.set(sessionId, now)
+    return true
+  }
+
+  private async serverAddresses(connectionId: string, reported: string[]): Promise<string[]> {
+    const host = this.connectionHosts.get(connectionId)
+    const resolve = this.deps.resolveHost ?? resolveAddresses
+    const connected = host ? await resolve(host).catch(() => []) : []
+    return [...new Set([...connected.filter((a) => !isLoopback(a)), ...reported])]
+  }
+
   private async runCheck(connectionId: string, sessionId: string): Promise<SslReport> {
     const scan = await this.service(connectionId).scan()
+    const addresses = await this.serverAddresses(connectionId, scan.facts.addresses)
     const cloudflare = await this.cloudflareStatus()
-    const edges = await this.edgesFor(scan, cloudflare)
+    const edges = await this.edgesFor(scan, addresses, cloudflare)
     const report = buildReport(scan, edges, cloudflare, Math.floor(this.deps.now() / 1000))
-    this.rememberHosts(sessionId, scan)
+    this.rememberHosts(sessionId, scan, addresses[0] ?? '')
+    if (!this.deps.execFor(connectionId)) return report
     const critical = report.hostnames.filter(isCritical).length
     this.criticalCounts.set(connectionId, critical)
     this.deps.broadcast('ssl:critical', connectionId, critical)
     return report
   }
 
-  private async edgesFor(scan: ServerScan, cloudflare: CloudflareStatus): Promise<Record<string, EdgeInfo>> {
+  private async edgesFor(scan: ServerScan, addresses: string[], cloudflare: CloudflareStatus): Promise<Record<string, EdgeInfo>> {
     const hosts = hostnamesOf(scan.blocks).filter((h) => !isPattern(h))
     const token = this.deps.store.cloudflareToken()
-    if (!token) return (this.deps.edgesWithoutToken ?? edgesWithoutZone)(hosts, scan.facts.addresses, 'no Cloudflare token')
+    if (!token) return (this.deps.edgesWithoutToken ?? edgesWithoutZone)(hosts, addresses, 'no Cloudflare token')
     if (cloudflare.error) return unknownEdges(hosts, cloudflare.error)
     try {
-      return await this.deps.cloudflare(token).edges(hosts, scan.facts.addresses, cloudflare.zones)
+      return await this.deps.cloudflare(token).edges(hosts, addresses, cloudflare.zones)
     } catch (err) {
       return unknownEdges(hosts, (err as Error).message)
     }
   }
 
-  private rememberHosts(sessionId: string, scan: ServerScan): void {
-    const fallback = scan.facts.addresses[0] ?? ''
+  private rememberHosts(sessionId: string, scan: ServerScan, fallback: string): void {
     if (!fallback) return
     const known = scan.blocks
       .filter((b) => b.tls)

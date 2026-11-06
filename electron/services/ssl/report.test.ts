@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CloudflareStatus, EdgeInfo, OriginCert, ServerBlock, ServerScan } from '../../../src/types/ssl'
-import { buildReport, unknownEdges } from './report'
+import { buildReport, isPattern, unknownEdges } from './report'
 
 const DAY = 86_400
 const NOW = 1_800_000_000
@@ -55,6 +55,11 @@ describe('buildReport', () => {
     expect(app).toMatchObject({ lineage: 'app.example.com', verdict: 'expiring' })
     const failing = scan({ facts: { ...scan().facts, renewal: { mechanism: 'certbot.timer', lastRun: NOW, lastResult: 'failed', output: '' } } })
     expect(buildReport(failing, edges, cloudflare, NOW).hostnames.find((h) => h.name === 'app.example.com')?.verdict).toBe('will-break')
+  })
+
+  it('treats wildcard, regex and leading-dot server names as patterns', () => {
+    expect(['*.example.com', '~^www\\.', '.example.com'].every(isPattern)).toBe(true)
+    expect(isPattern('app.example.com')).toBe(false)
   })
 
   it('does not probe wildcard names and treats a plain HTTP block as having no certificate', () => {

@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { mockNovadeck } from '@/test/novadeck'
 import { DAY, edgeOf, makeBlock, makeFacts, makeHost, makeOrigin, makeReport, NOW, originExpiringIn, unknownEdge } from '@/utils/ssl/testReport'
 import type { HostnameStatus, SslReport } from '@/types/ssl'
 import { HostnameDetail } from './HostnameDetail'
+import { useCertbotRun } from './detail/useCertbotRun'
 import { HostnamesScreen } from './HostnamesScreen'
 
 const shop = makeHost({
@@ -119,13 +121,26 @@ describe('HostnamesScreen', () => {
   })
 })
 
+interface DetailHarnessProps {
+  host: HostnameStatus
+  sslReport: SslReport
+  onBack: () => void
+  onRefresh: () => Promise<void>
+}
+
+function DetailHarness({ host, sslReport, onBack, onRefresh }: DetailHarnessProps) {
+  const run = useCertbotRun('c1', () => void onRefresh())
+  const [open, setOpen] = useState(true)
+  if (!open) return <button type="button" onClick={() => setOpen(true)}>Reopen</button>
+  const back = () => { onBack(); setOpen(false) }
+  return <HostnameDetail host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onRefresh={onRefresh} />
+}
+
 function renderDetail(host: HostnameStatus, overrides: Partial<SslReport> = {}, api: Record<string, unknown> = {}) {
   mockNovadeck(api)
   const onRefresh = vi.fn().mockResolvedValue(undefined)
   const onBack = vi.fn()
-  render(
-    <HostnameDetail connectionId="c1" host={host} report={report(overrides)} now={NOW} loading={false} error={null} onBack={onBack} onRefresh={onRefresh} />
-  )
+  render(<DetailHarness host={host} sslReport={report(overrides)} onBack={onBack} onRefresh={onRefresh} />)
   return { onRefresh, onBack }
 }
 
@@ -213,6 +228,22 @@ describe('HostnameDetail', () => {
     expect(await screen.findByText('Test renewal succeeded')).toBeInTheDocument()
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('button', { name: 'Renew' })).toBeEnabled()
+  })
+
+  it('keeps a running action and its output after going back and reopening the hostname', async () => {
+    let emit: (runId: string, chunk: string) => void = () => {}
+    const runCertbot = vi.fn(() => new Promise(() => {}))
+    const onOutput = vi.fn((cb: typeof emit) => { emit = cb; return vi.fn() })
+    renderDetail(api, {}, { 'ssl.runCertbot': runCertbot, 'ssl.onOutput': onOutput })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Renew' }))
+    const runId = (runCertbot.mock.calls[0] as unknown[])[3] as string
+    emit(runId, 'Renewing an existing certificate\n')
+    await userEvent.click(screen.getByRole('button', { name: /back/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Reopen' }))
+
+    expect(await screen.findByText('Renewing an existing certificate')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run test' })).toBeDisabled()
   })
 
   it('shows a failed action', async () => {

@@ -88,9 +88,9 @@ export function registerSslIPC(): void {
   })
 }
 
-export function notifySslConnectionReady(connectionId: string, sessionId: string | undefined, label: string): void {
+export function notifySslConnectionReady(connectionId: string, sessionId: string | undefined, label: string, host: string): void {
   if (!coordinator || !sessionId) return
-  void coordinator.onConnected(connectionId, sessionId, label)
+  void coordinator.onConnected(connectionId, sessionId, label, host)
 }
 
 export function notifySslConnectionClosed(connectionId: string): void {

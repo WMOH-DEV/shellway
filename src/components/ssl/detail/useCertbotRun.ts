@@ -4,6 +4,7 @@ import { actionOutcome, type ActionOutcome } from '@/utils/ssl/certbotActions'
 import { sslApi } from '../sslApi'
 
 export interface CertbotRun {
+  lineage: string | null
   running: CertbotAction | null
   output: string
   outcome: ActionOutcome | null
@@ -11,6 +12,7 @@ export interface CertbotRun {
 }
 
 export function useCertbotRun(connectionId: string, onFinished: () => void): CertbotRun {
+  const [lineage, setLineage] = useState<string | null>(null)
   const [running, setRunning] = useState<CertbotAction | null>(null)
   const [output, setOutput] = useState('')
   const [outcome, setOutcome] = useState<ActionOutcome | null>(null)
@@ -24,10 +26,11 @@ export function useCertbotRun(connectionId: string, onFinished: () => void): Cer
     return () => { mounted.current = false }
   }, [])
 
-  const start = useCallback(async (lineage: string, action: CertbotAction) => {
+  const start = useCallback(async (target: string, action: CertbotAction) => {
     if (busy.current) return
     busy.current = true
     const runId = crypto.randomUUID()
+    setLineage(target)
     setRunning(action)
     setOutput('')
     setOutcome(null)
@@ -35,7 +38,7 @@ export function useCertbotRun(connectionId: string, onFinished: () => void): Cer
       if (id === runId && mounted.current) setOutput((current) => current + chunk)
     })
     try {
-      const result = await sslApi().runCertbot(connectionId, lineage, action, runId)
+      const result = await sslApi().runCertbot(connectionId, target, action, runId)
       if (mounted.current) {
         if (result.success && result.data) {
           const full = result.data.output
@@ -55,5 +58,5 @@ export function useCertbotRun(connectionId: string, onFinished: () => void): Cer
     finished.current()
   }, [connectionId])
 
-  return { running, output, outcome, start }
+  return { lineage, running, output, outcome, start }
 }

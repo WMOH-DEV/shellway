@@ -8,6 +8,7 @@ import { ServerChecksCard } from './ServerChecksCard'
 export interface SslSettingsProps {
   connectionId: string
   report: SslReport | null
+  checking: boolean
   onBack: () => void
   onRecheck: () => void
   onCloudflareChanged: () => void
@@ -15,7 +16,7 @@ export interface SslSettingsProps {
 
 const COLUMNS = { gridTemplateColumns: 'repeat(auto-fit, minmax(min(480px, 100%), 1fr))' }
 
-export function SslSettings({ report, onBack, onRecheck, onCloudflareChanged }: SslSettingsProps) {
+export function SslSettings({ report, checking, onBack, onRecheck, onCloudflareChanged }: SslSettingsProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-nd-bg-primary">
       <header className="flex items-center gap-2.5 border-b border-nd-border px-7 py-4">
@@ -26,7 +27,7 @@ export function SslSettings({ report, onBack, onRecheck, onCloudflareChanged }: 
       <div className="grid items-start gap-5 px-7 py-6" style={COLUMNS}>
         <CloudflareCard hostnames={report?.hostnames ?? []} onChanged={onCloudflareChanged} />
         <div className="flex flex-col gap-5">
-          <ServerChecksCard report={report} onRecheck={onRecheck} />
+          <ServerChecksCard report={report} checking={checking} onRecheck={onRecheck} />
           <AlertsCard />
         </div>
       </div>

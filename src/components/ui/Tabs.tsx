@@ -51,7 +51,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
           >
             {tab.icon}
             {tab.label}
-            {tab.alert && <span aria-label="needs attention" className="h-1.5 w-1.5 shrink-0 rounded-full bg-nd-error" />}
+            {tab.alert && <span role="img" aria-label="needs attention" className="h-1.5 w-1.5 shrink-0 rounded-full bg-nd-error" />}
             {onTabClose && !tab.disabled && !isDimmed && (
               <span
                 role="button"

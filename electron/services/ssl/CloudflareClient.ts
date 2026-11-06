@@ -60,6 +60,9 @@ class CloudflareApiError extends Error {
 
 const isDenied = (err: unknown): boolean => err instanceof CloudflareApiError && err.status === 403
 
+const STOP_STATUSES = new Set([401, 429])
+const shouldStop = (err: unknown): boolean => err instanceof CloudflareApiError && STOP_STATUSES.has(err.status)
+
 function failureMessage(status: number, body: ApiEnvelope<unknown>): string {
   if (status === 401) return 'Cloudflare rejected this token. Check that it was copied completely and has not expired or been deleted.'
   if (status === 429) return 'Cloudflare is limiting requests from this token. Try again in a few minutes.'
@@ -239,7 +242,8 @@ export class CloudflareClient {
       const body = await this.request<{ value?: string }>(`/zones/${zone.id}/settings/ssl`)
       const value = body.result?.value ?? ''
       return SSL_MODES.includes(value) ? (value as SslMode) : null
-    } catch {
+    } catch (err) {
+      if (shouldStop(err)) throw err
       return null
     }
   }
@@ -249,6 +253,7 @@ export class CloudflareClient {
       const body = await this.request<ApiRecord[]>(`/zones/${zone.id}/dns_records`, { name: host, per_page: RECORDS_PER_PAGE })
       return edgeFromRecords(zone.name, sslMode, host, body.result ?? [], serverAddresses)
     } catch (err) {
+      if (shouldStop(err)) throw err
       return { ...unknownEdge(dnsFailure(err)), zone: zone.name, sslMode }
     }
   }

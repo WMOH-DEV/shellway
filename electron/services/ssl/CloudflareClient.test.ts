@@ -288,6 +288,18 @@ describe('CloudflareClient.edges', () => {
     expect(edges['b.example.com'].sslMode).toBe('strict')
   })
 
+  it('stops asking about more hostnames once Cloudflare rate-limits the token', async () => {
+    const limited: Reply = { status: 429, body: { success: false, errors: [{ message: 'Rate limited' }] } }
+    const routes = {
+      '/zones/z1/settings/ssl': ok({ value: 'strict' }),
+      [RECORD_URL('a.example.com')]: limited,
+      [RECORD_URL('b.example.com')]: ok([])
+    }
+    const { impl, calls } = fakeFetch(routes)
+    await expect(new CloudflareClient(TOKEN, impl).edges(['a.example.com', 'b.example.com'], [], [zone])).rejects.toThrow(/limiting requests/)
+    expect(calls.some((c) => c.path === RECORD_URL('b.example.com'))).toBe(false)
+  })
+
   it('keeps the edge with no SSL mode when the setting cannot be read', async () => {
     const routes = {
       '/zones/z1/settings/ssl': denied(),

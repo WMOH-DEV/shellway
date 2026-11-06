@@ -10,23 +10,22 @@ import { Diagram } from './detail/Diagram'
 import { FactsCard } from './detail/FactsCard'
 import { ForceRenewModal } from './detail/ForceRenewModal'
 import { RenewalCard } from './detail/RenewalCard'
-import { useCertbotRun } from './detail/useCertbotRun'
+import type { CertbotRun } from './detail/useCertbotRun'
 
 interface HostnameDetailProps {
-  connectionId: string
   host: HostnameStatus
   report: SslReport
   now: number
   loading: boolean
   error: string | null
+  run: CertbotRun
   onBack: () => void
   onRefresh: () => Promise<void>
 }
 
-export function HostnameDetail({ connectionId, host, report, now, loading, error, onBack, onRefresh }: HostnameDetailProps) {
+export function HostnameDetail({ host, report, now, loading, error, run, onBack, onRefresh }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
-  const run = useCertbotRun(connectionId, () => void onRefresh())
   const block = blocks.find((b) => b.id === host.blockId)
 
   const force = () => {

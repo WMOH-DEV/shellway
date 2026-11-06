@@ -4,11 +4,12 @@ interface ToggleProps {
   checked: boolean
   onChange: (checked: boolean) => void
   label?: string
+  ariaLabel?: string
   disabled?: boolean
   className?: string
 }
 
-export function Toggle({ checked, onChange, label, disabled = false, className }: ToggleProps) {
+export function Toggle({ checked, onChange, label, ariaLabel, disabled = false, className }: ToggleProps) {
   return (
     <label
       className={cn(
@@ -21,6 +22,7 @@ export function Toggle({ checked, onChange, label, disabled = false, className }
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(

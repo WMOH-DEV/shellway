@@ -11,7 +11,7 @@ export function unknownEdges(hosts: string[], reason: string): Record<string, Ed
   return Object.fromEntries(hosts.map((host) => [host, unknownEdge(reason)]))
 }
 
-export const isPattern = (name: string): boolean => name.includes('*') || name.startsWith('~')
+export const isPattern = (name: string): boolean => name.includes('*') || name.startsWith('~') || name.startsWith('.')
 
 export function hostnamesOf(blocks: ServerBlock[]): string[] {
   return [...new Set(blocks.flatMap((b) => b.names).filter((n) => n && n !== '_'))]

@@ -64,7 +64,7 @@ function setup(status: CloudflareStatus, overrides: Record<string, unknown> = {}
     ...overrides
   }
   mockNovadeck(api)
-  const props = { connectionId: 'c1', report, onBack: vi.fn(), onRecheck: vi.fn(), onCloudflareChanged: vi.fn() }
+  const props = { connectionId: 'c1', report, checking: false, onBack: vi.fn(), onRecheck: vi.fn(), onCloudflareChanged: vi.fn() }
   render(<SslSettings {...props} />)
   return { api, props }
 }
@@ -129,7 +129,7 @@ describe('SslSettings server checks', () => {
 
   it('says there is no check yet when there is no report', async () => {
     mockNovadeck({ 'ssl.cloudflareStatus': vi.fn().mockResolvedValue({ success: true, data: empty }), 'ssl.alerts': vi.fn().mockResolvedValue({ success: true, data: alerts }) })
-    render(<SslSettings connectionId="c1" report={null} onBack={vi.fn()} onRecheck={vi.fn()} onCloudflareChanged={vi.fn()} />)
+    render(<SslSettings connectionId="c1" report={null} checking={false} onBack={vi.fn()} onRecheck={vi.fn()} onCloudflareChanged={vi.fn()} />)
     expect(await screen.findByText(/No server check yet/)).toBeInTheDocument()
   })
 })
