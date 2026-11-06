@@ -165,7 +165,7 @@ export function useSafeModeGate({
             <div
               className={
                 danger
-                  ? 'p-2 rounded-full bg-nd-error/10'
+                  ? 'p-2 rounded-full bg-nd-error/12'
                   : 'p-2 rounded-full bg-nd-warning/12'
               }
             >
@@ -188,7 +188,7 @@ export function useSafeModeGate({
           </div>
 
           {risk.unboundedCount > 0 && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-nd-error/10 border border-nd-error/30">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-nd-error/[0.07] border border-nd-error/30">
               <TriangleAlert size={14} className="text-nd-error mt-0.5 shrink-0" />
               <p className="text-xs text-nd-error">
                 {risk.unboundedCount === 1

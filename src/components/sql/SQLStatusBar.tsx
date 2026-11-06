@@ -113,7 +113,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
         {/* Updates */}
         {updates.length > 0 && (
           <div>
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-warning-fg bg-nd-warning/5">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-warning-fg bg-nd-warning/[0.07]">
               <Pencil size={10} className="inline mr-1 -mt-px" />
               Updates ({updates.length})
             </div>
@@ -211,7 +211,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
         {/* Deletes */}
         {deletes.length > 0 && (
           <div>
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-error bg-nd-error/5">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-error-fg bg-nd-error/[0.07]">
               <Trash2 size={10} className="inline mr-1 -mt-px" />
               Deletes ({deletes.length})
             </div>
@@ -296,9 +296,9 @@ export const SQLStatusBar = memo(function SQLStatusBar({
         'flex items-center gap-0 h-7 px-2 text-2xs font-medium border-t',
         'select-none shrink-0 overflow-hidden relative',
         hasChanges
-          ? 'border-nd-warning/40 bg-nd-warning/5'
+          ? 'border-nd-warning/30 bg-nd-warning/[0.07]'
           : isProduction
-            ? 'border-nd-error/40 bg-nd-error/5'
+            ? 'border-nd-error/30 bg-nd-error/[0.07]'
             : 'border-nd-border bg-nd-bg-secondary'
       )}
     >
