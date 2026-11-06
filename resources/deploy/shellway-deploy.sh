@@ -12,6 +12,7 @@ CRON_PROCESSES="${SHELLWAY_CRON_PROCESSES:-cron crond}"
 STOP_GRACE_SECONDS=5
 EXIT_BUSY=75
 TAB="$(printf '\t')"
+MARK="$(printf '\036')"
 PATH="$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export PATH
 
@@ -28,6 +29,7 @@ STEP_PID=''
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+mark() { printf '%s%s %s\n' "$MARK" "$(now)" "$*"; }
 now() { date +%s; }
 
 check_name() {
@@ -229,7 +231,9 @@ resolve_commit() { git --git-dir="$MIRROR" rev-parse -q --verify "$1^{commit}" 2
 
 history_add() {
   note="$(printf '%s' "$8" | tr '\t\n' '  ')"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$note" >> "$SDIR/history.tsv"
+  subject=''
+  [ "$4" = - ] || subject="$(commit_subject "$4")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$note" "$subject" >> "$SDIR/history.tsv"
 }
 
 history_commit_of() {
@@ -248,9 +252,11 @@ run_steps() {
     stop_if_cancelled || return 1
     STEP_INDEX=$((STEP_INDEX + 1))
     STEP_COMMAND="$cmd"
+    mark step "$kind"
     log "\$ $cmd"
     run_tracked run_step "$workdir" "$cmd"
     code=$?
+    mark end "$code"
     STEP_COMMAND=''
     [ "$code" = 0 ] && continue
     stop_if_cancelled || return 1
@@ -278,6 +284,7 @@ http_code() {
 health_ok() {
   [ -n "$HEALTH_URL" ] || return 0
   set_stage health
+  mark phase health
   attempt=1
   while :; do
     got="$(http_code "$HEALTH_URL")"
@@ -388,11 +395,13 @@ checkout_release() {
 
 activate_release() {
   release="$1"; previous="$2"
+  mark phase golive
   point_current_at "$release" || { log "could not switch current"; return 1; }
   if ! link_site_path; then
     revert_release "$previous"
     return 1
   fi
+  mark phase after
   if run_steps "$SDIR/steps.activate" "$release" && health_ok; then
     return 0
   fi
@@ -407,6 +416,7 @@ deploy_releases() {
   release="$DEPLOY_ROOT/releases/$ID"
   previous="$(read_val current_release)"
   set_stage build
+  mark phase build
   mkdir -p "$release" "$DEPLOY_ROOT/shared" || return 1
   checkout_release "$release" || { log "checkout failed"; discard_release "$release"; return 1; }
   link_shared "$release"
@@ -432,11 +442,13 @@ deploy_inplace() {
   fi
   git -C "$SITE_PATH" fetch -q "$MIRROR" "+refs/heads/*:refs/remotes/shellway/*" || return 1
   set_stage build
+  mark phase build
   stop_if_cancelled || return 1
   LIVE_TOUCHED=1
   git -C "$SITE_PATH" reset -q --hard "$COMMIT" || return 1
   run_steps "$SDIR/steps.build" "$SITE_PATH" || return 1
   set_stage activate
+  mark phase after
   run_steps "$SDIR/steps.activate" "$SITE_PATH" || return 1
   health_ok || { RESULT_NOTE="health check failed"; return 1; }
   write_val current_release "$SITE_PATH"
@@ -492,6 +504,7 @@ do_deploy() {
   RESULT_NOTE=''
   acquire_lock || { printf 'busy\n' >&2; exit $EXIT_BUSY; }
   start_deploy_log fetch $(($(count_steps "$SDIR/steps.build") + $(count_steps "$SDIR/steps.activate")))
+  mark phase fetch
   log "deploy $SITE ($LAYOUT, $SOURCE_MODE, trigger $TRIGGER)"
   obtain_commit
   obtained=$?
@@ -582,6 +595,7 @@ cmd_apply() {
   acquire_lock || { printf 'busy\n' >&2; exit $EXIT_BUSY; }
   start_deploy_log activate "$(count_steps "$SDIR/steps.activate")"
   log "running after-going-live commands in $live"
+  mark phase after
   if run_steps "$SDIR/steps.activate" "$live" && health_ok; then
     if [ "$WARNINGS" -gt 0 ]; then finish warning; else finish success; fi
     return 0
@@ -651,6 +665,7 @@ cmd_status() {
   printf 'BEHIND=%s\n' "$(commits_behind)"
   printf 'BUSY=%s\n' "$busy"
   printf 'CURRENT_SUBJECT=%s\n' "$(commit_subject "$(read_val current)")"
+  printf 'REMOTE_SUBJECT=%s\n' "$(commit_subject "$(read_val remote_head)")"
   if [ "$busy" = 1 ]; then
     [ -f "$SDIR/progress" ] && grep -v '^STEP_PID=' "$SDIR/progress"
     cancel_requested && printf 'CANCELLING=1\n'

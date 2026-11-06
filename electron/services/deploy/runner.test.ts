@@ -795,4 +795,37 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
       expect(result.stderr).toContain('auto')
     })
   })
+
+  describe('run log markers and commit messages', () => {
+    const markers = (log: string) => log.split('\n').filter((l) => l.startsWith('\x1e')).map((l) => l.replace(/^\x1e\d+ /, ''))
+
+    it('marks each stage and each command with its result', async () => {
+      writeSite('app', {}, ['R\techo built', 'O\tfalse'], ['R\techo live'])
+      await deployWithId('app', 'd1')
+      expect(markers(siteFile('app', 'logs/d1.log'))).toEqual([
+        'phase fetch', 'phase build', 'step R', 'end 0', 'step O', 'end 1', 'phase golive', 'phase after', 'step R', 'end 0'
+      ])
+    })
+
+    it('marks the build and after stages of an in-place deploy', async () => {
+      writeSite('app', { LAYOUT: 'inplace' }, ['R\techo built'], ['R\techo live'])
+      await deployWithId('app', 'd1')
+      expect(markers(siteFile('app', 'logs/d1.log'))).toEqual([
+        'phase fetch', 'phase build', 'step R', 'end 0', 'phase after', 'step R', 'end 0'
+      ])
+    })
+
+    it('records the commit message with each deploy', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      expect(history('app').find((r) => r[0] === 'd1')![8]).toBe('first')
+    })
+
+    it('prints the message of the newest commit when the server has it', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      writeFileSync(join(root, 'sites', 'app', 'remote_head'), await git(work, 'rev-parse', 'HEAD'))
+      expect((await runner('status', 'app')).stdout).toContain('REMOTE_SUBJECT=first\n')
+    })
+  })
 })

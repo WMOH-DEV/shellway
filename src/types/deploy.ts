@@ -46,6 +46,7 @@ export interface DeployRecord {
   finished: number | null
   warnings: number
   note: string
+  subject: string
 }
 
 export interface SiteState {
@@ -59,6 +60,7 @@ export interface SiteState {
   behind: number | null
   busy: boolean
   currentSubject: string
+  remoteSubject: string
   progress: DeployProgress | null
   cancelling: boolean
   now: number

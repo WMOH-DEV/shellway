@@ -29,7 +29,7 @@ const toNumberOrNull = (value: string | undefined): number | null => {
 }
 
 function parseRecord(line: string): DeployRecord | null {
-  const [id, status, trigger, commit, started, finished, warnings, note] = line.split('\t')
+  const [id, status, trigger, commit, started, finished, warnings, note, subject] = line.split('\t')
   if (!id || !STATUSES.has(status)) return null
   return {
     id,
@@ -39,7 +39,8 @@ function parseRecord(line: string): DeployRecord | null {
     started: toNumberOrNull(started) ?? 0,
     finished: toNumberOrNull(finished),
     warnings: toNumberOrNull(warnings) ?? 0,
-    note: note ?? ''
+    note: note ?? '',
+    subject: subject ?? ''
   }
 }
 
@@ -75,6 +76,7 @@ export function parseState(text: string): SiteState {
     behind: toNumberOrNull(v.BEHIND),
     busy: v.BUSY === '1',
     currentSubject: v.CURRENT_SUBJECT ?? '',
+    remoteSubject: v.REMOTE_SUBJECT ?? '',
     progress: parseProgress(v),
     cancelling: v.BUSY === '1' && v.CANCELLING === '1',
     now: toNumberOrNull(v.NOW) ?? Math.floor(Date.now() / 1000)

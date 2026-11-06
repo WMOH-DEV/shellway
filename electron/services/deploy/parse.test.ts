@@ -7,7 +7,7 @@ describe('parseHistory', () => {
       'd1\trunning\tmanual\t-\t100\t\t0\t',
       'd1\tsuccess\tmanual\tabc\t100\t110\t0\t',
       'd2\trunning\tauto\t-\t200\t\t0\t',
-      'd2\tfailed\tauto\tdef\t200\t230\t1\tbuild failed; live site untouched',
+      'd2\tfailed\tauto\tdef\t200\t230\t1\tbuild failed; live site untouched\tAdd invoice export',
       'garbage line',
       ''
     ].join('\n')
@@ -15,8 +15,9 @@ describe('parseHistory', () => {
     expect(history.map((r) => [r.id, r.status])).toEqual([['d2', 'failed'], ['d1', 'success']])
     expect(history[0]).toEqual({
       id: 'd2', status: 'failed', trigger: 'auto', commit: 'def', started: 200, finished: 230, warnings: 1,
-      note: 'build failed; live site untouched'
+      note: 'build failed; live site untouched', subject: 'Add invoice export'
     })
+    expect(history[1].subject).toBe('')
   })
 
   it('reads cancelled deploys', () => {
@@ -35,12 +36,12 @@ describe('parseState', () => {
   it('reads every status key', () => {
     const state = parseState([
       'CURRENT=abc', 'CURRENT_RELEASE=d1', 'LAST_ATTEMPTED=abc', 'REMOTE_HEAD=def', 'HEARTBEAT=50', 'MIRROR_HEAD=abc',
-      'PENDING=', 'BEHIND=4', 'BUSY=1', 'CURRENT_SUBJECT=Fix a=b in login', 'STAGE=build', 'STEP=2', 'STEPS=5',
+      'PENDING=', 'BEHIND=4', 'BUSY=1', 'CURRENT_SUBJECT=Fix a=b in login', 'REMOTE_SUBJECT=Newer', 'STAGE=build', 'STEP=2', 'STEPS=5',
       'COMMAND=npm run build', 'CANCELLING=1', 'NOW=60', ''
     ].join('\n'))
     expect(state).toEqual({
       current: 'abc', currentRelease: 'd1', lastAttempted: 'abc', remoteHead: 'def', heartbeat: 50,
-      mirrorHead: 'abc', pending: '', behind: 4, busy: true, currentSubject: 'Fix a=b in login',
+      mirrorHead: 'abc', pending: '', behind: 4, busy: true, currentSubject: 'Fix a=b in login', remoteSubject: 'Newer',
       progress: { stage: 'build', step: 2, steps: 5, command: 'npm run build' }, cancelling: true, now: 60
     })
   })
