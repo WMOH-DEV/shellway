@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SwitchRequest } from '../../../../src/types/ssl'
 import { certWriteScript, csrScript } from '../../../../src/utils/ssl/originCa/scripts'
-import { makeBlock } from '../../../../src/utils/ssl/testReport'
+import { makeBlock, makeFacts } from '../../../../src/utils/ssl/testReport'
 import { runPrepare } from './prepare'
 import type { PrepareHooks } from './prepare'
 import { BACKUP_PATH, CERT_PATH, CSR, FILE, KEY_PATH, NAMES, PEM, SITE, readyReport, recorder } from './testKit'
@@ -100,9 +100,42 @@ describe('runPrepare', () => {
   })
 
   it('removes the key and certificate when the certificate lines cannot be swapped', async () => {
-    const { rec, done } = prepare((call) => (call.command === READ ? { code: 0, stdout: SITE.replace(/ssl_certificate_key[^\n]*\n/, '') } : normal(call)))
+    const report = readyReport({ blocks: [makeBlock({ names: NAMES, keyPath: '' })] })
+    const { rec, done } = prepare((call) => (call.command === READ ? { code: 0, stdout: SITE.replace(/ssl_certificate_key[^\n]*\n/, '') } : normal(call)), report)
     await expect(done).rejects.toThrow('no ssl_certificate_key line')
     expect(rec.calls.at(-1)?.command).toBe(REMOVE)
+  })
+
+  describe('when the site file is not the one that was scanned', () => {
+    const CHANGED = 'The site file changed while preparing. Check again.'
+    const edits: Record<string, (text: string) => string> = {
+      'a different certificate': (text) => text.replace('live/app.example.com/fullchain.pem', 'live/other.example.com/fullchain.pem'),
+      'a different key': (text) => text.replace('live/app.example.com/privkey.pem', 'live/other.example.com/privkey.pem'),
+      'different names': (text) => text.replace('www.example.com;', 'shop.example.com;'),
+      'an extra name': (text) => text.replace('www.example.com;', 'www.example.com api.example.com;'),
+      'lines added above the site': (text) => `# new\n${text}`,
+      'no site at that line': () => '# nothing here\n'
+    }
+
+    it.each(Object.keys(edits))('removes the new key and certificate when it has %s', async (label) => {
+      const { rec, done } = prepare((call) => (call.command === READ ? { code: 0, stdout: edits[label](SITE) } : normal(call)))
+      await expect(done).rejects.toThrow(CHANGED)
+      expect(rec.calls.at(-1)?.command).toBe(REMOVE)
+    })
+
+    it('accepts a differently cased name list', async () => {
+      const { done } = prepare((call) => (call.command === READ ? { code: 0, stdout: SITE.replace('app.example.com www', 'APP.example.com www') } : normal(call)))
+      await expect(done).resolves.toMatchObject({ switchId: 'switch-1' })
+    })
+  })
+
+  it('refuses before touching the server when nginx was not fully read', async () => {
+    for (const nginxParse of ['partial', 'unavailable'] as const) {
+      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      const { rec, done } = prepare(normal, readyReport({ facts }))
+      await expect(done).rejects.toThrow('could not read the whole nginx configuration')
+      expect(rec.calls).toEqual([])
+    }
   })
 
   it('uses the RSA request type when asked', async () => {

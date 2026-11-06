@@ -5,7 +5,7 @@ import { isIssuableName } from '../../../../src/utils/ssl/https/issueCommands'
 import { originPaths } from '../../../../src/utils/ssl/originCa/originPaths'
 import type { OriginPaths } from '../../../../src/utils/ssl/originCa/originPaths'
 import { certWriteScript, csrScript, removeFilesCommand, switchScript } from '../../../../src/utils/ssl/originCa/scripts'
-import { swapCertLines } from '../../../../src/utils/ssl/originCa/swapCertLines'
+import { blockIdentity, swapCertLines } from '../../../../src/utils/ssl/originCa/swapCertLines'
 import { switchCheck } from '../../../../src/utils/ssl/originCa/switchCheck'
 import { shellEscape } from '../../../utils/shellEscape'
 import type { RemoteExec } from '../../deploy/DeployService'
@@ -28,7 +28,11 @@ export interface PrepareInput {
   request: SwitchRequest
 }
 
-const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
+const SITE_CHANGED = 'The site file changed while preparing. Check again.'
+
+const sameList = (a: string[], b: string[]): boolean => a.length === b.length && a.every((value, i) => value === b[i])
+
+const sha256 =(text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
 
 function targetBlock(report: SslReport, request: SwitchRequest) {
   const check = switchCheck(report, request.blockId)
@@ -69,6 +73,7 @@ class PrepareRun {
     const signed = await this.input.cloudflare.createOriginCert(csr, this.names, this.input.request.keyType, this.input.request.validityYears)
     await this.writeCertificate(signed.certificate)
     const siteText = await this.readSiteFile()
+    this.assertUnchanged(siteText)
     const swapped = swapCertLines(siteText, this.block.line, this.paths.certPath, this.paths.keyPath)
     return {
       switchId: this.hooks.newId(),
@@ -104,6 +109,19 @@ class PrepareRun {
     const read = await this.runner.run(`sudo -n cat ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS, { stream: false })
     if (read.code !== 0 || read.stdout === '') throw new Error(`Could not read ${this.block.file} on the server.`)
     return read.stdout
+  }
+
+  private assertUnchanged(siteText: string): void {
+    if (!this.matchesScan(siteText)) throw new Error(SITE_CHANGED)
+  }
+
+  private matchesScan(siteText: string): boolean {
+    try {
+      const found = blockIdentity(siteText, this.block.line)
+      return found.certPath === this.block.certPath && found.keyPath === this.block.keyPath && sameList(found.names, this.names)
+    } catch {
+      return false
+    }
   }
 
   private async discard(): Promise<void> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { swapCertLines } from './swapCertLines'
+import { blockIdentity, swapCertLines } from './swapCertLines'
 
 const CERT = '/etc/ssl/shellway/app.example.com-1800000000.pem'
 const KEY = '/etc/ssl/shellway/app.example.com-1800000000.key'
@@ -131,5 +131,26 @@ describe('swapCertLines', () => {
   it('refuses certificate paths that could change the directive', () => {
     expect(() => swapCertLines(lines(...CERTBOT_BLOCK), 1, '/etc/x.pem; evil', KEY)).toThrow('not allowed')
     expect(() => swapCertLines(lines(...CERTBOT_BLOCK), 1, CERT, '/etc/x key')).toThrow('not allowed')
+  })
+})
+
+describe('blockIdentity', () => {
+  it('reads the names and certificate paths of the block that starts on the line', () => {
+    const text = lines('server {', '  listen 80;', '}', ...CERTBOT_BLOCK, 'server {', '  server_name other.example.com;', '}')
+    expect(blockIdentity(text, 4)).toEqual({
+      names: ['app.example.com', 'www.example.com'],
+      certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem',
+      keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem'
+    })
+    expect(blockIdentity(text, 12)).toEqual({ names: ['other.example.com'], certPath: '', keyPath: '' })
+  })
+
+  it('merges repeated server_name lines, lowercases, and ignores nested locations', () => {
+    const text = lines('server {', '  server_name App.example.com;', '  server_name www.example.com app.example.com;', '  location / {', '    server_name nested.example.com;', '  }', '}')
+    expect(blockIdentity(text, 1).names).toEqual(['app.example.com', 'www.example.com'])
+  })
+
+  it('throws when no site starts on the line', () => {
+    expect(() => blockIdentity(lines(...CERTBOT_BLOCK), 3)).toThrow('was not found')
   })
 })
