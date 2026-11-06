@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { SERVICE_METRIC_ICON } from '@/components/ui/decorativeColors'
 import { formatBytes } from '@/components/monitor/MonitorCharts'
 import type { ServiceDetails, ServiceAction } from '@/types/serviceManager'
 
@@ -212,7 +213,7 @@ export function ServiceDetailPanel({
                       variant="ghost"
                       disabled={anyActionPending}
                       onClick={() => handleAction('start')}
-                      className="text-emerald-400 hover:bg-emerald-400/10"
+                      className="text-nd-success hover:bg-nd-success/12"
                     >
                       {pendingAction === 'start' ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                       Start
@@ -225,7 +226,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('stop')}
-                        className="text-red-400 hover:bg-red-400/10"
+                        className="text-nd-error hover:bg-nd-error/12"
                       >
                         {pendingAction === 'stop' ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
                         Stop
@@ -235,7 +236,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('restart')}
-                        className="text-orange-400 hover:bg-orange-400/10"
+                        className="text-nd-warning hover:bg-nd-warning/12"
                       >
                         {pendingAction === 'restart' ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
                         Restart
@@ -245,7 +246,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('reload')}
-                        className="text-blue-400 hover:bg-blue-400/10"
+                        className="text-nd-info hover:bg-nd-info/12"
                       >
                         {pendingAction === 'reload' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                         Reload
@@ -263,7 +264,7 @@ export function ServiceDetailPanel({
                       disabled={anyActionPending}
                       onClick={() => handleAction(isEnabled ? 'disable' : 'enable')}
                       className={cn(
-                        isEnabled ? 'text-emerald-400' : 'text-nd-text-muted'
+                        isEnabled ? 'text-nd-success' : 'text-nd-text-muted'
                       )}
                     >
                       {(pendingAction === 'enable' || pendingAction === 'disable')
@@ -290,7 +291,7 @@ export function ServiceDetailPanel({
                 <div className="grid grid-cols-3 gap-3">
                   {details.memoryCurrentBytes !== undefined && (
                     <div className="flex flex-col items-center gap-1 py-2 px-2 rounded bg-nd-bg-primary/50">
-                      <MemoryStick size={12} className="text-purple-400" />
+                      <MemoryStick size={12} className={SERVICE_METRIC_ICON.memory} />
                       <span className="text-xs font-semibold text-nd-text-primary tabular-nums">
                         {formatBytes(details.memoryCurrentBytes)}
                       </span>
@@ -299,7 +300,7 @@ export function ServiceDetailPanel({
                   )}
                   {details.cpuUsageNSec !== undefined && (
                     <div className="flex flex-col items-center gap-1 py-2 px-2 rounded bg-nd-bg-primary/50">
-                      <Cpu size={12} className="text-blue-400" />
+                      <Cpu size={12} className={SERVICE_METRIC_ICON.cpu} />
                       <span className="text-xs font-semibold text-nd-text-primary tabular-nums">
                         {formatCpuTime(details.cpuUsageNSec)}
                       </span>
@@ -308,7 +309,7 @@ export function ServiceDetailPanel({
                   )}
                   {details.tasksCurrent !== undefined && (
                     <div className="flex flex-col items-center gap-1 py-2 px-2 rounded bg-nd-bg-primary/50">
-                      <ListTree size={12} className="text-cyan-400" />
+                      <ListTree size={12} className={SERVICE_METRIC_ICON.tasks} />
                       <span className="text-xs font-semibold text-nd-text-primary tabular-nums">
                         {details.tasksCurrent}
                       </span>

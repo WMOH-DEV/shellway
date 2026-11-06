@@ -15,6 +15,11 @@ import { toast } from '@/components/ui/Toast'
 import { TERMINAL_THEMES } from '@/data/terminalThemes'
 import type { ServiceLogEntry } from '@/types/serviceManager'
 
+function readSunkenBackground(): string {
+  const channels = getComputedStyle(document.documentElement).getPropertyValue('--nd-bg-sunken').trim().split(/\s+/)
+  return `rgb(${channels.join(', ')})`
+}
+
 interface ServiceLogViewerProps {
   connectionId: string
   unit: string
@@ -110,7 +115,7 @@ export function ServiceLogViewer({
       allowProposedApi: true,
       theme: {
         ...theme,
-        background: '#0c0e14',     // slightly darker than terminal for differentiation
+        background: readSunkenBackground(),
       },
     })
 
@@ -497,16 +502,16 @@ export function ServiceLogViewer({
         <div className="w-px h-3 bg-nd-border" />
         <span className="flex items-center gap-1.5">
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />ERR
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-error inline-block" />ERR
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block" />WARN
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-warning inline-block" />WARN
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />NOTICE
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-info inline-block" />NOTICE
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 inline-block" />INFO
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-text-muted inline-block" />INFO
           </span>
         </span>
         <div className="flex-1" />
