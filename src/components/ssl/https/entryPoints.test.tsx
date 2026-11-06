@@ -74,6 +74,7 @@ describe('Add HTTPS from the hostname detail', () => {
         onBack={vi.fn()}
         onAddHttps={onAddHttps}
         onSwitchOrigin={vi.fn()}
+        onSetZoneStrict={vi.fn()}
         onRefresh={vi.fn()}
       />
     )

@@ -9,6 +9,7 @@ import { SwitchWizard } from './originCa/SwitchWizard'
 import { HostnamesScreen } from './HostnamesScreen'
 import { ErrorState, LoadingState } from './LoadState'
 import { SslSettings } from './settings/SslSettings'
+import { ZoneModeScreen } from './zoneMode/ZoneModeScreen'
 import { useNowSeconds } from './useNowSeconds'
 import { useSslReport } from './useSslReport'
 
@@ -18,7 +19,13 @@ interface SslViewProps {
   connectionStatus: ConnectionStatus
 }
 
-type Screen = { kind: 'list' } | { kind: 'detail'; name: string } | { kind: 'settings' } | { kind: 'add-https'; blockId?: string } | { kind: 'origin-switch'; name: string }
+type Screen =
+  | { kind: 'list' }
+  | { kind: 'detail'; name: string }
+  | { kind: 'settings' }
+  | { kind: 'add-https'; blockId?: string }
+  | { kind: 'origin-switch'; name: string }
+  | { kind: 'zone-mode'; zone: string; returnTo: Screen }
 
 export function SslView({ connectionId, sessionId, connectionStatus }: SslViewProps) {
   const connected = connectionStatus === 'connected'
@@ -43,8 +50,29 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
     return <div className="flex h-full items-center justify-center bg-nd-bg-primary text-sm text-nd-text-muted">Connect to this server to check its certificates</div>
   }
 
+  if (screen.kind === 'zone-mode') {
+    return (
+      <ZoneModeScreen
+        key={screen.zone}
+        zone={screen.zone}
+        onCancel={() => setScreen(screen.returnTo)}
+        onFinished={() => { recheck(); backToList() }}
+      />
+    )
+  }
+
   if (screen.kind === 'settings') {
-    return <SslSettings connectionId={connectionId} report={report} checking={loading} onBack={backToList} onRecheck={recheck} onCloudflareChanged={recheck} />
+    return (
+      <SslSettings
+        connectionId={connectionId}
+        report={report}
+        checking={loading}
+        onBack={backToList}
+        onRecheck={recheck}
+        onCloudflareChanged={recheck}
+        onSetZoneStrict={(zone) => setScreen({ kind: 'zone-mode', zone, returnTo: screen })}
+      />
+    )
   }
 
   if (!report) return error ? <ErrorState message={error} retrying={loading} onRetry={recheck} /> : <LoadingState />
@@ -95,6 +123,7 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
         onBack={backToList}
         onAddHttps={addHttps}
         onSwitchOrigin={(name) => setScreen({ kind: 'origin-switch', name })}
+        onSetZoneStrict={(zone) => setScreen({ kind: 'zone-mode', zone, returnTo: screen })}
         onRefresh={refresh}
       />
     )

@@ -183,6 +183,7 @@ describe('HostnameDetail after a switch', () => {
         onBack={vi.fn()}
         onAddHttps={vi.fn()}
         onSwitchOrigin={vi.fn()}
+        onSetZoneStrict={vi.fn()}
         onRefresh={vi.fn(async () => undefined)}
       />
     )
