@@ -211,3 +211,33 @@ describe('SslService.runCertbot', () => {
     expect(runs).toBe(0)
   })
 })
+
+describe('SslService.readConfig and probeNames', () => {
+  it('reads the facts and the nginx blocks without listing certificates or probing', async () => {
+    const { exec, calls } = fakeExec(healthy())
+    const config = await new SslService(exec).readConfig()
+    expect(calls.map((c) => c.command)).toEqual(['sh -s', "sudo -n '/usr/sbin/nginx' -T"])
+    expect(config.facts).toMatchObject({ nginxParse: 'full', user: 'deploy' })
+    expect(config.blocks).toHaveLength(10)
+  })
+
+  it('probes only the given names, each at the address of its server block', async () => {
+    const { exec, calls } = fakeExec(healthy())
+    const service = new SslService(exec)
+    const config = await service.readConfig()
+    const origins = await service.probeNames(['example.net', 'unlisted.example.com'], config)
+    const probes = calls.at(-1)!.stdin.split('\n').filter((line) => line.startsWith('probe '))
+    expect(probes).toEqual(["probe 0 '203.0.113.10:443' 'example.net'", "probe 1 '127.0.0.1:443' 'unlisted.example.com'"])
+    expect(Object.keys(origins)).toEqual(['example.net', 'unlisted.example.com'])
+  })
+
+  it('does not probe without names or without openssl', async () => {
+    const { exec, calls } = fakeExec(healthy())
+    const service = new SslService(exec)
+    const config = await service.readConfig()
+    const before = calls.length
+    expect(await service.probeNames([], config)).toEqual({})
+    expect(await service.probeNames(['example.net'], { ...config, facts: { ...config.facts, openssl: null } })).toEqual({})
+    expect(calls).toHaveLength(before)
+  })
+})

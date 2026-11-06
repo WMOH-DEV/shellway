@@ -17,6 +17,7 @@ interface Schema {
   alerted: Record<string, number>
   unreachable: UnreachableHost[]
   probedAt: Record<string, number>
+  httpsEmails: Record<string, string>
 }
 
 const DEFAULTS: Schema = {
@@ -27,7 +28,8 @@ const DEFAULTS: Schema = {
   lastAlert: null,
   alerted: {},
   unreachable: [],
-  probedAt: {}
+  probedAt: {},
+  httpsEmails: {}
 }
 
 const toSeconds = (ms: number) => Math.floor(ms / 1000)
@@ -97,5 +99,13 @@ export class SslLocalStore {
     this.store.set('probedAt', { ...this.store.get('probedAt'), [host]: at })
     const others = this.store.get('unreachable').filter((u) => u.host !== host)
     this.store.set('unreachable', failure ? [...others, { host, reason: failure, at }] : others)
+  }
+
+  httpsEmail(sessionId: string): string {
+    return this.store.get('httpsEmails')[sessionId] ?? ''
+  }
+
+  setHttpsEmail(sessionId: string, email: string): void {
+    this.store.set('httpsEmails', { ...this.store.get('httpsEmails'), [sessionId]: email })
   }
 }

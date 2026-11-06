@@ -1,0 +1,24 @@
+@@SW@@ SUDO
+full=0
+@@SW@@ OS
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.19.1
+PRETTY_NAME="Alpine Linux v3.19"
+@@SW@@ ARCH
+x86_64
+@@SW@@ WEB
+nginx=/usr/sbin/nginx
+apache=
+caddy=
+@@SW@@ CERTBOT
+path=
+@@SW@@ METHOD
+dpkg=
+@@SW@@ PLUGINS
+@@SW@@ SNAPD
+@@SW@@ PM
+apt=
+dnf=
+yum=
+@@SW@@ TIMER
