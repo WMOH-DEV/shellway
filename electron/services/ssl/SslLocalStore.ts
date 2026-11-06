@@ -30,6 +30,8 @@ const DEFAULTS: Schema = {
   probedAt: {}
 }
 
+const toSeconds = (ms: number) => Math.floor(ms / 1000)
+
 export class SslLocalStore {
   private readonly store = new Store<Schema>({ name: 'shellway-ssl', defaults: DEFAULTS })
   private readonly masterKey: string
@@ -66,7 +68,12 @@ export class SslLocalStore {
   }
 
   alertSettings(): AlertSettings {
-    return { probeEnabled: this.store.get('probeEnabled'), lastAlert: this.store.get('lastAlert'), unreachable: this.store.get('unreachable') }
+    const lastAlert = this.store.get('lastAlert')
+    return {
+      probeEnabled: this.store.get('probeEnabled'),
+      lastAlert: lastAlert && { ...lastAlert, at: toSeconds(lastAlert.at) },
+      unreachable: this.store.get('unreachable').map((u) => ({ ...u, at: toSeconds(u.at) }))
+    }
   }
 
   setProbeEnabled(enabled: boolean): void {

@@ -4,6 +4,7 @@ import type { CloudflareClient } from './CloudflareClient'
 import { SslCoordinator, type SslDeps } from './SslCoordinator'
 import type { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
+import { unknownEdge } from './report'
 
 const NOW_MS = 1_800_000_000_000
 const DAY = 86_400
@@ -49,6 +50,7 @@ function coordinator(store = fakeStore(), cloudflare?: Partial<CloudflareClient>
     store,
     cloudflare: () => cloudflare as CloudflareClient,
     serviceFor: () => ({ scan: async () => { scanCalls++; return scan(scanDays) } }) as unknown as SslService,
+    edgesWithoutToken: async (hosts, _addresses, reason) => Object.fromEntries(hosts.map((h) => [h, unknownEdge(reason)])),
     broadcast: vi.fn(),
     notify: vi.fn(),
     now: () => NOW_MS

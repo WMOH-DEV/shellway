@@ -1,6 +1,7 @@
 import type { RemoteExec } from '../deploy/DeployService'
 import type { ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, ServerScan, SslReport } from '../../../src/types/ssl'
 import { CloudflareClient } from './CloudflareClient'
+import { edgesWithoutZone } from './dnsEdge'
 import { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
@@ -10,6 +11,7 @@ export interface SslDeps {
   store: SslLocalStore
   cloudflare: (token: string) => CloudflareClient
   serviceFor?: (exec: RemoteExec) => SslService
+  edgesWithoutToken?: typeof edgesWithoutZone
   broadcast: (channel: string, ...args: unknown[]) => void
   notify: (title: string, body: string) => void
   now: () => number
@@ -115,7 +117,7 @@ export class SslCoordinator {
   private async edgesFor(scan: ServerScan, cloudflare: CloudflareStatus): Promise<Record<string, EdgeInfo>> {
     const hosts = hostnamesOf(scan.blocks).filter((h) => !isPattern(h))
     const token = this.deps.store.cloudflareToken()
-    if (!token) return unknownEdges(hosts, 'no Cloudflare token')
+    if (!token) return (this.deps.edgesWithoutToken ?? edgesWithoutZone)(hosts, scan.facts.addresses, 'no Cloudflare token')
     if (cloudflare.error) return unknownEdges(hosts, cloudflare.error)
     try {
       return await this.deps.cloudflare(token).edges(hosts, scan.facts.addresses, cloudflare.zones)
