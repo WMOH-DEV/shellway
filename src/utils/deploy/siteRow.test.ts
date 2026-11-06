@@ -96,7 +96,7 @@ describe('recent runs', () => {
 })
 
 describe('live commit', () => {
-  it('finds the newest successful run of the live commit, env changes included', () => {
+  it('finds the newest successful deploy of the live commit, skipping env changes', () => {
     const site = makeSummary({
       state: { current: 'aaa' },
       history: [
@@ -105,7 +105,7 @@ describe('live commit', () => {
         makeRecord({ id: 'd1', status: 'success', commit: 'aaa' })
       ]
     })
-    expect(liveRecord(site)?.id).toBe('d2')
+    expect(liveRecord(site)?.id).toBe('d1')
   })
 
   it.each([['manual', 'manual'], ['auto', 'auto'], ['pc', 'from PC'], ['approve', 'approved'], ['rollback', 'rollback'], ['env', 'env'], ['other', 'other']])(
