@@ -3,18 +3,22 @@ import { Check, Copy, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/utils/cn'
 import { parseRunLog } from '@/utils/deploy/runLog'
-import type { ActionOutcome } from '@/utils/ssl/certbotActions'
 import { copyText } from '@/components/deploy/copyText'
 import { LogViewer } from '@/components/deploy/detail/LogViewer'
+
+interface PanelOutcome {
+  success: boolean
+  message: string
+}
 
 interface OutputPanelProps {
   command: string
   output: string
   running: boolean
-  outcome: ActionOutcome | null
+  outcome: PanelOutcome | null
 }
 
-function OutcomeLine({ outcome }: { outcome: ActionOutcome }) {
+function OutcomeLine({ outcome }: { outcome: PanelOutcome }) {
   const Icon = outcome.success ? Check : X
   return (
     <span role="status" className={cn('flex items-center gap-1.5 text-xs font-medium', outcome.success ? 'text-nd-success' : 'text-nd-error')}>
