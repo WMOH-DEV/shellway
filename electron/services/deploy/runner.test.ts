@@ -144,6 +144,10 @@ async function deployWithId(name: string, id: string, ...extra: string[]): Promi
   return runner('deploy', name, '--id', id, ...extra)
 }
 
+async function deployLog(name: string, id: string): Promise<string> {
+  return (await runner('log', name, id)).stdout
+}
+
 describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
   beforeEach(async () => {
     base = realpathSync(mkdtempSync(join(tmpdir(), 'sw-deploy-')))
@@ -793,6 +797,284 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
       const result = await runner('resume', 'app')
       expect(result.code).not.toBe(0)
       expect(result.stderr).toContain('auto')
+    })
+  })
+
+  describe('step time limits', () => {
+    const SHIM = [
+      'secs="$1"; shift',
+      'marker="$(mktemp)"; rm -f "$marker"',
+      '"$@" &',
+      'pid=$!',
+      '( sleep "$secs"; : > "$marker"; kill "$pid" 2>/dev/null ) &',
+      'watcher=$!',
+      'wait "$pid"; code=$?',
+      'kill "$watcher" 2>/dev/null',
+      '[ -f "$marker" ] && { rm -f "$marker"; exit 124; }',
+      'exit "$code"'
+    ].join('\n')
+
+    function hasRealTimeout(): boolean {
+      try {
+        execFileSync('sh', ['-c', 'command -v timeout'])
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    beforeEach(() => {
+      if (!hasRealTimeout()) fakeCommand('timeout', SHIM)
+    })
+
+    it('fails the deploy and says so when a required command runs past its limit', async () => {
+      writeSite('app', {}, ['R:1\tsleep 3'])
+      const result = await deployWithId('app', 'd1')
+      expect(result.code).not.toBe(0)
+      expect(lastStatus('app')).toBe('failed')
+      expect(await deployLog('app', 'd1')).toContain('step failed (hit its 1s time limit)')
+    })
+
+    it('continues with a warning when an optional command runs past its limit', async () => {
+      writeSite('app', {}, ['O:1\tsleep 3', 'R\ttouch "$HOME/after-timeout"'])
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('warning')
+      expect(existsSync(join(home, 'after-timeout'))).toBe(true)
+      expect(await deployLog('app', 'd1')).toContain('optional step failed (hit its 1s time limit), continuing')
+    })
+
+    it('limits activate commands too and switches back', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      await commit({ 'index.html': 'v2' })
+      writeSite('app', {}, [], ['R:1\tsleep 3'])
+      await deployWithId('app', 'd2')
+      expect(lastStatus('app')).toBe('reverted')
+      expect(served('app', 'index.html')).toBe('v1')
+    })
+
+    it('lets a command that finishes in time succeed', async () => {
+      writeSite('app', {}, ['R:30\ttouch "$HOME/built"'])
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('success')
+      expect(existsSync(join(home, 'built'))).toBe(true)
+    })
+
+    it('does not limit commands without a limit, and reports other exit codes plainly', async () => {
+      writeSite('app', {}, ['R\texit 124'])
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('failed')
+      expect(await deployLog('app', 'd1')).toContain('step failed (exit 124)')
+    })
+
+    it.each(['R:0', 'R:abc', 'R:'])('treats %s as no limit', async (kind) => {
+      writeSite('app', {}, [`${kind}\ttrue`])
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('success')
+    })
+
+    it('still passes the site environment to limited commands', async () => {
+      writeSite('app', {}, ['R:30\tprintf "%s" "$SHELLWAY_SITE" > "$HOME/site-name"'])
+      await deployWithId('app', 'd1')
+      expect(readFileSync(join(home, 'site-name'), 'utf8')).toBe('app')
+    })
+  })
+
+  describe('quiet hours', () => {
+    function fakeClock(time: string): void {
+      const realDate = execFileSync('sh', ['-c', 'command -v date']).toString().trim()
+      fakeCommand('date', `[ "$*" = "+%H:%M" ] && { echo ${time}; exit 0; }\nexec ${realDate} "$@"`)
+    }
+
+    async function tickAt(time: string, conf: Conf = { QUIET_HOURS: '22:00-06:00' }): Promise<void> {
+      fakeClock(time)
+      writeSite('app', conf)
+      writeFileSync(join(root, 'sites', 'app', 'heartbeat'), '0')
+      await runner('tick', 'app')
+    }
+
+    it.each(['22:00', '23:30', '00:00', '03:00', '05:59'])('does not start an auto deploy at %s inside a window that wraps midnight', async (time) => {
+      await tickAt(time)
+      expect(history('app')).toHaveLength(0)
+      expect(siteFile('app', 'remote_head')).toBe(await git(work, 'rev-parse', 'HEAD'))
+      expect(siteFile('app', 'last_attempted')).toBe('')
+    })
+
+    it.each(['06:00', '12:00', '21:59'])('deploys at %s outside the window', async (time) => {
+      await tickAt(time)
+      expect(lastStatus('app')).toBe('success')
+    })
+
+    it('handles a window inside one day, including its edges', async () => {
+      const conf = { QUIET_HOURS: '09:00-17:00' }
+      await tickAt('09:00', conf)
+      expect(history('app')).toHaveLength(0)
+      await tickAt('16:59', conf)
+      expect(history('app')).toHaveLength(0)
+      await tickAt('17:00', conf)
+      expect(lastStatus('app')).toBe('success')
+    })
+
+    it('deploys the held commit on the first tick after the window ends', async () => {
+      await tickAt('23:30')
+      expect(history('app')).toHaveLength(0)
+      await tickAt('06:01')
+      expect(lastStatus('app')).toBe('success')
+      expect(siteFile('app', 'current')).toBe(await git(work, 'rev-parse', 'HEAD'))
+    })
+
+    it('does not hold back manual deploys', async () => {
+      fakeClock('23:30')
+      writeSite('app', { QUIET_HOURS: '22:00-06:00' })
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('success')
+    })
+
+    it.each(['', 'night', '25:00-26:00', '9:00-17:00'])('ignores quiet hours value %j', async (value) => {
+      await tickAt('23:30', { QUIET_HOURS: value })
+      expect(lastStatus('app')).toBe('success')
+    })
+  })
+
+  describe('failure notifications', () => {
+    interface Received { method: string; contentType: string; body: string }
+
+    let server: Server
+    let received: Received[]
+    let replyStatus: number
+    let hookUrl: string
+
+    beforeEach(async () => {
+      received = []
+      replyStatus = 200
+      server = createServer((req, res) => {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => chunks.push(chunk))
+        req.on('end', () => {
+          received.push({ method: req.method ?? '', contentType: String(req.headers['content-type']), body: Buffer.concat(chunks).toString() })
+          res.statusCode = replyStatus
+          res.end()
+        })
+      })
+      await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+      hookUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/hook`
+    })
+
+    afterEach(() => new Promise<void>((done) => server.close(() => done())))
+
+    const payload = (): Record<string, string> => JSON.parse(received[0].body)
+
+    it('posts one generic JSON message when a deploy fails', async () => {
+      writeSite('app', { NOTIFY_URL: hookUrl }, ['R\tfalse'])
+      await deployWithId('app', 'd1')
+      expect(received).toHaveLength(1)
+      expect(received[0].method).toBe('POST')
+      expect(received[0].contentType).toBe('application/json')
+      expect(payload()).toEqual({
+        site: 'app',
+        status: 'failed',
+        commit: await git(work, 'rev-parse', 'HEAD'),
+        note: 'build failed; live site untouched'
+      })
+      expect(await deployLog('app', 'd1')).toContain('failure notification sent')
+    })
+
+    it('posts when a deploy was switched back', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      await commit({ 'index.html': 'v2' })
+      writeSite('app', { NOTIFY_URL: hookUrl, HEALTH_URL: 'http://127.0.0.1:1/' })
+      await deployWithId('app', 'd2')
+      expect(lastStatus('app')).toBe('reverted')
+      expect(received).toHaveLength(1)
+      expect(payload().status).toBe('reverted')
+    })
+
+    it('stays quiet for success, warnings and approvals', async () => {
+      writeSite('app', { NOTIFY_URL: hookUrl })
+      await deployWithId('app', 'd1')
+      writeSite('app', { NOTIFY_URL: hookUrl }, ['O\tfalse'])
+      await commit({ 'index.html': 'v2' })
+      await deployWithId('app', 'd2')
+      expect(lastStatus('app')).toBe('warning')
+      writeSite('app', { NOTIFY_URL: hookUrl, APPROVE_MIGRATIONS: '1' })
+      await commit({ 'database/migrations/2026_add.php': '<?php' })
+      await deployWithId('app', 'd3')
+      expect(lastStatus('app')).toBe('waiting')
+      expect(received).toHaveLength(0)
+    })
+
+    it('does not post when no url is set or the url is not http', async () => {
+      writeSite('app', {}, ['R\tfalse'])
+      await deployWithId('app', 'd1')
+      writeSite('app', { NOTIFY_URL: 'ftp://127.0.0.1/hook' }, ['R\tfalse'])
+      await deployWithId('app', 'd2')
+      expect(received).toHaveLength(0)
+      expect(await deployLog('app', 'd2')).not.toContain('notification')
+    })
+
+    it('does not retry and does not change the result when the endpoint rejects the post', async () => {
+      replyStatus = 500
+      writeSite('app', { NOTIFY_URL: hookUrl }, ['R\tfalse'])
+      const result = await deployWithId('app', 'd1')
+      expect(received).toHaveLength(1)
+      expect(lastStatus('app')).toBe('failed')
+      expect(result.code).toBe(1)
+      expect(await deployLog('app', 'd1')).toContain('could not send failure notification')
+    })
+
+    it('does not change the result when the endpoint is unreachable', async () => {
+      writeSite('app', { NOTIFY_URL: 'http://127.0.0.1:1/hook' }, ['R\tfalse'])
+      const result = await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('failed')
+      expect(result.code).toBe(1)
+      expect(await deployLog('app', 'd1')).toContain('could not send failure notification')
+    })
+
+    it('escapes quotes and backslashes so the body is always valid JSON', async () => {
+      const tracked = 'we"ird\\name'
+      await commit({ [tracked]: 'x' })
+      writeSite('app', { LAYOUT: 'inplace', SHARED_PATHS: tracked, NOTIFY_URL: hookUrl })
+      await deployWithId('app', 'd1')
+      expect(lastStatus('app')).toBe('failed')
+      expect(payload().note).toBe(`${tracked} is tracked in git; an in-place deploy would overwrite it`)
+    })
+
+    describe('chat webhooks', () => {
+      beforeEach(() => {
+        fakeCommand('curl', [
+          'prev=""',
+          'for arg in "$@"; do',
+          '  [ "$prev" = -d ] && printf "%s" "$arg" > "$HOME/payload.json"',
+          '  last="$arg"; prev="$arg"',
+          'done',
+          'printf "%s" "$last" > "$HOME/posted-url"'
+        ].join('\n'))
+      })
+
+      async function failedDeployTo(url: string): Promise<Record<string, string>> {
+        writeSite('app', { NOTIFY_URL: url }, ['R\tfalse'])
+        await deployWithId('app', 'd1')
+        expect(readFileSync(join(home, 'posted-url'), 'utf8')).toBe(url)
+        return JSON.parse(readFileSync(join(home, 'payload.json'), 'utf8'))
+      }
+
+      it('sends a Slack text message to hooks.slack.com', async () => {
+        const body = await failedDeployTo('https://hooks.slack.com/services/T0/B0/x')
+        const short = (await git(work, 'rev-parse', 'HEAD')).slice(0, 7)
+        expect(body).toEqual({ text: `Deploy failed: app at ${short} (build failed; live site untouched)` })
+      })
+
+      it.each(['https://discord.com/api/webhooks/1/x', 'https://discordapp.com/api/webhooks/1/x'])('sends a Discord content message to %s', async (url) => {
+        const body = await failedDeployTo(url)
+        expect(Object.keys(body)).toEqual(['content'])
+        expect(body.content).toContain('Deploy failed: app at ')
+      })
+
+      it('uses the generic shape for any other host', async () => {
+        const body = await failedDeployTo('https://hooks.example.com/notify')
+        expect(Object.keys(body)).toEqual(['site', 'status', 'commit', 'note'])
+      })
     })
   })
 })

@@ -42,7 +42,7 @@ describe.skipIf(process.platform === 'win32')('DeployService against the real ru
     repoUrl: origin,
     sharedPaths: ['.env'],
     healthUrl: '',
-    buildSteps: [{ command: 'echo built', optional: false }],
+    buildSteps: [{ command: 'echo built', optional: false, timeoutSeconds: null }],
     activateSteps: [],
     ...overrides
   })

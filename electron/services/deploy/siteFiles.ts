@@ -3,7 +3,7 @@ import type { DeployStep, SiteConfig } from '../../../src/types/deploy'
 type ConfKey =
   | 'SITE_PATH' | 'REPO_URL' | 'BRANCH' | 'SOURCE_MODE' | 'LAYOUT' | 'SHARED_PATHS' | 'ENV_FILE'
   | 'HEALTH_URL' | 'HEALTH_STATUS' | 'HEALTH_REVERT' | 'KEEP_RELEASES' | 'POLL_MINUTES'
-  | 'APPROVE_MIGRATIONS' | 'MIGRATIONS_PATH' | 'PC_AUTO'
+  | 'APPROVE_MIGRATIONS' | 'MIGRATIONS_PATH' | 'PC_AUTO' | 'QUIET_HOURS' | 'NOTIFY_URL'
 
 const SITE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 const BRANCH_NAME = /^[A-Za-z0-9._/-]+$/
@@ -60,7 +60,9 @@ function confEntries(c: SiteConfig): [ConfKey, string][] {
     ['POLL_MINUTES', String(c.pollMinutes)],
     ['APPROVE_MIGRATIONS', flag(c.approveMigrations)],
     ['MIGRATIONS_PATH', c.migrationsPath],
-    ['PC_AUTO', flag(c.pcAuto)]
+    ['PC_AUTO', flag(c.pcAuto)],
+    ['QUIET_HOURS', c.quietHours],
+    ['NOTIFY_URL', c.notifyUrl]
   ]
 }
 
@@ -68,8 +70,16 @@ export function serializeSiteConf(c: SiteConfig): string {
   return confEntries(c).map(([key, value]) => `${key}=${quoteShellValue(value)}\n`).join('')
 }
 
+const stepKind = (s: DeployStep): string => `${s.optional ? 'O' : 'R'}${s.timeoutSeconds ? `:${s.timeoutSeconds}` : ''}`
+
 export function serializeSteps(steps: DeployStep[]): string {
-  return steps.map((s) => `${s.optional ? 'O' : 'R'}\t${s.command}\n`).join('')
+  return steps.map((s) => `${stepKind(s)}\t${s.command}\n`).join('')
+}
+
+function parseStepKind(kind: string): Pick<DeployStep, 'optional' | 'timeoutSeconds'> {
+  const [letter, seconds] = kind.split(':')
+  const timeout = Number.parseInt(seconds ?? '', 10)
+  return { optional: letter === 'O', timeoutSeconds: timeout > 0 ? timeout : null }
 }
 
 export function parseSteps(text: string): DeployStep[] {
@@ -79,7 +89,7 @@ export function parseSteps(text: string): DeployStep[] {
       const tab = line.indexOf('\t')
       if (tab === -1) return null
       const command = line.slice(tab + 1)
-      return command ? { optional: line.slice(0, tab) === 'O', command } : null
+      return command ? { ...parseStepKind(line.slice(0, tab)), command } : null
     })
     .filter((s): s is DeployStep => s !== null)
 }
@@ -117,6 +127,8 @@ export function parseSiteFiles(name: string, conf: string, build: string, activa
     approveMigrations: v.APPROVE_MIGRATIONS === '1',
     migrationsPath: v.MIGRATIONS_PATH || 'database/migrations',
     pcAuto: v.PC_AUTO === '1',
+    quietHours: v.QUIET_HOURS ?? '',
+    notifyUrl: v.NOTIFY_URL ?? '',
     buildSteps: parseSteps(build),
     activateSteps: parseSteps(activate)
   }
@@ -132,10 +144,24 @@ const hasNestedPath = (paths: string[]): boolean =>
 
 const inRange = (n: number, min: number, max: number): boolean => Number.isInteger(n) && n >= min && n <= max
 
+const QUIET_HOURS = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/
+const MAX_STEP_SECONDS = 86_400
+
+export function isValidQuietHours(value: string): boolean {
+  if (value === '') return true
+  const [start, end] = value.split('-')
+  return QUIET_HOURS.test(value) && start !== end
+}
+
+export function isValidNotifyUrl(value: string): boolean {
+  return value === '' || /^https?:\/\/[^\s'"\\]+$/.test(value)
+}
+
 function validateSteps(steps: DeployStep[]): string | null {
   for (const step of steps) {
     if (!step.command.trim()) return 'Steps cannot be empty'
     if (CONTROL_CHARS.test(step.command)) return 'Each step must be a single line without tabs'
+    if (step.timeoutSeconds !== null && !inRange(step.timeoutSeconds, 1, MAX_STEP_SECONDS)) return 'Time limit must be between 1 second and 24 hours'
   }
   return null
 }
@@ -155,5 +181,7 @@ export function validateSiteConfig(c: SiteConfig): string | null {
   if (!inRange(c.healthStatus, 100, 599)) return 'Expected status must be between 100 and 599'
   if (!inRange(c.keepReleases, 1, 50)) return 'Releases to keep must be between 1 and 50'
   if (!inRange(c.pollMinutes, 1, 60)) return 'Check interval must be between 1 and 60 minutes'
+  if (!isValidQuietHours(c.quietHours)) return 'Quiet hours must look like 22:00-06:00'
+  if (!isValidNotifyUrl(c.notifyUrl)) return 'Notification URL must start with http:// or https://'
   return validateSteps([...c.buildSteps, ...c.activateSteps])
 }

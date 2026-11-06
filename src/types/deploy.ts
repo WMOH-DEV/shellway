@@ -4,6 +4,7 @@ export type DeployLayout = 'releases' | 'inplace'
 export interface DeployStep {
   command: string
   optional: boolean
+  timeoutSeconds: number | null
 }
 
 export interface SiteConfig {
@@ -23,6 +24,8 @@ export interface SiteConfig {
   approveMigrations: boolean
   migrationsPath: string
   pcAuto: boolean
+  quietHours: string
+  notifyUrl: string
   buildSteps: DeployStep[]
   activateSteps: DeployStep[]
 }

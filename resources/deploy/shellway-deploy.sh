@@ -25,6 +25,7 @@ STAGE=''
 STEP_INDEX=0
 STEP_TOTAL=0
 STEP_PID=''
+STEP_LIMIT=''
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
@@ -50,6 +51,7 @@ load_site() {
   SITE_PATH=''; REPO_URL=''; BRANCH=main; SOURCE_MODE=auto; LAYOUT=releases
   SHARED_PATHS=''; ENV_FILE=.env; HEALTH_URL=''; HEALTH_STATUS=200; HEALTH_REVERT=1
   KEEP_RELEASES=5; POLL_MINUTES=1; APPROVE_MIGRATIONS=0; MIGRATIONS_PATH=database/migrations; PC_AUTO=0
+  QUIET_HOURS=''; NOTIFY_URL=''
   . "$SDIR/site.conf"
   case "$SITE_PATH" in
     /?*) ;;
@@ -236,8 +238,26 @@ history_commit_of() {
   awk -F "$TAB" -v id="$1" '$1 == id && ($2 == "success" || $2 == "warning") { c = $4 } END { print c }' "$SDIR/history.tsv" 2>/dev/null
 }
 
+step_shell() {
+  if [ -n "$STEP_LIMIT" ]; then with_timeout "$STEP_LIMIT" sh -c "$1"; else sh -c "$1"; fi
+}
+
 run_step() {
-  (cd "$1" && SHELLWAY_SITE="$SITE" SHELLWAY_COMMIT="${COMMIT:-}" SHELLWAY_RELEASE_DIR="$1" sh -c "$2") </dev/null
+  (cd "$1" && export SHELLWAY_SITE="$SITE" SHELLWAY_COMMIT="${COMMIT:-}" SHELLWAY_RELEASE_DIR="$1" && step_shell "$2") </dev/null
+}
+
+set_step_limit() {
+  STEP_LIMIT=''
+  case "$1" in *:*) STEP_LIMIT="${1#*:}" ;; esac
+  case "$STEP_LIMIT" in ''|*[!0-9]*|0) STEP_LIMIT='' ;; esac
+}
+
+describe_failure() {
+  if [ "$1" = 124 ] && [ -n "$STEP_LIMIT" ]; then
+    printf 'hit its %ss time limit' "$STEP_LIMIT"
+  else
+    printf 'exit %s' "$1"
+  fi
 }
 
 run_steps() {
@@ -248,18 +268,21 @@ run_steps() {
     stop_if_cancelled || return 1
     STEP_INDEX=$((STEP_INDEX + 1))
     STEP_COMMAND="$cmd"
+    set_step_limit "$kind"
+    kind="${kind%%:*}"
     log "\$ $cmd"
     run_tracked run_step "$workdir" "$cmd"
     code=$?
     STEP_COMMAND=''
     [ "$code" = 0 ] && continue
     stop_if_cancelled || return 1
+    failure="$(describe_failure "$code")"
     if [ "$kind" = O ]; then
       WARNINGS=$((WARNINGS + 1))
-      log "optional step failed (exit $code), continuing"
+      log "optional step failed ($failure), continuing"
       continue
     fi
-    log "step failed (exit $code)"
+    log "step failed ($failure)"
     return 1
   done < "$steps_file"
   return 0
@@ -458,12 +481,59 @@ obtain_commit() {
   [ -n "$COMMIT" ] || { log "commit ${REQUESTED:-$BRANCH} not found"; return 1; }
 }
 
+json_escape() {
+  printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '\000-\010\013\014\016-\037\177' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+notify_message() {
+  message="Deploy $1: $SITE"
+  [ -n "${COMMIT:-}" ] && message="$message at $(printf '%.7s' "$COMMIT")"
+  [ -n "$RESULT_NOTE" ] && message="$message ($RESULT_NOTE)"
+  printf '%s' "$message"
+}
+
+notify_payload() {
+  case "$NOTIFY_URL" in
+    http://hooks.slack.com/*|https://hooks.slack.com/*)
+      printf '{"text": "%s"}' "$(json_escape "$(notify_message "$1")")" ;;
+    http://discord.com/*|https://discord.com/*|http://discordapp.com/*|https://discordapp.com/*)
+      printf '{"content": "%s"}' "$(json_escape "$(notify_message "$1")")" ;;
+    *)
+      printf '{"site": "%s", "status": "%s", "commit": "%s", "note": "%s"}' \
+        "$(json_escape "$SITE")" "$1" "$(json_escape "${COMMIT:-}")" "$(json_escape "$RESULT_NOTE")" ;;
+  esac
+}
+
+post_json() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -sf -o /dev/null --max-time 10 -X POST -H 'Content-Type: application/json' -d "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O /dev/null -T 10 --tries=1 --header='Content-Type: application/json' --post-data="$2" "$1"
+  else
+    return 2
+  fi
+}
+
+notify_failure() {
+  case "$1" in failed|reverted) ;; *) return 0 ;; esac
+  case "$NOTIFY_URL" in http://?*|https://?*) ;; *) return 0 ;; esac
+  post_json "$NOTIFY_URL" "$(notify_payload "$1")"
+  sent=$?
+  case "$sent" in
+    0) log "failure notification sent" ;;
+    2) ;;
+    *) log "could not send failure notification" ;;
+  esac
+  return 0
+}
+
 finish() {
   status="$1"
   DEPLOY_OPEN=0
   history_add "$ID" "$status" "$TRIGGER" "${COMMIT:--}" "$STARTED" "$(now)" "$WARNINGS" "$RESULT_NOTE"
   rm -f "$SDIR/progress" "$SDIR/cancel"
   log "deploy $status"
+  notify_failure "$status"
 }
 
 finish_unsuccessful() {
@@ -597,6 +667,27 @@ commits_behind() {
   git --git-dir="$MIRROR" rev-list --count "$live_commit..$newest_commit" 2>/dev/null
 }
 
+clock_minutes() {
+  hours="${1%:*}"; minutes="${1#*:}"
+  hours="${hours#0}"; minutes="${minutes#0}"
+  echo $((${hours:-0} * 60 + ${minutes:-0}))
+}
+
+in_quiet_hours() {
+  case "$QUIET_HOURS" in
+    [0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]) ;;
+    *) return 1 ;;
+  esac
+  from="$(clock_minutes "${QUIET_HOURS%-*}")"
+  until_minute="$(clock_minutes "${QUIET_HOURS#*-}")"
+  at="$(clock_minutes "$(date +%H:%M)")"
+  if [ "$from" -le "$until_minute" ]; then
+    [ "$at" -ge "$from" ] && [ "$at" -lt "$until_minute" ]
+  else
+    [ "$at" -ge "$from" ] || [ "$at" -lt "$until_minute" ]
+  fi
+}
+
 cmd_tick() {
   load_site "$1"
   [ "$SOURCE_MODE" = auto ] || return 0
@@ -619,6 +710,7 @@ cmd_tick() {
   fi
   rm -f "$SDIR/check_failures"
   write_val remote_head "$head"
+  in_quiet_hours && return 0
   [ "$head" = "$(read_val last_attempted)" ] && return 0
   [ "$head" = "$(read_val current)" ] && return 0
   write_val last_attempted "$head"
