@@ -21,8 +21,8 @@ interface CommandsSectionProps extends SectionProps {
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-nd-border bg-nd-bg-secondary p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-nd-text-muted">{title}</h3>
+    <section className="flex flex-col gap-3 rounded-lg border border-nd-border bg-nd-surface p-4">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-nd-text-dim">{title}</h3>
       {children}
     </section>
   )
@@ -38,7 +38,7 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
           onClick={() => onChange(option.value)}
           className={cn(
             'rounded-md border p-2.5 text-left transition-colors',
-            value === option.value ? 'border-nd-accent bg-nd-accent/10' : 'border-nd-border hover:border-nd-border-hover'
+            value === option.value ? 'border-nd-accent/70 bg-nd-accent/[0.07]' : 'border-nd-border hover:border-nd-border-hover'
           )}
         >
           <div className="text-xs font-medium text-nd-text-primary">{option.label}</div>
@@ -109,8 +109,8 @@ export function CodeSection({ draft }: SectionProps) {
       </div>
       <Choice value={site.sourceMode} options={SOURCE_OPTIONS} onChange={(sourceMode) => patch({ sourceMode })} />
       {needsSshUrl && (
-        <div className="flex items-center gap-2 rounded-md border border-nd-warning/40 bg-nd-warning/10 p-2 text-2xs text-nd-warning">
-          <AlertTriangle size={13} />
+        <div className="flex items-center gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] p-2 text-2xs text-nd-text-primary">
+          <AlertTriangle size={13} className="text-nd-warning-fg" />
           <span className="flex-1">Deploy keys only work with SSH repository URLs.</span>
           {github && <Button size="sm" variant="secondary" onClick={() => patch({ repoUrl: githubSshUrl(github) })}>Use SSH URL</Button>}
         </div>

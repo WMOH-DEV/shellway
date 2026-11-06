@@ -3,8 +3,8 @@ import type { RemoteDrift, SiteSummary } from '@/types/deploy'
 import { behindChip, type Chip } from '@/utils/deploy/siteRow'
 
 const CHIP_STYLE: Record<Chip['tone'], string> = {
-  info: 'bg-nd-info/[.12] text-nd-info',
-  warning: 'bg-nd-warning/[.12] text-nd-warning',
+  info: 'bg-nd-info/12 text-nd-info-fg',
+  warning: 'bg-nd-warning/12 text-nd-warning-fg',
   muted: 'text-nd-text-muted'
 }
 

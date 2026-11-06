@@ -28,8 +28,8 @@ interface CommandRowProps {
 }
 
 const FLAG_TONES: Record<StepFlag['tone'], string> = {
-  warning: 'bg-nd-warning/15 text-nd-warning',
-  muted: 'bg-nd-bg-tertiary text-nd-text-secondary'
+  warning: 'bg-nd-warning/12 text-nd-warning-fg',
+  muted: 'bg-nd-surface-raised text-nd-text-muted'
 }
 
 function ModeSwitch({ optional, onChange }: { optional: boolean; onChange: (optional: boolean) => void }) {
@@ -48,9 +48,9 @@ function ModeSwitch({ optional, onChange }: { optional: boolean; onChange: (opti
     </button>
   )
   return (
-    <div className="flex gap-0.5 rounded-md border border-nd-border p-0.5">
-      {option(false, 'Required', 'bg-nd-bg-tertiary text-nd-text-primary')}
-      {option(true, 'Optional', 'bg-nd-warning/15 text-nd-warning')}
+    <div className="flex gap-0.5 rounded-md border border-nd-border bg-nd-bg-sunken p-0.5">
+      {option(false, 'Required', 'bg-nd-surface-raised text-nd-text-primary')}
+      {option(true, 'Optional', 'bg-nd-warning/12 text-nd-warning-fg')}
     </div>
   )
 }
@@ -80,8 +80,8 @@ export function CommandRow({ step, index, count, label, flag, otherStageLabel, d
       data-step-row
       {...drag.rowProps(index)}
       className={cn(
-        'grid grid-cols-[16px_18px_minmax(0,1fr)_auto_auto_28px] items-center gap-2.5 rounded-lg border bg-nd-bg-primary py-1.5 pl-2 pr-1.5',
-        drag.isDropTarget(index) ? 'border-nd-accent' : 'border-nd-border hover:border-nd-border-hover',
+        'grid grid-cols-[16px_18px_minmax(0,1fr)_auto_auto_28px] items-center gap-2.5 rounded-lg border bg-nd-surface py-1.5 pl-2 pr-1.5',
+        drag.isDropTarget(index) ? 'border-nd-accent' : 'border-nd-border hover:border-nd-border-hover hover:bg-nd-surface-hover',
         drag.isDragging(index) && 'opacity-50'
       )}
     >
@@ -92,7 +92,7 @@ export function CommandRow({ step, index, count, label, flag, otherStageLabel, d
       <div className="flex min-w-0 items-center gap-2">
         <input
           aria-label={`${label} command ${index + 1}`}
-          className="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-nd-text-primary placeholder:text-nd-text-muted hover:bg-nd-bg-tertiary focus:bg-nd-bg-tertiary focus:outline-none focus:ring-1 focus:ring-nd-accent"
+          className="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-nd-text-primary placeholder:text-nd-text-muted hover:bg-nd-bg-sunken focus:bg-nd-bg-sunken focus:outline-none focus:ring-1 focus:ring-nd-accent"
           value={step.command}
           placeholder="php artisan migrate --force"
           spellCheck={false}

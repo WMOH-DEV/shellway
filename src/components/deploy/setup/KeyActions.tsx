@@ -26,7 +26,7 @@ function ByHandHint({ deployKey }: { deployKey: DeployKey }) {
 
 function TokenForm({ deployKey }: { deployKey: DeployKey }) {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-bg-primary p-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-surface p-3">
       <GithubTokenFields deployKey={deployKey} />
       <div>
         <Button variant="primary" size="sm" onClick={() => void deployKey.register()} disabled={!deployKey.canRegister}>
@@ -47,7 +47,7 @@ export function KeyActions({ deployKey, actions }: KeyActionsProps) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      {keyError && <span className="text-xs text-nd-error">{keyError}</span>}
+      {keyError && <span className="text-xs text-nd-error-fg">{keyError}</span>}
       <div className="flex flex-wrap items-center gap-2">
         {offers('add-to-github') && (
           <Button variant="primary" size="sm" onClick={addToGitHub} disabled={!publicKey || registering}>

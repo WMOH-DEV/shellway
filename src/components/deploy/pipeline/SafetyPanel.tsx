@@ -14,7 +14,7 @@ function TimeField({ label, value, onChange }: { label: string; value: string; o
       {label}
       <input
         type="time"
-        className="h-8 rounded-md border border-nd-border bg-nd-bg-primary px-2 text-sm text-nd-text-primary hover:border-nd-border-hover focus:border-nd-accent focus:outline-none focus:ring-1 focus:ring-nd-accent"
+        className="h-8 rounded-md border border-nd-border-hover bg-nd-bg-sunken px-2 text-sm text-nd-text-primary focus:border-nd-accent focus:outline-none focus:ring-1 focus:ring-nd-accent"
         value={value}
         onChange={(e) => e.target.value && onChange(e.target.value)}
       />

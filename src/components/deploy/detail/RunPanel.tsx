@@ -22,21 +22,21 @@ interface RunPanelProps {
 }
 
 export const TONE_CHIP: Record<RunStatusTone, string> = {
-  success: 'bg-nd-success/[.12] text-nd-success',
-  warning: 'bg-nd-warning/[.12] text-nd-warning',
-  error: 'bg-nd-error/[.12] text-nd-error',
-  info: 'bg-nd-info/[.12] text-nd-info',
-  muted: 'bg-nd-bg-tertiary text-nd-text-muted'
+  success: 'bg-nd-success/12 text-nd-success-fg',
+  warning: 'bg-nd-warning/12 text-nd-warning-fg',
+  error: 'bg-nd-error/12 text-nd-error-fg',
+  info: 'bg-nd-info/12 text-nd-info-fg',
+  muted: 'bg-nd-surface-raised text-nd-text-muted'
 }
 
 const STAGE_STYLE: Record<StageState, { bar: string; text: string; icon: ReactNode }> = {
   done: { bar: 'bg-nd-success', text: 'text-nd-text-secondary', icon: <Check size={13} className="text-nd-success" /> },
   warning: { bar: 'bg-nd-warning', text: 'text-nd-text-secondary', icon: <AlertTriangle size={13} className="text-nd-warning" /> },
-  failed: { bar: 'bg-nd-error', text: 'text-nd-error', icon: <X size={13} /> },
-  running: { bar: 'bg-nd-info animate-pulse', text: 'text-nd-info', icon: <Loader2 size={13} className="animate-spin" /> },
+  failed: { bar: 'bg-nd-error', text: 'text-nd-error-fg', icon: <X size={13} /> },
+  running: { bar: 'bg-nd-info animate-pulse', text: 'text-nd-info-fg', icon: <Loader2 size={13} className="animate-spin" /> },
   cancelled: { bar: 'bg-nd-text-muted', text: 'text-nd-text-muted', icon: <X size={13} /> },
-  pending: { bar: 'bg-nd-border', text: 'text-nd-text-muted', icon: <Minus size={13} /> },
-  skipped: { bar: 'bg-nd-border', text: 'text-nd-text-muted', icon: <Minus size={13} /> }
+  pending: { bar: 'bg-nd-border-hover', text: 'text-nd-text-muted', icon: <Minus size={13} /> },
+  skipped: { bar: 'bg-nd-border-hover', text: 'text-nd-text-muted', icon: <Minus size={13} /> }
 }
 
 function StageBar({ stages }: { stages: StageView[] }) {
@@ -62,8 +62,8 @@ function StageBar({ stages }: { stages: StageView[] }) {
 function FailureCallout({ failure, onJump }: { failure: FailureView; onJump: () => void }) {
   const during = failure.stageLabel ? ` during ${failure.stageLabel}` : ''
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/[.08] px-3.5 py-2.5 text-[13px] text-nd-text-secondary">
-      <AlertTriangle size={15} className="shrink-0 text-nd-error" />
+    <div className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-2.5 text-[13px] text-nd-text-primary">
+      <AlertTriangle size={15} className="shrink-0 text-nd-error-fg" />
       <span className="min-w-0 flex-1">
         {failure.command
           ? <><b className="font-mono font-semibold text-nd-text-primary">{failure.command}</b> exited with {failure.exitCode}{during}. </>
@@ -121,7 +121,7 @@ export function RunPanel({ connectionId, summary, record, retry }: RunPanelProps
       {stages.length > 0 && <StageBar stages={stages} />}
       {failure && <FailureCallout failure={failure} onJump={() => setJump((n) => n + 1)} />}
       {record.status === 'cancelled' && record.note && <div className="text-xs text-nd-text-muted">{record.note}</div>}
-      {error && <div className="text-xs text-nd-error">{error}</div>}
+      {error && <div className="text-xs text-nd-error-fg">{error}</div>}
       <LogViewer
         sections={parsed.sections}
         skipped={skipped}

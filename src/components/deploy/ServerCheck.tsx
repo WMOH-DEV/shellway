@@ -21,7 +21,7 @@ function CheckRow({ item }: { item: ReadyItem }) {
         {!passed && <span className="text-2xs text-nd-text-muted">{item.detail}</span>}
         {!passed && item.code && (
           <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded bg-nd-bg-primary p-2 font-mono text-2xs text-nd-text-primary">{item.code}</code>
+            <code className="flex-1 break-all rounded bg-nd-bg-sunken p-2 font-mono text-2xs text-nd-text-primary">{item.code}</code>
             <Button size="icon" variant="ghost" aria-label="Copy" onClick={() => void copyText(item.code ?? '')}><Copy size={13} /></Button>
           </div>
         )}
@@ -34,7 +34,7 @@ export function ServerCheck({ site, check }: { site: SiteConfig; check: ServerCh
   const { report, error, run } = check
   if (error) {
     return (
-      <div className="flex items-center gap-3 p-4 text-xs text-nd-error">
+      <div className="flex items-center gap-3 p-4 text-xs text-nd-error-fg">
         {error}
         <Button size="sm" variant="ghost" onClick={() => void run()}>Try again</Button>
       </div>

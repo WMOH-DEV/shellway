@@ -36,7 +36,7 @@ function ServicePicker({ connectionId, onPick }: { connectionId: string; onPick:
 
   if (error) {
     return (
-      <span className="flex items-center gap-1 text-2xs text-nd-error">
+      <span className="flex items-center gap-1 text-2xs text-nd-error-fg">
         {error}
         <Button size="sm" variant="ghost" onClick={() => void load()}>Try again</Button>
       </span>
@@ -51,7 +51,7 @@ function ServicePicker({ connectionId, onPick }: { connectionId: string; onPick:
   }
   return (
     <select
-      className="h-7 rounded border border-nd-border bg-nd-bg-primary px-2 text-xs text-nd-text-primary"
+      className="h-7 rounded border border-nd-border-hover bg-nd-bg-sunken px-2 text-xs text-nd-text-primary"
       value=""
       onChange={(e) => e.target.value && onPick(e.target.value)}
     >
@@ -77,7 +77,7 @@ export function StepsEditor({ connectionId, title, hint, steps, onChange }: Step
         <div key={index} className="flex items-center gap-1.5">
           <span className="w-5 text-right text-2xs text-nd-text-muted">{index + 1}</span>
           <input
-            className="h-7 flex-1 rounded border border-nd-border bg-nd-bg-primary px-2 font-mono text-xs text-nd-text-primary focus:border-nd-accent focus:outline-none"
+            className="h-7 flex-1 rounded border border-nd-border-hover bg-nd-bg-sunken px-2 font-mono text-xs text-nd-text-primary focus:border-nd-accent focus:outline-none"
             value={step.command}
             placeholder="php artisan migrate --force"
             spellCheck={false}
@@ -87,10 +87,10 @@ export function StepsEditor({ connectionId, title, hint, steps, onChange }: Step
             type="button"
             title={step.optional ? 'If this fails, the deploy continues with a warning' : 'If this fails, the deploy stops'}
             className={cn(
-              'h-7 w-20 rounded border text-2xs font-medium transition-colors',
+              'h-7 w-20 rounded text-2xs font-medium transition-colors',
               step.optional
-                ? 'border-nd-warning/40 bg-nd-warning/10 text-nd-warning'
-                : 'border-nd-accent/40 bg-nd-accent/10 text-nd-accent'
+                ? 'bg-nd-warning/12 text-nd-warning-fg'
+                : 'bg-nd-accent/12 text-nd-accent-hover'
             )}
             onClick={() => update(index, { optional: !step.optional })}
           >

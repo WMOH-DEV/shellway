@@ -54,7 +54,7 @@ export function SiteForm({ connectionId, initial, existingNames, onSaved, onCanc
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-nd-border px-4 py-2.5">
-        {error && <span className="mr-auto text-xs text-nd-error">{error}</span>}
+        {error && <span className="mr-auto text-xs text-nd-error-fg">{error}</span>}
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button variant="primary" onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save site'}</Button>
       </div>

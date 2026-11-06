@@ -18,7 +18,7 @@ export function RunBars({ runs, caption }: { runs: RunTone[]; caption: string })
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div role="img" aria-label={label} className="flex h-5 items-end gap-[3px]">
-        {Array.from({ length: empty }, (_, i) => <span key={`empty-${i}`} className="h-1.5 w-2 rounded-sm bg-nd-border" />)}
+        {Array.from({ length: empty }, (_, i) => <span key={`empty-${i}`} className="h-1.5 w-2 rounded-sm bg-nd-border-hover" />)}
         {runs.map((tone, i) => <span key={i} className={cn('w-2 rounded-sm', TONE_STYLE[tone])} />)}
       </div>
       <span className="truncate text-xs text-nd-text-muted">{caption}</span>

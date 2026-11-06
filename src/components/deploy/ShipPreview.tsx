@@ -33,13 +33,13 @@ type PreviewState =
 
 const LOADING: PreviewState = { status: 'loading' }
 
-const AVATAR_TONES = ['bg-nd-info/15 text-nd-info', 'bg-nd-warning/15 text-nd-warning', 'bg-nd-success/15 text-nd-success', 'bg-nd-accent/15 text-nd-accent']
+const AVATAR_TONES = ['bg-nd-info/12 text-nd-info-fg', 'bg-nd-warning/12 text-nd-warning-fg', 'bg-nd-success/12 text-nd-success-fg', 'bg-nd-accent/12 text-nd-accent-hover']
 
 const FILE_STATUS_TONES: Record<ShipFileStatus, string> = {
-  A: 'text-nd-success',
-  M: 'text-nd-warning',
-  D: 'text-nd-error',
-  R: 'text-nd-info'
+  A: 'text-nd-success-fg',
+  M: 'text-nd-warning-fg',
+  D: 'text-nd-error-fg',
+  R: 'text-nd-info-fg'
 }
 
 function usePreview(connectionId: string, siteName: string, open: boolean) {
@@ -64,16 +64,16 @@ function usePreview(connectionId: string, siteName: string, open: boolean) {
 }
 
 function SectionLabel({ children }: { children: ReactNode }) {
-  return <span className="text-2xs font-semibold uppercase tracking-wider text-nd-text-muted">{children}</span>
+  return <span className="text-[11px] font-semibold uppercase tracking-wider text-nd-text-dim">{children}</span>
 }
 
 function MigrationChip() {
-  return <span className="inline-flex h-5 shrink-0 items-center rounded bg-nd-warning/[.12] px-1.5 text-2xs font-medium text-nd-warning">migration</span>
+  return <span className="inline-flex h-5 shrink-0 items-center rounded bg-nd-warning/12 px-1.5 text-2xs font-medium text-nd-warning-fg">migration</span>
 }
 
 function Hash({ sha, fresh }: { sha: string; fresh?: boolean }) {
   return (
-    <span className={cn('rounded px-1.5 py-px font-mono text-xs', fresh ? 'bg-nd-info/[.12] text-nd-info' : 'bg-nd-bg-tertiary text-nd-text-secondary')}>
+    <span className={cn('rounded px-1.5 py-px font-mono text-xs', fresh ? 'bg-nd-info/12 text-nd-info-fg' : 'bg-nd-surface-raised text-nd-text-secondary')}>
       {shortSha(sha)}
     </span>
   )
@@ -119,7 +119,7 @@ function CommitList({ commits, now }: { commits: ShipCommit[]; now: number }) {
   return (
     <section className="flex flex-col gap-2">
       <SectionLabel>Commits</SectionLabel>
-      <ul className="overflow-hidden rounded-lg border border-nd-border">
+      <ul className="overflow-hidden rounded-lg border border-nd-border bg-nd-surface">
         {commits.map((commit) => <CommitRow key={commit.sha} commit={commit} now={now} />)}
       </ul>
     </section>
@@ -129,12 +129,12 @@ function CommitList({ commits, now }: { commits: ShipCommit[]; now: number }) {
 function FileRow({ file }: { file: ShipFile }) {
   const delta = fileDelta(file)
   return (
-    <li className={cn('flex items-center gap-2.5 border-b border-nd-border px-3 py-1.5 last:border-b-0', file.migration && 'bg-nd-warning/5')}>
+    <li className={cn('flex items-center gap-2.5 border-b border-nd-border px-3 py-1.5 last:border-b-0', file.migration && 'bg-nd-warning/10')}>
       <span className={cn('w-3 shrink-0', FILE_STATUS_TONES[file.status])} title={FILE_STATUS_LABELS[file.status]}>{file.status}</span>
       <span className="min-w-0 flex-1 truncate text-nd-text-secondary" title={file.path}>{file.path}</span>
       {file.migration && <MigrationChip />}
-      <span className={cn('text-right', delta.added === 'binary' ? 'w-24 text-nd-text-muted' : 'w-11 text-nd-success')}>{delta.added}</span>
-      <span className="w-11 text-right text-nd-error">{delta.removed}</span>
+      <span className={cn('text-right', delta.added === 'binary' ? 'w-24 text-nd-text-muted' : 'w-11 text-nd-success-fg')}>{delta.added}</span>
+      <span className="w-11 text-right text-nd-error-fg">{delta.removed}</span>
     </li>
   )
 }
@@ -154,7 +154,7 @@ function FileList({ preview }: { preview: ShipPreviewData }) {
           </button>
         )}
       </div>
-      <ul className="overflow-hidden rounded-lg border border-nd-border font-mono text-xs">
+      <ul className="overflow-hidden rounded-lg border border-nd-border bg-nd-bg-sunken font-mono text-xs">
         {visibleFiles(preview.files, expanded).map((file) => <FileRow key={file.path} file={file} />)}
       </ul>
       {note && <span className="text-xs text-nd-text-muted">{note}</span>}
@@ -165,12 +165,12 @@ function FileList({ preview }: { preview: ShipPreviewData }) {
 function MigrationCallout({ summary, preview, reviewed, onReviewed }: { summary: SiteSummary; preview: ShipPreviewData; reviewed: boolean; onReviewed: (value: boolean) => void }) {
   const command = migrationCommand(summary.config)
   return (
-    <div className="flex gap-3 rounded-lg border border-nd-warning/30 bg-nd-warning/[.06] px-3.5 py-3">
-      <Database size={16} className="mt-0.5 shrink-0 text-nd-warning" />
+    <div className="flex gap-3 rounded-lg border border-nd-warning/30 bg-nd-warning/[0.07] px-3.5 py-3">
+      <Database size={16} className="mt-0.5 shrink-0 text-nd-warning-fg" />
       <div className="flex flex-1 flex-col gap-2 text-sm text-nd-text-primary">
         <span>
           {migrationHeadline(migrationCount(preview))}{' '}
-          {command && <>After going live Shellway runs <code className="font-mono text-xs text-nd-warning">{command}</code>. </>}
+          {command && <>After going live Shellway runs <code className="font-mono text-xs text-nd-warning-fg">{command}</code>. </>}
           Rolling back the code will not undo it.
         </span>
         <label className="flex cursor-pointer items-center gap-2 text-nd-text-secondary">
@@ -193,7 +193,7 @@ function WhatWillRun({ summary, onEditPipeline }: { summary: SiteSummary; onEdit
       <ol className="flex flex-wrap items-center gap-1.5">
         {chips.map((chip, index) => (
           <Fragment key={chip.id}>
-            <li className="inline-flex h-7 items-center gap-1.5 rounded-md border border-nd-border bg-nd-bg-primary px-2.5 text-xs">
+            <li className="inline-flex h-7 items-center gap-1.5 rounded-md bg-nd-surface-raised px-2.5 text-xs">
               <span className="font-medium text-nd-text-primary">{chip.name}</span>
               {chip.detail && <span className="text-nd-text-muted">{chip.detail}</span>}
             </li>
@@ -207,7 +207,7 @@ function WhatWillRun({ summary, onEditPipeline }: { summary: SiteSummary; onEdit
 
 function UpToDate({ preview }: { preview: ShipPreviewData }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-nd-border bg-nd-bg-secondary px-3.5 py-3 text-sm text-nd-text-secondary">
+    <div className="flex items-center gap-3 rounded-lg border border-nd-border bg-nd-surface px-3.5 py-3 text-sm text-nd-text-secondary">
       <span>
         The branch has nothing new. <Hash sha={preview.to} /> is already live. Redeploying runs the same steps again on this commit.
       </span>
@@ -226,9 +226,9 @@ function Loading() {
 
 function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-3 rounded-lg border border-nd-error/30 bg-nd-error/[.06] px-3.5 py-3">
+    <div className="flex flex-col items-start gap-3 rounded-lg border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-3">
       <div className="flex gap-2.5 text-sm text-nd-text-primary">
-        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-nd-error" />
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-nd-error-fg" />
         <span className="break-words">{message}</span>
       </div>
       <Button size="sm" onClick={onRetry}>Try again</Button>
@@ -256,12 +256,12 @@ function Body({ summary, preview, reviewed, onReviewed, onEditPipeline }: BodyPr
 }
 
 function FooterNote({ summary }: { summary: SiteSummary }) {
-  if (summary.state.busy) return <span className="text-xs text-nd-warning">A deploy is already running for this site</span>
+  if (summary.state.busy) return <span className="text-xs text-nd-warning-fg">A deploy is already running for this site</span>
   const commit = rollbackCommit(summary)
   if (!commit) return null
   return (
     <span className="flex items-center gap-2 text-xs text-nd-text-muted">
-      <RotateCcw size={14} className="text-nd-success" />
+      <RotateCcw size={14} className="text-nd-success-fg" />
       One-click rollback to <span className="font-mono text-nd-text-secondary">{shortSha(commit)}</span> stays available
     </span>
   )

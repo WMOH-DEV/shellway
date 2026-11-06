@@ -26,7 +26,7 @@ export function RunsAsPanel({ report, loading, path, onOpenServerCheck }: RunsAs
         <span title={path} className="min-w-0 truncate font-mono text-[12.5px] text-nd-text-secondary">{shortPath(path, user)}</span>
       </div>
       {warning && (
-        <span className="flex items-center gap-1.5 text-xs text-nd-warning">
+        <span className="flex items-center gap-1.5 text-xs text-nd-warning-fg">
           <span className="h-1.5 w-1.5 rounded-full bg-nd-warning" />
           {warning}
         </span>

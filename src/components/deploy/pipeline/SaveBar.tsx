@@ -17,7 +17,7 @@ export function SaveBar({ changes, issue, saving, onDiscard, onSave }: SaveBarPr
       <span className={cn('h-1.5 w-1.5 rounded-full', dirty ? 'bg-nd-warning' : 'bg-nd-success')} />
       <span className="text-sm text-nd-text-secondary">{changesLabel(changes)}</span>
       {dirty && <span className="text-sm text-nd-text-muted">· applies from the next deploy</span>}
-      {dirty && issue && <span className="ml-2 text-xs text-nd-error">{issue}</span>}
+      {dirty && issue && <span className="ml-2 text-xs text-nd-error-fg">{issue}</span>}
       <div className="flex-1" />
       <Button variant="secondary" disabled={!dirty || saving} onClick={onDiscard}>Discard</Button>
       <Button variant="primary" disabled={!dirty || saving || issue !== null} onClick={onSave}>

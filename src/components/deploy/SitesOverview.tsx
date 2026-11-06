@@ -66,8 +66,8 @@ function subtitle(data: DeploySites, serverName: string): string {
 
 function RunnerBanner({ installed, installing, onInstall }: { installed: boolean; installing: boolean; onInstall: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-nd-accent/40 bg-nd-accent/10 px-3.5 py-2.5">
-      <AlertTriangle size={15} className="shrink-0 text-nd-accent" />
+    <div className="flex items-center gap-3 rounded-[10px] border border-nd-info/30 bg-nd-info/[0.07] px-3.5 py-2.5">
+      <AlertTriangle size={15} className="shrink-0 text-nd-info-fg" />
       <div className="flex-1 text-[13px] text-nd-text-primary">
         {installed
           ? 'A newer deploy runner is available for this server.'
@@ -82,8 +82,8 @@ function RunnerBanner({ installed, installing, onInstall }: { installed: boolean
 
 function ErrorBanner({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/10 px-3.5 py-2.5 text-[13px] text-nd-error">
-      <AlertTriangle size={15} className="shrink-0" />
+    <div className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-2.5 text-[13px] text-nd-text-primary">
+      <AlertTriangle size={15} className="shrink-0 text-nd-error-fg" />
       <span className="flex-1">{message}</span>
       <Button size="sm" onClick={onRetry} disabled={retrying}>Try again</Button>
     </div>
@@ -91,14 +91,14 @@ function ErrorBanner({ message, retrying, onRetry }: { message: string; retrying
 }
 
 const OUTCOME_STYLE: Record<Exclude<AwayOutcome['tone'], 'plain'>, string> = {
-  error: 'text-nd-error',
-  warning: 'text-nd-warning'
+  error: 'text-nd-error-fg',
+  warning: 'text-nd-warning-fg'
 }
 
 function AwayBanner({ summary, onReview, onDismiss }: { summary: AwaySummary; onReview: () => void; onDismiss: () => void }) {
   const { runs, outcomes } = awayParts(summary)
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary py-2.5 pl-3.5 pr-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-nd-border bg-nd-surface py-2.5 pl-3.5 pr-3">
       <Clock size={16} className="shrink-0 text-nd-text-muted" />
       <span className="text-[13px] text-nd-text-secondary">
         While you were away, <b className="font-semibold text-nd-text-primary">{runs}</b> ran on this server
@@ -121,7 +121,7 @@ function AwayBanner({ summary, onReview, onDismiss }: { summary: AwaySummary; on
 
 function FilterBar({ value, counts, onChange }: { value: SiteFilter; counts: Record<SiteFilter, number>; onChange: (f: SiteFilter) => void }) {
   return (
-    <div role="tablist" aria-label="Filter sites" className="flex w-fit flex-wrap items-center gap-1 rounded-lg border border-nd-border bg-nd-bg-secondary p-[3px]">
+    <div role="tablist" aria-label="Filter sites" className="flex w-fit flex-wrap items-center gap-1 rounded-lg border border-nd-border bg-nd-bg-sunken p-[3px]">
       {FILTERS.map((f) => (
         <button
           key={f.id}
@@ -131,11 +131,11 @@ function FilterBar({ value, counts, onChange }: { value: SiteFilter; counts: Rec
           onClick={() => onChange(f.id)}
           className={cn(
             'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
-            value === f.id ? 'bg-nd-bg-tertiary text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
+            value === f.id ? 'bg-nd-surface-raised text-nd-text-primary' : 'text-nd-text-muted hover:text-nd-text-primary'
           )}
         >
           {f.label}
-          <span className={cn(f.id === 'attention' && counts.attention > 0 ? 'text-nd-error' : 'text-nd-text-muted')}>{counts[f.id]}</span>
+          <span className={cn(f.id === 'attention' && counts.attention > 0 ? 'text-nd-error-fg' : 'text-nd-text-muted')}>{counts[f.id]}</span>
         </button>
       ))}
     </div>
@@ -188,7 +188,7 @@ export function SitesOverview({ data, filters, away, serverName, user, starting,
           </div>
           <div className="flex-1" />
           {sites.length > 0 && (
-            <label className="flex h-8 w-60 items-center gap-2 rounded-md border border-nd-border bg-nd-bg-secondary px-2.5 text-nd-text-muted focus-within:border-nd-accent">
+            <label className="flex h-8 w-60 items-center gap-2 rounded-md border border-nd-border-hover bg-nd-bg-sunken px-2.5 text-nd-text-muted focus-within:border-nd-accent">
               <Search size={14} className="shrink-0" />
               <input
                 ref={searchRef}

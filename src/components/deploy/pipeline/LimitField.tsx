@@ -28,9 +28,9 @@ export function LimitField({ seconds, onChange }: LimitFieldProps) {
     <label
       title="Stops the command after this long. Examples: 10m, 90s, 2h. Empty means no limit."
       className={cn(
-        'flex h-7 w-[96px] items-center gap-1.5 rounded-md border bg-nd-bg-primary px-2 text-nd-text-muted',
+        'flex h-7 w-[96px] items-center gap-1.5 rounded-md border bg-nd-bg-sunken px-2 text-nd-text-muted',
         'focus-within:border-nd-accent',
-        invalid ? 'border-nd-error' : 'border-nd-border hover:border-nd-border-hover'
+        invalid ? 'border-nd-error' : 'border-nd-border-hover'
       )}
     >
       <Clock size={12} className="shrink-0" />

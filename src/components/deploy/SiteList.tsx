@@ -17,7 +17,7 @@ export function SiteList({ sites, pcDrift, user, starting, actions }: SiteListPr
   const nowMs = useNowMs(sites.some((s) => s.state.busy))
   return (
     <div className="flex flex-col gap-1.5">
-      <div className={cn('hidden px-4 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-nd-text-muted lg:grid', SITE_COLUMNS)}>
+      <div className={cn('hidden px-4 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-nd-text-dim lg:grid', SITE_COLUMNS)}>
         {COLUMN_TITLES.map((title, i) => <span key={i}>{title}</span>)}
       </div>
       {sites.map((summary) => (

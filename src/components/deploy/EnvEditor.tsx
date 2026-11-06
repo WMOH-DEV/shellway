@@ -67,7 +67,7 @@ export function EnvEditor({ connectionId, site, canApply, onApply }: EnvEditorPr
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveRef.current())
   }
 
-  if (error) return <div className="p-4 text-xs text-nd-error">{error}</div>
+  if (error) return <div className="p-4 text-xs text-nd-error-fg">{error}</div>
   if (original === null) return <div className="p-4 text-xs text-nd-text-muted">Loading…</div>
 
   return (

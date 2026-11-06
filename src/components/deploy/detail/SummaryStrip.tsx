@@ -17,7 +17,7 @@ const DOT: Record<SourceView['tone'], string> = {
 function Cell({ label, children, caption }: { label: string; children: ReactNode; caption: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5 px-4 py-3">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-muted">{label}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-dim">{label}</span>
       <div className="flex min-w-0 items-center gap-2 text-[13px] text-nd-text-primary">{children}</div>
       <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-nd-text-muted">{caption}</span>
     </div>
@@ -27,7 +27,7 @@ function Cell({ label, children, caption }: { label: string; children: ReactNode
 function Commit({ sha, subject }: { sha: string; subject: string }) {
   return (
     <>
-      <span className="shrink-0 rounded bg-nd-bg-tertiary px-1.5 py-px font-mono text-xs text-nd-text-secondary">{shortSha(sha)}</span>
+      <span className="shrink-0 rounded bg-nd-surface-raised px-1.5 py-px font-mono text-xs text-nd-text-secondary">{shortSha(sha)}</span>
       <span className="truncate">{subject}</span>
     </>
   )
@@ -39,7 +39,7 @@ export function SummaryStrip({ summary, pcDrift, user }: { summary: SiteSummary;
   const source = sourceView(summary)
   const SourceIcon = config.sourceMode === 'auto' ? Server : Laptop
   return (
-    <section aria-label="Site summary" className="grid grid-cols-2 divide-nd-border rounded-[10px] border border-nd-border bg-nd-bg-secondary lg:grid-cols-4 lg:divide-x">
+    <section aria-label="Site summary" className="grid grid-cols-2 divide-nd-border rounded-[10px] border border-nd-border bg-nd-surface lg:grid-cols-4 lg:divide-x">
       <Cell label="Live now" caption={liveCaption(summary)}>
         {state.current ? <Commit sha={state.current} subject={state.currentSubject} /> : <span className="text-nd-text-muted">Nothing live yet</span>}
       </Cell>
@@ -58,7 +58,7 @@ export function SummaryStrip({ summary, pcDrift, user }: { summary: SiteSummary;
           type="button"
           aria-label="Copy full path"
           onClick={() => copyText(config.path, 'Path copied')}
-          className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
+          className="shrink-0 rounded p-1 text-nd-text-muted transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
         >
           <Copy size={12} />
         </button>

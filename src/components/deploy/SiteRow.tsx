@@ -78,7 +78,7 @@ function SiteCell({ summary, pcDrift, user, onOpen }: SiteCellProps) {
           type="button"
           aria-label="Copy full path"
           onClick={(e) => { stop(e); copyText(path, 'Path copied') }}
-          className="shrink-0 rounded p-1 transition-colors hover:bg-nd-bg-tertiary hover:text-nd-text-primary"
+          className="shrink-0 rounded p-1 transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
         >
           <Copy size={12} />
         </button>
@@ -94,7 +94,7 @@ function CommitCell({ summary, pcDrift }: { summary: SiteSummary; pcDrift?: Remo
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 rounded bg-nd-bg-tertiary px-1.5 py-px font-mono text-xs text-nd-text-secondary">{shortSha(state.current)}</span>
+        <span className="shrink-0 rounded bg-nd-surface-raised px-1.5 py-px font-mono text-xs text-nd-text-secondary">{shortSha(state.current)}</span>
         <span className="truncate text-[13px] text-nd-text-primary">{state.currentSubject}</span>
       </div>
       <div className="flex min-w-0 items-center gap-2.5 text-xs text-nd-text-muted">
@@ -123,12 +123,12 @@ function ProgressCell({ summary, nowMs }: { summary: SiteSummary; nowMs: number 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center gap-2 text-[13px]">
-        <span className="shrink-0 font-medium text-nd-info">{state.cancelling ? 'Cancelling…' : view.label}</span>
+        <span className="shrink-0 font-medium text-nd-info-fg">{state.cancelling ? 'Cancelling…' : view.label}</span>
         {view.step && <span className="shrink-0 text-nd-text-muted">{view.step}</span>}
         {view.command && <span className="truncate font-mono text-xs text-nd-text-secondary">{view.command}</span>}
         {elapsed && <span className="ml-auto shrink-0 font-mono text-xs text-nd-text-muted">{elapsed}</span>}
       </div>
-      <ProgressBar value={view.fraction * 100} size="sm" trackClassName="h-1 bg-nd-bg-tertiary" />
+      <ProgressBar value={view.fraction * 100} size="sm" trackClassName="h-1" />
     </div>
   )
 }
@@ -228,7 +228,7 @@ export function SiteRow({ summary, pcDrift, user, nowMs, starting, actions }: Si
     <div
       onClick={open}
       className={cn(
-        'grid cursor-pointer items-center rounded-[10px] border border-nd-border bg-nd-bg-secondary px-4 py-3.5 transition-colors hover:border-nd-border-hover',
+        'grid cursor-pointer items-center rounded-[10px] border border-nd-border bg-nd-surface px-4 py-3.5 transition-colors hover:border-nd-border-hover hover:bg-nd-surface-hover',
         SITE_COLUMNS
       )}
     >

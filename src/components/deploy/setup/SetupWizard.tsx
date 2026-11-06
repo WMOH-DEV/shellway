@@ -62,7 +62,7 @@ function Footer({ flow }: { flow: SetupFlow }) {
     <footer className="flex flex-wrap items-center gap-2.5 border-t border-nd-border bg-nd-bg-secondary px-7 py-3">
       <Button onClick={flow.back} disabled={flow.busy}>{flow.step === 'where' ? 'Cancel' : 'Back'}</Button>
       <div className="flex-1" />
-      {flow.error && <span className="max-w-[50%] truncate text-xs text-nd-error" title={flow.error}>{flow.error}</span>}
+      {flow.error && <span className="max-w-[50%] truncate text-xs text-nd-error-fg" title={flow.error}>{flow.error}</span>}
       {flow.step === 'ready' ? <ReadyFooter flow={flow} /> : <StepFooter flow={flow} />}
     </footer>
   )

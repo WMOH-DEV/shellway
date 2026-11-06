@@ -33,13 +33,13 @@ export function KeySetup({ connectionId, site, onDone }: KeySetupProps) {
           <span className="text-xs font-medium text-nd-text-secondary">Server public key</span>
           <Button size="sm" variant="ghost" onClick={() => void deployKey.copyKey()} disabled={!publicKey}><Copy size={12} /> Copy</Button>
         </div>
-        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-nd-border bg-nd-bg-primary p-2 font-mono text-2xs text-nd-text-primary">
+        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-nd-border bg-nd-bg-sunken p-2 font-mono text-2xs text-nd-text-primary">
           {keyError ?? (publicKey || 'Creating key…')}
         </pre>
       </div>
 
       {github && (
-        <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-bg-secondary p-3">
+        <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-surface p-3">
           <span className="text-xs font-medium text-nd-text-primary">Add it to GitHub for me</span>
           <GithubTokenFields deployKey={deployKey} />
           <div>
@@ -50,7 +50,7 @@ export function KeySetup({ connectionId, site, onDone }: KeySetupProps) {
         </div>
       )}
 
-      <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-bg-secondary p-3">
+      <div className="flex flex-col gap-2 rounded-lg border border-nd-border bg-nd-surface p-3">
         <span className="text-xs font-medium text-nd-text-primary">{github ? 'Or add it yourself' : 'Add it as a read-only deploy key in your git host'}</span>
         {github && (
           <a
@@ -66,8 +66,8 @@ export function KeySetup({ connectionId, site, onDone }: KeySetupProps) {
           <Button size="sm" onClick={() => void deployKey.testAccess()} disabled={!publicKey || access.state === 'checking'}>
             {access.state === 'checking' ? 'Checking…' : 'Test access'}
           </Button>
-          {access.state === 'ok' && <span className="flex items-center gap-1 text-xs text-nd-success"><Check size={12} /> The server can read {site.branch} ({access.head.slice(0, 7)})</span>}
-          {access.state === 'failed' && <span className="text-xs text-nd-error">{access.message}</span>}
+          {access.state === 'ok' && <span className="flex items-center gap-1 text-xs text-nd-success-fg"><Check size={12} /> The server can read {site.branch} ({access.head.slice(0, 7)})</span>}
+          {access.state === 'failed' && <span className="text-xs text-nd-error-fg">{access.message}</span>}
         </div>
       </div>
 

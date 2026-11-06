@@ -12,7 +12,7 @@ interface ReadyItemRowProps {
 }
 
 function StatusDot({ item }: { item: ReadyItem }) {
-  const tone = item.status === 'pass' ? 'bg-nd-success/[.14] text-nd-success' : item.required ? 'bg-nd-error/[.14] text-nd-error' : 'bg-nd-warning/[.14] text-nd-warning'
+  const tone = item.status === 'pass' ? 'bg-nd-success/12 text-nd-success-fg' : item.required ? 'bg-nd-error/12 text-nd-error-fg' : 'bg-nd-warning/12 text-nd-warning-fg'
   const Icon = item.status === 'pass' ? Check : item.required ? X : AlertTriangle
   return (
     <span className={cn('flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full', tone)}>
@@ -38,7 +38,7 @@ function ExpandedRow({ item, deployKey }: ReadyItemRowProps) {
       <div className="flex items-center gap-3">
         <StatusDot item={item} />
         <span className="min-w-0 flex-1 text-[13px] font-medium text-nd-text-primary">{item.title}</span>
-        <span className={cn('text-xs', item.required ? 'text-nd-error' : 'text-nd-warning')}>{item.required ? 'Required' : 'Recommended'}</span>
+        <span className={cn('text-xs', item.required ? 'text-nd-error-fg' : 'text-nd-warning-fg')}>{item.required ? 'Required' : 'Recommended'}</span>
       </div>
       <div className="flex flex-col gap-2.5 pl-[34px]">
         <span className="text-xs text-nd-text-secondary">{item.detail}</span>

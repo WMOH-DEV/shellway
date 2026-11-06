@@ -37,7 +37,7 @@ function SharedPaths({ paths, onChange }: { paths: string[]; onChange: (paths: s
         </div>
       ) : (
         paths.map((path) => (
-          <span key={path} className="rounded-md bg-nd-bg-tertiary px-2 py-0.5 font-mono text-xs text-nd-text-secondary">{path}</span>
+          <span key={path} className="rounded-md bg-nd-surface-raised px-2 py-0.5 font-mono text-xs text-nd-text-secondary">{path}</span>
         ))
       )}
       {!editing && paths.length === 0 && <span className="text-xs italic text-nd-text-muted">Nothing</span>}

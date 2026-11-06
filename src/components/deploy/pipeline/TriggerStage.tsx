@@ -26,7 +26,7 @@ function SourceCard({ mode, icon: Icon, title, hint, active, onSelect }: (typeof
       onClick={onSelect}
       className={cn(
         'flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors',
-        active ? 'border-nd-accent bg-nd-accent/10' : 'border-nd-border hover:border-nd-border-hover'
+        active ? 'border-nd-accent/70 bg-nd-accent/[0.07]' : 'border-nd-border hover:border-nd-border-hover'
       )}
       data-mode={mode}
     >
@@ -49,7 +49,7 @@ export function TriggerStage({ draft, savedSourceMode, patch, onOpenServerCheck 
         ))}
       </div>
       {switchedToAuto && (
-        <div className="text-xs text-nd-warning">
+        <div className="text-xs text-nd-warning-fg">
           Auto deploys need the server's read-only deploy key.{' '}
           <button type="button" className="text-nd-info hover:underline" onClick={onOpenServerCheck}>Open server check</button>
         </div>

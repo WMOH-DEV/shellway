@@ -4,8 +4,8 @@ import { cn } from '@/utils/cn'
 
 export function SidePanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary px-4 py-3.5">
-      <h3 className="text-2xs font-semibold uppercase tracking-wider text-nd-text-muted">{title}</h3>
+    <div className="flex flex-col gap-3 rounded-[10px] border border-nd-border bg-nd-surface px-4 py-3.5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-nd-text-dim">{title}</h3>
       {children}
     </div>
   )

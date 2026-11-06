@@ -19,7 +19,7 @@ function Checklist({ model }: { model: ReadyCheckModel }) {
   const { items, error, deployKey } = model
   if (error) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3.5 text-xs text-nd-error">
+      <div className="flex items-center gap-3 px-4 py-3.5 text-xs text-nd-error-fg">
         {error}
         <Button size="sm" variant="ghost" onClick={() => void model.run()}>Try again</Button>
       </div>
@@ -46,7 +46,7 @@ export function ReadyCheck({ model }: { model: ReadyCheckModel }) {
         <div className="flex-1" />
         <Progress model={model} />
       </div>
-      <div className="flex flex-col divide-y divide-nd-border overflow-hidden rounded-xl border border-nd-border bg-nd-bg-secondary">
+      <div className="flex flex-col divide-y divide-nd-border overflow-hidden rounded-xl border border-nd-border bg-nd-surface">
         <Checklist model={model} />
       </div>
     </div>
