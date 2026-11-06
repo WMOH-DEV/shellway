@@ -18,7 +18,8 @@ import {
 } from 'lucide-react'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import type * as MonacoEditor from 'monaco-editor'
-import { ensureViewerTheme } from './monacoViewer'
+import './monacoViewer'
+import { MONACO_THEME, syncMonacoTheme } from '@/components/ui/tokenThemes'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/utils/cn'
 
@@ -606,8 +607,7 @@ export function FilePreview({
   // Monaco editor mount
   const handleEditorMount: OnMount = useCallback(
     (editor, monacoInstance) => {
-      ensureViewerTheme(monacoInstance)
-      monacoInstance.editor.setTheme('shellway-viewer')
+      syncMonacoTheme(monacoInstance)
 
       // Store editor ref for save operations
       monacoEditorRef.current = editor
@@ -834,7 +834,7 @@ export function FilePreview({
     return (
       <Editor
         language={language}
-        theme="shellway-viewer"
+        theme={MONACO_THEME}
         value={content}
         options={editorOptions}
         onMount={handleEditorMount}

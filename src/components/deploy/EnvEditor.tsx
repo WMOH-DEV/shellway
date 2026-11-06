@@ -3,7 +3,8 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { toast } from '@/components/ui/Toast'
-import { ensureViewerTheme } from '@/components/sftp/monacoViewer'
+import '@/components/sftp/monacoViewer'
+import { MONACO_THEME, syncMonacoTheme } from '@/components/ui/tokenThemes'
 import { deployApi } from './useDeploySites'
 
 interface EnvEditorProps {
@@ -62,8 +63,7 @@ export function EnvEditor({ connectionId, site, canApply, onApply }: EnvEditorPr
   saveRef.current = () => { if (dirty && !saving) void save(false) }
 
   const handleMount: OnMount = (editor, monaco) => {
-    ensureViewerTheme(monaco)
-    monaco.editor.setTheme('shellway-viewer')
+    syncMonacoTheme(monaco)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveRef.current())
   }
 
@@ -84,7 +84,7 @@ export function EnvEditor({ connectionId, site, canApply, onApply }: EnvEditorPr
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-nd-border">
         <Editor
           language="ini"
-          theme="shellway-viewer"
+          theme={MONACO_THEME}
           value={content}
           onChange={(value) => setContent(value ?? '')}
           onMount={handleMount}

@@ -32,6 +32,7 @@ import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
 import { Splitter } from "@/components/ui/Splitter";
 import { DataGrid } from "@/components/sql/DataGrid";
+import { MONACO_THEME, syncMonacoTheme } from "@/components/ui/tokenThemes";
 import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete";
 import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
@@ -54,40 +55,12 @@ interface QueryEditorProps {
   scopeId: string;
 }
 
-// ── Shellway dark theme definition ──
-
-function defineShellwayTheme(monaco: typeof MonacoEditor) {
-  monaco.editor.defineTheme("shellway-dark", {
-    base: "vs-dark",
-    inherit: true,
-    rules: [
-      { token: "keyword", foreground: "38bdf8", fontStyle: "bold" },
-      { token: "string", foreground: "86efac" },
-      { token: "number", foreground: "fbbf24" },
-      { token: "comment", foreground: "64748b", fontStyle: "italic" },
-      { token: "operator", foreground: "e2e8f0" },
-      { token: "predefined", foreground: "c084fc" },
-    ],
-    colors: {
-      "editor.background": "#0f1117",
-      "editor.foreground": "#e2e8f0",
-      "editor.lineHighlightBackground": "#1e293b40",
-      "editor.selectionBackground": "#38bdf830",
-      "editorCursor.foreground": "#38bdf8",
-      "editorGutter.background": "#0f1117",
-      "editorLineNumber.foreground": "#475569",
-      "editorLineNumber.activeForeground": "#94a3b8",
-      "editor.inactiveSelectionBackground": "#38bdf815",
-    },
-  });
-}
-
 // ── Monaco editor options ──
 
 const EDITOR_OPTIONS: MonacoEditor.editor.IStandaloneEditorConstructionOptions =
   {
     language: "sql",
-    theme: "shellway-dark",
+    theme: MONACO_THEME,
     minimap: { enabled: false },
     fontSize: 13,
     lineNumbers: "on",
@@ -689,8 +662,7 @@ export const QueryEditor = React.memo(function QueryEditor({
       editorRef.current = editor;
       monacoRef.current = monaco;
 
-      defineShellwayTheme(monaco);
-      monaco.editor.setTheme("shellway-dark");
+      syncMonacoTheme(monaco);
 
       // Register autocomplete — pass a stable wrapper so the provider always
       // calls the latest getSchema even after tables/columns/databases load
@@ -921,7 +893,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         <Editor
           defaultLanguage="sql"
           defaultValue={initialQuery}
-          theme="shellway-dark"
+          theme={MONACO_THEME}
           options={EDITOR_OPTIONS}
           onMount={handleEditorMount}
           onChange={handleEditorChange}
