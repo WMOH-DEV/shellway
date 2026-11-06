@@ -129,6 +129,10 @@ describe('firstDeployPlan', () => {
     expect(plan.footer && flatten(plan.footer)).toBe('Then deploys new commits while Shellway is open and connected.')
   })
 
+  it('names a missing repository in plain words', () => {
+    expect(firstDeployPlan(site({ repoUrl: '' })).lines[0]).toEqual(['Clone ', 'the repository', ' at ', { code: 'main' }])
+  })
+
   it('has no footer for a manual PC site and skips empty stages', () => {
     const plan = firstDeployPlan(site({ sourceMode: 'pc', buildSteps: [], activateSteps: [] }))
     expect(plan.lines.map(flatten)).toEqual(['Send [main] of [acme/example-app] from this PC', 'Build in [releases/<new>]', 'Point [current] at it'])

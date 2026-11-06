@@ -93,7 +93,8 @@ export function stepDetail(step: SetupStep, site: SiteConfig, presetLabel: strin
 }
 
 function sourceLine(site: SiteConfig): PlanLine {
-  const repo = { code: repoLabel(site) || 'the repository' }
+  const label = repoLabel(site)
+  const repo: PlanPart = label ? { code: label } : 'the repository'
   const branch = { code: site.branch }
   return site.sourceMode === 'auto' ? ['Clone ', repo, ' at ', branch] : ['Send ', branch, ' of ', repo, ' from this PC']
 }
