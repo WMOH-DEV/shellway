@@ -1,6 +1,6 @@
 import { createReadStream } from 'fs'
 import { rm } from 'fs/promises'
-import type { SiteConfig, SiteState } from '../../../src/types/deploy'
+import type { DeployOptions, SiteConfig, SiteState } from '../../../src/types/deploy'
 import type { DeployService } from './DeployService'
 import type { LocalGit } from './LocalGit'
 
@@ -28,12 +28,18 @@ export async function deployFromPc(
   site: SiteConfig,
   state: Pick<SiteState, 'mirrorHead'>,
   id: string,
-  trigger: 'manual' | 'pc'
+  trigger: 'manual' | 'pc',
+  options: DeployOptions = {}
 ): Promise<string> {
   const head = await git.fetch(site.repoUrl, site.branch)
+  const target = options.commit ?? head
   const needsCode = !(await git.isAncestor(site.repoUrl, head, state.mirrorHead))
   if (needsCode) await sendMissingCommits(service, git, site, state.mirrorHead)
-  const source = needsCode ? ['--uploaded-bundle'] : ['--commit', head]
-  await service.startDeploy(site.name, id, [...source, '--trigger', trigger])
-  return head
+  const source = needsCode ? ['--uploaded-bundle', ...(options.commit ? ['--commit', target] : [])] : ['--commit', target]
+  await service.startDeploy(site.name, id, [...source, '--trigger', trigger, ...approvalArgs(options)])
+  return target
+}
+
+export function approvalArgs(options: DeployOptions): string[] {
+  return options.approved ? ['--approved'] : []
 }

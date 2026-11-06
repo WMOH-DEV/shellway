@@ -2,11 +2,12 @@ import { useRef, useState, type ReactNode } from 'react'
 import { toast } from '@/components/ui/Toast'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { ConnectionStatus } from '@/types/session'
-import type { DeployResult, SiteConfig } from '@/types/deploy'
+import type { DeployOptions, DeployResult, SiteConfig } from '@/types/deploy'
 import type { SiteFilter } from '@/utils/deploy/siteRow'
 import { KeySetup } from './KeySetup'
 import { SiteDetail, type DetailTab } from './SiteDetail'
 import { SetupWizard } from './setup/SetupWizard'
+import { ShipPreview } from './ShipPreview'
 import type { SiteActions } from './SiteRow'
 import { SitesOverview } from './SitesOverview'
 import { useAwaySummary } from './useAwaySummary'
@@ -47,6 +48,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
   const data = useDeploySites(connectionId, sessionId, connected)
   const { sites, pcDrift, refresh } = data
   const [screen, setScreen] = useState<Screen>({ kind: 'list' })
+  const [shipping, setShipping] = useState<string | null>(null)
   const [starting, track] = useStartingSites()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SiteFilter>('all')
@@ -54,7 +56,22 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
   const visible = useIsVisible(rootRef)
   const away = useAwaySummary(sessionId, sites, visible && connected)
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
-  const frame = (content: ReactNode) => <div ref={rootRef} className="h-full">{content}</div>
+  const shipSite = shipping ? sites.find((s) => s.config.name === shipping) : undefined
+  const frame = (content: ReactNode) => (
+    <div ref={rootRef} className="h-full">
+      {content}
+      {shipSite && (
+        <ShipPreview
+          connectionId={connectionId}
+          summary={shipSite}
+          open
+          onClose={() => setShipping(null)}
+          onDeploy={(options) => deployNow(shipSite.config.name, options)}
+          onApprove={() => approve(shipSite.config.name)}
+        />
+      )}
+    </div>
+  )
 
   const siteAction = (name: string, call: () => Promise<DeployResult<unknown>>, failure: string, onStarted: () => void) =>
     track(name, async () => {
@@ -67,11 +84,17 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
       await refresh()
     })
 
+  const deployNow = (name: string, options?: DeployOptions) =>
+    void siteAction(name, () => deployApi().deploy(connectionId, name, options), `Could not deploy ${name}`, () => toast.info(`Deploying ${name}…`))
+
+  const approve = (name: string) =>
+    void siteAction(name, () => deployApi().approve(connectionId, name), `Could not approve ${name}`, () => toast.info(`Deploying ${name}…`))
+
   const configOf = (name: string) => sites.find((s) => s.config.name === name)?.config
 
   const actions: SiteActions = {
     open: (name) => setScreen({ kind: 'detail', name }),
-    deploy: (name) => void siteAction(name, () => deployApi().deploy(connectionId, name), `Could not deploy ${name}`, () => toast.info(`Deploying ${name}…`)),
+    deploy: (name) => setShipping(name),
     cancel: (name) => void siteAction(name, () => deployApi().cancel(connectionId, name), `Could not cancel ${name}`, () => toast.info(`Cancelling ${name}…`)),
     resume: (name) => void siteAction(
       name,
@@ -129,6 +152,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
         onSaved={(site) => { toast.success(`${site.name} saved`); void refresh() }}
         onKeySetup={() => actions.keySetup(name)}
         onDeploy={() => actions.deploy(name)}
+        onDeployNow={() => deployNow(name)}
         onCancel={() => actions.cancel(name)}
         onRemoved={() => { setScreen({ kind: 'list' }); void refresh() }}
       />

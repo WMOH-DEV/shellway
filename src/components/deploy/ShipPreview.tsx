@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/utils/cn'
-import type { ShipCommit, ShipFile, ShipFileStatus, ShipPreview as ShipPreviewData, SiteSummary } from '@/types/deploy'
+import type { DeployOptions, ShipCommit, ShipFile, ShipFileStatus, ShipPreview as ShipPreviewData, SiteSummary } from '@/types/deploy'
 import {
   authorTone,
   deployLabel,
@@ -261,7 +261,7 @@ export interface ShipPreviewProps {
   summary: SiteSummary
   open: boolean
   onClose: () => void
-  onDeploy: () => void
+  onDeploy: (options: DeployOptions) => void
   onApprove: () => void
 }
 
@@ -276,7 +276,7 @@ export function ShipPreview({ connectionId, summary, open, onClose, onDeploy, on
 
   const submit = () => {
     if (summary.state.pending) onApprove()
-    else onDeploy()
+    else if (preview) onDeploy({ commit: preview.to, approved: needsReview && reviewed })
     onClose()
   }
 

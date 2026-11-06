@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, ChevronDown, KeyRound, Loader2, MoreHorizontal, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Eye, KeyRound, Loader2, MoreHorizontal, Play, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -13,7 +13,6 @@ export interface DetailActions {
   back: () => void
   deploy: () => void
   deployNow: () => void
-  approve: () => void
   cancel: () => void
   rollback: (record: DeployRecord) => void
   keySetup: () => void
@@ -41,8 +40,8 @@ function CancelButton({ summary, starting, onCancel }: { summary: SiteSummary; s
 function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeaderProps, 'rollbackTo'>) {
   if (summary.state.pending) {
     return (
-      <Button variant="primary" onClick={actions.approve} disabled={starting}>
-        <Check size={14} /> Approve {shortSha(summary.state.pending)}
+      <Button variant="primary" onClick={actions.deploy} disabled={starting}>
+        <Eye size={14} /> Review migration
       </Button>
     )
   }

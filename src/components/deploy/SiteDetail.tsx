@@ -36,6 +36,7 @@ interface SiteDetailProps {
   onBack: () => void
   onKeySetup: () => void
   onDeploy: () => void
+  onDeployNow: () => void
   onCancel: () => void
   onSaved: (site: SiteConfig) => void
   onRemoved: () => void
@@ -83,7 +84,7 @@ function ConfirmModal({ title, body, confirm, danger, onConfirm, onClose }: { ti
   )
 }
 
-export function SiteDetail({ connectionId, summary, pcDrift, user, starting, initialTab = 'history', onBack, onKeySetup, onDeploy, onCancel, onSaved, onRemoved }: SiteDetailProps) {
+export function SiteDetail({ connectionId, summary, pcDrift, user, starting, initialTab = 'history', onBack, onKeySetup, onDeploy, onDeployNow, onCancel, onSaved, onRemoved }: SiteDetailProps) {
   const { config, state, history } = summary
   const [tab, setTab] = useState<DetailTab>(initialTab)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -127,8 +128,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
   const actions: DetailActions = {
     back: onBack,
     deploy: followNewest(onDeploy),
-    deployNow: followNewest(onDeploy),
-    approve: () => void runAndSelect(deployApi().approve(connectionId, config.name), 'Could not approve'),
+    deployNow: followNewest(onDeployNow),
     cancel: onCancel,
     rollback: setRollbackTo,
     keySetup: onKeySetup,

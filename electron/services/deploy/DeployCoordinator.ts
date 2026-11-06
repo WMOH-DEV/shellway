@@ -1,9 +1,9 @@
-import type { DeployRecord, ShipPreview, SiteSummary } from '../../../src/types/deploy'
+import type { DeployOptions, DeployRecord, ShipPreview, SiteSummary } from '../../../src/types/deploy'
 import type { RemoteExec } from './DeployService'
 import { DeployService, newDeployId } from './DeployService'
 import type { DeployLocalStore } from './DeployLocalStore'
 import type { LocalGit } from './LocalGit'
-import { deployFromPc } from './pcDeploy'
+import { approvalArgs, deployFromPc } from './pcDeploy'
 
 export interface CoordinatorDeps {
   execFor: (connectionId: string) => RemoteExec | null
@@ -68,16 +68,17 @@ export class DeployCoordinator {
     return summaries
   }
 
-  async deploy(connectionId: string, name: string): Promise<string> {
+  async deploy(connectionId: string, name: string, options: DeployOptions = {}): Promise<string> {
     const service = this.service(connectionId)
     const site = (await service.listSites()).find((s) => s.config.name === name)
     if (!site) throw new Error(`Unknown site ${name}`)
     if (site.state.busy) throw new Error('A deploy is already running for this site')
     const id = newDeployId()
     if (site.config.sourceMode === 'pc') {
-      await deployFromPc(service, this.deps.git, site.config, site.state, id, 'manual')
+      await deployFromPc(service, this.deps.git, site.config, site.state, id, 'manual', options)
     } else {
-      await service.startDeploy(name, id, ['--trigger', 'manual'])
+      const pin = options.commit ? ['--commit', options.commit] : []
+      await service.startDeploy(name, id, [...pin, '--trigger', 'manual', ...approvalArgs(options)])
     }
     this.track(connectionId, name, id)
     return id

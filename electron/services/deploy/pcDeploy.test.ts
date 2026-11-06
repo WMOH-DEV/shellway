@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { execFileSync } from 'child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'fs'
+import type { DeployOptions } from '../../../src/types/deploy'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { DeployService, newDeployId } from './DeployService'
@@ -24,9 +25,9 @@ function commit(content: string): string {
 
 const served = () => readFileSync(join(base, 'www', 'app', 'index.html'), 'utf8')
 
-async function deployNow(mirrorHead: string): Promise<string> {
+async function deployNow(mirrorHead: string, options: DeployOptions = {}): Promise<string> {
   const id = newDeployId()
-  await deployFromPc(service, local, site(), { mirrorHead }, id, 'manual')
+  await deployFromPc(service, local, site(), { mirrorHead }, id, 'manual', options)
   return waitForDeploy(service, 'app', id)
 }
 
@@ -80,6 +81,17 @@ describe.skipIf(process.platform === 'win32')('deployFromPc', () => {
     commit('v2')
     await local.fetch(origin, 'main')
     expect(await deployNow(first)).toBe('success')
+    expect(served()).toBe('v2')
+  })
+
+  it('deploys the previewed commit even when the branch moved on since', async () => {
+    const first = commit('v1')
+    await deployNow('')
+    const previewed = commit('v2')
+    commit('v3')
+    expect(await deployNow(first, { commit: previewed })).toBe('success')
+    expect(served()).toBe('v2')
+    expect(await deployNow(previewed, { commit: previewed })).toBe('success')
     expect(served()).toBe('v2')
   })
 

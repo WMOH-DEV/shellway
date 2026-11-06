@@ -10,7 +10,7 @@ import { LocalGit } from '../services/deploy/LocalGit'
 import type { RemoteExec } from '../services/deploy/DeployService'
 import { registerDeployKey } from '../services/deploy/githubDeployKey'
 import { parseGitHubRepo } from '../../src/utils/deploy/githubRepo'
-import type { DeployResult, SiteConfig } from '../../src/types/deploy'
+import type { DeployOptions, DeployResult, SiteConfig } from '../../src/types/deploy'
 
 let coordinator: DeployCoordinator | null = null
 let localStore: DeployLocalStore | null = null
@@ -25,6 +25,17 @@ function execFor(connectionId: string): RemoteExec | null {
 function str(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 4096) throw new Error(`Invalid ${label}`)
   return value
+}
+
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/
+
+function deployOptions(value: unknown): DeployOptions {
+  if (value === undefined) return {}
+  if (typeof value !== 'object' || value === null) throw new Error('Invalid deploy options')
+  const { commit, approved } = value as Record<string, unknown>
+  if (commit !== undefined && (typeof commit !== 'string' || !COMMIT_SHA.test(commit))) throw new Error('Invalid commit')
+  if (approved !== undefined && typeof approved !== 'boolean') throw new Error('Invalid deploy options')
+  return { commit: commit as string | undefined, approved: approved as boolean | undefined }
 }
 
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
@@ -75,7 +86,7 @@ export function registerDeployIPC(): void {
   handle('deploy:list', (c, s) => requireCoordinator().list(str(c, 'connection'), str(s, 'session')))
   handle('deploy:save', (c, config) => service(c).saveSite(config as SiteConfig))
   handle('deploy:remove', (c, name) => service(c).removeSite(str(name, 'site')))
-  handle('deploy:deploy', (c, name) => requireCoordinator().deploy(str(c, 'connection'), str(name, 'site')))
+  handle('deploy:deploy', (c, name, options) => requireCoordinator().deploy(str(c, 'connection'), str(name, 'site'), deployOptions(options)))
   handle('deploy:preview', (c, name) => requireCoordinator().preview(str(c, 'connection'), str(name, 'site')))
   handle('deploy:rollback',(c, name, target) => requireCoordinator().rollback(str(c, 'connection'), str(name, 'site'), str(target, 'deploy')))
   handle('deploy:approve', (c, name) => requireCoordinator().approve(str(c, 'connection'), str(name, 'site')))

@@ -76,6 +76,20 @@ describe.skipIf(process.platform === 'win32')('DeployCoordinator', () => {
     expect(readFileSync(join(base, 'www', 'app', 'index.html'), 'utf8')).toBe('v1')
   })
 
+  it('deploys the previewed commit and skips the migration pause once it was reviewed', async () => {
+    await new DeployService(exec).saveSite(site({ approveMigrations: true }))
+    await coordinator.deploy('c1', 'app')
+    await finishedRecord()
+    deps.broadcast.mockClear()
+    mkdirSync(join(work, 'database', 'migrations'), { recursive: true })
+    writeFileSync(join(work, 'database', 'migrations', '2026_add.php'), '<?php')
+    const reviewed = commit('v2')
+    commit('v3')
+    const id = await coordinator.deploy('c1', 'app', { commit: reviewed, approved: true })
+    expect(await finishedRecord()).toMatchObject({ id, status: 'success', commit: reviewed })
+    expect(readFileSync(join(base, 'www', 'app', 'index.html'), 'utf8')).toBe('v2')
+  })
+
   it('cancels a running deploy and reports it as cancelled', async () => {
     const service = new DeployService(exec)
     await service.saveSite(site({ buildSteps: [{ command: 'sleep 41', optional: false }] }))

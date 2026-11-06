@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
-import type { DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
+import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1130,8 +1130,8 @@ const api = {
       ipcRenderer.invoke("deploy:save", connectionId, config) as Promise<DeployResult>,
     remove: (connectionId: string, name: string) =>
       ipcRenderer.invoke("deploy:remove", connectionId, name) as Promise<DeployResult>,
-    deploy: (connectionId: string, name: string) =>
-      ipcRenderer.invoke("deploy:deploy", connectionId, name) as Promise<DeployResult<string>>,
+    deploy: (connectionId: string, name: string, options?: DeployOptions) =>
+      ipcRenderer.invoke("deploy:deploy", connectionId, name, options) as Promise<DeployResult<string>>,
     preview: (connectionId: string, name: string) =>
       ipcRenderer.invoke("deploy:preview", connectionId, name) as Promise<DeployResult<ShipPreview>>,
     rollback: (connectionId: string, name: string, targetId: string) =>

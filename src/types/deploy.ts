@@ -137,6 +137,11 @@ export interface ShipPreview {
   truncated: boolean
 }
 
+export interface DeployOptions {
+  commit?: string
+  approved?: boolean
+}
+
 export interface DeployResult<T = undefined> {
   success: boolean
   data?: T
