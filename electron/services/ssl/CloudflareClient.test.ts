@@ -161,15 +161,13 @@ describe('CloudflareClient.check', () => {
     expect((await pending).error).toBe('Cloudflare did not answer within 15 seconds.')
   })
 
-  it('pages through zones up to a hard cap', async () => {
+  it('reports an account with more zones than the hard cap instead of truncating', async () => {
     const routes: Routes = {}
     for (let page = 1; page <= 12; page++) routes[`/zones?page=${page}&per_page=50`] = ok([{ id: `z${page}`, name: `site${page}.example.com` }], 99)
-    routes['/zones/z1/dns_records?per_page=5'] = ok([])
-    routes['/zones/z1/settings/ssl'] = ok({ value: 'full' })
-    routes['/certificates?zone_id=z1&per_page=5'] = denied()
     const { impl, calls } = fakeFetch(routes)
     const result = await new CloudflareClient(TOKEN, impl).check()
-    expect(result.zones).toHaveLength(10)
+    expect(result.error).toContain('more zones than Shellway can list')
+    expect(result.zones).toEqual([])
     expect(calls.filter((c) => c.path.startsWith('/zones?'))).toHaveLength(10)
   })
 
@@ -425,12 +423,38 @@ describe('CloudflareClient zone SSL mode', () => {
     expect(calls).toHaveLength(2)
   })
 
-  it('stops after a bounded number of pages', async () => {
+  it('refuses to check a zone with more records than the page limit allows', async () => {
     const routes: Routes = {}
     for (let page = 1; page <= 12; page++) routes[RECORDS_URL(page)] = ok([], 50)
     const { impl, calls } = fakeFetch(routes)
-    await new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')
+    await expect(new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')).rejects.toThrow('more DNS records than Shellway can check (over 1000)')
     expect(calls).toHaveLength(10)
+  })
+
+  it('accepts a zone that fills exactly the page limit', async () => {
+    const routes: Routes = {}
+    for (let page = 1; page <= 10; page++) routes[RECORDS_URL(page)] = ok([], 10)
+    const { impl, calls } = fakeFetch(routes)
+    expect(await new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')).toEqual([])
+    expect(calls).toHaveLength(10)
+  })
+
+  it('refuses a full page when the API omits the page count', async () => {
+    const full = Array.from({ length: 100 }, (_, i) => record('A', `h${i}.example.com`, '203.0.113.10', true))
+    const { impl } = fakeFetch({ [RECORDS_URL(1)]: { body: { success: true, result: full } } })
+    await expect(new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')).rejects.toThrow('more DNS records than Shellway can check')
+  })
+
+  it('accepts a short page when the API omits the page count', async () => {
+    const { impl } = fakeFetch({ [RECORDS_URL(1)]: { body: { success: true, result: [record('A', 'a.example.com', '203.0.113.10', true)] } } })
+    expect(await new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')).toHaveLength(1)
+  })
+
+  it('refuses to list zones past the page limit', async () => {
+    const routes: Routes = {}
+    for (let page = 1; page <= 10; page++) routes[`/zones?page=${page}&per_page=50`] = ok([], 11)
+    const { impl } = fakeFetch(routes)
+    await expect(new CloudflareClient(TOKEN, impl).findZone('example.com')).rejects.toThrow('more zones than Shellway can list')
   })
 
   it('explains a denied record list and does not retry', async () => {

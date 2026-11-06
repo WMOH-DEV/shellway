@@ -67,4 +67,7 @@ export function blockedMessage(preflight: ZonePreflight): string | null {
   return `Full (strict) would break ${subject}: ${names.join(', ')}. Fix ${owner} origin certificate first.`
 }
 
-export const revertableMode = (previous: SslMode | null): SslMode | null => (previous && previous !== 'strict' ? previous : null)
+const REVERTABLE_MODES: readonly SslMode[] = ['off', 'flexible', 'full']
+
+export const revertableMode = (previous: SslMode | null): SslMode | null =>
+  previous && REVERTABLE_MODES.includes(previous) ? previous : null

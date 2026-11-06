@@ -27,7 +27,7 @@ import { runLineageRemoval, runUndo } from './originCa/undo'
 import type { VerifyDeps } from './originCa/verifyServed'
 import { SslService } from './SslService'
 import type { OriginProbe } from './zoneMode/probeOrigin'
-import { preflightZone, setZoneMode } from './zoneMode/zoneMode'
+import { preflightZone, setZoneMode, type ZoneChange } from './zoneMode/zoneMode'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
 
@@ -90,6 +90,7 @@ export class SslCoordinator {
   private readonly warnedAt = new Map<string, number>()
   private readonly switches = new PreparedSwitches()
   private readonly checkedSessions = new Map<string, string>()
+  private readonly zoneChanges = new Map<string, ZoneChange>()
 
   constructor(private readonly deps: SslDeps) {}
 
@@ -301,7 +302,7 @@ export class SslCoordinator {
   private zoneModeDeps() {
     const token = this.deps.store.cloudflareToken()
     if (!token) throw new Error('Add a Cloudflare token first.')
-    return { client: this.deps.cloudflare(token), probe: this.deps.zoneProbe }
+    return { client: this.deps.cloudflare(token), changes: this.zoneChanges, probe: this.deps.zoneProbe }
   }
 
   private refreshZoneConnections(zone: string): void {
