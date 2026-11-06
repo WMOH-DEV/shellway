@@ -27,7 +27,7 @@ function str(value: unknown, label: string): string {
   return value
 }
 
-const COMMIT_SHA = /^[0-9a-f]{7,40}$/
+const COMMIT_SHA = /^[0-9a-f]{7,64}$/
 
 function deployOptions(value: unknown): DeployOptions {
   if (value === undefined) return {}

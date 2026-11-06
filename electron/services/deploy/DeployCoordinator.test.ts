@@ -122,6 +122,17 @@ describe.skipIf(process.platform === 'win32')('DeployCoordinator', () => {
     expect(deps.broadcast).not.toHaveBeenCalledWith('deploy:changed', 'c1')
   })
 
+  it('tries a new PC head only once even when the deploy could not start', async () => {
+    await new DeployService(exec).saveSite(site({ sourceMode: 'pc', pcAuto: true }))
+    const fetch = vi.spyOn(deps.git, 'fetch').mockRejectedValue(new Error('network down'))
+    for (let i = 0; i < 3; i++) {
+      await coordinator.list('c1', 's1')
+      await coordinator.watchOnce()
+    }
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(deps.notify).toHaveBeenCalledTimes(1)
+  })
+
   it('does nothing for pc sites without auto deploy or when disconnected', async () => {
     await new DeployService(exec).saveSite(site({ sourceMode: 'pc', pcAuto: false }))
     await coordinator.list('c1', 's1')

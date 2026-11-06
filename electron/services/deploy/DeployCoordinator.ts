@@ -51,6 +51,7 @@ export class DeployCoordinator {
   private watchTimer: ReturnType<typeof setInterval> | null = null
   private watching = false
   private readonly headCheckRetryAt = new Map<string, { failures: number; at: number }>()
+  private readonly attemptedHeads = new Map<string, string>()
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
@@ -168,11 +169,12 @@ export class DeployCoordinator {
   private async autoDeployFromPc(connectionId: string, cached: SiteSummary): Promise<void> {
     const { config } = cached
     if (config.sourceMode !== 'pc' || !config.pcAuto || cached.state.busy) return
-    const head = await this.remoteHeadWithBackoff(`${connectionId}:${config.name}`, config.repoUrl, config.branch)
-    if (!head || !this.isNewHead(cached, head)) return
+    const key = `${connectionId}:${config.name}`
+    const head = await this.remoteHeadWithBackoff(key, config.repoUrl, config.branch)
+    if (!head || !this.isNewHead(key, cached, head)) return
     const fresh = await this.refreshSite(connectionId, config.name)
-    if (!fresh || fresh.state.busy || !this.isNewHead(fresh, head)) return
-    fresh.state.lastAttempted = head
+    if (!fresh || fresh.state.busy || !this.isNewHead(key, fresh, head)) return
+    this.attemptedHeads.set(key, head)
     const id = newDeployId()
     try {
       await deployFromPc(this.service(connectionId), this.deps.git, fresh.config, fresh.state, id, 'pc')
@@ -182,8 +184,8 @@ export class DeployCoordinator {
     }
   }
 
-  private isNewHead(summary: SiteSummary, head: string): boolean {
-    return head !== summary.state.current && head !== summary.state.lastAttempted
+  private isNewHead(key: string, summary: SiteSummary, head: string): boolean {
+    return head !== summary.state.current && head !== summary.state.lastAttempted && head !== this.attemptedHeads.get(key)
   }
 
   private async remoteHeadWithBackoff(key: string, url: string, branch: string): Promise<string | null> {
