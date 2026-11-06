@@ -406,3 +406,70 @@ describe('CloudflareClient.createOriginCert', () => {
     expect(calls).toHaveLength(1)
   })
 })
+
+describe('CloudflareClient zone SSL mode', () => {
+  const record = (type: string, name: string, content: string, proxied: boolean) => ({ type, name, content, proxied })
+  const RECORDS_URL = (page: number) => `/zones/z1/dns_records?page=${page}&per_page=100`
+
+  it('lists only proxied A, AAAA and CNAME records across pages', async () => {
+    const { impl, calls } = fakeFetch({
+      [RECORDS_URL(1)]: ok([record('A', 'App.example.com', '203.0.113.10', true), record('A', 'direct.example.com', '203.0.113.11', false), record('TXT', 'example.com', 'v=spf1', true)], 2),
+      [RECORDS_URL(2)]: ok([record('CNAME', 'www.example.com', 'app.example.com', true), record('AAAA', 'v6.example.com', '2001:db8::1', true), record('MX', 'example.com', 'mail.example.com', true)], 2)
+    })
+    const records = await new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')
+    expect(records).toEqual([
+      { type: 'A', name: 'app.example.com', content: '203.0.113.10' },
+      { type: 'CNAME', name: 'www.example.com', content: 'app.example.com' },
+      { type: 'AAAA', name: 'v6.example.com', content: '2001:db8::1' }
+    ])
+    expect(calls).toHaveLength(2)
+  })
+
+  it('stops after a bounded number of pages', async () => {
+    const routes: Routes = {}
+    for (let page = 1; page <= 12; page++) routes[RECORDS_URL(page)] = ok([], 50)
+    const { impl, calls } = fakeFetch(routes)
+    await new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')
+    expect(calls).toHaveLength(10)
+  })
+
+  it('explains a denied record list and does not retry', async () => {
+    const { impl, calls } = fakeFetch({ [RECORDS_URL(1)]: denied() })
+    await expect(new CloudflareClient(TOKEN, impl).listProxiedRecords('z1')).rejects.toThrow('needs DNS · Read')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('changes the mode with a PATCH carrying the value', async () => {
+    const { impl, calls } = fakeFetch({ '/zones/z1/settings/ssl': ok({ id: 'ssl', value: 'strict' }) })
+    await new CloudflareClient(TOKEN, impl).setSslMode('z1', 'strict')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].init.method).toBe('PATCH')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ value: 'strict' })
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('uses the Zone Settings wording for a denied PATCH and the plain wording for a bad token', async () => {
+    const forbidden = fakeFetch({ '/zones/z1/settings/ssl': denied() })
+    await expect(new CloudflareClient(TOKEN, forbidden.impl).setSslMode('z1', 'strict')).rejects.toThrow('The Cloudflare token needs Zone Settings · Edit to change the SSL mode.')
+    const rejected = fakeFetch({ '/zones/z1/settings/ssl': { status: 401, body: { success: false } } })
+    await expect(new CloudflareClient(TOKEN, rejected.impl).setSslMode('z1', 'strict')).rejects.toThrow('rejected this token')
+    expect(forbidden.calls).toHaveLength(1)
+  })
+
+  it('refuses to send a mode Cloudflare cannot be set to here', async () => {
+    const { impl, calls } = fakeFetch({})
+    await expect(new CloudflareClient(TOKEN, impl).setSslMode('z1', 'origin_pull')).rejects.toThrow('cannot be set')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('reads the current mode and finds a zone by name', async () => {
+    const { impl } = fakeFetch({
+      '/zones/z1/settings/ssl': ok({ id: 'ssl', value: 'full' }),
+      [ZONES_URL]: ok([{ id: 'z1', name: 'Example.com' }])
+    })
+    const client = new CloudflareClient(TOKEN, impl)
+    expect(await client.currentSslMode('z1')).toBe('full')
+    expect(await client.findZone('EXAMPLE.com')).toEqual(zone)
+    await expect(client.findZone('other.example.net')).rejects.toThrow('not a zone in this Cloudflare account')
+  })
+})

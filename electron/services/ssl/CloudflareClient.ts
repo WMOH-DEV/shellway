@@ -26,6 +26,7 @@ const VALIDITY_DAYS: Record<OriginValidityYears, number> = { 1: 365, 2: 730, 3: 
 const REQUEST_TYPES: Record<OriginKeyType, string> = { ecc: 'origin-ecc', rsa: 'origin-rsa' }
 const MAX_ORIGIN_HOSTNAMES = 200
 const SSL_MODES: readonly string[] = ['off', 'flexible', 'full', 'strict', 'origin_pull']
+const SETTABLE_MODES: readonly string[] = ['off', 'flexible', 'full', 'strict']
 const ROUTING_RECORD_TYPES = new Set(['A', 'AAAA', 'CNAME'])
 const ADDRESS_RECORD_TYPES = new Set(['A', 'AAAA'])
 
@@ -45,6 +46,12 @@ interface ApiRecord {
   name: string
   content: string
   proxied?: boolean
+}
+
+export interface ProxiedRecord {
+  type: string
+  name: string
+  content: string
 }
 
 interface ApiOriginCertificate {
@@ -70,6 +77,8 @@ class CloudflareApiError extends Error {
     super(message)
   }
 }
+
+const parseSslMode = (value: string | undefined): SslMode | null => (SSL_MODES.includes(value ?? '') ? (value as SslMode) : null)
 
 const isDenied = (err: unknown): boolean => err instanceof CloudflareApiError && err.status === 403
 
@@ -172,6 +181,10 @@ function originCertificateError(err: unknown): Error {
   return err as Error
 }
 
+function deniedAs(message: string, err: unknown): Error {
+  return isDenied(err) ? new Error(message) : (err as Error)
+}
+
 function dnsFailure(err: unknown): string {
   if (isDenied(err)) return 'the token cannot read DNS records (it needs Zone → DNS → Read)'
   return (err as Error).message
@@ -208,14 +221,54 @@ export class CloudflareClient {
     }
   }
 
-  private async request<T>(path: string, query: Record<string, string | number> = {}, payload?: unknown): Promise<ApiEnvelope<T>> {
+  async findZone(name: string): Promise<CloudflareZone> {
+    const wanted = name.trim().toLowerCase()
+    const zone = (await this.listZones()).find((candidate) => candidate.name === wanted)
+    if (!zone) throw new Error(`${name} is not a zone in this Cloudflare account.`)
+    return zone
+  }
+
+  async currentSslMode(zoneId: string): Promise<SslMode | null> {
+    try {
+      const body = await this.request<{ value?: string }>(`/zones/${zoneId}/settings/ssl`)
+      return parseSslMode(body.result?.value)
+    } catch (err) {
+      throw deniedAs('The Cloudflare token needs Zone Settings · Read to read the SSL mode.', err)
+    }
+  }
+
+  async listProxiedRecords(zoneId: string): Promise<ProxiedRecord[]> {
+    const records: ProxiedRecord[] = []
+    try {
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const body = await this.request<ApiRecord[]>(`/zones/${zoneId}/dns_records`, { page, per_page: RECORDS_PER_PAGE })
+        const proxied = (body.result ?? []).filter((r) => ROUTING_RECORD_TYPES.has(r.type) && r.proxied === true)
+        records.push(...proxied.map((r) => ({ type: r.type, name: r.name.toLowerCase(), content: r.content })))
+        if (page >= (body.result_info?.total_pages ?? 1)) break
+      }
+    } catch (err) {
+      throw deniedAs('The Cloudflare token needs DNS · Read to list the zone\'s records.', err)
+    }
+    return records
+  }
+
+  async setSslMode(zoneId: string, mode: SslMode): Promise<void> {
+    if (!SETTABLE_MODES.includes(mode)) throw new Error('Cloudflare cannot be set to that SSL mode from here.')
+    try {
+      await this.request(`/zones/${zoneId}/settings/ssl`, {}, { value: mode }, 'PATCH')
+    } catch (err) {
+      throw deniedAs('The Cloudflare token needs Zone Settings · Edit to change the SSL mode.', err)
+    }
+  }
+
+  private async request<T>(path: string, query: Record<string, string | number> = {}, payload?: unknown, method = payload === undefined ? 'GET' : 'POST'): Promise<ApiEnvelope<T>> {
     const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]))
     const url = params.size > 0 ? `${API_BASE}${path}?${params}` : `${API_BASE}${path}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       const response = await this.fetchImpl(url, {
-        method: payload === undefined ? 'GET' : 'POST',
+        method,
         headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json', ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
         body: payload === undefined ? undefined : JSON.stringify(payload),
         signal: controller.signal
@@ -281,8 +334,7 @@ export class CloudflareClient {
   private async sslMode(zone: CloudflareZone): Promise<SslMode | null> {
     try {
       const body = await this.request<{ value?: string }>(`/zones/${zone.id}/settings/ssl`)
-      const value = body.result?.value ?? ''
-      return SSL_MODES.includes(value) ? (value as SslMode) : null
+      return parseSslMode(body.result?.value)
     } catch (err) {
       if (shouldStop(err)) throw err
       return null

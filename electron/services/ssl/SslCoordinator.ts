@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { RemoteExec } from '../deploy/DeployService'
 import type {
   ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, InstallRoute, IssueRequest, IssueResult,
-  NameReadiness, OriginCert, PrepFacts, ServerScan, SslReport, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult
+  NameReadiness, OriginCert, PrepFacts, ServerScan, SslMode, SslReport, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult,
+  ZoneModeResult, ZonePreflight
 } from '../../../src/types/ssl'
 import { isIssuableName } from '../../../src/utils/ssl/https/issueCommands'
 import { LINEAGE_NAME } from '../../../src/utils/ssl/commands'
@@ -25,6 +26,8 @@ import { SHORT_TIMEOUT_MS } from './originCa/remoteRun'
 import { runLineageRemoval, runUndo } from './originCa/undo'
 import type { VerifyDeps } from './originCa/verifyServed'
 import { SslService } from './SslService'
+import type { OriginProbe } from './zoneMode/probeOrigin'
+import { preflightZone, setZoneMode } from './zoneMode/zoneMode'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
 
@@ -36,6 +39,7 @@ export interface SslDeps {
   edgesWithoutToken?: typeof edgesWithoutZone
   resolveHost?: (host: string) => Promise<string[]>
   httpGet?: HttpGet
+  zoneProbe?: OriginProbe
   newId?: () => string
   sleep?: (ms: number) => Promise<void>
   broadcast: (channel: string, ...args: unknown[]) => void
@@ -282,6 +286,28 @@ export class SslCoordinator {
       httpGet: this.deps.httpGet ?? httpGet,
       edgesOf: (hosts) => this.cloudflareEdges(hosts, serverAddresses, cloudflare)
     })
+  }
+
+  async zonePreflight(zone: string): Promise<ZonePreflight> {
+    return preflightZone(zone, this.zoneModeDeps())
+  }
+
+  async zoneSetMode(zone: string, mode: SslMode, confirmedUnknown: string[]): Promise<ZoneModeResult> {
+    const result = await setZoneMode(zone, mode, confirmedUnknown, this.zoneModeDeps())
+    this.refreshZoneConnections(result.zone)
+    return result
+  }
+
+  private zoneModeDeps() {
+    const token = this.deps.store.cloudflareToken()
+    if (!token) throw new Error('Add a Cloudflare token first.')
+    return { client: this.deps.cloudflare(token), probe: this.deps.zoneProbe }
+  }
+
+  private refreshZoneConnections(zone: string): void {
+    for (const [connectionId, report] of this.reports) {
+      if (report.hostnames.some((host) => host.edge.zone === zone)) void this.refreshRemembered(connectionId)
+    }
   }
 
   private async exclusive<T>(connectionId: string, task: () => Promise<T>): Promise<T> {
