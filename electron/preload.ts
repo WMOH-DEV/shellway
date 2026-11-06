@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
-import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult } from "../src/types/ssl";
+import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1226,6 +1226,9 @@ const api = {
       ipcRenderer.invoke("ssl:origin-undo", connectionId, sessionId, name, runId) as Promise<SslResult<SwitchResult>>,
     removeLineage: (connectionId: string, lineage: string, runId: string) =>
       ipcRenderer.invoke("ssl:remove-lineage", connectionId, lineage, runId) as Promise<SslResult<ActionResult>>,
+    zonePreflight: (zone: string) => ipcRenderer.invoke("ssl:zone-preflight", zone) as Promise<SslResult<ZonePreflight>>,
+    zoneSetMode: (zone: string, mode: SslMode, confirmedUnknown: string[]) =>
+      ipcRenderer.invoke("ssl:zone-set-mode", zone, mode, confirmedUnknown) as Promise<SslResult<ZoneModeResult>>,
   },
 
   // ── Host Key Management ──

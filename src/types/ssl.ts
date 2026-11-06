@@ -306,3 +306,27 @@ export interface SwitchLeftover {
   backupPath: string | null
   undoable: boolean
 }
+
+export type ZoneProbeState = 'pass' | 'fail' | 'unknown'
+
+export interface ZoneHostProbe {
+  name: string
+  recordType: string
+  origin: string
+  state: ZoneProbeState
+  detail: string
+}
+
+export interface ZonePreflight {
+  zoneId: string
+  zone: string
+  currentMode: SslMode | null
+  hosts: ZoneHostProbe[]
+  blockedReason: string | null
+}
+
+export interface ZoneModeResult {
+  zone: string
+  previousMode: SslMode | null
+  mode: SslMode
+}
