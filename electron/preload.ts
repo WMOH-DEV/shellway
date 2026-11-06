@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
-import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, VerifyResult } from "../src/types/ssl";
+import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1214,6 +1214,18 @@ const api = {
       ipcRenderer.invoke("ssl:https-verify", connectionId, names, lineage) as Promise<SslResult<VerifyResult>>,
     httpsEmail: (sessionId: string) => ipcRenderer.invoke("ssl:https-email", sessionId) as Promise<SslResult<string>>,
     lastReport: (connectionId: string) => ipcRenderer.invoke("ssl:last-report", connectionId) as Promise<SslResult<SslReport | null>>,
+    originPrepare: (connectionId: string, sessionId: string, request: SwitchRequest, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-prepare", connectionId, sessionId, request, runId) as Promise<SslResult<SwitchPrepared>>,
+    originApply: (connectionId: string, sessionId: string, switchId: string, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-apply", connectionId, sessionId, switchId, runId) as Promise<SslResult<SwitchResult>>,
+    originCancel: (connectionId: string, switchId: string) =>
+      ipcRenderer.invoke("ssl:origin-cancel", connectionId, switchId) as Promise<SslResult>,
+    originLeftover: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("ssl:origin-leftover", connectionId, name) as Promise<SslResult<SwitchLeftover | null>>,
+    originUndo: (connectionId: string, sessionId: string, name: string, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-undo", connectionId, sessionId, name, runId) as Promise<SslResult<SwitchResult>>,
+    removeLineage: (connectionId: string, lineage: string, runId: string) =>
+      ipcRenderer.invoke("ssl:remove-lineage", connectionId, lineage, runId) as Promise<SslResult<ActionResult>>,
   },
 
   // ── Host Key Management ──

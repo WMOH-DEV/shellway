@@ -234,3 +234,75 @@ export interface SslResult<T = undefined> {
   data?: T
   error?: string
 }
+
+export type OriginKeyType = 'ecc' | 'rsa'
+export type OriginValidityYears = 1 | 2 | 3 | 15
+
+export interface SwitchName {
+  name: string
+  ok: boolean
+  reason: string | null
+}
+
+export interface SwitchCheck {
+  blockId: string
+  names: SwitchName[]
+  blockedReason: string | null
+}
+
+export interface SwitchRequest {
+  blockId: string
+  keyType: OriginKeyType
+  validityYears: OriginValidityYears
+}
+
+export type DiffKind = 'same' | 'add' | 'remove'
+
+export interface DiffLine {
+  kind: DiffKind
+  oldLine: number | null
+  newLine: number | null
+  text: string
+}
+
+export interface SwitchPrepared {
+  switchId: string
+  blockId: string
+  file: string
+  blockLine: number
+  names: string[]
+  certPath: string
+  keyPath: string
+  keyType: OriginKeyType
+  validityYears: OriginValidityYears
+  notAfter: number | null
+  backupPath: string
+  diff: DiffLine[]
+  script: string
+}
+
+export type SwitchStage = 'apply' | 'nginx-test' | 'verify'
+
+export interface SwitchVerifyName {
+  name: string
+  served: OriginCert | null
+  https: ReadinessCheck
+}
+
+export interface SwitchResult {
+  ok: boolean
+  failedStage: SwitchStage | null
+  restored: boolean
+  backupPath: string | null
+  output: string
+  verify: SwitchVerifyName[]
+}
+
+export interface SwitchLeftover {
+  name: string
+  blockId: string
+  lineage: string
+  lineageShared: boolean
+  backupPath: string | null
+  undoable: boolean
+}
