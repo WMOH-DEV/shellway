@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDoctor, parseHistory, parseKeyValues, parseState } from './parse'
+import { parseDoctor, parseHistory, parseKeyValues, parsePreview, parseState } from './parse'
 
 describe('parseHistory', () => {
   it('keeps the last line per id and sorts newest first', () => {
@@ -76,5 +76,48 @@ describe('parseDoctor', () => {
 describe('parseKeyValues', () => {
   it('keeps everything after the first equals sign', () => {
     expect(parseKeyValues('URL=https://x/?a=b\n')).toEqual({ URL: 'https://x/?a=b' })
+  })
+})
+
+describe('parsePreview', () => {
+  const output = [
+    'FROM=aaa',
+    'TO=bbb',
+    'BRANCH=main',
+    'TOTAL_COMMITS=2',
+    'COMMIT\tbbb\t1700000100\tTest User\t0\tBump a=b dependency',
+    'COMMIT\tccc\t1700000000\tOther Dev\t1\tAdd tax\tregion',
+    'FILE\tA\t31\t0\t1\tdatabase/migrations/2026_add.php',
+    'FILE\tM\t4\t1\t0\tapp/Models/Order.php',
+    'FILE\tM\t-\t-\t0\tlogo.png',
+    'TOTAL_FILES=3',
+    ''
+  ].join('\n')
+
+  it('reads commits and files from the runner output', () => {
+    const preview = parsePreview(output)
+    expect(preview).toMatchObject({ from: 'aaa', to: 'bbb', branch: 'main', totalCommits: 2, totalFiles: 3 })
+    expect(preview.commits[0]).toEqual({ sha: 'bbb', time: 1700000100, author: 'Test User', migration: false, subject: 'Bump a=b dependency' })
+    expect(preview.commits[1]).toMatchObject({ migration: true, subject: 'Add tax region' })
+    expect(preview.files[0]).toEqual({ status: 'A', path: 'database/migrations/2026_add.php', added: 31, removed: 0, migration: true })
+  })
+
+  it('reads binary files as unknown counts and unknown statuses as modified', () => {
+    const { files } = parsePreview(`TO=bbb\nFILE\tM\t-\t-\t0\tlogo.png\nFILE\tT\t1\t1\t0\tlink\n`)
+    expect(files[0]).toMatchObject({ path: 'logo.png', added: null, removed: null })
+    expect(files[1].status).toBe('M')
+  })
+
+  it('is not truncated when every row is present', () => {
+    expect(parsePreview(output).truncated).toBe(false)
+  })
+
+  it('flags lists cut short by the caps', () => {
+    expect(parsePreview(output.replace('TOTAL_FILES=3', 'TOTAL_FILES=240')).truncated).toBe(true)
+    expect(parsePreview(output.replace('TOTAL_COMMITS=2', 'TOTAL_COMMITS=80')).truncated).toBe(true)
+  })
+
+  it('rejects output without a target commit', () => {
+    expect(() => parsePreview('FROM=aaa\n')).toThrow(/no preview/)
   })
 })

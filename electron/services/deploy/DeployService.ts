@@ -2,9 +2,9 @@ import type { Readable } from 'stream'
 import runnerScript from '../../../resources/deploy/shellway-deploy.sh?raw'
 import type { ExecOptions, ExecResult } from '../../utils/sshExec'
 import { shellEscape } from '../../utils/shellEscape'
-import type { DeployRecord, DetectResult, DoctorReport, RunnerInfo, SiteConfig, SiteSummary } from '../../../src/types/deploy'
+import type { DeployRecord, DetectResult, DoctorReport, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from '../../../src/types/deploy'
 import { isValidSiteName, serializeSiteConf, serializeSteps, validateSiteConfig } from './siteFiles'
-import { parseDoctor, parseDump, parseHistory, parseKeyValues } from './parse'
+import { parseDoctor, parseDump, parseHistory, parseKeyValues, parsePreview } from './parse'
 
 export type RemoteExec = (command: string, options?: ExecOptions) => Promise<ExecResult>
 
@@ -14,6 +14,7 @@ const BUNDLED_VERSION = Number(/RUNNER_VERSION=(\d+)/.exec(runnerScript)?.[1] ??
 const LIST_TIMEOUT_MS = 30_000
 const SETUP_TIMEOUT_MS = 90_000
 const UPLOAD_TIMEOUT_MS = 10 * 60_000
+const PREVIEW_TIMEOUT_MS = 330_000
 const DEPLOY_ID = /^[A-Za-z0-9-]{1,64}$/
 const ENV_MISSING_EXIT = 3
 const ENV_BACKUPS_KEPT = 10
@@ -116,6 +117,12 @@ export class DeployService {
     siteDir(name)
     const result = await this.run(`${RUNNER} history ${name} 50`, {}, 'Could not read deploy history')
     return parseHistory(result.stdout)
+  }
+
+  async preview(name: string): Promise<ShipPreview> {
+    siteDir(name)
+    const result = await this.run(`${RUNNER} preview ${name}`, { timeoutMs: PREVIEW_TIMEOUT_MS }, 'Could not read what is about to ship')
+    return parsePreview(result.stdout)
   }
 
   async readLog(name: string, id: string, offset: number): Promise<{ text: string; offset: number }> {

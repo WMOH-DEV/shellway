@@ -141,4 +141,22 @@ describe.skipIf(process.platform === 'win32')('DeployCoordinator', () => {
     await new DeployService(exec).saveSite(site({ repoUrl: join(base, 'missing.git') }))
     await expect(coordinator.resume('c1', 'app')).rejects.toThrow(/missing\.git/)
   })
+
+  describe('previewing a deploy', () => {
+    it.each(['auto', 'pc'] as const)('lists the commits waiting to ship for a %s site', async (sourceMode) => {
+      await new DeployService(exec).saveSite(site({ sourceMode }))
+      await coordinator.deploy('c1', 'app')
+      await finishedRecord()
+      const live = git(work, 'rev-parse', 'HEAD')
+      const head = commit('v2')
+      const preview = await coordinator.preview('c1', 'app')
+      expect(preview).toMatchObject({ from: live, to: head, branch: 'main', totalCommits: 1, totalFiles: 1 })
+      expect(preview.commits[0]).toMatchObject({ sha: head, subject: 'v2' })
+      expect(preview.files[0]).toMatchObject({ status: 'M', path: 'index.html' })
+    })
+
+    it('rejects an unknown site', async () => {
+      await expect(coordinator.preview('c1', 'nope')).rejects.toThrow(/Unknown site/)
+    })
+  })
 })

@@ -10,6 +10,8 @@ HEALTH_ATTEMPTS=5
 CRON_MARKER="# shellway-deploy"
 CRON_PROCESSES="${SHELLWAY_CRON_PROCESSES:-cron crond}"
 STOP_GRACE_SECONDS=5
+PREVIEW_COMMITS=50
+PREVIEW_FILES=200
 EXIT_BUSY=75
 TAB="$(printf '\t')"
 MARK="$(printf '\036')"
@@ -211,11 +213,15 @@ use_deploy_key() {
 
 ensure_mirror() { [ -d "$MIRROR" ] || git init --bare -q "$MIRROR"; }
 
+fetch_branch() {
+  with_timeout 300 git --git-dir="$MIRROR" fetch -q --prune -- "$REPO_URL" "+refs/heads/$BRANCH:refs/heads/$BRANCH"
+}
+
 fetch_remote() {
   use_deploy_key
   ensure_mirror
   log "fetching $BRANCH from $REPO_URL"
-  run_tracked with_timeout 300 git --git-dir="$MIRROR" fetch -q --prune -- "$REPO_URL" "+refs/heads/$BRANCH:refs/heads/$BRANCH"
+  run_tracked fetch_branch
 }
 
 fetch_bundle() {
@@ -611,6 +617,76 @@ commits_behind() {
   git --git-dir="$MIRROR" rev-list --count "$live_commit..$newest_commit" 2>/dev/null
 }
 
+preview_target() {
+  pending="$(read_val pending)"
+  if [ -n "$pending" ]; then
+    resolve_commit "$pending"
+    return
+  fi
+  use_deploy_key
+  ensure_mirror
+  fetch_branch || die "could not fetch $BRANCH from $REPO_URL"
+  resolve_commit "refs/heads/$BRANCH"
+}
+
+preview_commits() {
+  {
+    [ -z "$MIGRATIONS_PATH" ] || git --git-dir="$MIRROR" log -n "$2" --format='M%x09%H' "$1" -- "$MIGRATIONS_PATH"
+    git --git-dir="$MIRROR" log -n "$2" --format='C%x09%H%x09%at%x09%an%x09%s' "$1" --
+  } | awk -F "$TAB" -v OFS="$TAB" '
+    $1 == "M" { migration[$2] = 1; next }
+    $1 == "C" {
+      subject = $5
+      for (i = 6; i <= NF; i++) subject = subject " " $i
+      print "COMMIT", $2, $3, $4, (($2 in migration) ? 1 : 0), subject
+    }'
+}
+
+preview_diff() {
+  if [ -n "$1" ]; then
+    git --git-dir="$MIRROR" -c core.quotepath=off diff --no-renames --raw --numstat "$1" "$2"
+  else
+    git --git-dir="$MIRROR" -c core.quotepath=off show --format= --no-renames --raw --numstat "$2"
+  fi
+}
+
+preview_files() {
+  preview_diff "$1" "$2" | awk -F "$TAB" -v OFS="$TAB" -v prefix="${MIGRATIONS_PATH:+${MIGRATIONS_PATH%/}/}" -v cap="$PREVIEW_FILES" '
+    function isMigration(p) { return (prefix != "" && index(p, prefix) == 1) ? 1 : 0 }
+    function emit(wanted,   i, p, a, r) {
+      for (i = 1; i <= n && printed < cap; i++) {
+        p = path[i]
+        if (isMigration(p) != wanted) continue
+        a = added[p]; r = removed[p]
+        print "FILE", status[i], (a == "" ? "-" : a), (r == "" ? "-" : r), wanted, p
+        printed++
+      }
+    }
+    /^:/ { n++; path[n] = $2; status[n] = substr($1, length($1)); next }
+    { added[$3] = $1; removed[$3] = $2 }
+    END { emit(1); emit(0); print "TOTAL_FILES=" n + 0 }'
+}
+
+cmd_preview() {
+  load_site "$1"
+  [ "$SOURCE_MODE" = auto ] || die "previews for sites deployed from a PC are built by Shellway"
+  target="$(preview_target)" || exit 1
+  [ -n "$target" ] || die "nothing to preview on $BRANCH"
+  live="$(resolve_commit "$(read_val current)")"
+  if [ -n "$live" ]; then
+    range="$live..$target"; limit="$PREVIEW_COMMITS"; base="$live"
+    total="$(git --git-dir="$MIRROR" rev-list --count "$range")"
+  else
+    range="$target"; limit=1; base="$(resolve_commit "$target^")"; total=1
+  fi
+  printf 'FROM=%s\n' "$live"
+  printf 'TO=%s\n' "$target"
+  printf 'BRANCH=%s\n' "$BRANCH"
+  printf 'TOTAL_COMMITS=%s\n' "$total"
+  preview_commits "$range" "$limit"
+  preview_files "$base" "$target"
+}
+
 cmd_tick() {
   load_site "$1"
   [ "$SOURCE_MODE" = auto ] || return 0
@@ -893,6 +969,7 @@ main() {
     apply) [ $# -ge 1 ] || die "usage: apply <site>"; cmd_apply "$@" ;;
     tick) [ $# -ge 1 ] || die "usage: tick <site>"; cmd_tick "$1" ;;
     tick-all) cmd_tick_all ;;
+    preview) [ $# -ge 1 ] || die "usage: preview <site>"; cmd_preview "$1" ;;
     status) [ $# -ge 1 ] || die "usage: status <site>"; cmd_status "$1" ;;
     history) [ $# -ge 1 ] || die "usage: history <site> [n]"; cmd_history "$@" ;;
     dump) cmd_dump ;;
@@ -907,7 +984,7 @@ main() {
     doctor) [ $# -ge 1 ] || die "usage: doctor <site>"; cmd_doctor "$1" ;;
     env-path) [ $# -ge 1 ] || die "usage: env-path <site>"; cmd_env_path "$1" ;;
     remove) [ $# -ge 1 ] || die "usage: remove <site>"; cmd_remove "$1" ;;
-    *) die "usage: shellway-deploy <version|deploy|approve|rollback|apply|tick|tick-all|status|history|dump|log|keygen|check-remote|cancel|resume|cron-install|cron-remove|sync-cron|doctor|env-path|remove>" ;;
+    *) die "usage: shellway-deploy <version|deploy|approve|rollback|apply|tick|tick-all|preview|status|history|dump|log|keygen|check-remote|cancel|resume|cron-install|cron-remove|sync-cron|doctor|env-path|remove>" ;;
   esac
 }
 

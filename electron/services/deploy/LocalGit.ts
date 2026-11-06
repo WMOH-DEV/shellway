@@ -4,6 +4,8 @@ import { existsSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
+import type { ShipCommit, ShipFile, ShipFileStatus, ShipPreview } from '../../../src/types/deploy'
+import { isMigrationPath, makeShipPreview, orderFiles, PREVIEW_COMMIT_CAP, PREVIEW_FILE_CAP } from './previewShape'
 import { isValidBranch } from './siteFiles'
 
 const run = promisify(execFile)
@@ -17,6 +19,53 @@ const COMMIT_SHA = /^[0-9a-f]{40,64}$/
 export interface BundleResult {
   file: string
   full: boolean
+}
+
+export interface PreviewRequest {
+  url: string
+  branch: string
+  live: string
+  pending: string
+  migrationsPath: string
+}
+
+const DIFF_STATUSES: ReadonlySet<string> = new Set(['A', 'M', 'D', 'R'])
+
+export function parseCommitLog(stdout: string, migrationShas: ReadonlySet<string>): ShipCommit[] {
+  return stdout.split('\n').filter(Boolean).map((line) => {
+    const [sha, time, author, ...subject] = line.split('\t')
+    return { sha, time: Number.parseInt(time, 10) || 0, author, subject: subject.join(' '), migration: migrationShas.has(sha) }
+  })
+}
+
+function diffCommand(base: string, to: string): string[] {
+  const flags = ['--no-renames', '--raw', '--numstat']
+  return base ? ['diff', ...flags, base, to] : ['show', '--format=', ...flags, to]
+}
+
+function countOrNull(value: string): number | null {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function parseDiff(stdout: string, migrationsPath: string): ShipFile[] {
+  const statuses = new Map<string, string>()
+  const counts = new Map<string, [string, string]>()
+  for (const line of stdout.split('\n')) {
+    const [head, ...rest] = line.split('\t')
+    if (line.startsWith(':')) statuses.set(rest.join('\t'), head.slice(-1))
+    else if (rest.length >= 2) counts.set(rest.slice(1).join('\t'), [head, rest[0]])
+  }
+  return [...statuses].map(([path, status]) => {
+    const [added, removed] = counts.get(path) ?? ['-', '-']
+    return {
+      status: (DIFF_STATUSES.has(status) ? status : 'M') as ShipFileStatus,
+      path,
+      added: countOrNull(added),
+      removed: countOrNull(removed),
+      migration: isMigrationPath(path, migrationsPath)
+    }
+  })
 }
 
 function gitError(err: unknown, fallback: string): Error {
@@ -85,9 +134,61 @@ export class LocalGit {
     return { head, behind: Number.parseInt(stdout.trim(), 10) }
   }
 
+  async preview(request: PreviewRequest): Promise<ShipPreview> {
+    const mirror = this.mirrorPath(request.url)
+    const to = await this.previewTarget(request, mirror)
+    const from = (await this.hasCommit(mirror, request.live)) ? request.live : ''
+    const range = from ? `${from}..${to}` : to
+    const limit = from ? PREVIEW_COMMIT_CAP : 1
+    const [commits, totalCommits, files] = await Promise.all([
+      this.previewCommits(mirror, range, limit, request.migrationsPath),
+      from ? this.countCommits(mirror, range) : Promise.resolve(1),
+      this.previewFiles(mirror, from, to, request.migrationsPath)
+    ])
+    return makeShipPreview({
+      from,
+      to,
+      branch: request.branch,
+      commits,
+      files: orderFiles(files).slice(0, PREVIEW_FILE_CAP),
+      totalCommits,
+      totalFiles: files.length
+    })
+  }
+
   async isAncestor(url: string, ancestor: string, descendant: string): Promise<boolean> {
     if (!COMMIT_SHA.test(ancestor) || !COMMIT_SHA.test(descendant)) return false
     return this.succeeds(['--git-dir', this.mirrorPath(url), 'merge-base', '--is-ancestor', ancestor, descendant])
+  }
+
+  private async previewTarget(request: PreviewRequest, mirror: string): Promise<string> {
+    if (await this.hasCommit(mirror, request.pending)) return request.pending
+    return this.fetch(request.url, request.branch)
+  }
+
+  private async countCommits(mirror: string, range: string): Promise<number> {
+    const { stdout } = await this.git(['--git-dir', mirror, 'rev-list', '--count', range], LOCAL_TIMEOUT_MS, 'Could not count commits')
+    return Number.parseInt(stdout.trim(), 10)
+  }
+
+  private async previewCommits(mirror: string, range: string, limit: number, migrationsPath: string): Promise<ShipCommit[]> {
+    const count = String(limit)
+    const log = await this.git(['--git-dir', mirror, 'log', '-n', count, '--format=%H%x09%at%x09%an%x09%s', range, '--'], LOCAL_TIMEOUT_MS, 'Could not read the commits')
+    const migrations = migrationsPath
+      ? await this.git(['--git-dir', mirror, 'log', '-n', count, '--format=%H', range, '--', migrationsPath], LOCAL_TIMEOUT_MS, 'Could not read the commits')
+      : { stdout: '' }
+    return parseCommitLog(log.stdout, new Set(migrations.stdout.split('\n').filter(Boolean)))
+  }
+
+  private async previewFiles(mirror: string, from: string, to: string, migrationsPath: string): Promise<ShipFile[]> {
+    const base = from || (await this.parentOf(mirror, to))
+    const { stdout } = await this.git(['--git-dir', mirror, '-c', 'core.quotepath=off', ...diffCommand(base, to)], LOCAL_TIMEOUT_MS, 'Could not read the changed files')
+    return parseDiff(stdout, migrationsPath)
+  }
+
+  private async parentOf(mirror: string, sha: string): Promise<string> {
+    const { stdout } = await this.git(['--git-dir', mirror, 'rev-list', '--parents', '-n', '1', sha], LOCAL_TIMEOUT_MS, 'Could not read the commit')
+    return stdout.trim().split(' ')[1] ?? ''
   }
 
   private hasCommit(mirror: string, sha: string): Promise<boolean> {
