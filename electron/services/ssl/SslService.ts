@@ -1,7 +1,7 @@
 import type { ExecResult } from '../../utils/sshExec'
 import { shellEscape } from '../../utils/shellEscape'
 import type { RemoteExec } from '../deploy/DeployService'
-import type { ActionResult, CertbotAction, CertbotLineage, NginxParse, OriginCert, ServerBlock, ServerScan } from '../../../src/types/ssl'
+import type { ActionResult, CertbotAction, CertbotLineage, NginxParse, OriginCert, ServerBlock, ServerFacts, ServerScan } from '../../../src/types/ssl'
 import { certbotCommand } from '../../../src/utils/ssl/commands'
 import { hasConfigFiles, parseCertbotCertificates, parseFacts, parseProbes, parseServerBlocks, SECTION_MARK } from './parse'
 import type { ParsedFacts, ProbeTarget } from './parse'
@@ -100,6 +100,13 @@ function probeTimeout(count: number): number {
   return Math.min(PROBE_MAX_TIMEOUT_MS, PROBE_BASE_TIMEOUT_MS + count * PROBE_PER_NAME_TIMEOUT_MS)
 }
 
+export interface ServerConfig {
+  facts: ServerFacts
+  blocks: ServerBlock[]
+}
+
+const DEFAULT_PROBE_ADDRESS = '127.0.0.1:443'
+
 interface NginxDump {
   dump: string
   parse: NginxParse
@@ -114,6 +121,24 @@ export class SslService {
     const blocks = parseServerBlocks(nginx.dump)
     const origins = await this.probeOrigins(blocks, facts)
     return { facts: { ...facts, nginxParse: nginx.parse }, blocks, lineages, origins }
+  }
+
+  async readFacts(): Promise<ParsedFacts> {
+    const result = await this.runScript(FACTS_SCRIPT, FACTS_TIMEOUT_MS)
+    return parseFacts(result.stdout)
+  }
+
+  async readConfig(): Promise<ServerConfig> {
+    const facts = await this.readFacts()
+    const nginx = await this.readNginx(facts)
+    return { facts: { ...facts, nginxParse: nginx.parse }, blocks: parseServerBlocks(nginx.dump) }
+  }
+
+  async probeNames(names: string[], config: ServerConfig): Promise<Record<string, OriginCert>> {
+    if (names.length === 0 || config.facts.openssl === null) return {}
+    const targets = names.map((name) => ({ name, address: this.probeAddressOf(name, config.blocks) }))
+    const result = await this.runScript(probeScript(targets), probeTimeout(targets.length))
+    return parseProbes(result.stdout, targets)
   }
 
   async runCertbot(lineage: string, action: CertbotAction, onOutput: OutputSink): Promise<ActionResult> {
@@ -132,9 +157,10 @@ export class SslService {
     return this.exec('sh -s', { stdin: script, timeoutMs })
   }
 
-  private async readFacts(): Promise<ParsedFacts> {
-    const result = await this.runScript(FACTS_SCRIPT, FACTS_TIMEOUT_MS)
-    return parseFacts(result.stdout)
+  private probeAddressOf(name: string, blocks: ServerBlock[]): string {
+    const wanted = name.toLowerCase()
+    const block = blocks.find((b) => b.names.some((n) => n.toLowerCase() === wanted))
+    return block?.probeAddress ?? DEFAULT_PROBE_ADDRESS
   }
 
   private async readNginx(facts: ParsedFacts): Promise<NginxDump> {

@@ -1,0 +1,31 @@
+@@SW@@ SUDO
+full=0
+@@SW@@ OS
+PRETTY_NAME="Ubuntu 22.04.4 LTS"
+VERSION_ID="22.04"
+ID=ubuntu
+ID_LIKE=debian
+@@SW@@ ARCH
+x86_64
+@@SW@@ WEB
+nginx=/usr/sbin/nginx
+apache=/usr/sbin/apache2
+caddy=
+@@SW@@ CERTBOT
+path=/usr/bin/certbot
+certbot 1.21.0
+@@SW@@ METHOD
+dpkg=install ok installed
+@@SW@@ PLUGINS
+* nginx
+Description: Nginx Web Server plugin
+@@SW@@ SNAPD
+snap    2.58
+snapd   unavailable
+series  -
+@@SW@@ PM
+apt=/usr/bin/apt-get
+dnf=
+yum=
+@@SW@@ TIMER
+timer=certbot.timer

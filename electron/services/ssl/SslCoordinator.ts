@@ -1,7 +1,19 @@
 import type { RemoteExec } from '../deploy/DeployService'
-import type { ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, ServerScan, SslReport } from '../../../src/types/ssl'
+import type {
+  ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, InstallRoute, IssueRequest, IssueResult,
+  NameReadiness, PrepFacts, ServerScan, SslReport, VerifyResult
+} from '../../../src/types/ssl'
+import { isIssuableName } from '../../../src/utils/ssl/https/issueCommands'
+import { LINEAGE_NAME } from '../../../src/utils/ssl/commands'
 import { CloudflareClient } from './CloudflareClient'
 import { edgesWithoutZone, resolveAddresses } from './dnsEdge'
+import { httpGet } from './https/httpGet'
+import type { HttpGet } from './https/httpGet'
+import { runInstall } from './https/install'
+import { runIssue } from './https/issue'
+import { detectPrep } from './https/prepFacts'
+import { checkReadiness } from './https/readiness'
+import { verifyHttps } from './https/verify'
 import { SslService } from './SslService'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
@@ -13,6 +25,7 @@ export interface SslDeps {
   serviceFor?: (exec: RemoteExec) => SslService
   edgesWithoutToken?: typeof edgesWithoutZone
   resolveHost?: (host: string) => Promise<string[]>
+  httpGet?: HttpGet
   broadcast: (channel: string, ...args: unknown[]) => void
   notify: (title: string, body: string) => void
   now: () => number
@@ -24,6 +37,15 @@ function criticalSummary(label: string, critical: HostnameStatus[]): [string, st
   const [worst, ...rest] = critical
   const more = rest.length === 0 ? '' : rest.length === 1 ? '\n1 more hostname needs attention' : `\n${rest.length} more hostnames need attention`
   return [`SSL problem on ${label}`, `${worst.name}: ${worst.reason}${more}`]
+}
+
+const MAX_NAMES = 100
+
+function issuableNames(names: string[]): string[] {
+  if (names.length > MAX_NAMES) throw new Error(`At most ${MAX_NAMES} names at a time`)
+  const bad = names.find((name) => !isIssuableName(name))
+  if (bad !== undefined) throw new Error(`${bad} is not a valid hostname`)
+  return names
 }
 
 const WARN_AGAIN_AFTER_MS = 12 * 60 * 60 * 1000
@@ -41,7 +63,8 @@ function probeTarget(address: string, fallbackHost: string): Pick<KnownHost, 'ad
 
 export class SslCoordinator {
   private readonly checks = new Map<string, Promise<SslReport>>()
-  private readonly certbotRuns = new Set<string>()
+  private readonly busy = new Set<string>()
+  private readonly reports = new Map<string, SslReport>()
   private readonly criticalCounts = new Map<string, number>()
   private readonly connectionHosts = new Map<string, string>()
   private readonly warnedAt = new Map<string, number>()
@@ -49,9 +72,14 @@ export class SslCoordinator {
   constructor(private readonly deps: SslDeps) {}
 
   service(connectionId: string): SslService {
+    const exec = this.exec(connectionId)
+    return this.deps.serviceFor ? this.deps.serviceFor(exec) : new SslService(exec)
+  }
+
+  private exec(connectionId: string): RemoteExec {
     const exec = this.deps.execFor(connectionId)
     if (!exec) throw new Error('Not connected')
-    return this.deps.serviceFor ? this.deps.serviceFor(exec) : new SslService(exec)
+    return exec
   }
 
   async onConnected(connectionId: string, sessionId: string, label: string, host: string): Promise<void> {
@@ -69,6 +97,11 @@ export class SslCoordinator {
   forget(connectionId: string): void {
     this.criticalCounts.delete(connectionId)
     this.connectionHosts.delete(connectionId)
+    this.reports.delete(connectionId)
+  }
+
+  lastReport(connectionId: string): SslReport | null {
+    return this.reports.get(connectionId) ?? null
   }
 
   criticalCount(connectionId: string): number {
@@ -84,13 +117,71 @@ export class SslCoordinator {
   }
 
   async runCertbot(connectionId: string, lineage: string, action: CertbotAction, runId: string): Promise<ActionResult> {
-    if (this.certbotRuns.has(connectionId)) throw new Error('certbot is already running on this server. Wait for it to finish.')
-    this.certbotRuns.add(connectionId)
-    try {
-      return await this.service(connectionId).runCertbot(lineage, action, (chunk) => this.deps.broadcast('ssl:output', runId, chunk))
-    } finally {
-      this.certbotRuns.delete(connectionId)
+    return this.exclusive(connectionId, () => this.service(connectionId).runCertbot(lineage, action, this.outputTo(runId)))
+  }
+
+  httpsPrep(connectionId: string): Promise<PrepFacts> {
+    return detectPrep(this.exec(connectionId))
+  }
+
+  httpsInstall(connectionId: string, route: InstallRoute, runId: string): Promise<ActionResult> {
+    const exec = this.exec(connectionId)
+    return this.exclusive(connectionId, () => runInstall(exec, route, this.outputTo(runId)))
+  }
+
+  httpsIssue(connectionId: string, sessionId: string, request: IssueRequest, runId: string): Promise<IssueResult> {
+    const exec = this.exec(connectionId)
+    const service = this.service(connectionId)
+    const hooks = {
+      now: this.deps.now,
+      rememberEmail: () => this.deps.store.setHttpsEmail(sessionId, request.email),
+      onOutput: this.outputTo(runId)
     }
+    return this.exclusive(connectionId, () => runIssue(exec, () => service.readConfig(), request, hooks))
+  }
+
+  httpsEmail(sessionId: string): string {
+    return this.deps.store.httpsEmail(sessionId)
+  }
+
+  httpsVerify(connectionId: string, names: string[], lineage: string): Promise<VerifyResult> {
+    if (!LINEAGE_NAME.test(lineage)) throw new Error('Invalid certificate name')
+    const exec = this.exec(connectionId)
+    const service = this.service(connectionId)
+    return verifyHttps({
+      names: issuableNames(names),
+      probeServer: async () => service.probeNames(names, await service.readConfig()),
+      httpGet: this.deps.httpGet ?? httpGet,
+      renewalTest: () => this.exclusive(connectionId, () => service.runCertbot(lineage, 'test', () => {})),
+      detect: () => detectPrep(exec)
+    })
+  }
+
+  async httpsReadiness(connectionId: string, names: string[]): Promise<NameReadiness[]> {
+    issuableNames(names)
+    const facts = await this.service(connectionId).readFacts()
+    const serverAddresses = await this.serverAddresses(connectionId, facts.addresses)
+    const cloudflare = await this.cloudflareStatus()
+    return checkReadiness(names, {
+      serverAddresses,
+      resolve: this.deps.resolveHost ?? resolveAddresses,
+      httpGet: this.deps.httpGet ?? httpGet,
+      edgesOf: (hosts) => this.cloudflareEdges(hosts, serverAddresses, cloudflare)
+    })
+  }
+
+  private async exclusive<T>(connectionId: string, task: () => Promise<T>): Promise<T> {
+    if (this.busy.has(connectionId)) throw new Error('Another certificate task is already running on this server. Wait for it to finish.')
+    this.busy.add(connectionId)
+    try {
+      return await task()
+    } finally {
+      this.busy.delete(connectionId)
+    }
+  }
+
+  private outputTo(runId: string): (chunk: string) => void {
+    return (chunk) => this.deps.broadcast('ssl:output', runId, chunk)
   }
 
   async cloudflareStatus(): Promise<CloudflareStatus> {
@@ -142,6 +233,7 @@ export class SslCoordinator {
     const report = buildReport(scan, edges, cloudflare, Math.floor(this.deps.now() / 1000))
     this.rememberHosts(sessionId, scan, addresses[0] ?? '')
     if (!this.deps.execFor(connectionId)) return report
+    this.reports.set(connectionId, report)
     const critical = report.hostnames.filter(isCritical).length
     this.criticalCounts.set(connectionId, critical)
     this.deps.broadcast('ssl:critical', connectionId, critical)
@@ -150,8 +242,12 @@ export class SslCoordinator {
 
   private async edgesFor(scan: ServerScan, addresses: string[], cloudflare: CloudflareStatus): Promise<Record<string, EdgeInfo>> {
     const hosts = hostnamesOf(scan.blocks).filter((h) => !isPattern(h))
+    return (await this.cloudflareEdges(hosts, addresses, cloudflare)) ?? (this.deps.edgesWithoutToken ?? edgesWithoutZone)(hosts, addresses, 'no Cloudflare token')
+  }
+
+  private async cloudflareEdges(hosts: string[], addresses: string[], cloudflare: CloudflareStatus): Promise<Record<string, EdgeInfo> | null> {
     const token = this.deps.store.cloudflareToken()
-    if (!token) return (this.deps.edgesWithoutToken ?? edgesWithoutZone)(hosts, addresses, 'no Cloudflare token')
+    if (!token) return null
     if (cloudflare.error) return unknownEdges(hosts, cloudflare.error)
     try {
       return await this.deps.cloudflare(token).edges(hosts, addresses, cloudflare.zones)

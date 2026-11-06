@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { OriginCert, ServerScan } from '../../../src/types/ssl'
+import type { IssueRequest, OriginCert, ServerScan } from '../../../src/types/ssl'
 import type { CloudflareClient } from './CloudflareClient'
 import { SslCoordinator, type SslDeps } from './SslCoordinator'
 import type { SslService } from './SslService'
@@ -31,13 +31,17 @@ const scan = (days: number): ServerScan => ({
 
 function fakeStore(known: Record<string, KnownHost[]> = {}, token: string | null = null) {
   const hosts = { ...known }
+  const emails: Record<string, string> = {}
   return {
     hosts,
     cloudflareToken: () => token,
     setCloudflareToken: vi.fn(),
     knownHosts: () => hosts,
-    setKnownHosts: (sessionId: string, list: KnownHost[]) => { hosts[sessionId] = list }
-  } as unknown as SslLocalStore & { hosts: Record<string, KnownHost[]> }
+    setKnownHosts: (sessionId: string, list: KnownHost[]) => { hosts[sessionId] = list },
+    emails,
+    httpsEmail: (sessionId: string) => emails[sessionId] ?? '',
+    setHttpsEmail: (sessionId: string, email: string) => { emails[sessionId] = email }
+  } as unknown as SslLocalStore & { hosts: Record<string, KnownHost[]>; emails: Record<string, string> }
 }
 
 let scanDays: number
@@ -147,6 +151,88 @@ describe('SslCoordinator', () => {
     const again = ssl.runCertbot('c1', 'app.example.com', 'renew', 'run-3')
     finish()
     await expect(again).resolves.toEqual({ code: 0, output: '' })
+  })
+
+  it('keeps the last report per connection and drops it when the connection closes', async () => {
+    const ssl = coordinator()
+    expect(ssl.lastReport('c1')).toBeNull()
+    const report = await ssl.check('c1', 's1')
+    expect(ssl.lastReport('c1')).toBe(report)
+    expect(ssl.lastReport('c2')).toBeNull()
+    ssl.forget('c1')
+    expect(ssl.lastReport('c1')).toBeNull()
+  })
+
+  it('refuses every certificate task while one is running on the server', async () => {
+    let finish: () => void = () => {}
+    const ssl = coordinator()
+    const httpsRequest: IssueRequest = { blockId: 'app.conf:1', names: ['app.example.com'], email: 'admin@example.com', redirect: true, staging: true }
+    deps.httpGet = async () => ({ status: 200 })
+    deps.serviceFor = () => ({
+      runCertbot: () => new Promise((resolve) => { finish = () => resolve({ code: 0, output: '' }) }),
+      readConfig: async () => ({ facts: {}, blocks: [] }),
+      probeNames: async () => ({})
+    }) as unknown as SslService
+    const running = ssl.runCertbot('c1', 'app.example.com', 'test', 'run-1')
+
+    await expect(ssl.httpsInstall('c1', 'snap', 'run-2')).rejects.toThrow(/already running/)
+    await expect(ssl.httpsIssue('c1', 's1', httpsRequest, 'run-3')).rejects.toThrow(/already running/)
+    const verified = await ssl.httpsVerify('c1', ['app.example.com'], 'app.example.com')
+    expect(verified.renewalTest).toMatchObject({ state: 'fail', detail: expect.stringMatching(/already running/) })
+
+    finish()
+    await running
+  })
+
+  it('runs an issue through the connection, streams it under the run id and remembers the email for the session', async () => {
+    const store = fakeStore()
+    const ssl = coordinator(store)
+    const commands: string[] = []
+    deps.execFor = () => async (command, options) => {
+      commands.push(command)
+      options?.onOutput?.(`ran ${command}\n`)
+      return { stdout: '', stdoutBytes: 0, stderr: '', code: 0 }
+    }
+    deps.serviceFor = () => ({
+      readConfig: async () => ({ facts: { sudo: { full: true } }, blocks: [{ id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', names: ['app.example.com'] }] })
+    }) as unknown as SslService
+
+    expect(ssl.httpsEmail('s1')).toBe('')
+    const result = await ssl.httpsIssue('c1', 's1', { blockId: 'app.conf:1', names: ['app.example.com'], email: 'admin@example.com', redirect: false, staging: false }, 'run-9')
+
+    expect(result).toMatchObject({ ok: true, lineage: 'app.example.com' })
+    expect(commands).toEqual(['sudo -n sh -s', 'sudo -n certbot --nginx --non-interactive --agree-tos -m admin@example.com --cert-name app.example.com -d app.example.com --no-redirect', 'sudo -n nginx -t'])
+    expect(deps.broadcast).toHaveBeenCalledWith('ssl:output', 'run-9', 'ran sudo -n nginx -t\n')
+    expect(ssl.httpsEmail('s1')).toBe('admin@example.com')
+    await expect(ssl.httpsInstall('c1', 'snap', 'run-10')).rejects.not.toThrow(/already running/)
+  })
+
+  it('checks readiness against the connected address and the Cloudflare record of a proxied name', async () => {
+    const cloudflare = {
+      check: async () => ({ error: null, permissions: [], zones: [{ id: 'z1', name: 'example.com' }] }),
+      edges: vi.fn(async () => ({ 'app.example.com': { state: 'proxied', zone: 'example.com', recordType: 'A', recordContent: '203.0.113.10', sslMode: 'flexible', unknownReason: null } }))
+    }
+    const ssl = coordinator(fakeStore({}, 'test-token-123'), cloudflare as unknown as CloudflareClient)
+    deps.serviceFor = () => ({ readFacts: async () => ({ addresses: ['203.0.113.10'] }) }) as unknown as SslService
+    deps.resolveHost = async (host) => (host === 'app.example.com' ? ['104.18.1.1'] : [])
+    deps.httpGet = async () => ({ status: 404 })
+
+    const result = await ssl.httpsReadiness('c1', ['app.example.com'])
+
+    expect(result).toEqual([{
+      name: 'app.example.com',
+      dns: { state: 'ok', detail: 'proxied by Cloudflare, record points to this server' },
+      port80: { state: 'ok', detail: 'answers on port 80' },
+      cloudflare: 'Cloudflare SSL mode: Flexible'
+    }])
+    expect(cloudflare.edges).toHaveBeenCalledWith(['app.example.com'], ['203.0.113.10'], [{ id: 'z1', name: 'example.com' }])
+  })
+
+  it('rejects names that are not plain hostnames before doing any work', async () => {
+    const ssl = coordinator()
+    await expect(ssl.httpsReadiness('c1', ['app.example.com; rm -rf /'])).rejects.toThrow(/not a valid hostname/)
+    expect(() => ssl.httpsVerify('c1', ['*.example.com'], 'app.example.com')).toThrow(/not a valid hostname/)
+    expect(() => ssl.httpsVerify('c1', ['app.example.com'], '../etc')).toThrow('Invalid certificate name')
   })
 
   it('keeps the saved token when a new one is rejected', async () => {
