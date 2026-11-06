@@ -20,10 +20,11 @@ interface HostnameDetailProps {
   error: string | null
   run: CertbotRun
   onBack: () => void
+  onAddHttps: (blockId: string) => void
   onRefresh: () => Promise<void>
 }
 
-export function HostnameDetail({ host, report, now, loading, error, run, onBack, onRefresh }: HostnameDetailProps) {
+export function HostnameDetail({ host, report, now, loading, error, run, onBack, onAddHttps, onRefresh }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
   const block = blocks.find((b) => b.id === host.blockId)
@@ -47,7 +48,7 @@ export function HostnameDetail({ host, report, now, loading, error, run, onBack,
         {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void onRefresh()} />}
         <Diagram host={host} facts={facts} now={now} />
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          <ActionsCard host={host} facts={facts} run={run} onForce={() => setConfirmForce(true)} />
+          <ActionsCard host={host} facts={facts} run={run} onForce={() => setConfirmForce(true)} onAddHttps={onAddHttps} />
           <FactsCard host={host} block={block} now={now} />
         </div>
         {facts.certbot && <RenewalCard renewal={facts.renewal} />}

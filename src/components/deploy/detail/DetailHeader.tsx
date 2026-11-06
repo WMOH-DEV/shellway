@@ -6,6 +6,7 @@ import type { DeployRecord, RemoteDrift, SiteSummary } from '@/types/deploy'
 import { shortSha } from '@/utils/deploy/siteStatus'
 import { canCancel, cancelBlockedReason } from '@/utils/deploy/siteRow'
 import { deployLabel } from '@/utils/deploy/siteDetail'
+import { NoHttpsChip } from '@/components/ssl/https/NoHttpsChip'
 import { BehindChip } from '../BehindChip'
 import { SiteStatusBadge } from '../SiteStatusBadge'
 
@@ -20,6 +21,7 @@ export interface DetailActions {
 }
 
 interface DetailHeaderProps {
+  connectionId: string
   summary: SiteSummary
   pcDrift?: RemoteDrift
   starting: boolean
@@ -37,7 +39,7 @@ function CancelButton({ summary, starting, onCancel }: { summary: SiteSummary; s
   return allowed ? button : <Tooltip content={cancelBlockedReason(summary)}>{button}</Tooltip>
 }
 
-function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeaderProps, 'rollbackTo'>) {
+function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeaderProps, 'rollbackTo' | 'connectionId'>) {
   if (summary.state.pending) {
     return (
       <Button variant="primary" onClick={actions.deploy} disabled={starting}>
@@ -64,7 +66,7 @@ function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeader
   )
 }
 
-export function DetailHeader({ summary, pcDrift, starting, rollbackTo, actions }: DetailHeaderProps) {
+export function DetailHeader({ connectionId, summary, pcDrift, starting, rollbackTo, actions }: DetailHeaderProps) {
   const { config, state } = summary
   const menu = [
     ...(config.sourceMode === 'auto' ? [{ id: 'key', label: 'Deploy key', icon: <KeyRound size={13} /> }] : []),
@@ -78,6 +80,7 @@ export function DetailHeader({ summary, pcDrift, starting, rollbackTo, actions }
       <h1 className="truncate text-lg font-semibold tracking-tight text-nd-text-primary">{config.name}</h1>
       <SiteStatusBadge summary={summary} pcDrift={pcDrift} />
       <BehindChip summary={summary} pcDrift={pcDrift} />
+      <NoHttpsChip connectionId={connectionId} path={config.path} healthUrl={config.healthUrl} />
       <div className="flex-1" />
       {rollbackTo && (
         <Tooltip content={`Roll back to ${shortSha(rollbackTo.commit)}`}>

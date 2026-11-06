@@ -21,6 +21,7 @@ interface HostnamesScreenProps {
   onRefresh: () => void
   onOpen: (name: string) => void
   onOpenSettings: () => void
+  onAddHttps: (blockId?: string) => void
 }
 
 function NoMatches({ onClear }: { onClear: () => void }) {
@@ -32,7 +33,7 @@ function NoMatches({ onClear }: { onClear: () => void }) {
   )
 }
 
-export function HostnamesScreen({ report, serverName, now, loading, error, onRefresh, onOpen, onOpenSettings }: HostnamesScreenProps) {
+export function HostnamesScreen({ report, serverName, now, loading, error, onRefresh, onOpen, onOpenSettings, onAddHttps }: HostnamesScreenProps) {
   const { hostnames, facts, cloudflare } = report
   const [filter, setFilter] = useState<HostFilter>('all')
   const counts = useMemo(() => filterCounts(hostnames), [hostnames])
@@ -49,6 +50,7 @@ export function HostnamesScreen({ report, serverName, now, loading, error, onRef
           loading={loading}
           onRefresh={onRefresh}
           onOpenSettings={onOpenSettings}
+          onAddHttps={() => onAddHttps()}
         />
         {error && <ErrorBanner message={error} retrying={loading} onRetry={onRefresh} />}
         {banner && <CriticalBanner banner={banner} onFix={onOpen} />}
@@ -58,7 +60,7 @@ export function HostnamesScreen({ report, serverName, now, loading, error, onRef
             {notice && <PartialNotice notice={notice} />}
             <HostFilterBar value={filter} counts={counts} onChange={setFilter} />
             {shown.length > 0
-              ? <HostList hosts={shown} facts={facts} now={now} onOpen={onOpen} />
+              ? <HostList hosts={shown} facts={facts} now={now} onOpen={onOpen} onAddHttps={onAddHttps} />
               : <NoMatches onClear={() => setFilter('all')} />}
           </>
         )}

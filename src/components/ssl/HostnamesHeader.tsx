@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { CloudflareStatus } from '@/types/ssl'
 import { cloudflareButton } from '@/utils/ssl/header'
@@ -10,9 +10,10 @@ interface HostnamesHeaderProps {
   loading: boolean
   onRefresh: () => void
   onOpenSettings: () => void
+  onAddHttps: () => void
 }
 
-export function HostnamesHeader({ subtitle, cloudflare, loading, onRefresh, onOpenSettings }: HostnamesHeaderProps) {
+export function HostnamesHeader({ subtitle, cloudflare, loading, onRefresh, onOpenSettings, onAddHttps }: HostnamesHeaderProps) {
   const status = cloudflareButton(cloudflare)
   return (
     <header className="flex flex-wrap items-center gap-3">
@@ -27,6 +28,9 @@ export function HostnamesHeader({ subtitle, cloudflare, loading, onRefresh, onOp
       </Button>
       <Button onClick={onRefresh} disabled={loading}>
         <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} /> Refresh
+      </Button>
+      <Button variant="primary" onClick={onAddHttps}>
+        <Plus size={14} /> Add HTTPS
       </Button>
     </header>
   )
