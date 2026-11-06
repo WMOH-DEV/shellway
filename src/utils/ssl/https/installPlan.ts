@@ -66,13 +66,13 @@ function checkSteps(plugin: Plugin, timer: string): InstallStep[] {
   return [
     check('check-version', 'certbot --version', 'Confirms certbot runs'),
     check('check-plugin', `certbot plugins --text | grep -w ${plugin}`, `Confirms the ${plugin} plugin is there`),
-    check('check-timer', `systemctl list-timers ${timer} --no-pager`, 'Confirms automatic renewal is scheduled')
+    check('check-timer', `systemctl is-active ${timer}`, 'Confirms automatic renewal is scheduled')
   ]
 }
 
 function packagedRemoval(facts: PrepFacts): InstallStep {
   const method = facts.certbot?.method
-  const why = 'An older packaged certbot would clash with the snap'
+  const why = 'Removed once the snap works, so the older packaged certbot cannot clash with it'
   if (method === 'apt' || method === 'dnf' || method === 'yum') return run('remove-packaged', `${method === 'apt' ? 'apt-get' : method} remove -y certbot`, why)
   return skip('remove-packaged', 'apt-get remove -y certbot', why, 'No packaged certbot found')
 }
@@ -82,11 +82,11 @@ function snapSteps(facts: PrepFacts): InstallStep[] {
   const hasSnap = facts.certbot?.method === 'snap'
   const installWhy = `Installs certbot with the ${plugin} plugin and a renewal timer`
   return [
-    packagedRemoval(facts),
     hasSnap
       ? skip('install-snap', 'snap install --classic certbot', installWhy, 'Already installed from the snap')
       : run('install-snap', 'snap install --classic certbot', installWhy),
     run('link', 'ln -sf /snap/bin/certbot /usr/local/bin/certbot', 'So certbot works from any shell'),
+    packagedRemoval(facts),
     ...checkSteps(plugin, 'snap.certbot.renew.timer')
   ]
 }

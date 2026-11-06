@@ -35,6 +35,7 @@ describe('issue commands', () => {
     expect(issueRequestError(request({ names: ['*.example.com'] }))).toBe('*.example.com cannot get a certificate this way')
     expect(issueRequestError(request({ names: ['app.example.com', 'app.example.com'] }))).toBe('A name is listed twice')
     expect(issueRequestError(request({ email: 'not-an-email' }))).toBe('Enter a valid email address')
+    expect(issueRequestError(request({ email: '-d@example.com' }))).toBe('Enter a valid email address')
     expect(issueRequestError(request())).toBeNull()
   })
 

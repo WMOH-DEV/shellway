@@ -21,20 +21,20 @@ const commands = (f: PrepFacts, route?: 'snap' | 'distro') =>
 describe('installPlan', () => {
   it('follows certbot.eff.org with the snap when snapd is there', () => {
     expect(commands(facts())).toEqual([
-      'skip apt-get remove -y certbot',
       'run snap install --classic certbot',
       'run ln -sf /snap/bin/certbot /usr/local/bin/certbot',
+      'skip apt-get remove -y certbot',
       'check certbot --version',
       'check certbot plugins --text | grep -w nginx',
-      'check systemctl list-timers snap.certbot.renew.timer --no-pager'
+      'check systemctl is-active snap.certbot.renew.timer'
     ])
     expect(installPlan(facts())).toMatchObject({ route: 'snap', routes: ['snap', 'distro'], needed: true, blockedReason: null, docsUrl: 'https://certbot.eff.org/instructions?ws=nginx&os=snap' })
   })
 
-  it('removes an old packaged certbot before the snap', () => {
+  it('removes an old packaged certbot only after the snap is in place', () => {
     const old = facts({ certbot: { path: '/usr/bin/certbot', version: '1.21.0', method: 'apt' }, plugins: ['nginx'] })
-    expect(commands(old)[0]).toBe('run apt-get remove -y certbot')
-    expect(commands(facts({ certbot: { path: '/usr/bin/certbot', version: '2.6.0', method: 'dnf' }, os: { id: 'fedora', versionId: '40', family: 'rhel', pretty: 'Fedora 40' }, packageManager: 'dnf' }))[0]).toBe('run dnf remove -y certbot')
+    expect(commands(old).slice(0, 3)).toEqual(['run snap install --classic certbot', 'run ln -sf /snap/bin/certbot /usr/local/bin/certbot', 'run apt-get remove -y certbot'])
+    expect(commands(facts({ certbot: { path: '/usr/bin/certbot', version: '2.6.0', method: 'dnf' }, os: { id: 'fedora', versionId: '40', family: 'rhel', pretty: 'Fedora 40' }, packageManager: 'dnf' }))[2]).toBe('run dnf remove -y certbot')
   })
 
   it('uses the apache plugin for Apache servers', () => {
@@ -47,7 +47,7 @@ describe('installPlan', () => {
       'run DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
       'check certbot --version',
       'check certbot plugins --text | grep -w nginx',
-      'check systemctl list-timers certbot.timer --no-pager'
+      'check systemctl is-active certbot.timer'
     ])
   })
 
@@ -59,7 +59,7 @@ describe('installPlan', () => {
       'run systemctl enable --now certbot-renew.timer',
       'check certbot --version',
       'check certbot plugins --text | grep -w nginx',
-      'check systemctl list-timers certbot-renew.timer --no-pager'
+      'check systemctl is-active certbot-renew.timer'
     ])
     const fedora = facts({ os: { id: 'fedora', versionId: '40', family: 'rhel', pretty: 'Fedora 40' }, packageManager: 'dnf', snapd: null })
     expect(commands(fedora)[0]).toBe('run dnf install -y certbot python3-certbot-nginx')
@@ -83,12 +83,12 @@ describe('installPlan', () => {
     const ready = facts({ certbot: { path: '/usr/local/bin/certbot', version: '2.11.0', method: 'snap' }, plugins: ['nginx', 'standalone'], renewalTimer: 'snap.certbot.renew.timer' })
     expect(isCertbotReady(ready)).toBe(true)
     expect(installPlan(ready).needed).toBe(false)
-    expect(commands(ready)[1]).toBe('skip snap install --classic certbot')
+    expect(commands(ready)[0]).toBe('skip snap install --classic certbot')
   })
 
   it('turns the plan into one script that stops at the first failure and skips skipped steps', () => {
     expect(installScript(installPlan(facts()))).toBe(
-      'set -e\nsnap install --classic certbot\nln -sf /snap/bin/certbot /usr/local/bin/certbot\ncertbot --version\ncertbot plugins --text | grep -w nginx\nsystemctl list-timers snap.certbot.renew.timer --no-pager\n'
+      'set -e\nsnap install --classic certbot\nln -sf /snap/bin/certbot /usr/local/bin/certbot\ncertbot --version\ncertbot plugins --text | grep -w nginx\nsystemctl is-active snap.certbot.renew.timer\n'
     )
   })
 })

@@ -9,6 +9,8 @@ import type { IssueHooks } from './issue'
 
 const FILE = '/etc/nginx/sites-enabled/app.conf'
 const BACKUP = '/etc/ssl/shellway/backups/app.conf.1800000000'
+const limited = (command: string) => command.replace(/^sudo -n /, 'sudo -n timeout -k 10 570 ')
+const COMPARE = `sudo -n cmp -s '${BACKUP}' '${FILE}'`
 
 const request: IssueRequest = { blockId: `${FILE}:1`, names: ['app.example.com'], email: 'admin@example.com', redirect: true, staging: true }
 
@@ -43,6 +45,9 @@ function fakeExec(responder: Responder): RemoteExec {
   }
 }
 
+const STAGING = limited(stagingCommand(request))
+const ISSUE = limited(issueCommand(request))
+
 const issue = (responder: Responder = () => undefined, cfg: ServerConfig = config(), req: IssueRequest = request) =>
   runIssue(fakeExec(responder), async () => cfg, req, hooks)
 
@@ -57,7 +62,7 @@ describe('runIssue', () => {
   it('backs up, tests with staging, issues and checks nginx, sending exactly the helper commands', async () => {
     const result = await issue()
 
-    expect(commands).toEqual(['sudo -n sh -s', stagingCommand(request), issueCommand(request), 'sudo -n nginx -t'])
+    expect(commands).toEqual(['sudo -n sh -s', STAGING, ISSUE, 'sudo -n nginx -t'])
     expect(stdins['sudo -n sh -s']).toBe(`set -e\nmkdir -p -m 700 /etc/ssl/shellway/backups\ncp -p '${FILE}' '${BACKUP}'\n`)
     expect(result).toMatchObject({ ok: true, failedStage: null, restored: false, backupPath: BACKUP, lineage: 'app.example.com', hint: null })
     expect(hooks.rememberEmail).toHaveBeenCalled()
@@ -79,14 +84,14 @@ describe('runIssue', () => {
 
   it('skips the staging run when it is switched off', async () => {
     await issue(() => undefined, config(), { ...request, staging: false })
-    expect(commands).toEqual(['sudo -n sh -s', issueCommand({ ...request, staging: false }), 'sudo -n nginx -t'])
+    expect(commands).toEqual(['sudo -n sh -s', limited(issueCommand({ ...request, staging: false })), 'sudo -n nginx -t'])
   })
 
   it('stops after a failed staging run without sending the real request', async () => {
     const result = await issue((command) =>
-      command === stagingCommand(request) ? { code: 1, output: 'Challenge failed: 404 /.well-known/acme-challenge/x\n' } : undefined)
+      command === STAGING ? { code: 1, output: 'Challenge failed: 404 /.well-known/acme-challenge/x\n' } : undefined)
 
-    expect(commands).toEqual(['sudo -n sh -s', stagingCommand(request)])
+    expect(commands).toEqual(['sudo -n sh -s', STAGING, COMPARE])
     expect(result).toMatchObject({ ok: false, failedStage: 'staging', restored: false, backupPath: BACKUP, lineage: null })
     expect(result.hint).toMatch(/could not reach the challenge file/)
     expect(hooks.rememberEmail).not.toHaveBeenCalled()
@@ -97,7 +102,7 @@ describe('runIssue', () => {
       command === 'sudo -n nginx -t' && attempt === 1 ? { code: 1, output: 'nginx: configuration file test failed\n' } : undefined)
 
     expect(commands).toEqual([
-      'sudo -n sh -s', stagingCommand(request), issueCommand(request), 'sudo -n nginx -t',
+      'sudo -n sh -s', STAGING, ISSUE, 'sudo -n nginx -t',
       `sudo -n cp -p '${BACKUP}' '${FILE}'`, 'sudo -n nginx -t', 'sudo -n nginx -s reload'
     ])
     expect(result).toMatchObject({ ok: false, failedStage: 'nginx-test', restored: true, lineage: null })
@@ -105,7 +110,7 @@ describe('runIssue', () => {
 
   it('restores when the issue command and the nginx test both fail', async () => {
     const result = await issue((command, attempt) => {
-      if (command === issueCommand(request)) return { code: 1 }
+      if (command === ISSUE) return { code: 1 }
       return command === 'sudo -n nginx -t' && attempt === 1 ? { code: 1 } : undefined
     })
     expect(result).toMatchObject({ ok: false, failedStage: 'issue', restored: true })
@@ -113,10 +118,35 @@ describe('runIssue', () => {
   })
 
   it('leaves a valid configuration alone when only the issue command failed', async () => {
-    const result = await issue((command) => (command === issueCommand(request) ? { code: 1, output: 'too many certificates already issued\n' } : undefined))
-    expect(commands).toEqual(['sudo -n sh -s', stagingCommand(request), issueCommand(request), 'sudo -n nginx -t'])
+    const result = await issue((command) => (command === ISSUE ? { code: 1, output: 'too many certificates already issued\n' } : undefined))
+    expect(commands).toEqual(['sudo -n sh -s', STAGING, ISSUE, 'sudo -n nginx -t', COMPARE])
     expect(result).toMatchObject({ ok: false, failedStage: 'issue', restored: false })
     expect(result.hint).toMatch(/rate limit/)
+  })
+
+  it('limits certbot on the server so it stops before Shellway gives up waiting', async () => {
+    await issue()
+    expect(STAGING).toBe(`sudo -n timeout -k 10 570 ${stagingCommand(request).slice('sudo -n '.length)}`)
+    expect(commands).toContain(ISSUE)
+  })
+
+  it('restores the file when a failed certbot run left it changed', async () => {
+    const result = await issue((command) => {
+      if (command === STAGING) return { code: 1 }
+      return command === COMPARE ? { code: 1 } : undefined
+    })
+    expect(commands).toEqual([
+      'sudo -n sh -s', STAGING, COMPARE,
+      `sudo -n cp -p '${BACKUP}' '${FILE}'`, 'sudo -n nginx -t', 'sudo -n nginx -s reload'
+    ])
+    expect(result).toMatchObject({ ok: false, failedStage: 'staging', restored: true })
+  })
+
+  it('still reports the certificate when remembering the email fails', async () => {
+    hooks.rememberEmail.mockImplementation(() => { throw new Error('disk full') })
+    const result = await issue()
+    expect(result).toMatchObject({ ok: true, lineage: 'app.example.com' })
+    expect(result.output).toContain('Could not remember the email: disk full')
   })
 
   it('reports a restore that did not work', async () => {
@@ -131,7 +161,7 @@ describe('runIssue', () => {
 
   it('restores after a lost connection during the real request', async () => {
     const result = await issue((command, attempt) => {
-      if (command === issueCommand(request)) return new Error('Command timed out after 600000ms')
+      if (command === ISSUE) return new Error('Command timed out after 600000ms')
       return command === 'sudo -n nginx -t' && attempt === 1 ? { code: 1 } : undefined
     })
     expect(result).toMatchObject({ failedStage: 'issue', restored: true })

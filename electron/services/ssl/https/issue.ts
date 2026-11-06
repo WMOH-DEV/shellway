@@ -14,6 +14,7 @@ const NGINX_TEST = 'sudo -n nginx -t'
 const NGINX_RELOAD = 'sudo -n nginx -s reload'
 const CERTBOT_TIMEOUT_MS = 10 * 60_000
 const SHORT_TIMEOUT_MS = 30_000
+const REMOTE_LIMIT_S = CERTBOT_TIMEOUT_MS / 1000 - 30
 const NEEDS_SUDO = 'Issuing a certificate needs passwordless sudo. Run these commands yourself, then Check again.'
 const SITE_GONE = 'This site is no longer in the nginx configuration. Check again.'
 
@@ -49,15 +50,38 @@ class IssueRun {
   async execute(): Promise<IssueResult> {
     if (!(await this.backup())) return this.failure('backup', false)
     if (this.request.staging) {
-      if (!(await this.run(stagingCommand(this.request), CERTBOT_TIMEOUT_MS))) return this.failure('staging', false)
-      this.hooks.rememberEmail()
+      if (!(await this.runCertbot(stagingCommand(this.request)))) return this.failUnlessUnchanged('staging')
+      this.rememberEmail()
     }
-    const issued = await this.run(issueCommand(this.request), CERTBOT_TIMEOUT_MS)
+    const issued = await this.runCertbot(issueCommand(this.request))
     const tested = await this.run(NGINX_TEST, SHORT_TIMEOUT_MS)
     if (issued && tested) return this.success()
-    if (tested) return this.failure('issue', false)
+    if (tested) return this.failUnlessUnchanged('issue')
     const restored = await this.restore()
     return this.failure(restored ? (issued ? 'nginx-test' : 'issue') : 'restore', restored)
+  }
+
+  private runCertbot(command: string): Promise<boolean> {
+    const limited = command.replace(/^sudo -n /, `sudo -n timeout -k 10 ${REMOTE_LIMIT_S} `)
+    return this.run(limited, CERTBOT_TIMEOUT_MS, {}, command)
+  }
+
+  private async failUnlessUnchanged(stage: IssueStage): Promise<IssueResult> {
+    if (await this.matchesBackup()) return this.failure(stage, false)
+    const restored = await this.restore()
+    return this.failure(restored ? stage : 'restore', restored)
+  }
+
+  private matchesBackup(): Promise<boolean> {
+    return this.run(`sudo -n cmp -s ${shellEscape(this.backupPath ?? '')} ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS)
+  }
+
+  private rememberEmail(): void {
+    try {
+      this.hooks.rememberEmail()
+    } catch (err) {
+      this.log.write(`Could not remember the email: ${(err as Error).message}\n`)
+    }
   }
 
   private async run(command: string, timeoutMs: number, options: ExecOptions = {}, shown = command): Promise<boolean> {
@@ -87,7 +111,7 @@ class IssueRun {
   }
 
   private success(): IssueResult {
-    this.hooks.rememberEmail()
+    this.rememberEmail()
     return { ok: true, failedStage: null, restored: false, backupPath: this.backupPath, lineage: lineageFor(this.request), output: this.log.text(), hint: null }
   }
 

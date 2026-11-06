@@ -201,7 +201,7 @@ describe('SslCoordinator', () => {
     const result = await ssl.httpsIssue('c1', 's1', { blockId: 'app.conf:1', names: ['app.example.com'], email: 'admin@example.com', redirect: false, staging: false }, 'run-9')
 
     expect(result).toMatchObject({ ok: true, lineage: 'app.example.com' })
-    expect(commands).toEqual(['sudo -n sh -s', 'sudo -n certbot --nginx --non-interactive --agree-tos -m admin@example.com --cert-name app.example.com -d app.example.com --no-redirect', 'sudo -n nginx -t'])
+    expect(commands).toEqual(['sudo -n sh -s', 'sudo -n timeout -k 10 570 certbot --nginx --non-interactive --agree-tos -m admin@example.com --cert-name app.example.com -d app.example.com --no-redirect', 'sudo -n nginx -t'])
     expect(deps.broadcast).toHaveBeenCalledWith('ssl:output', 'run-9', 'ran sudo -n nginx -t\n')
     expect(ssl.httpsEmail('s1')).toBe('admin@example.com')
     await expect(ssl.httpsInstall('c1', 'snap', 'run-10')).rejects.not.toThrow(/already running/)
