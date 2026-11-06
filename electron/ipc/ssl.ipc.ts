@@ -9,7 +9,7 @@ import { CloudflareClient } from '../services/ssl/CloudflareClient'
 import { SslCoordinator } from '../services/ssl/SslCoordinator'
 import { SslLocalStore } from '../services/ssl/SslLocalStore'
 import { LINEAGE_NAME } from '../../src/utils/ssl/commands'
-import type { CertbotAction, InstallRoute, IssueRequest, OriginKeyType, OriginValidityYears, SslResult, SwitchRequest } from '../../src/types/ssl'
+import type { CertbotAction, InstallRoute, IssueRequest, OriginKeyType, OriginValidityYears, SslMode, SslResult, SwitchRequest } from '../../src/types/ssl'
 
 let coordinator: SslCoordinator | null = null
 let store: SslLocalStore | null = null
@@ -22,6 +22,7 @@ const SWITCH_ID = /^[A-Za-z0-9-]{1,64}$/
 const ORIGIN_KEY_TYPES: readonly OriginKeyType[] = ['ecc', 'rsa']
 const ORIGIN_YEARS: readonly OriginValidityYears[] = [1, 2, 3, 15]
 const MAX_NAMES = 100
+const ZONE_MODES: readonly SslMode[] = ['off', 'flexible', 'full', 'strict']
 
 function execFor(connectionId: string): RemoteExec | null {
   const conn = getSSHService().get(connectionId)
@@ -53,6 +54,11 @@ function installRoute(value: unknown): InstallRoute {
 function nameList(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.length > MAX_NAMES) throw new Error(`Invalid ${label}`)
   return value.map((name) => str(name, label, 253))
+}
+
+function zoneMode(value: unknown): SslMode {
+  if (!ZONE_MODES.includes(value as SslMode)) throw new Error('Invalid SSL mode')
+  return value as SslMode
 }
 
 function flag(value: unknown, label: string): boolean {
@@ -139,6 +145,9 @@ export function registerSslIPC(): void {
     requireCoordinator().originUndo(str(c, 'connection'), str(s, 'session'), str(name, 'name', 253), matching(runId, RUN_ID, 'run')))
   handle('ssl:remove-lineage', (c, lineage, runId) =>
     requireCoordinator().originRemoveLineage(str(c, 'connection'), matching(lineage, LINEAGE_NAME, 'certificate name'), matching(runId, RUN_ID, 'run')))
+  handle('ssl:zone-preflight', (zone) => requireCoordinator().zonePreflight(str(zone, 'zone', 253)))
+  handle('ssl:zone-set-mode', (zone, mode, confirmedUnknown) =>
+    requireCoordinator().zoneSetMode(str(zone, 'zone', 253), zoneMode(mode), nameList(confirmedUnknown, 'hostnames')))
   handle('ssl:last-report', (c) => requireCoordinator().lastReport(str(c, 'connection')))
   handle('ssl:cf-status', () => requireCoordinator().cloudflareStatus())
   handle('ssl:cf-save', (token) => requireCoordinator().saveCloudflareToken(str(token, 'token', 512).trim()))
