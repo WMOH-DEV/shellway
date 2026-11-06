@@ -19,7 +19,7 @@ interface HostRowProps {
   onAddHttps: (blockId: string) => void
 }
 
-function HostCell({ host, onOpen, onAddHttps }: { host: HostnameStatus; onOpen: () => void; onAddHttps: (blockId: string) => void }) {
+function HostCell({ host, onOpen }: { host: HostnameStatus; onOpen: () => void }) {
   const open = (e: MouseEvent) => { e.stopPropagation(); onOpen() }
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -32,13 +32,19 @@ function HostCell({ host, onOpen, onAddHttps }: { host: HostnameStatus; onOpen: 
           {host.name}
         </button>
         <VerdictBadge view={verdictBadge(host)} className="shrink-0" />
-        {isMissingServerCertificate(host) && (
-          <Button size="sm" className="shrink-0" aria-label={`Add HTTPS to ${host.name}`} onClick={(e) => { e.stopPropagation(); onAddHttps(host.blockId) }}>
-            Add HTTPS
-          </Button>
-        )}
       </div>
       <span className="truncate text-xs text-nd-text-muted">{host.reason}</span>
+    </div>
+  )
+}
+
+function MissingCertCell({ host, onAddHttps }: { host: HostnameStatus; onAddHttps: (blockId: string) => void }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-[13px] text-nd-text-primary">
+      <span className="truncate">{certView(host, 0).kindLabel}</span>
+      <Button size="sm" className="ml-auto shrink-0" aria-label={`Add HTTPS to ${host.name}`} onClick={(e) => { e.stopPropagation(); onAddHttps(host.blockId) }}>
+        Add HTTPS
+      </Button>
     </div>
   )
 }
@@ -94,8 +100,8 @@ export function HostRow({ host, facts, now, onOpen, onAddHttps }: HostRowProps) 
         SSL_COLUMNS
       )}
     >
-      <HostCell host={host} onOpen={open} onAddHttps={onAddHttps} />
-      <CertCell host={host} now={now} />
+      <HostCell host={host} onOpen={open} />
+      {isMissingServerCertificate(host) ? <MissingCertCell host={host} onAddHttps={onAddHttps} /> : <CertCell host={host} now={now} />}
       <CloudflareCell host={host} />
       <RenewalCell host={host} facts={facts} now={now} />
       <span className="flex h-8 w-8 items-center justify-center justify-self-center text-nd-text-muted" aria-hidden>

@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
+import type { InstallRoute } from '@/types/ssl'
 import type { HttpsStep } from '@/utils/ssl/addHttps/steps'
 import { CardLabel } from '../Card'
 
 interface ContextCardProps {
   step: HttpsStep
   certbotDocsUrl: string | null
+  route: InstallRoute | null
 }
 
 const OUTCOMES = ['HTTPS on every name you pick', 'HTTP redirected to HTTPS', 'Renewal set up and tested', 'The site watched in this tab']
@@ -18,7 +20,15 @@ function Frame({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function ContextCard({ step, certbotDocsUrl }: ContextCardProps) {
+export function ContextCard({ step, certbotDocsUrl, route }: ContextCardProps) {
+  if (step === 'prepare' && route === 'distro') {
+    return (
+      <Frame label="Using your distribution's packages">
+        <span className="text-[12.5px] text-nd-text-secondary">certbot's own instructions recommend the snap. These packages come from your distribution instead: they include a renewal timer but can be older. Nothing runs until you click Install.</span>
+        {certbotDocsUrl && <a className="text-xs text-nd-accent hover:underline" href={certbotDocsUrl} target="_blank" rel="noreferrer">Open certbot's instructions</a>}
+      </Frame>
+    )
+  }
   if (step === 'prepare') {
     return (
       <Frame label="Following certbot's guide">

@@ -212,6 +212,8 @@ describe('Add HTTPS step 2', () => {
     await u.click(within(toggle).getByRole('button', { name: 'From your distribution' }))
     expect(screen.getByText('DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx')).toBeInTheDocument()
     expect(screen.queryByText('snap install --classic certbot')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: "Using your distribution's packages" })).toHaveTextContent(/recommend the snap/)
+    expect(screen.queryByRole('region', { name: "Following certbot's guide" })).not.toBeInTheDocument()
   })
 
   it('has no route toggle when only one route exists', async () => {
