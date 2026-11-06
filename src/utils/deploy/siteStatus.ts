@@ -57,8 +57,11 @@ export function timeAgo(epochSeconds: number, nowSeconds: number): string {
   return diff < 60 ? 'just now' : `${timeSpan(diff)} ago`
 }
 
+export function formatSeconds(seconds: number): string {
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
 export function duration(record: DeployRecord): string {
   if (!record.finished) return ''
-  const seconds = Math.max(0, record.finished - record.started)
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  return formatSeconds(Math.max(0, record.finished - record.started))
 }

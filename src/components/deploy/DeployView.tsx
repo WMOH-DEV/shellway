@@ -5,7 +5,7 @@ import type { ConnectionStatus } from '@/types/session'
 import type { DeployResult, SiteConfig } from '@/types/deploy'
 import type { SiteFilter } from '@/utils/deploy/siteRow'
 import { KeySetup } from './KeySetup'
-import { SiteDetail } from './SiteDetail'
+import { SiteDetail, type DetailTab } from './SiteDetail'
 import { SiteForm } from './SiteForm'
 import type { SiteActions } from './SiteRow'
 import { SitesOverview } from './SitesOverview'
@@ -21,7 +21,7 @@ interface DeployViewProps {
 
 type Screen =
   | { kind: 'list' }
-  | { kind: 'detail'; name: string }
+  | { kind: 'detail'; name: string; tab?: DetailTab }
   | { kind: 'form'; site: SiteConfig | null }
   | { kind: 'key'; site: SiteConfig }
 
@@ -79,10 +79,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
       `Could not resume the auto check for ${name}`,
       () => toast.success(`Auto check resumed for ${name}`, 'It looks for new commits again within a minute')
     ),
-    edit: (name) => {
-      const site = configOf(name)
-      if (site) setScreen({ kind: 'form', site })
-    },
+    edit: (name) => setScreen({ kind: 'detail', name, tab: 'settings' }),
     keySetup: (name) => {
       const site = configOf(name)
       if (site) setScreen({ kind: 'key', site })
@@ -121,12 +118,15 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
     const { name } = detailSite.config
     return frame(
       <SiteDetail
+        key={`${name}:${screen.kind === 'detail' ? screen.tab ?? '' : ''}`}
         connectionId={connectionId}
         summary={detailSite}
         pcDrift={pcDrift[name]}
+        user={session?.username ?? ''}
         starting={starting.has(name)}
+        initialTab={screen.kind === 'detail' ? screen.tab : undefined}
         onBack={() => setScreen({ kind: 'list' })}
-        onEdit={() => actions.edit(name)}
+        onSaved={(site) => { toast.success(`${site.name} saved`); void refresh() }}
         onKeySetup={() => actions.keySetup(name)}
         onDeploy={() => actions.deploy(name)}
         onCancel={() => actions.cancel(name)}

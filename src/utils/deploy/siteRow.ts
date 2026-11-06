@@ -73,7 +73,7 @@ export function shortPath(path: string, user: string): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }
 
-function runTone(record: DeployRecord, summary: SiteSummary): RunTone {
+export function runTone(record: DeployRecord, summary: SiteSummary): RunTone {
   if (record.status === 'reverted' || isInterrupted(record, summary)) return 'failed'
   return record.status
 }

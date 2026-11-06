@@ -4,12 +4,10 @@ import { Button } from '@/components/ui/Button'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Tooltip } from '@/components/ui/Tooltip'
-import { toast } from '@/components/ui/Toast'
 import { cn } from '@/utils/cn'
 import type { RemoteDrift, SiteConfig, SiteSummary } from '@/types/deploy'
 import { isCheckStale, latestRecord, shortSha, siteBadge, timeAgo, type SiteBadge } from '@/utils/deploy/siteStatus'
 import {
-  behindChip,
   cancelBlockedReason,
   canCancel,
   formatElapsed,
@@ -21,9 +19,10 @@ import {
   shortPath,
   sourceMeta,
   triggerLabel,
-  type Chip,
   type RowAction
 } from '@/utils/deploy/siteRow'
+import { BehindChip } from './BehindChip'
+import { copyText } from './copyText'
 import { RunBars } from './RunBars'
 import { SiteStatusBadge } from './SiteStatusBadge'
 
@@ -48,20 +47,7 @@ const ACTION_BUTTONS: Record<RowAction, { label: string; icon: ReactNode }> = {
   resume: { label: 'Resume', icon: <RotateCcw size={13} /> }
 }
 
-const CHIP_STYLE: Record<Chip['tone'], string> = {
-  info: 'bg-nd-info/[.12] text-nd-info',
-  warning: 'bg-nd-warning/[.12] text-nd-warning',
-  muted: 'text-nd-text-muted'
-}
-
 const stop = (e: MouseEvent) => e.stopPropagation()
-
-function copyPath(path: string): void {
-  navigator.clipboard.writeText(path).then(
-    () => toast.success('Path copied'),
-    () => toast.error('Could not copy the path')
-  )
-}
 
 interface SiteCellProps {
   summary: SiteSummary
@@ -91,7 +77,7 @@ function SiteCell({ summary, pcDrift, user, onOpen }: SiteCellProps) {
         <button
           type="button"
           aria-label="Copy full path"
-          onClick={(e) => { stop(e); copyPath(path) }}
+          onClick={(e) => { stop(e); copyText(path, 'Path') }}
           className="shrink-0 rounded p-1 transition-colors hover:bg-nd-surface-hover hover:text-nd-text-primary"
         >
           <Copy size={12} />
@@ -105,7 +91,6 @@ function CommitCell({ summary, pcDrift }: { summary: SiteSummary; pcDrift?: Remo
   const { state } = summary
   if (!state.current) return <div className="text-xs text-nd-text-muted">Nothing live yet</div>
   const live = liveRecord(summary)
-  const chip = behindChip(summary, pcDrift)
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2">
@@ -114,7 +99,7 @@ function CommitCell({ summary, pcDrift }: { summary: SiteSummary; pcDrift?: Remo
       </div>
       <div className="flex min-w-0 items-center gap-2.5 text-xs text-nd-text-muted">
         {live && <span className="truncate">{triggerLabel(live.trigger)} · {timeAgo(live.finished ?? live.started, state.now)}</span>}
-        {chip && <span className={cn('shrink-0 rounded px-1.5 py-px', CHIP_STYLE[chip.tone])}>{chip.label}</span>}
+        <BehindChip summary={summary} pcDrift={pcDrift} />
       </div>
     </div>
   )
@@ -197,7 +182,7 @@ function RowActions({ summary, badge, starting, actions }: RowActionsProps) {
     open: () => actions.open(name),
     edit: () => actions.edit(name),
     key: () => actions.keySetup(name),
-    copy: () => copyPath(path),
+    copy: () => copyText(path, 'Path'),
     resume: () => actions.resume(name)
   }
   const blocked = action === 'cancel' && !canCancel(summary)
