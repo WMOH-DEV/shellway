@@ -219,12 +219,12 @@ const ErrorBanner = React.memo(function ErrorBanner({
   }, [error]);
 
   return (
-    <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border-b border-red-500/30 text-xs text-red-400 font-mono">
+    <div className="flex items-start gap-2 px-3 py-2 border border-nd-error/30 bg-nd-error/[0.07] text-xs text-nd-error-fg font-mono">
       <div className="flex-1 min-w-0 whitespace-pre-wrap break-words select-text cursor-text">
         {error.code && <span className="font-semibold">[{error.code}] </span>}
         {error.message}
         {error.line && (
-          <span className="ml-2 text-red-500/60">
+          <span className="ml-2 text-nd-error/60">
             (line {error.line}
             {error.position ? `, col ${error.position}` : ""})
           </span>
@@ -233,7 +233,7 @@ const ErrorBanner = React.memo(function ErrorBanner({
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 p-0.5 rounded text-red-400/70 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+        className="shrink-0 p-0.5 rounded text-nd-error-fg/70 hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
         title="Copy error"
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -862,7 +862,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         ) : (
           <>
             <span
-              className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md border border-amber-400/40 bg-amber-500/10 text-amber-300 font-medium"
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md border border-nd-warning/30 bg-nd-warning/12 text-nd-warning-fg font-medium"
               title="An uncommitted transaction is open on this connection"
             >
               <GitBranch size={11} />

@@ -158,7 +158,7 @@ export function TimestampDropdownMenu({ state, onClose, onSetValue }: TimestampD
           }}
         />
         <button
-          className="w-full rounded bg-nd-accent px-2 py-1 text-xs text-white hover:bg-nd-accent/90 transition-colors"
+          className="w-full rounded bg-nd-accent-solid px-2 py-1 text-xs text-white hover:bg-nd-accent-solid-hover transition-colors"
           onClick={() => {
             const val = dateInputRef.current?.value
             if (val) {

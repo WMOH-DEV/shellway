@@ -102,7 +102,7 @@ export function ExportDialog({ result, table, dbType, onClose }: ExportDialogPro
     return (
       <Modal open onClose={onClose} title="Export Data" maxWidth="max-w-sm">
         <div className="flex flex-col gap-4">
-          <p className="text-xs text-green-400 bg-green-500/10 rounded-md px-3 py-2">
+          <p className="text-xs text-nd-success-fg border border-nd-success/30 bg-nd-success/[0.07] rounded-md px-3 py-2">
             Exported successfully
           </p>
           <div className="flex items-center justify-end gap-2 pt-1">
@@ -206,7 +206,7 @@ export function ExportDialog({ result, table, dbType, onClose }: ExportDialogPro
 
         {/* Error */}
         {error && (
-          <p className="text-xs text-red-400 bg-red-500/10 rounded-md px-3 py-2">{error}</p>
+          <p className="text-xs text-nd-error-fg border border-nd-error/30 bg-nd-error/[0.07] rounded-md px-3 py-2">{error}</p>
         )}
 
         {/* Actions */}

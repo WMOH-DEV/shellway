@@ -31,26 +31,26 @@ export const SAFE_MODE_OPTIONS: SafeModeOption[] = [
     value: 'warn-all',
     label: 'Alert Mode 1',
     description: 'Warn before sending any query to the server',
-    dotClass: 'bg-amber-400'
+    dotClass: 'bg-nd-warning'
   },
   {
     value: 'warn-writes',
     label: 'Alert Mode 2',
     description: 'Warn before sending queries, except SELECT / EXPLAIN / SHOW',
-    dotClass: 'bg-amber-400'
+    dotClass: 'bg-nd-warning'
   },
   {
     value: 'password-all',
     label: 'Safe Mode 1',
     description: 'Ask for confirmation credentials before sending any query',
-    dotClass: 'bg-red-500'
+    dotClass: 'bg-nd-error'
   },
   {
     value: 'password-writes',
     label: 'Safe Mode 2',
     description:
       'Ask for confirmation credentials, except SELECT / EXPLAIN / SHOW',
-    dotClass: 'bg-red-500'
+    dotClass: 'bg-nd-error'
   }
 ]
 
@@ -166,12 +166,12 @@ export function useSafeModeGate({
               className={
                 danger
                   ? 'p-2 rounded-full bg-nd-error/10'
-                  : 'p-2 rounded-full bg-amber-500/10'
+                  : 'p-2 rounded-full bg-nd-warning/12'
               }
             >
               <ShieldAlert
                 size={20}
-                className={danger ? 'text-nd-error' : 'text-amber-400'}
+                className={danger ? 'text-nd-error' : 'text-nd-warning'}
               />
             </div>
             <div className="space-y-1">

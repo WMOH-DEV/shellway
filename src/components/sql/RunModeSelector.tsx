@@ -36,7 +36,7 @@ const OPTIONS: ModeOption[] = [
     description:
       "Apply the recommended heal for every recognised error without prompting. Best for unattended runs.",
     Icon: Bandage,
-    accent: "text-emerald-400",
+    accent: "text-nd-success",
   },
   {
     mode: "ask-always",
@@ -44,7 +44,7 @@ const OPTIONS: ModeOption[] = [
     description:
       "Pause on every failure and let you pick the heal. Highest control, slowest.",
     Icon: HandMetal,
-    accent: "text-amber-400",
+    accent: "text-nd-warning",
   },
   {
     mode: "strict-abort",
@@ -52,7 +52,7 @@ const OPTIONS: ModeOption[] = [
     description:
       "Classic behaviour: wrap in a transaction and roll back on any failing statement.",
     Icon: Ban,
-    accent: "text-red-400",
+    accent: "text-nd-error",
   },
 ];
 

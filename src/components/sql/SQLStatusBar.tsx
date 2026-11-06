@@ -113,7 +113,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
         {/* Updates */}
         {updates.length > 0 && (
           <div>
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-500/5">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-warning-fg bg-nd-warning/5">
               <Pencil size={10} className="inline mr-1 -mt-px" />
               Updates ({updates.length})
             </div>
@@ -296,7 +296,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
         'flex items-center gap-0 h-7 px-2 text-2xs font-medium border-t',
         'select-none shrink-0 overflow-hidden relative',
         hasChanges
-          ? 'border-amber-500/40 bg-amber-500/5'
+          ? 'border-nd-warning/40 bg-nd-warning/5'
           : isProduction
             ? 'border-nd-error/40 bg-nd-error/5'
             : 'border-nd-border bg-nd-bg-secondary'
@@ -360,8 +360,8 @@ export const SQLStatusBar = memo(function SQLStatusBar({
             className={cn(
               'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs transition-colors',
               showReview
-                ? 'text-amber-300 bg-amber-500/15'
-                : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                ? 'text-nd-warning-fg bg-nd-warning/12'
+                : 'text-nd-warning hover:text-nd-warning-fg hover:bg-nd-warning/12'
             )}
             title="Review pending changes"
           >
@@ -380,7 +380,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
           <button
             onClick={onSave}
             disabled={isSaving}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-nd-warning hover:text-nd-warning-fg hover:bg-nd-warning/12 transition-colors disabled:opacity-40"
           >
             {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
             Save

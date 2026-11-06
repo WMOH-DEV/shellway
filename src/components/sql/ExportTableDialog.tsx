@@ -495,7 +495,7 @@ export function ExportTableDialog({
 
             {/* Error (from previous attempt) */}
             {error && (
-              <p className="text-xs text-red-400 bg-red-500/10 rounded-md px-3 py-2">
+              <p className="text-xs text-nd-error-fg border border-nd-error/30 bg-nd-error/[0.07] rounded-md px-3 py-2">
                 {error}
               </p>
             )}
@@ -586,12 +586,12 @@ export function ExportTableDialog({
         {phase === 'done' && (
           <>
             {resultMessage && !error && (
-              <p className="text-xs text-green-400 bg-green-500/10 rounded-md px-3 py-2">
+              <p className="text-xs text-nd-success-fg border border-nd-success/30 bg-nd-success/[0.07] rounded-md px-3 py-2">
                 {resultMessage}
               </p>
             )}
             {error && (
-              <p className="text-xs text-red-400 bg-red-500/10 rounded-md px-3 py-2">
+              <p className="text-xs text-nd-error-fg border border-nd-error/30 bg-nd-error/[0.07] rounded-md px-3 py-2">
                 {error}
               </p>
             )}

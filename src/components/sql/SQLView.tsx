@@ -66,10 +66,10 @@ function EmptyPanel() {
 
 // ── Tag color mapping ──
 const TAG_COLORS: Record<string, string> = {
-  development: 'bg-blue-500',
-  staging: 'bg-yellow-500',
-  production: 'bg-red-500',
-  testing: 'bg-green-500',
+  development: 'bg-nd-info',
+  staging: 'bg-nd-warning',
+  production: 'bg-nd-error',
+  testing: 'bg-nd-success',
 }
 
 // ── Saved config display for disconnected state ──
@@ -1580,7 +1580,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         />
         <ToolbarSep />
         <div className="flex items-center gap-1.5 px-1.5">
-          <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-nd-success shrink-0" />
           <span className="text-xs text-nd-text-secondary">
             {connectionConfig?.type?.toUpperCase()}
           </span>
