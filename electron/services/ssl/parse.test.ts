@@ -18,6 +18,12 @@ describe('parseServerBlocks', () => {
   const blocks = parseServerBlocks(fixture('nginx-T.txt'))
   const byId = (id: string) => blocks.find((b) => b.id === id)!
 
+  it('keeps the server-level root, not one inside a location', () => {
+    expect(byId('/etc/nginx/sites-enabled/app.example.com:9').root).toBeNull()
+    const dump = '# configuration file /etc/nginx/sites-enabled/site:\nserver {\n    server_name site.example.com;\n    root /var/www/site/current/public;\n}\n'
+    expect(parseServerBlocks(dump)[0].root).toBe('/var/www/site/current/public')
+  })
+
   it('finds every server block across included files', () => {
     expect(blocks.map((b) => b.id)).toEqual([
       '/etc/nginx/conf.d/status.conf:1',

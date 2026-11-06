@@ -15,6 +15,7 @@ export interface ServerBlock {
   certPath: string
   keyPath: string
   probeAddress: string
+  root: string | null
 }
 
 export interface OriginCert {
@@ -143,6 +144,89 @@ export interface AlertSettings {
   probeEnabled: boolean
   lastAlert: { host: string; verdict: Verdict; at: number } | null
   unreachable: UnreachableHost[]
+}
+
+export type CheckState = 'ok' | 'fail' | 'unknown'
+
+export interface ReadinessCheck {
+  state: CheckState
+  detail: string
+}
+
+export interface NameReadiness {
+  name: string
+  dns: ReadinessCheck
+  port80: ReadinessCheck
+  cloudflare: string | null
+}
+
+export type OsFamily = 'debian' | 'rhel' | 'other'
+export type PackageManager = 'apt' | 'dnf' | 'yum'
+export type WebServerKind = 'nginx' | 'apache' | 'caddy'
+export type CertbotInstallMethod = 'snap' | 'apt' | 'dnf' | 'yum' | 'pip' | 'unknown'
+
+export interface PrepFacts {
+  os: { id: string; versionId: string; family: OsFamily; pretty: string }
+  arch: string
+  webServer: WebServerKind | null
+  certbot: { path: string; version: string; method: CertbotInstallMethod } | null
+  plugins: string[]
+  snapd: string | null
+  packageManager: PackageManager | null
+  renewalTimer: string | null
+  fullSudo: boolean
+}
+
+export type InstallRoute = 'snap' | 'distro'
+export type InstallStepStatus = 'run' | 'skip' | 'check'
+
+export interface InstallStep {
+  id: string
+  command: string
+  why: string
+  status: InstallStepStatus
+  skipReason: string | null
+}
+
+export interface InstallPlan {
+  route: InstallRoute
+  routes: InstallRoute[]
+  needed: boolean
+  steps: InstallStep[]
+  blockedReason: string | null
+  docsUrl: string
+}
+
+export interface IssueRequest {
+  blockId: string
+  names: string[]
+  email: string
+  redirect: boolean
+  staging: boolean
+}
+
+export type IssueStage = 'backup' | 'staging' | 'issue' | 'nginx-test' | 'restore'
+
+export interface IssueResult {
+  ok: boolean
+  failedStage: IssueStage | null
+  restored: boolean
+  backupPath: string | null
+  lineage: string | null
+  output: string
+  hint: string | null
+}
+
+export interface VerifyName {
+  name: string
+  served: OriginCert | null
+  https: ReadinessCheck
+}
+
+export interface VerifyResult {
+  names: VerifyName[]
+  renewalTest: ReadinessCheck
+  timer: ReadinessCheck
 }
 
 export interface SslResult<T = undefined> {

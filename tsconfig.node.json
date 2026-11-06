@@ -23,6 +23,7 @@
     "src/utils/deploy/githubRepo.ts",
     "src/utils/ssl/verdict.ts",
     "src/utils/ssl/commands.ts",
+    "src/utils/ssl/https/**/*.ts",
     "package.json"
   ]
 }

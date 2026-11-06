@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
-import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, SslReport, SslResult } from "../src/types/ssl";
+import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, VerifyResult } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1203,6 +1203,16 @@ const api = {
       ipcRenderer.on("ssl:output", handler);
       return () => ipcRenderer.removeListener("ssl:output", handler);
     },
+    httpsReadiness: (connectionId: string, sessionId: string, names: string[]) =>
+      ipcRenderer.invoke("ssl:https-readiness", connectionId, sessionId, names) as Promise<SslResult<NameReadiness[]>>,
+    httpsPrep: (connectionId: string) => ipcRenderer.invoke("ssl:https-prep", connectionId) as Promise<SslResult<PrepFacts>>,
+    httpsInstall: (connectionId: string, route: InstallRoute, runId: string) =>
+      ipcRenderer.invoke("ssl:https-install", connectionId, route, runId) as Promise<SslResult<ActionResult>>,
+    httpsIssue: (connectionId: string, sessionId: string, request: IssueRequest, runId: string) =>
+      ipcRenderer.invoke("ssl:https-issue", connectionId, sessionId, request, runId) as Promise<SslResult<IssueResult>>,
+    httpsVerify: (connectionId: string, names: string[], lineage: string) =>
+      ipcRenderer.invoke("ssl:https-verify", connectionId, names, lineage) as Promise<SslResult<VerifyResult>>,
+    httpsEmail: (sessionId: string) => ipcRenderer.invoke("ssl:https-email", sessionId) as Promise<SslResult<string>>,
   },
 
   // ── Host Key Management ──

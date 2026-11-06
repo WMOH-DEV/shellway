@@ -60,6 +60,7 @@ export function makeBlock(overrides: Partial<ServerBlock> = {}): ServerBlock {
   return {
     id: 'app.conf:9',
     file: '/etc/nginx/sites-enabled/app.conf',
+    root: null,
     line: 9,
     names: ['app.example.com'],
     tls: true,

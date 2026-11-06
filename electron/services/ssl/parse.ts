@@ -176,7 +176,8 @@ function serverBlock(file: string, server: Statement): ServerBlock {
     tls: listens.some((l) => l.ssl) || (listens.some((l) => l.port === 443) && certPath !== ''),
     certPath,
     keyPath,
-    probeAddress: probeAddress(listens)
+    probeAddress: probeAddress(listens),
+    root: directives(server, 'root')[0]?.args[0] ?? null
   }
 }
 

@@ -23,7 +23,7 @@ const scan = (days: number): ServerScan => ({
   },
   blocks: [{
     id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', line: 1, names: ['app.example.com', 'api.example.com', '*.example.com'],
-    tls: true, certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem', keyPath: '', probeAddress: '127.0.0.1:443'
+    tls: true, certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem', keyPath: '', probeAddress: '127.0.0.1:443', root: null
   }],
   lineages: [{ name: 'app.example.com', domains: ['app.example.com', 'api.example.com'], notAfter: null, certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem', keyPath: '' }],
   origins: { 'app.example.com': cert(days), 'api.example.com': cert(days) }

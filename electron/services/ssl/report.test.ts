@@ -7,7 +7,7 @@ const NOW = 1_800_000_000
 
 const block = (overrides: Partial<ServerBlock>): ServerBlock => ({
   id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', line: 1, names: ['app.example.com'], tls: true,
-  certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem', keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem',
+  certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem', keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem', root: null,
   probeAddress: '127.0.0.1:443', ...overrides
 })
 
