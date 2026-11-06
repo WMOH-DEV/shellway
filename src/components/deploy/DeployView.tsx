@@ -7,7 +7,6 @@ import type { SiteFilter } from '@/utils/deploy/siteRow'
 import { KeySetup } from './KeySetup'
 import { SiteDetail, type DetailTab } from './SiteDetail'
 import { SetupWizard } from './setup/SetupWizard'
-import { SiteForm } from './SiteForm'
 import type { SiteActions } from './SiteRow'
 import { SitesOverview } from './SitesOverview'
 import { useAwaySummary } from './useAwaySummary'
@@ -23,7 +22,7 @@ interface DeployViewProps {
 type Screen =
   | { kind: 'list' }
   | { kind: 'detail'; name: string; tab?: DetailTab }
-  | { kind: 'form'; site: SiteConfig | null }
+  | { kind: 'setup' }
   | { kind: 'key'; site: SiteConfig }
 
 function useStartingSites(): [ReadonlySet<string>, (name: string, task: () => Promise<void>) => Promise<void>] {
@@ -87,12 +86,6 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
     }
   }
 
-  const saved = (site: SiteConfig) => {
-    toast.success(`${site.name} saved`)
-    void refresh()
-    setScreen({ kind: 'detail', name: site.name })
-  }
-
   const setupFinished = (site: SiteConfig) => {
     toast.info(`Deploying ${site.name}…`)
     void refresh()
@@ -105,7 +98,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
 
   const detailSite = screen.kind === 'detail' ? sites.find((s) => s.config.name === screen.name) : undefined
 
-  if (screen.kind === 'form' && screen.site === null) {
+  if (screen.kind === 'setup') {
     return frame(
       <SetupWizard
         connectionId={connectionId}
@@ -113,18 +106,6 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
         onCancel={() => setScreen({ kind: 'list' })}
         onSiteSaved={() => void refresh()}
         onFinished={setupFinished}
-      />
-    )
-  }
-
-  if (screen.kind === 'form') {
-    return frame(
-      <SiteForm
-        connectionId={connectionId}
-        initial={screen.site}
-        existingNames={sites.map((s) => s.config.name)}
-        onSaved={saved}
-        onCancel={() => setScreen(screen.site ? { kind: 'detail', name: screen.site.name } : { kind: 'list' })}
       />
     )
   }
@@ -163,7 +144,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
       user={session?.username ?? ''}
       starting={starting}
       actions={actions}
-      onAdd={() => setScreen({ kind: 'form', site: null })}
+      onAdd={() => setScreen({ kind: 'setup' })}
     />
   )
 }
