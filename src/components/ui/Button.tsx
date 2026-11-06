@@ -11,15 +11,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-nd-accent text-white hover:bg-nd-accent-hover active:bg-blue-700 shadow-sm',
+    'bg-nd-accent-solid text-white hover:bg-nd-accent-solid-hover active:bg-nd-accent-solid shadow-sm',
   secondary:
-    'bg-nd-surface text-nd-text-primary hover:bg-nd-surface-hover active:bg-nd-bg-tertiary border border-nd-border',
+    'bg-nd-bg-tertiary text-nd-text-primary hover:bg-nd-surface-raised active:bg-nd-bg-tertiary border border-nd-border-hover',
   ghost:
-    'text-nd-text-secondary hover:text-nd-text-primary hover:bg-nd-surface active:bg-nd-surface-hover',
+    'text-nd-text-secondary hover:text-nd-text-primary hover:bg-nd-surface-hover active:bg-nd-surface-raised',
   danger:
-    'bg-nd-error text-white hover:bg-red-600 active:bg-red-700 shadow-sm',
+    'bg-nd-error text-white hover:bg-nd-error/90 active:bg-nd-error/80 shadow-sm',
   outline:
-    'border border-nd-border text-nd-text-primary hover:bg-nd-surface hover:border-nd-border-hover active:bg-nd-surface-hover'
+    'border border-nd-border-hover text-nd-text-primary hover:bg-nd-surface-hover active:bg-nd-surface-raised'
 }
 
 const sizeStyles: Record<ButtonSize, string> = {

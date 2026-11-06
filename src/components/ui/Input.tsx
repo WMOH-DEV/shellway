@@ -31,10 +31,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              'h-8 w-full rounded-md border bg-nd-surface px-3 text-sm text-nd-text-primary',
-              'border-nd-border placeholder:text-nd-text-muted',
+              'h-8 w-full rounded-md border bg-nd-bg-sunken px-3 text-sm text-nd-text-primary',
+              'border-nd-border-hover placeholder:text-nd-text-muted',
               'transition-colors duration-150',
-              'hover:border-nd-border-hover',
               'focus:outline-none focus:border-nd-accent focus:ring-1 focus:ring-nd-accent',
               'disabled:cursor-not-allowed disabled:opacity-50',
               icon && 'pl-9',

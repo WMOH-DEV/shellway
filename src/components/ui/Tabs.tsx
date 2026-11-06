@@ -43,7 +43,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
               'border-b-2 -mb-px',
               size === 'sm' ? 'py-1.5 text-xs' : 'py-2 text-sm',
               isActive
-                ? 'border-nd-accent text-nd-accent'
+                ? 'border-nd-accent text-nd-text-primary'
                 : 'border-transparent text-nd-text-muted hover:text-nd-text-secondary',
               tab.disabled && 'opacity-40 cursor-not-allowed',
               isDimmed && 'opacity-30'
@@ -61,7 +61,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
                 }}
                 className={cn(
                   'ml-0.5 p-0.5 rounded transition-all shrink-0',
-                  'hover:bg-nd-surface hover:text-red-400',
+                  'hover:bg-nd-surface hover:text-nd-error-fg',
                   isActive
                     ? 'text-nd-text-muted/60'
                     : 'text-nd-text-muted/40 opacity-0 group-hover:opacity-100'
