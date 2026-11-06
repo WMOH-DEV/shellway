@@ -1,4 +1,9 @@
+import { ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import type { SslReport } from '@/types/ssl'
+import { AlertsCard } from './AlertsCard'
+import { CloudflareCard } from './CloudflareCard'
+import { ServerChecksCard } from './ServerChecksCard'
 
 export interface SslSettingsProps {
   connectionId: string
@@ -8,10 +13,23 @@ export interface SslSettingsProps {
   onCloudflareChanged: () => void
 }
 
-export function SslSettings({ onBack }: SslSettingsProps) {
+const COLUMNS = { gridTemplateColumns: 'repeat(auto-fit, minmax(min(480px, 100%), 1fr))' }
+
+export function SslSettings({ report, onBack, onRecheck, onCloudflareChanged }: SslSettingsProps) {
   return (
-    <div className="flex h-full items-center justify-center bg-nd-bg-primary text-sm text-nd-text-muted">
-      <button type="button" onClick={onBack}>Back</button>
+    <div className="flex h-full flex-col overflow-y-auto bg-nd-bg-primary">
+      <header className="flex items-center gap-2.5 border-b border-nd-border px-7 py-4">
+        <Button size="icon" variant="ghost" aria-label="Back to hostnames" onClick={onBack}><ArrowLeft size={16} /></Button>
+        <h1 className="text-lg font-semibold text-nd-text-primary">SSL settings</h1>
+        <span className="text-[13px] text-nd-text-muted">Cloudflare access and what this server can do</span>
+      </header>
+      <div className="grid items-start gap-5 px-7 py-6" style={COLUMNS}>
+        <CloudflareCard hostnames={report?.hostnames ?? []} onChanged={onCloudflareChanged} />
+        <div className="flex flex-col gap-5">
+          <ServerChecksCard report={report} onRecheck={onRecheck} />
+          <AlertsCard />
+        </div>
+      </div>
     </div>
   )
 }

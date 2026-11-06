@@ -1,0 +1,91 @@
+import type { AlertSettings, ServerFacts, Verdict } from '../../types/ssl'
+import { sudoersLine } from '../deploy/sudoers'
+import { timeAgo } from '../deploy/siteStatus'
+
+export type CheckTone = 'ok' | 'bad' | 'warn' | 'muted'
+
+export interface ServerCheckRow {
+  id: string
+  name: string
+  tone: CheckTone
+  detail: string
+  sudoers: string | null
+}
+
+export const SSL_SUDOERS_FILE = '/etc/sudoers.d/shellway-ssl'
+
+const OTHER_SERVER_NAMES = { apache: 'Apache', caddy: 'Caddy' } as const
+
+const VERDICT_PHRASES: Record<Verdict, string> = {
+  broken: 'broken now',
+  'will-break': 'will break soon',
+  expiring: 'server certificate expires soon',
+  'not-encrypted': 'not encrypted to the server',
+  unchecked: 'could not be fully checked',
+  ok: 'fine'
+}
+
+function nginxRow(facts: ServerFacts): ServerCheckRow {
+  if (facts.nginx) return { id: 'nginx', name: 'nginx', tone: 'ok', detail: facts.nginx, sudoers: null }
+  const other = facts.otherWebServer
+  const detail = other ? `not found · ${OTHER_SERVER_NAMES[other]} is monitored only` : 'not found'
+  return { id: 'nginx', name: 'nginx', tone: other ? 'warn' : 'bad', detail, sudoers: null }
+}
+
+function opensslRow(facts: ServerFacts): ServerCheckRow {
+  if (facts.openssl) return { id: 'openssl', name: 'openssl', tone: 'ok', detail: facts.openssl, sudoers: null }
+  return { id: 'openssl', name: 'openssl', tone: 'bad', detail: 'not found · needed to read your server certificates', sudoers: null }
+}
+
+function certbotRow(facts: ServerFacts): ServerCheckRow {
+  if (facts.certbot) return { id: 'certbot', name: 'certbot', tone: 'ok', detail: facts.certbot, sudoers: null }
+  return { id: 'certbot', name: 'certbot', tone: 'warn', detail: 'not installed', sudoers: null }
+}
+
+function renewalRow({ renewal }: ServerFacts, hasCertbot: boolean, now: number): ServerCheckRow {
+  const base = { id: 'renewal', name: 'Automatic renewal', sudoers: null }
+  if (renewal.mechanism === 'none') {
+    return hasCertbot
+      ? { ...base, tone: 'bad', detail: 'no timer or cron job found' }
+      : { ...base, tone: 'muted', detail: 'not applicable without certbot' }
+  }
+  const when = renewal.lastRun ? ` ${timeAgo(renewal.lastRun, now)}` : ''
+  if (renewal.lastResult === 'failed') return { ...base, tone: 'bad', detail: `${renewal.mechanism} · failed${when}` }
+  if (renewal.lastResult === 'success') return { ...base, tone: 'ok', detail: `${renewal.mechanism} · last run succeeded${when}` }
+  return { ...base, tone: 'warn', detail: `${renewal.mechanism} · last result unknown` }
+}
+
+function sudoRow(id: string, name: string, allowed: boolean, path: string | null, user: string, tool: string): ServerCheckRow {
+  if (allowed) return { id, name, tone: 'ok', detail: 'allowed', sudoers: null }
+  if (!path) return { id, name, tone: 'muted', detail: `${tool} not found on this server`, sudoers: null }
+  return { id, name, tone: 'bad', detail: 'not allowed', sudoers: sudoersLine(user, [path]) }
+}
+
+function fullSudoRow({ sudo }: ServerFacts): ServerCheckRow {
+  const id = 'sudo-full'
+  const name = 'Full passwordless sudo'
+  if (sudo.full) return { id, name, tone: 'ok', detail: 'yes · unlocks switching to Origin CA and installing certbot', sudoers: null }
+  return { id, name, tone: 'warn', detail: 'no · needed to switch to Origin CA and to install certbot', sudoers: null }
+}
+
+export function serverCheckRows(facts: ServerFacts, now: number): ServerCheckRow[] {
+  return [
+    nginxRow(facts),
+    opensslRow(facts),
+    certbotRow(facts),
+    renewalRow(facts, facts.certbot !== null, now),
+    sudoRow('sudo-certbot', 'sudo -n certbot', facts.sudo.certbot, facts.paths.certbot, facts.user, 'certbot'),
+    sudoRow('sudo-nginx', 'sudo -n nginx', facts.sudo.nginx, facts.paths.nginx, facts.user, 'nginx'),
+    fullSudoRow(facts)
+  ]
+}
+
+export function renewalOutputOf(facts: ServerFacts): string | null {
+  const output = facts.renewal.output.trim()
+  return output === '' ? null : output
+}
+
+export function lastAlertText(lastAlert: AlertSettings['lastAlert'], now: number): string | null {
+  if (!lastAlert) return null
+  return `${lastAlert.host} · ${VERDICT_PHRASES[lastAlert.verdict]} · ${timeAgo(lastAlert.at, now)}`
+}
