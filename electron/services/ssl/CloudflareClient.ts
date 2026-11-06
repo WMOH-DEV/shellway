@@ -1,4 +1,4 @@
-import type { CloudflareStatus, CloudflareZone, EdgeInfo, PermissionGroup, PermissionLine, PermissionState, SslMode } from '../../../src/types/ssl'
+import type { CloudflareStatus, CloudflareZone, EdgeInfo, OriginKeyType, OriginValidityYears, PermissionGroup, PermissionLine, PermissionState, SslMode } from '../../../src/types/ssl'
 import { edgesWithoutZone } from './dnsEdge'
 import { unknownEdge } from './report'
 
@@ -22,6 +22,9 @@ const MAX_PAGES = 10
 const ZONES_PER_PAGE = 50
 const PROBE_PER_PAGE = 5
 const RECORDS_PER_PAGE = 100
+const VALIDITY_DAYS: Record<OriginValidityYears, number> = { 1: 365, 2: 730, 3: 1095, 15: 5475 }
+const REQUEST_TYPES: Record<OriginKeyType, string> = { ecc: 'origin-ecc', rsa: 'origin-rsa' }
+const MAX_ORIGIN_HOSTNAMES = 200
 const SSL_MODES: readonly string[] = ['off', 'flexible', 'full', 'strict', 'origin_pull']
 const ROUTING_RECORD_TYPES = new Set(['A', 'AAAA', 'CNAME'])
 const ADDRESS_RECORD_TYPES = new Set(['A', 'AAAA'])
@@ -42,6 +45,16 @@ interface ApiRecord {
   name: string
   content: string
   proxied?: boolean
+}
+
+interface ApiOriginCertificate {
+  certificate?: string
+  expires_on?: string
+}
+
+export interface OriginCertificate {
+  certificate: string
+  notAfter: number | null
 }
 
 interface Probes {
@@ -146,6 +159,19 @@ function edgeFromRecords(zone: string, sslMode: SslMode | null, host: string, fo
   return { state, zone, recordType: record.type, recordContent: record.content, sslMode, unknownReason: null }
 }
 
+function parseExpiry(value: string | undefined): number | null {
+  const match = /(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/.exec(value ?? '')
+  const millis = match ? Date.parse(`${match[1]}T${match[2]}Z`) : Number.NaN
+  return Number.isNaN(millis) ? null : Math.floor(millis / 1000)
+}
+
+function originCertificateError(err: unknown): Error {
+  if (err instanceof CloudflareApiError && err.status === 403) {
+    return new Error('Cloudflare refused to create the certificate. The token needs Zone → SSL and Certificates → Edit for these names.')
+  }
+  return err as Error
+}
+
 function dnsFailure(err: unknown): string {
   if (isDenied(err)) return 'the token cannot read DNS records (it needs Zone → DNS → Read)'
   return (err as Error).message
@@ -169,14 +195,29 @@ export class CloudflareClient {
     return { ...zoned, ...unzoned }
   }
 
-  private async request<T>(path: string, query: Record<string, string | number> = {}): Promise<ApiEnvelope<T>> {
+  async createOriginCert(csr: string, hostnames: string[], keyType: OriginKeyType, years: OriginValidityYears): Promise<OriginCertificate> {
+    if (hostnames.length === 0 || hostnames.length > MAX_ORIGIN_HOSTNAMES) throw new Error(`An Origin CA certificate needs between 1 and ${MAX_ORIGIN_HOSTNAMES} names`)
+    const body = { csr, hostnames, request_type: REQUEST_TYPES[keyType], requested_validity: VALIDITY_DAYS[years] }
+    try {
+      const reply = await this.request<ApiOriginCertificate>('/certificates', {}, body)
+      const certificate = reply.result?.certificate
+      if (!certificate?.includes('BEGIN CERTIFICATE')) throw new Error('Cloudflare did not return a certificate.')
+      return { certificate, notAfter: parseExpiry(reply.result?.expires_on) }
+    } catch (err) {
+      throw originCertificateError(err)
+    }
+  }
+
+  private async request<T>(path: string, query: Record<string, string | number> = {}, payload?: unknown): Promise<ApiEnvelope<T>> {
     const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]))
     const url = params.size > 0 ? `${API_BASE}${path}?${params}` : `${API_BASE}${path}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       const response = await this.fetchImpl(url, {
-        headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' },
+        method: payload === undefined ? 'GET' : 'POST',
+        headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json', ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
+        body: payload === undefined ? undefined : JSON.stringify(payload),
         signal: controller.signal
       })
       const body = await readBody<T>(response)
