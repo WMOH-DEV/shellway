@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { timeAgo } from '@/utils/deploy/siteStatus'
 import type { HostnameStatus, SslReport } from '@/types/ssl'
 import { certbotCommand } from '@/utils/ssl/commands'
+import { switchCheck } from '@/utils/ssl/originCa/switchCheck'
 import { verdictHeadline } from '@/utils/ssl/hostRow'
 import { ErrorBanner } from './LoadState'
 import { ActionsCard } from './detail/ActionsCard'
@@ -11,8 +12,11 @@ import { FactsCard } from './detail/FactsCard'
 import { ForceRenewModal } from './detail/ForceRenewModal'
 import { RenewalCard } from './detail/RenewalCard'
 import type { CertbotRun } from './detail/useCertbotRun'
+import { LeftoverCard } from './originCa/LeftoverCard'
 
 interface HostnameDetailProps {
+  connectionId: string
+  sessionId: string
   host: HostnameStatus
   report: SslReport
   now: number
@@ -21,10 +25,11 @@ interface HostnameDetailProps {
   run: CertbotRun
   onBack: () => void
   onAddHttps: (blockId: string) => void
+  onSwitchOrigin: (name: string) => void
   onRefresh: () => Promise<void>
 }
 
-export function HostnameDetail({ host, report, now, loading, error, run, onBack, onAddHttps, onRefresh }: HostnameDetailProps) {
+export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onRefresh }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
   const block = blocks.find((b) => b.id === host.blockId)
@@ -48,9 +53,24 @@ export function HostnameDetail({ host, report, now, loading, error, run, onBack,
         {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void onRefresh()} />}
         <Diagram host={host} facts={facts} now={now} />
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          <ActionsCard host={host} facts={facts} run={run} onForce={() => setConfirmForce(true)} onAddHttps={onAddHttps} />
+          <ActionsCard
+            host={host}
+            facts={facts}
+            run={run}
+            onForce={() => setConfirmForce(true)}
+            onAddHttps={onAddHttps}
+            originBlockedReason={switchCheck(report, host.blockId).blockedReason}
+            onSwitchOrigin={() => onSwitchOrigin(host.name)}
+          />
           <FactsCard host={host} block={block} now={now} />
         </div>
+        <LeftoverCard
+          connectionId={connectionId}
+          sessionId={sessionId}
+          name={host.name}
+          enabled={host.origin?.kind === 'cloudflare-origin'}
+          onChanged={() => void onRefresh()}
+        />
         {facts.certbot && <RenewalCard renewal={facts.renewal} />}
       </div>
       {confirmForce && host.lineage && (

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { mockNovadeck } from '@/test/novadeck'
-import { DAY, edgeOf, makeBlock, makeFacts, makeHost, makeOrigin, makeReport, NOW, originExpiringIn, unknownEdge } from '@/utils/ssl/testReport'
+import { connectedCloudflare, DAY, edgeOf, makeBlock, makeFacts, makeHost, makeOrigin, makeReport, NOW, originExpiringIn, unknownEdge } from '@/utils/ssl/testReport'
 import type { HostnameStatus, SslReport } from '@/types/ssl'
 import { HostnameDetail } from './HostnameDetail'
 import { useCertbotRun } from './detail/useCertbotRun'
@@ -125,23 +125,25 @@ interface DetailHarnessProps {
   host: HostnameStatus
   sslReport: SslReport
   onBack: () => void
+  onSwitchOrigin: (name: string) => void
   onRefresh: () => Promise<void>
 }
 
-function DetailHarness({ host, sslReport, onBack, onRefresh }: DetailHarnessProps) {
+function DetailHarness({ host, sslReport, onBack, onSwitchOrigin, onRefresh }: DetailHarnessProps) {
   const run = useCertbotRun('c1', () => void onRefresh())
   const [open, setOpen] = useState(true)
   if (!open) return <button type="button" onClick={() => setOpen(true)}>Reopen</button>
   const back = () => { onBack(); setOpen(false) }
-  return <HostnameDetail host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onAddHttps={vi.fn()} onRefresh={onRefresh} />
+  return <HostnameDetail connectionId="conn-1" sessionId="session-1" host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onAddHttps={vi.fn()} onSwitchOrigin={onSwitchOrigin} onRefresh={onRefresh} />
 }
 
 function renderDetail(host: HostnameStatus, overrides: Partial<SslReport> = {}, api: Record<string, unknown> = {}) {
   mockNovadeck(api)
   const onRefresh = vi.fn().mockResolvedValue(undefined)
   const onBack = vi.fn()
-  render(<DetailHarness host={host} sslReport={report(overrides)} onBack={onBack} onRefresh={onRefresh} />)
-  return { onRefresh, onBack }
+  const onSwitchOrigin = vi.fn()
+  render(<DetailHarness host={host} sslReport={report(overrides)} onBack={onBack} onSwitchOrigin={onSwitchOrigin} onRefresh={onRefresh} />)
+  return { onRefresh, onBack, onSwitchOrigin }
 }
 
 describe('HostnameDetail', () => {
@@ -189,10 +191,19 @@ describe('HostnameDetail', () => {
     expect(screen.getByRole('button', { name: 'Renew' }).className).not.toContain('bg-nd-accent')
   })
 
-  it('keeps the Origin CA switch disabled for a later step', () => {
+  it('disables the Origin CA switch and says why when a precondition is missing', () => {
     renderDetail(api)
-    expect(screen.getByText('Coming in a later step')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled()
+    expect(screen.getByText('The Cloudflare token needs SSL and Certificates · Edit.')).toBeInTheDocument()
+  })
+
+  it('starts the Origin CA switch for this hostname when every precondition holds', async () => {
+    const { onSwitchOrigin } = renderDetail(api, {
+      facts: makeFacts({ renewal: failedRenewal, sudo: { certbot: true, nginx: true, full: true } }),
+      cloudflare: { ...connectedCloudflare, permissions: [{ id: 'origin-ca', state: 'granted', lines: [] }] }
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }))
+    expect(onSwitchOrigin).toHaveBeenCalledWith('api.example.com')
   })
 
   it('explains why actions are missing without sudo or a certbot certificate', () => {
@@ -290,7 +301,7 @@ describe('HostnameDetail', () => {
 
   it('describes an Origin CA certificate without renewal actions', () => {
     const host = makeHost({ origin: makeOrigin({ kind: 'cloudflare-origin', notAfter: NOW + 5000 * DAY, issuer: 'CloudFlare, Inc. · CloudFlare Origin SSL Certificate Authority' }), lineage: null })
-    renderDetail(host)
+    renderDetail(host, {}, { 'ssl.originLeftover': vi.fn(async () => ({ success: true, data: null })) })
     expect(screen.getByText(/It does not need renewing/)).toBeInTheDocument()
   })
 })

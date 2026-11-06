@@ -63,6 +63,8 @@ describe('Add HTTPS from the hostname detail', () => {
     const sslReport = report()
     render(
       <HostnameDetail
+        connectionId="conn-1"
+        sessionId="session-1"
         host={bare}
         report={sslReport}
         now={NOW}
@@ -71,6 +73,7 @@ describe('Add HTTPS from the hostname detail', () => {
         run={{ lineage: null, running: null, output: '', outcome: null, start: vi.fn() }}
         onBack={vi.fn()}
         onAddHttps={onAddHttps}
+        onSwitchOrigin={vi.fn()}
         onRefresh={vi.fn()}
       />
     )

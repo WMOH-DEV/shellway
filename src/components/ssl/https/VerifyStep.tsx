@@ -1,6 +1,6 @@
 import { AlertTriangle, Check } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
-import type { VerifyResult } from '@/types/ssl'
+import type { VerifyName, VerifyResult } from '@/types/ssl'
 import { servedText, verifyProblems } from '@/utils/ssl/addHttps/verifyView'
 import { nowSeconds } from '@/utils/ssl/time'
 import { ErrorBanner } from '../LoadState'
@@ -9,12 +9,12 @@ import { CheckText } from './CheckText'
 import { StepHeading } from './StepHeading'
 import type { Verify } from './useVerify'
 
-function NameRows({ result }: { result: VerifyResult }) {
+export function NameRows({ names }: { names: VerifyName[] }) {
   const now = nowSeconds()
   return (
     <section aria-label="Names" className="overflow-hidden rounded-[10px] border border-nd-border bg-nd-bg-secondary">
       <div className="border-b border-nd-border px-4 py-3"><CardLabel>Served certificate</CardLabel></div>
-      {result.names.map((row) => (
+      {names.map((row) => (
         <div key={row.name} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-3.5 border-b border-nd-border px-4 py-2.5 last:border-b-0">
           <span className="truncate font-mono text-[12.5px] text-nd-text-primary">{row.name}</span>
           <span className="truncate text-[12.5px] text-nd-text-secondary">{servedText(row.served, now)}</span>
@@ -70,7 +70,7 @@ export function VerifyStep({ verify }: { verify: Verify }) {
       {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void verify.run()} />}
       {!result && loading && <div role="status" aria-label="Verifying" className="flex justify-center py-16"><Spinner size="md" /></div>}
       {result && (problems.length === 0 ? <Success /> : <Problems problems={problems} />)}
-      {result && <NameRows result={result} />}
+      {result && <NameRows names={result.names} />}
       {result && <RenewalRows result={result} />}
     </div>
   )

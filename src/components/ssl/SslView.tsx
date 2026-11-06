@@ -5,6 +5,7 @@ import type { ConnectionStatus } from '@/types/session'
 import { HostnameDetail } from './HostnameDetail'
 import { AddHttpsWizard } from './https/AddHttpsWizard'
 import { useCertbotRun } from './detail/useCertbotRun'
+import { SwitchWizard } from './originCa/SwitchWizard'
 import { HostnamesScreen } from './HostnamesScreen'
 import { ErrorState, LoadingState } from './LoadState'
 import { SslSettings } from './settings/SslSettings'
@@ -17,7 +18,7 @@ interface SslViewProps {
   connectionStatus: ConnectionStatus
 }
 
-type Screen = { kind: 'list' } | { kind: 'detail'; name: string } | { kind: 'settings' } | { kind: 'add-https'; blockId?: string }
+type Screen = { kind: 'list' } | { kind: 'detail'; name: string } | { kind: 'settings' } | { kind: 'add-https'; blockId?: string } | { kind: 'origin-switch'; name: string }
 
 export function SslView({ connectionId, sessionId, connectionStatus }: SslViewProps) {
   const connected = connectionStatus === 'connected'
@@ -63,11 +64,28 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
     )
   }
 
+  const switchHost = screen.kind === 'origin-switch' ? report.hostnames.find((h) => h.name === screen.name) : undefined
+  if (switchHost) {
+    return (
+      <SwitchWizard
+        key={switchHost.name}
+        connectionId={connectionId}
+        sessionId={sessionId}
+        report={report}
+        host={switchHost}
+        onCancel={() => setScreen({ kind: 'detail', name: switchHost.name })}
+        onFinished={() => { recheck(); backToList() }}
+      />
+    )
+  }
+
   const detailHost = screen.kind === 'detail' ? report.hostnames.find((h) => h.name === screen.name) : undefined
   if (detailHost) {
     return (
       <HostnameDetail
         key={detailHost.name}
+        connectionId={connectionId}
+        sessionId={sessionId}
         host={detailHost}
         report={report}
         now={now}
@@ -76,6 +94,7 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
         run={run}
         onBack={backToList}
         onAddHttps={addHttps}
+        onSwitchOrigin={(name) => setScreen({ kind: 'origin-switch', name })}
         onRefresh={refresh}
       />
     )
