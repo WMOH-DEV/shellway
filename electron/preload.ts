@@ -1213,6 +1213,7 @@ const api = {
     httpsVerify: (connectionId: string, names: string[], lineage: string) =>
       ipcRenderer.invoke("ssl:https-verify", connectionId, names, lineage) as Promise<SslResult<VerifyResult>>,
     httpsEmail: (sessionId: string) => ipcRenderer.invoke("ssl:https-email", sessionId) as Promise<SslResult<string>>,
+    lastReport: (connectionId: string) => ipcRenderer.invoke("ssl:last-report", connectionId) as Promise<SslResult<SslReport | null>>,
   },
 
   // ── Host Key Management ──
