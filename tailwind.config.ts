@@ -10,11 +10,13 @@ const config: Config = {
           bg: {
             primary: 'rgb(var(--nd-bg-primary) / <alpha-value>)',
             secondary: 'rgb(var(--nd-bg-secondary) / <alpha-value>)',
-            tertiary: 'rgb(var(--nd-bg-tertiary) / <alpha-value>)'
+            tertiary: 'rgb(var(--nd-bg-tertiary) / <alpha-value>)',
+            sunken: 'rgb(var(--nd-bg-sunken) / <alpha-value>)'
           },
           surface: {
             DEFAULT: 'rgb(var(--nd-surface) / <alpha-value>)',
-            hover: 'rgb(var(--nd-surface-hover) / <alpha-value>)'
+            hover: 'rgb(var(--nd-surface-hover) / <alpha-value>)',
+            raised: 'rgb(var(--nd-surface-raised) / <alpha-value>)'
           },
           border: {
             DEFAULT: 'rgb(var(--nd-border) / <alpha-value>)',
@@ -23,16 +25,26 @@ const config: Config = {
           text: {
             primary: 'rgb(var(--nd-text-primary) / <alpha-value>)',
             secondary: 'rgb(var(--nd-text-secondary) / <alpha-value>)',
-            muted: 'rgb(var(--nd-text-muted) / <alpha-value>)'
+            muted: 'rgb(var(--nd-text-muted) / <alpha-value>)',
+            dim: 'rgb(var(--nd-text-dim) / <alpha-value>)',
+            faint: 'rgb(var(--nd-text-faint) / <alpha-value>)'
           },
           accent: {
             DEFAULT: 'rgb(var(--nd-accent) / <alpha-value>)',
-            hover: 'rgb(var(--nd-accent-hover) / <alpha-value>)'
+            hover: 'rgb(var(--nd-accent-hover) / <alpha-value>)',
+            solid: 'rgb(var(--nd-accent-solid) / <alpha-value>)',
+            'solid-hover': 'rgb(var(--nd-accent-solid-hover) / <alpha-value>)'
           },
           success: 'rgb(var(--nd-success) / <alpha-value>)',
+          'success-fg': 'rgb(var(--nd-success-fg) / <alpha-value>)',
           warning: 'rgb(var(--nd-warning) / <alpha-value>)',
+          'warning-fg': 'rgb(var(--nd-warning-fg) / <alpha-value>)',
           error: 'rgb(var(--nd-error) / <alpha-value>)',
-          info: 'rgb(var(--nd-info) / <alpha-value>)'
+          'error-fg': 'rgb(var(--nd-error-fg) / <alpha-value>)',
+          info: 'rgb(var(--nd-info) / <alpha-value>)',
+          'info-fg': 'rgb(var(--nd-info-fg) / <alpha-value>)',
+          cloudflare: 'rgb(var(--nd-cloudflare) / <alpha-value>)',
+          new: 'rgb(var(--nd-new) / <alpha-value>)'
         }
       },
       fontFamily: {
