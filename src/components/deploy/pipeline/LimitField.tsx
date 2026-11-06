@@ -28,7 +28,7 @@ export function LimitField({ seconds, onChange }: LimitFieldProps) {
     <label
       title="Stops the command after this long. Examples: 10m, 90s, 2h. Empty means no limit."
       className={cn(
-        'flex h-7 w-[84px] items-center gap-1.5 rounded-md border bg-nd-bg-primary px-2 text-nd-text-muted',
+        'flex h-7 w-[96px] items-center gap-1.5 rounded-md border bg-nd-bg-primary px-2 text-nd-text-muted',
         'focus-within:border-nd-accent',
         invalid ? 'border-nd-error' : 'border-nd-border hover:border-nd-border-hover'
       )}
@@ -36,7 +36,7 @@ export function LimitField({ seconds, onChange }: LimitFieldProps) {
       <Clock size={12} className="shrink-0" />
       <input
         aria-label="Time limit"
-        className="w-full min-w-0 bg-transparent font-mono text-xs text-nd-text-primary placeholder:text-nd-text-muted focus:outline-none"
+        className="w-full min-w-0 bg-transparent font-mono text-xs text-nd-text-primary placeholder:font-sans placeholder:text-nd-text-muted focus:outline-none"
         placeholder="No limit"
         value={text}
         spellCheck={false}

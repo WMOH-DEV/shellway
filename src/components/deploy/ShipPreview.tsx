@@ -182,11 +182,14 @@ function MigrationCallout({ summary, preview, reviewed, onReviewed }: { summary:
   )
 }
 
-function WhatWillRun({ summary }: { summary: SiteSummary }) {
+function WhatWillRun({ summary, onEditPipeline }: { summary: SiteSummary; onEditPipeline: () => void }) {
   const chips = stageChips(summary.config)
   return (
     <section className="flex flex-col gap-2">
-      <SectionLabel>What will run</SectionLabel>
+      <div className="flex items-center justify-between">
+        <SectionLabel>What will run</SectionLabel>
+        <button type="button" onClick={onEditPipeline} className="text-xs text-nd-accent hover:underline">Edit pipeline</button>
+      </div>
       <ol className="flex flex-wrap items-center gap-1.5">
         {chips.map((chip, index) => (
           <Fragment key={chip.id}>
@@ -233,13 +236,21 @@ function LoadError({ message, onRetry }: { message: string; onRetry: () => void 
   )
 }
 
-function Body({ summary, preview, reviewed, onReviewed }: { summary: SiteSummary; preview: ShipPreviewData; reviewed: boolean; onReviewed: (value: boolean) => void }) {
+interface BodyProps {
+  summary: SiteSummary
+  preview: ShipPreviewData
+  reviewed: boolean
+  onReviewed: (value: boolean) => void
+  onEditPipeline: () => void
+}
+
+function Body({ summary, preview, reviewed, onReviewed, onEditPipeline }: BodyProps) {
   return (
     <div className="flex flex-col gap-4">
       {isUpToDate(preview) ? <UpToDate preview={preview} /> : <CommitList commits={preview.commits} now={summary.state.now} />}
       {preview.files.length > 0 && <FileList preview={preview} />}
       {requiresReview(summary, preview) && <MigrationCallout summary={summary} preview={preview} reviewed={reviewed} onReviewed={onReviewed} />}
-      <WhatWillRun summary={summary} />
+      <WhatWillRun summary={summary} onEditPipeline={onEditPipeline} />
     </div>
   )
 }
@@ -263,9 +274,10 @@ export interface ShipPreviewProps {
   onClose: () => void
   onDeploy: (options: DeployOptions) => void
   onApprove: () => void
+  onEditPipeline: () => void
 }
 
-export function ShipPreview({ connectionId, summary, open, onClose, onDeploy, onApprove }: ShipPreviewProps) {
+export function ShipPreview({ connectionId, summary, open, onClose, onDeploy, onApprove, onEditPipeline }: ShipPreviewProps) {
   const { state, retry } = usePreview(connectionId, summary.config.name, open)
   const [reviewed, setReviewed] = useState(false)
   useEffect(() => setReviewed(false), [open])
@@ -285,8 +297,8 @@ export function ShipPreview({ connectionId, summary, open, onClose, onDeploy, on
       <Subtitle summary={summary} preview={preview} />
       {state.status === 'loading' && <Loading />}
       {state.status === 'error' && <LoadError message={state.message} onRetry={retry} />}
-      {preview && <Body summary={summary} preview={preview} reviewed={reviewed} onReviewed={setReviewed} />}
-      <footer className="sticky bottom-0 -mx-5 -mb-4 mt-4 flex flex-wrap items-center gap-2.5 border-t border-nd-border bg-nd-bg-secondary px-5 py-3">
+      {preview && <Body summary={summary} preview={preview} reviewed={reviewed} onReviewed={setReviewed} onEditPipeline={onEditPipeline} />}
+      <footer className="sticky -bottom-4 -mx-5 -mb-4 mt-4 flex flex-wrap items-center gap-2.5 border-t border-nd-border bg-nd-bg-secondary px-5 py-3">
         <FooterNote summary={summary} />
         <div className="flex-1" />
         <Button onClick={onClose}>Cancel</Button>

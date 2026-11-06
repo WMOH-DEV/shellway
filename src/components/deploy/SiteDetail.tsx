@@ -12,15 +12,17 @@ import { HistoryList } from './detail/HistoryList'
 import { RunPanel } from './detail/RunPanel'
 import { SummaryStrip } from './detail/SummaryStrip'
 import { EnvEditor } from './EnvEditor'
+import { PipelineEditor } from './PipelineEditor'
 import { ServerCheck } from './ServerCheck'
 import { SiteForm } from './SiteForm'
 import { deployApi } from './useDeploySites'
 import { useServerCheck } from './useServerCheck'
 
-export type DetailTab = 'history' | 'env' | 'check' | 'settings'
+export type DetailTab = 'history' | 'pipeline' | 'env' | 'check' | 'settings'
 
 const TABS: { id: DetailTab; label: string }[] = [
   { id: 'history', label: 'History' },
+  { id: 'pipeline', label: 'Pipeline' },
   { id: 'env', label: 'Env file' },
   { id: 'check', label: 'Server check' },
   { id: 'settings', label: 'Settings' }
@@ -39,6 +41,7 @@ interface SiteDetailProps {
   onDeployNow: () => void
   onCancel: () => void
   onSaved: (site: SiteConfig) => void
+  onPipelineSaved: () => void
   onRemoved: () => void
 }
 
@@ -84,7 +87,7 @@ function ConfirmModal({ title, body, confirm, danger, onConfirm, onClose }: { ti
   )
 }
 
-export function SiteDetail({ connectionId, summary, pcDrift, user, starting, initialTab = 'history', onBack, onKeySetup, onDeploy, onDeployNow, onCancel, onSaved, onRemoved }: SiteDetailProps) {
+export function SiteDetail({ connectionId, summary, pcDrift, user, starting, initialTab = 'history', onBack, onKeySetup, onDeploy, onDeployNow, onCancel, onSaved, onPipelineSaved, onRemoved }: SiteDetailProps) {
   const { config, state, history } = summary
   const [tab, setTab] = useState<DetailTab>(initialTab)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -152,6 +155,9 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
                 ? <RunPanel connectionId={connectionId} summary={summary} record={selected} retry={{ allowed: canRetry(selected, summary), disabled: starting || state.busy, onRetry: actions.deployNow }} />
                 : <div className="flex h-full items-center justify-center text-sm text-nd-text-muted">Deploy this site to see its first run here</div>}
             />
+          )}
+          {tab === 'pipeline' && (
+            <PipelineEditor connectionId={connectionId} summary={summary} onSaved={onPipelineSaved} onOpenServerCheck={() => setTab('check')} />
           )}
           {tab === 'env' && (
             <EnvEditor connectionId={connectionId} site={config.name} canApply={Boolean(state.current) && !state.busy} onApply={() => void runAndSelect(deployApi().apply(connectionId, config.name), 'Could not apply the change')} />

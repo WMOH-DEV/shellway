@@ -68,6 +68,10 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
           onClose={() => setShipping(null)}
           onDeploy={(options) => deployNow(shipSite.config.name, options)}
           onApprove={() => approve(shipSite.config.name)}
+          onEditPipeline={() => {
+            setShipping(null)
+            setScreen({ kind: 'detail', name: shipSite.config.name, tab: 'pipeline' })
+          }}
         />
       )}
     </div>
@@ -150,6 +154,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
         initialTab={screen.kind === 'detail' ? screen.tab : undefined}
         onBack={() => setScreen({ kind: 'list' })}
         onSaved={(site) => { toast.success(`${site.name} saved`); void refresh() }}
+        onPipelineSaved={() => void refresh()}
         onKeySetup={() => actions.keySetup(name)}
         onDeploy={() => actions.deploy(name)}
         onDeployNow={() => deployNow(name)}
