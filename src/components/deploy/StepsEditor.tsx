@@ -64,7 +64,7 @@ function ServicePicker({ connectionId, onPick }: { connectionId: string; onPick:
 export function StepsEditor({ connectionId, title, hint, steps, onChange }: StepsEditorProps) {
   const update = (index: number, patch: Partial<DeployStep>) =>
     onChange(steps.map((step, i) => (i === index ? { ...step, ...patch } : step)))
-  const add = (command = '') => onChange([...steps, { command, optional: false }])
+  const add = (command = '') => onChange([...steps, { command, optional: false, timeoutSeconds: null }])
 
   return (
     <div className="flex flex-col gap-2">

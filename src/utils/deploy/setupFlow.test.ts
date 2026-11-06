@@ -55,7 +55,7 @@ describe('stepError layout and commands', () => {
   })
 
   it('rejects empty commands, a bad health URL and a bad status', () => {
-    const empty = site({ buildSteps: [{ command: '  ', optional: false }] })
+    const empty = site({ buildSteps: [{ command: '  ', optional: false, timeoutSeconds: null }] })
     expect(stepError('commands', empty, context)).toMatch(/empty commands/)
     expect(stepError('commands', site({ healthUrl: 'example.com/up' }), context)).toMatch(/http/)
     expect(stepError('commands', site({ healthStatus: 99 }), context)).toMatch(/status/)
@@ -73,7 +73,7 @@ describe('needsSave', () => {
     expect(needsSave(null, current)).toBe(true)
     expect(needsSave(structuredClone(current), current)).toBe(false)
     expect(needsSave(current, { ...current, branch: 'develop' })).toBe(true)
-    expect(needsSave(current, { ...current, buildSteps: [...current.buildSteps, { command: 'make', optional: true }] })).toBe(true)
+    expect(needsSave(current, { ...current, buildSteps: [...current.buildSteps, { command: 'make', optional: true, timeoutSeconds: null }] })).toBe(true)
   })
 })
 

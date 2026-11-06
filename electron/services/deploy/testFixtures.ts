@@ -24,10 +24,12 @@ export function makeSite(overrides: Partial<SiteConfig> = {}): SiteConfig {
     approveMigrations: false,
     migrationsPath: 'database/migrations',
     pcAuto: false,
-    buildSteps: [{ command: 'composer install --no-dev --optimize-autoloader', optional: false }],
+    quietHours: '',
+    notifyUrl: '',
+    buildSteps: [{ command: 'composer install --no-dev --optimize-autoloader', optional: false, timeoutSeconds: null }],
     activateSteps: [
-      { command: 'php artisan migrate --force', optional: false },
-      { command: `php artisan route:cache || echo "can't cache"`, optional: true }
+      { command: 'php artisan migrate --force', optional: false, timeoutSeconds: null },
+      { command: `php artisan route:cache || echo "can't cache"`, optional: true, timeoutSeconds: null }
     ],
     ...overrides
   }

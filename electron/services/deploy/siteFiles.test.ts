@@ -5,6 +5,8 @@ import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import type { SiteConfig } from '../../../src/types/deploy'
 import {
+  isValidNotifyUrl,
+  isValidQuietHours,
   parseSiteFiles,
   parseSteps,
   quoteShellValue,
@@ -33,7 +35,7 @@ describe('steps files', () => {
   })
 
   it('ignores blank and malformed lines', () => {
-    expect(parseSteps('\nno-tab\nR\t\nO\tok\n')).toEqual([{ optional: true, command: 'ok' }])
+    expect(parseSteps('\nno-tab\nR\t\nO\tok\n')).toEqual([{ optional: true, command: 'ok', timeoutSeconds: null }])
   })
 })
 
@@ -92,10 +94,90 @@ describe('validateSiteConfig', () => {
     ['status out of range', { healthStatus: 99 }],
     ['zero releases', { keepReleases: 0 }],
     ['poll too long', { pollMinutes: 61 }],
-    ['multi-line step', { buildSteps: [{ command: 'a\nb', optional: false }] }],
-    ['tab in step', { activateSteps: [{ command: 'a\tb', optional: false }] }],
-    ['blank step', { activateSteps: [{ command: '  ', optional: true }] }]
+    ['multi-line step', { buildSteps: [{ command: 'a\nb', optional: false, timeoutSeconds: null }] }],
+    ['tab in step', { activateSteps: [{ command: 'a\tb', optional: false, timeoutSeconds: null }] }],
+    ['blank step', { activateSteps: [{ command: '  ', optional: true, timeoutSeconds: null }] }]
   ])('rejects %s', (_label, overrides) => {
     expect(validateSiteConfig(makeSite(overrides))).not.toBeNull()
+  })
+})
+
+describe('step time limits', () => {
+  it('writes the limit after the kind and keeps the command last', () => {
+    const steps = [
+      { command: 'npm run build', optional: false, timeoutSeconds: 600 },
+      { command: 'php artisan route:cache', optional: true, timeoutSeconds: 90 },
+      { command: 'echo done', optional: false, timeoutSeconds: null }
+    ]
+    expect(serializeSteps(steps)).toBe('R:600\tnpm run build\nO:90\tphp artisan route:cache\nR\techo done\n')
+  })
+
+  it('round-trips limits', () => {
+    const steps = [
+      { command: 'npm run build', optional: false, timeoutSeconds: 600 },
+      { command: 'php artisan route:cache', optional: true, timeoutSeconds: 5 }
+    ]
+    expect(parseSteps(serializeSteps(steps))).toEqual(steps)
+  })
+
+  it('reads old files without a limit as unlimited', () => {
+    expect(parseSteps('R\tone\nO\ttwo\n')).toEqual([
+      { command: 'one', optional: false, timeoutSeconds: null },
+      { command: 'two', optional: true, timeoutSeconds: null }
+    ])
+  })
+
+  it.each(['R:', 'R:0', 'R:abc', 'R:-5'])('treats %s as no limit', (kind) => {
+    expect(parseSteps(`${kind}\tcmd\n`)).toEqual([{ command: 'cmd', optional: false, timeoutSeconds: null }])
+  })
+
+  it('keeps optional steps optional when they have a limit', () => {
+    expect(parseSteps('O:30\tcmd\n')[0]).toMatchObject({ optional: true, timeoutSeconds: 30 })
+  })
+
+  it.each([0, -1, 1.5, 86_401])('rejects a limit of %s', (timeoutSeconds) => {
+    expect(validateSiteConfig(makeSite({ buildSteps: [{ command: 'x', optional: false, timeoutSeconds }] }))).not.toBeNull()
+  })
+
+  it('accepts limits from one second to a day', () => {
+    for (const timeoutSeconds of [1, 86_400]) {
+      expect(validateSiteConfig(makeSite({ buildSteps: [{ command: 'x', optional: false, timeoutSeconds }] }))).toBeNull()
+    }
+  })
+})
+
+describe('quiet hours and notifications', () => {
+  it('round-trips both through site.conf', () => {
+    const site = makeSite({ quietHours: '22:00-06:00', notifyUrl: 'https://hooks.slack.com/services/T0/B0/x' })
+    const parsed = parseSiteFiles(site.name, serializeSiteConf(site), '', '')
+    expect(parsed.quietHours).toBe('22:00-06:00')
+    expect(parsed.notifyUrl).toBe('https://hooks.slack.com/services/T0/B0/x')
+  })
+
+  it('defaults to off for configs written before they existed', () => {
+    const parsed = parseSiteFiles('app', "SITE_PATH='/srv/app'\n", '', '')
+    expect(parsed.quietHours).toBe('')
+    expect(parsed.notifyUrl).toBe('')
+  })
+
+  it.each(['', '22:00-06:00', '00:00-23:59', '09:30-17:45'])('accepts quiet hours %j', (value) => {
+    expect(isValidQuietHours(value)).toBe(true)
+  })
+
+  it.each(['22:00', '24:00-06:00', '22:60-06:00', '9:00-17:00', '10:00-10:00', '22:00-06:00 ', 'night'])('rejects quiet hours %j', (value) => {
+    expect(isValidQuietHours(value)).toBe(false)
+  })
+
+  it.each(['', 'https://example.com/hook', 'http://example.com:8080/a?b=c'])('accepts notification url %j', (value) => {
+    expect(isValidNotifyUrl(value)).toBe(true)
+  })
+
+  it.each(['example.com/hook', 'ftp://example.com', 'https://exa mple.com', "https://example.com/'x", 'https://example.com/\\x', '-d x'])('rejects notification url %j', (value) => {
+    expect(isValidNotifyUrl(value)).toBe(false)
+  })
+
+  it('reports invalid values through validateSiteConfig', () => {
+    expect(validateSiteConfig(makeSite({ quietHours: 'bad' }))).toContain('Quiet hours')
+    expect(validateSiteConfig(makeSite({ notifyUrl: 'bad' }))).toContain('Notification URL')
   })
 })

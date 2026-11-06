@@ -92,7 +92,7 @@ describe.skipIf(process.platform === 'win32')('DeployCoordinator', () => {
 
   it('cancels a running deploy and reports it as cancelled', async () => {
     const service = new DeployService(exec)
-    await service.saveSite(site({ buildSteps: [{ command: 'sleep 41', optional: false }] }))
+    await service.saveSite(site({ buildSteps: [{ command: 'sleep 41', optional: false, timeoutSeconds: null }] }))
     const id = await coordinator.deploy('c1', 'app')
     await vi.waitFor(async () => {
       const [summary] = await service.listSites()

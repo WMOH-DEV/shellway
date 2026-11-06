@@ -116,8 +116,8 @@ describe('migrations', () => {
   it('finds the command that runs migrations', () => {
     const config = makeSummary({
       config: {
-        buildSteps: [{ command: 'npm run build', optional: false }],
-        activateSteps: [{ command: 'php artisan migrate --force', optional: false }]
+        buildSteps: [{ command: 'npm run build', optional: false, timeoutSeconds: null }],
+        activateSteps: [{ command: 'php artisan migrate --force', optional: false, timeoutSeconds: null }]
       }
     }).config
     expect(migrationCommand(config)).toBe('php artisan migrate --force')
@@ -171,7 +171,7 @@ describe('rollbackCommit', () => {
 })
 
 describe('stageChips', () => {
-  const step = (command: string) => ({ command, optional: false })
+  const step = (command: string) => ({ command, optional: false, timeoutSeconds: null })
 
   it('lists only the stages the site runs', () => {
     const { config } = makeSummary()

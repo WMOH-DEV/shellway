@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDoctor, parseHistory, parseKeyValues, parsePreview, parseState } from './parse'
+import { parseDoctor, parseDump, parseHistory, parseKeyValues, parsePreview, parseState } from './parse'
 
 describe('parseHistory', () => {
   it('keeps the last line per id and sorts newest first', () => {
@@ -119,5 +119,29 @@ describe('parsePreview', () => {
 
   it('rejects output without a target commit', () => {
     expect(() => parsePreview('FROM=aaa\n')).toThrow(/no preview/)
+  })
+})
+
+describe('parseDump', () => {
+  it('reads step time limits, quiet hours and the notification url', () => {
+    const dump = [
+      '@@SITE example-app',
+      '@@CONF',
+      "SITE_PATH='/srv/example-app'",
+      "QUIET_HOURS='22:00-06:00'",
+      "NOTIFY_URL='https://example.com/hook'",
+      '@@BUILD',
+      'R:600\tnpm run build',
+      '@@ACTIVATE',
+      'O\tphp artisan route:cache',
+      '@@STATUS',
+      '@@HISTORY',
+      '@@END'
+    ].join('\n')
+    const [summary] = parseDump(dump)
+    expect(summary.config.quietHours).toBe('22:00-06:00')
+    expect(summary.config.notifyUrl).toBe('https://example.com/hook')
+    expect(summary.config.buildSteps).toEqual([{ command: 'npm run build', optional: false, timeoutSeconds: 600 }])
+    expect(summary.config.activateSteps).toEqual([{ command: 'php artisan route:cache', optional: true, timeoutSeconds: null }])
   })
 })

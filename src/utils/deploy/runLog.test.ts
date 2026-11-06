@@ -97,7 +97,7 @@ describe('filterSections', () => {
 })
 
 describe('stageViews', () => {
-  const config = makeSummary({ config: { healthUrl: 'https://example.com/up', activateSteps: [{ command: 'php artisan migrate', optional: false }] } }).config
+  const config = makeSummary({ config: { healthUrl: 'https://example.com/up', activateSteps: [{ command: 'php artisan migrate', optional: false, timeoutSeconds: null }] } }).config
 
   it('shows each stage with its time, the failed stage and the ones that never ran', () => {
     const record = makeRecord({ status: 'failed', started: 100, finished: 141 })
@@ -161,8 +161,8 @@ describe('failureView', () => {
 describe('skippedRows', () => {
   const config = makeSummary({
     config: {
-      buildSteps: [{ command: 'composer install', optional: false }, { command: 'npm ci && npm run build', optional: false }],
-      activateSteps: [{ command: 'php artisan migrate', optional: false }, { command: 'php artisan queue:restart', optional: true }]
+      buildSteps: [{ command: 'composer install', optional: false, timeoutSeconds: null }, { command: 'npm ci && npm run build', optional: false, timeoutSeconds: null }],
+      activateSteps: [{ command: 'php artisan migrate', optional: false, timeoutSeconds: null }, { command: 'php artisan queue:restart', optional: true, timeoutSeconds: null }]
     }
   }).config
 

@@ -11,8 +11,8 @@ export interface Preset {
   activateSteps: DeployStep[]
 }
 
-const required = (command: string): DeployStep => ({ command, optional: false })
-const optional = (command: string): DeployStep => ({ command, optional: true })
+const required = (command: string): DeployStep => ({ command, optional: false, timeoutSeconds: null })
+const optional = (command: string): DeployStep => ({ command, optional: true, timeoutSeconds: null })
 
 const COMPOSER_INSTALL = required('composer install --no-dev --optimize-autoloader --no-interaction')
 const COMPOSE_FILES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']
@@ -111,6 +111,8 @@ export function newSite(path = ''): SiteConfig {
     approveMigrations: false,
     migrationsPath: 'database/migrations',
     pcAuto: false,
+    quietHours: '',
+    notifyUrl: '',
     buildSteps: [],
     activateSteps: []
   }
