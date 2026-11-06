@@ -22,6 +22,8 @@ const MAX_PAGES = 10
 const ZONES_PER_PAGE = 50
 const PROBE_PER_PAGE = 5
 const RECORDS_PER_PAGE = 100
+const TOO_MANY_RECORDS = `The zone has more DNS records than Shellway can check (over ${MAX_PAGES * RECORDS_PER_PAGE}). Change the SSL mode in the Cloudflare dashboard.`
+const TOO_MANY_ZONES = `The Cloudflare account has more zones than Shellway can list (over ${MAX_PAGES * ZONES_PER_PAGE}).`
 const VALIDITY_DAYS: Record<OriginValidityYears, number> = { 1: 365, 2: 730, 3: 1095, 15: 5475 }
 const REQUEST_TYPES: Record<OriginKeyType, string> = { ecc: 'origin-ecc', rsa: 'origin-rsa' }
 const MAX_ORIGIN_HOSTNAMES = 200
@@ -238,18 +240,14 @@ export class CloudflareClient {
   }
 
   async listProxiedRecords(zoneId: string): Promise<ProxiedRecord[]> {
-    const records: ProxiedRecord[] = []
     try {
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const body = await this.request<ApiRecord[]>(`/zones/${zoneId}/dns_records`, { page, per_page: RECORDS_PER_PAGE })
-        const proxied = (body.result ?? []).filter((r) => ROUTING_RECORD_TYPES.has(r.type) && r.proxied === true)
-        records.push(...proxied.map((r) => ({ type: r.type, name: r.name.toLowerCase(), content: r.content })))
-        if (page >= (body.result_info?.total_pages ?? 1)) break
-      }
+      const records = await this.allPages<ApiRecord>(`/zones/${zoneId}/dns_records`, RECORDS_PER_PAGE, TOO_MANY_RECORDS)
+      return records
+        .filter((r) => ROUTING_RECORD_TYPES.has(r.type) && r.proxied === true)
+        .map((r) => ({ type: r.type, name: r.name.toLowerCase(), content: r.content }))
     } catch (err) {
       throw deniedAs('The Cloudflare token needs DNS · Read to list the zone\'s records.', err)
     }
-    return records
   }
 
   async setSslMode(zoneId: string, mode: SslMode): Promise<void> {
@@ -294,13 +292,21 @@ export class CloudflareClient {
   }
 
   private async listZones(): Promise<CloudflareZone[]> {
-    const zones: CloudflareZone[] = []
+    const zones = await this.allPages<ApiZone>('/zones', ZONES_PER_PAGE, TOO_MANY_ZONES)
+    return zones.map((zone) => ({ id: zone.id, name: zone.name.toLowerCase() }))
+  }
+
+  private async allPages<T>(path: string, perPage: number, overflowMessage: string): Promise<T[]> {
+    const items: T[] = []
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const body = await this.request<ApiZone[]>('/zones', { page, per_page: ZONES_PER_PAGE })
-      zones.push(...(body.result ?? []).map((zone) => ({ id: zone.id, name: zone.name.toLowerCase() })))
-      if (page >= (body.result_info?.total_pages ?? 1)) break
+      const body = await this.request<T[]>(path, { page, per_page: perPage })
+      const result = body.result ?? []
+      items.push(...result)
+      const totalPages = body.result_info?.total_pages
+      if (totalPages === undefined && result.length >= perPage) throw new Error(overflowMessage)
+      if (page >= (totalPages ?? 1)) return items
     }
-    return zones
+    throw new Error(overflowMessage)
   }
 
   private async zonesOrDenied(): Promise<CloudflareZone[] | null> {

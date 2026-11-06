@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SslReport } from '../../../src/types/ssl'
+import type { SslMode, SslReport } from '../../../src/types/ssl'
 import type { CloudflareClient } from './CloudflareClient'
 import { SslCoordinator } from './SslCoordinator'
 import type { SslLocalStore } from './SslLocalStore'
@@ -9,9 +9,10 @@ const failing: OriginProbe = async () => ({ state: 'fail', detail: 'the origin c
 const passing: OriginProbe = async () => ({ state: 'pass', detail: 'ok' })
 
 function build(token: string | null, probe: OriginProbe) {
+  const mode = { current: 'full' as SslMode }
   const client = {
     findZone: vi.fn(async () => ({ id: 'z1', name: 'example.com' })),
-    currentSslMode: vi.fn(async () => 'full' as const),
+    currentSslMode: vi.fn(async (): Promise<SslMode> => mode.current),
     listProxiedRecords: vi.fn(async () => [{ type: 'A', name: 'app.example.com', content: '203.0.113.10' }]),
     setSslMode: vi.fn(async () => {})
   }
@@ -24,7 +25,7 @@ function build(token: string | null, probe: OriginProbe) {
     notify: vi.fn(),
     now: () => 1_800_000_000_000
   })
-  return { coordinator, client }
+  return { coordinator, client, mode }
 }
 
 const reportInZone = (zone: string) => ({ hostnames: [{ edge: { zone } }] }) as unknown as SslReport
@@ -68,5 +69,18 @@ describe('SslCoordinator zone SSL mode', () => {
     expect(client.setSslMode).toHaveBeenCalledWith('z1', 'strict')
     expect(check).toHaveBeenCalledTimes(1)
     expect(check).toHaveBeenCalledWith('c1', 's1')
+  })
+
+  it('only sets a zone back to the mode it had before Shellway made it strict', async () => {
+    const { coordinator, client, mode } = build('token', passing)
+    vi.spyOn(coordinator, 'check').mockResolvedValue(reportInZone('example.com'))
+    mode.current = 'strict'
+    await expect(coordinator.zoneSetMode('example.com', 'full', [])).rejects.toThrow('only sets a zone back')
+    mode.current = 'flexible'
+    await coordinator.zoneSetMode('example.com', 'strict', [])
+    mode.current = 'strict'
+    await expect(coordinator.zoneSetMode('example.com', 'off', [])).rejects.toThrow('only sets a zone back')
+    await coordinator.zoneSetMode('example.com', 'flexible', [])
+    expect(client.setSslMode.mock.calls).toEqual([['z1', 'strict'], ['z1', 'flexible']])
   })
 })

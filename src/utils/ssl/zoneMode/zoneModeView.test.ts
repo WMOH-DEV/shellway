@@ -88,6 +88,7 @@ describe('helpers', () => {
     expect(modeLabel(null)).toBe('Unknown')
     expect(revertableMode('flexible')).toBe('flexible')
     expect(revertableMode('strict')).toBeNull()
+    expect(revertableMode('origin_pull')).toBeNull()
     expect(revertableMode(null)).toBeNull()
   })
 })
