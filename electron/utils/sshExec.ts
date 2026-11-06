@@ -11,6 +11,7 @@ export interface ExecResult {
 export interface ExecOptions {
   timeoutMs?: number
   stdin?: string | Buffer | Readable
+  onOutput?: (chunk: string) => void
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -31,7 +32,7 @@ function feedStdin(stream: any, stdin: ExecOptions['stdin']): void {
 export function sshExec(
   conn: SSHConnection,
   command: string,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin }: ExecOptions = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput }: ExecOptions = {}
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     if (conn.status !== 'connected') {
@@ -59,8 +60,8 @@ export function sshExec(
         })
       }, timeoutMs)
 
-      stream.on('data', (d: Buffer) => stdout.push(d))
-      stream.stderr.on('data', (d: Buffer) => stderr.push(d))
+      stream.on('data', (d: Buffer) => { stdout.push(d); onOutput?.(d.toString('utf8')) })
+      stream.stderr.on('data', (d: Buffer) => { stderr.push(d); onOutput?.(d.toString('utf8')) })
       stream.on('error', (streamErr: Error) => settle(() => reject(streamErr)))
       stream.stderr.on('error', () => {})
       stream.on('close', (code: number) => {

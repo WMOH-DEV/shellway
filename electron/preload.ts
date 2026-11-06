@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
+import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, SslReport, SslResult } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -1178,6 +1179,23 @@ const api = {
         callback(connectionId, site, record);
       ipcRenderer.on("deploy:finished", handler);
       return () => ipcRenderer.removeListener("deploy:finished", handler);
+    },
+  },
+
+  ssl: {
+    check: (connectionId: string, sessionId: string) =>
+      ipcRenderer.invoke("ssl:check", connectionId, sessionId) as Promise<SslResult<SslReport>>,
+    runCertbot: (connectionId: string, lineage: string, action: CertbotAction, runId: string) =>
+      ipcRenderer.invoke("ssl:certbot", connectionId, lineage, action, runId) as Promise<SslResult<ActionResult>>,
+    cloudflareStatus: () => ipcRenderer.invoke("ssl:cf-status") as Promise<SslResult<CloudflareStatus>>,
+    saveCloudflareToken: (token: string) => ipcRenderer.invoke("ssl:cf-save", token) as Promise<SslResult<CloudflareStatus>>,
+    removeCloudflareToken: () => ipcRenderer.invoke("ssl:cf-remove") as Promise<SslResult>,
+    alerts: () => ipcRenderer.invoke("ssl:alerts") as Promise<SslResult<AlertSettings>>,
+    setAlertsEnabled: (enabled: boolean) => ipcRenderer.invoke("ssl:alerts-enable", enabled) as Promise<SslResult<AlertSettings>>,
+    onOutput: (callback: (runId: string, chunk: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, runId: string, chunk: string) => callback(runId, chunk);
+      ipcRenderer.on("ssl:output", handler);
+      return () => ipcRenderer.removeListener("ssl:output", handler);
     },
   },
 
