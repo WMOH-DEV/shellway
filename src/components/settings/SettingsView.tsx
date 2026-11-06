@@ -532,7 +532,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
             <div>
               <div className="flex flex-col items-center text-center mb-6">
                 {/* Logo */}
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
+                <div className="w-16 h-16 rounded-2xl bg-nd-accent-solid flex items-center justify-center mb-4">
                   <Wifi size={28} className="text-white" />
                 </div>
                 <h3 className="text-lg font-bold text-nd-text-primary">Shellway</h3>

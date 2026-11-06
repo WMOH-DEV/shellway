@@ -308,7 +308,7 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
         ref={containerRef}
         className={cn(
           'flex-1 min-h-0 overflow-hidden flex items-center justify-center',
-          'bg-[#0a0c10]',
+          'bg-nd-bg-sunken',
           scale > 1 ? 'cursor-grab' : 'cursor-default',
           isDragging && 'cursor-grabbing'
         )}
@@ -1009,7 +1009,7 @@ export function FilePreview({
       )}
 
       {/* ─── Main content area ─── */}
-      <div className="flex-1 min-h-0 rounded-md border border-nd-border overflow-hidden bg-[#0c0e14]">
+      <div className="flex-1 min-h-0 rounded-md border border-nd-border overflow-hidden bg-nd-bg-sunken">
         {renderContent()}
       </div>
     </div>

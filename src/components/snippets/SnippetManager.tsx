@@ -152,7 +152,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
             onClick={() => setSelectedCategory(null)}
             className={`text-left text-xs px-2.5 py-1.5 rounded transition-colors ${
               selectedCategory === null
-                ? 'bg-nd-accent text-white'
+                ? 'bg-nd-surface-raised text-nd-text-primary'
                 : 'text-nd-text-secondary hover:bg-nd-surface hover:text-nd-text-primary'
             }`}
           >
@@ -164,7 +164,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
               onClick={() => setSelectedCategory(cat)}
               className={`text-left text-xs px-2.5 py-1.5 rounded transition-colors truncate ${
                 selectedCategory === cat
-                  ? 'bg-nd-accent text-white'
+                  ? 'bg-nd-surface-raised text-nd-text-primary'
                   : 'text-nd-text-secondary hover:bg-nd-surface hover:text-nd-text-primary'
               }`}
             >
