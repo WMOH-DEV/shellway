@@ -29,7 +29,7 @@ function NameRow({ site, name, issuable }: { site: SiteSelection; name: string; 
         checked={on}
         disabled={!issuable || blocked}
         onChange={() => site.toggle(name)}
-        className="h-[15px] w-[15px] accent-[rgb(var(--nd-accent))]"
+        className="h-[15px] w-[15px] accent-nd-accent"
       />
       <span className={cn('truncate font-mono text-[12.5px]', on ? 'text-nd-text-primary' : 'text-nd-text-muted')}>{name}</span>
       {issuable

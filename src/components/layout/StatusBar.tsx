@@ -94,14 +94,14 @@ export function StatusBar() {
             {autoUpdateSupported ? (
               <button
                 onClick={() => window.novadeck.updater.installAndRestart(version)}
-                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent text-white hover:bg-nd-accent-hover transition-colors"
+                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent-solid text-white hover:bg-nd-accent-solid-hover transition-colors"
               >
                 Restart to update
               </button>
             ) : (
               <button
                 onClick={() => window.novadeck.updater.installAndRestart(version)}
-                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent text-white hover:bg-nd-accent-hover transition-colors flex items-center gap-1"
+                className="ml-0.5 px-2 py-0.5 rounded text-2xs font-medium bg-nd-accent-solid text-white hover:bg-nd-accent-solid-hover transition-colors flex items-center gap-1"
               >
                 <ExternalLink size={10} />
                 Download update

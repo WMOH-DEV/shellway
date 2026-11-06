@@ -370,7 +370,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
               </button>
               <button
                 onClick={handleSetDefaultApp}
-                className="px-3 py-1.5 text-sm rounded bg-nd-accent hover:bg-nd-accent-hover text-white transition-colors"
+                className="px-3 py-1.5 text-sm rounded bg-nd-accent-solid hover:bg-nd-accent-solid-hover text-white transition-colors"
               >
                 Always
               </button>

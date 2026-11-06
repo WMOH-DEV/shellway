@@ -59,10 +59,10 @@ export function HostKeyVerifyDialog({
       >
         <div className="flex flex-col gap-4">
           {/* Warning header */}
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-            <ShieldAlert size={24} className="text-red-400 shrink-0" />
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-nd-error/30 bg-nd-error/[0.07]">
+            <ShieldAlert size={24} className="text-nd-error shrink-0" />
             <div>
-              <h3 className="text-sm font-bold text-red-400">HOST KEY CHANGED — POTENTIAL SECURITY RISK</h3>
+              <h3 className="text-sm font-bold text-nd-error-fg">HOST KEY CHANGED — POTENTIAL SECURITY RISK</h3>
             </div>
           </div>
 
@@ -77,7 +77,7 @@ export function HostKeyVerifyDialog({
               <div className="flex flex-col gap-0.5">
                 <label className="text-2xs font-medium text-nd-text-muted">Previous Fingerprint</label>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs font-mono text-red-300 bg-nd-bg-primary px-2 py-1 rounded border border-nd-border flex-1 break-all">
+                  <code className="text-xs font-mono text-nd-error-fg bg-nd-bg-sunken px-2 py-1 rounded border border-nd-border flex-1 break-all">
                     {previousFingerprint}
                   </code>
                   <button onClick={() => copyFingerprint(previousFingerprint)} className="p-1 text-nd-text-muted hover:text-nd-text-primary">
@@ -89,7 +89,7 @@ export function HostKeyVerifyDialog({
             <div className="flex flex-col gap-0.5">
               <label className="text-2xs font-medium text-nd-text-muted">Current Fingerprint</label>
               <div className="flex items-center gap-2">
-                <code className="text-xs font-mono text-nd-warning bg-nd-bg-primary px-2 py-1 rounded border border-nd-border flex-1 break-all">
+                <code className="text-xs font-mono text-nd-warning bg-nd-bg-sunken px-2 py-1 rounded border border-nd-border flex-1 break-all">
                   {fingerprint}
                 </code>
                 <button onClick={() => copyFingerprint(fingerprint)} className="p-1 text-nd-text-muted hover:text-nd-text-primary">

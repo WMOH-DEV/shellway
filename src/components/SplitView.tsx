@@ -117,7 +117,7 @@ export function SplitView({ connectionId, sessionId, connectionStatus, layout, r
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-1 h-1 rounded-full bg-nd-text-muted/40 group-hover:bg-white/60 transition-colors"
+              className="w-1 h-1 rounded-full bg-nd-text-muted/40 group-hover:bg-nd-text-muted transition-colors"
             />
           ))}
         </div>

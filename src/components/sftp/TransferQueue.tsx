@@ -214,7 +214,7 @@ function TransferRow({ transfer }: { transfer: TrackedTransfer }) {
         {transfer.status === 'failed' && (
           <button
             onClick={() => window.novadeck.sftp.transferRetry(connectionId, transfer.id)}
-            className="p-0.5 rounded text-nd-error hover:text-red-300 transition-colors"
+            className="p-0.5 rounded text-nd-error hover:text-nd-error-fg transition-colors"
           >
             <RotateCw size={11} />
           </button>
