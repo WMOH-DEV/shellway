@@ -343,3 +343,66 @@ describe('CloudflareClient.edges', () => {
     expect(edges['app.example.com'].state).toBe('proxied')
   })
 })
+
+describe('CloudflareClient.createOriginCert', () => {
+  const PEM = '-----BEGIN CERTIFICATE-----\nMIIBsample\n-----END CERTIFICATE-----\n'
+  const CSR = '-----BEGIN CERTIFICATE REQUEST-----\nMIIBcsr\n-----END CERTIFICATE REQUEST-----\n'
+  const NAMES = ['app.example.com', 'www.example.com']
+  const issued = (extra: object = {}): Reply => ({ body: { success: true, result: { id: 'c1', certificate: PEM, expires_on: '2041-11-06 12:30:00 +0000 UTC', ...extra } } })
+
+  it('posts the request with a bearer token and returns the certificate and expiry', async () => {
+    const { impl, calls } = fakeFetch({ '/certificates': issued() })
+
+    const result = await new CloudflareClient(TOKEN, impl).createOriginCert(CSR, NAMES, 'ecc', 15)
+
+    expect(result).toEqual({ certificate: PEM, notAfter: Date.UTC(2041, 10, 6, 12, 30, 0) / 1000 })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].init.method).toBe('POST')
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`)
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({ csr: CSR, hostnames: NAMES, request_type: 'origin-ecc', requested_validity: 5475 })
+  })
+
+  it.each([
+    ['ecc', 1, 'origin-ecc', 365],
+    ['rsa', 2, 'origin-rsa', 730],
+    ['rsa', 3, 'origin-rsa', 1095],
+    ['ecc', 15, 'origin-ecc', 5475]
+  ] as const)('maps %s and %i years to %s and %i days', async (keyType, years, requestType, days) => {
+    const { impl, calls } = fakeFetch({ '/certificates': issued() })
+    await new CloudflareClient(TOKEN, impl).createOriginCert(CSR, NAMES, keyType, years)
+    expect(JSON.parse(calls[0].init.body as string)).toMatchObject({ request_type: requestType, requested_validity: days })
+  })
+
+  it('reads an ISO expiry date and tolerates a missing one', async () => {
+    const iso = fakeFetch({ '/certificates': issued({ expires_on: '2041-11-06T12:30:00Z' }) })
+    expect((await new CloudflareClient(TOKEN, iso.impl).createOriginCert(CSR, NAMES, 'ecc', 15)).notAfter).toBe(Date.UTC(2041, 10, 6, 12, 30, 0) / 1000)
+    const none = fakeFetch({ '/certificates': issued({ expires_on: undefined }) })
+    expect((await new CloudflareClient(TOKEN, none.impl).createOriginCert(CSR, NAMES, 'ecc', 15)).notAfter).toBeNull()
+  })
+
+  it('explains a 403 plainly and never retries', async () => {
+    const { impl, calls } = fakeFetch({ '/certificates': denied() })
+    await expect(new CloudflareClient(TOKEN, impl).createOriginCert(CSR, NAMES, 'ecc', 15)).rejects.toThrow('needs Zone → SSL and Certificates → Edit')
+    expect(calls).toHaveLength(1)
+  })
+
+  it.each([[401, 'rejected this token'], [429, 'limiting requests'], [500, 'had a problem']])('reports a %i plainly and never retries', async (status, text) => {
+    const { impl, calls } = fakeFetch({ '/certificates': { status, body: { success: false } } })
+    await expect(new CloudflareClient(TOKEN, impl).createOriginCert(CSR, NAMES, 'ecc', 15)).rejects.toThrow(text)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('shows the message Cloudflare gave for a rejected request', async () => {
+    const { impl } = fakeFetch({ '/certificates': { status: 400, body: { success: false, errors: [{ message: 'Invalid CSR' }] } } })
+    await expect(new CloudflareClient(TOKEN, impl).createOriginCert(CSR, NAMES, 'ecc', 15)).rejects.toThrow('Cloudflare answered: Invalid CSR')
+  })
+
+  it('refuses an answer without a certificate and a bad number of names, without calling Cloudflare for the names', async () => {
+    const { impl, calls } = fakeFetch({ '/certificates': { body: { success: true, result: {} } } })
+    const client = new CloudflareClient(TOKEN, impl)
+    await expect(client.createOriginCert(CSR, NAMES, 'ecc', 15)).rejects.toThrow('did not return a certificate')
+    await expect(client.createOriginCert(CSR, [], 'ecc', 15)).rejects.toThrow('between 1 and 200')
+    await expect(client.createOriginCert(CSR, Array.from({ length: 201 }, (_, i) => `h${i}.example.com`), 'ecc', 15)).rejects.toThrow('between 1 and 200')
+    expect(calls).toHaveLength(1)
+  })
+})

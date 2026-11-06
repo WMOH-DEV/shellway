@@ -9,7 +9,7 @@ import { CloudflareClient } from '../services/ssl/CloudflareClient'
 import { SslCoordinator } from '../services/ssl/SslCoordinator'
 import { SslLocalStore } from '../services/ssl/SslLocalStore'
 import { LINEAGE_NAME } from '../../src/utils/ssl/commands'
-import type { CertbotAction, InstallRoute, IssueRequest, SslResult } from '../../src/types/ssl'
+import type { CertbotAction, InstallRoute, IssueRequest, OriginKeyType, OriginValidityYears, SslResult, SwitchRequest } from '../../src/types/ssl'
 
 let coordinator: SslCoordinator | null = null
 let store: SslLocalStore | null = null
@@ -18,6 +18,9 @@ let alertProbe: AlertProbe | null = null
 const CERTBOT_ACTIONS: readonly CertbotAction[] = ['test', 'renew', 'force']
 const INSTALL_ROUTES: readonly InstallRoute[] = ['snap', 'distro']
 const RUN_ID = /^[A-Za-z0-9-]{1,64}$/
+const SWITCH_ID = /^[A-Za-z0-9-]{1,64}$/
+const ORIGIN_KEY_TYPES: readonly OriginKeyType[] = ['ecc', 'rsa']
+const ORIGIN_YEARS: readonly OriginValidityYears[] = [1, 2, 3, 15]
 const MAX_NAMES = 100
 
 function execFor(connectionId: string): RemoteExec | null {
@@ -69,6 +72,14 @@ function issueRequest(value: unknown): IssueRequest {
   }
 }
 
+function switchRequest(value: unknown): SwitchRequest {
+  if (typeof value !== 'object' || value === null) throw new Error('Invalid request')
+  const raw = value as Record<string, unknown>
+  if (!ORIGIN_KEY_TYPES.includes(raw.keyType as OriginKeyType)) throw new Error('Invalid key type')
+  if (!ORIGIN_YEARS.includes(raw.validityYears as OriginValidityYears)) throw new Error('Invalid validity')
+  return { blockId: str(raw.blockId, 'site'), keyType: raw.keyType as OriginKeyType, validityYears: raw.validityYears as OriginValidityYears }
+}
+
 function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   ipcMain.handle(channel, async (_event, ...args: unknown[]): Promise<SslResult<unknown>> => {
     try {
@@ -117,6 +128,17 @@ export function registerSslIPC(): void {
   handle('ssl:https-verify', (c, names, lineage) =>
     requireCoordinator().httpsVerify(str(c, 'connection'), nameList(names, 'names'), matching(lineage, LINEAGE_NAME, 'certificate name')))
   handle('ssl:https-email', (s) => requireCoordinator().httpsEmail(str(s, 'session')))
+  handle('ssl:origin-prepare', (c, s, request, runId) =>
+    requireCoordinator().originPrepare(str(c, 'connection'), str(s, 'session'), switchRequest(request), matching(runId, RUN_ID, 'run')))
+  handle('ssl:origin-apply', (c, s, switchId, runId) =>
+    requireCoordinator().originApply(str(c, 'connection'), str(s, 'session'), matching(switchId, SWITCH_ID, 'switch'), matching(runId, RUN_ID, 'run')))
+  handle('ssl:origin-cancel', (c, switchId) =>
+    requireCoordinator().originCancel(str(c, 'connection'), matching(switchId, SWITCH_ID, 'switch')))
+  handle('ssl:origin-leftover', (c, name) => requireCoordinator().originLeftover(str(c, 'connection'), str(name, 'name', 253)))
+  handle('ssl:origin-undo', (c, s, name, runId) =>
+    requireCoordinator().originUndo(str(c, 'connection'), str(s, 'session'), str(name, 'name', 253), matching(runId, RUN_ID, 'run')))
+  handle('ssl:remove-lineage', (c, lineage, runId) =>
+    requireCoordinator().originRemoveLineage(str(c, 'connection'), matching(lineage, LINEAGE_NAME, 'certificate name'), matching(runId, RUN_ID, 'run')))
   handle('ssl:last-report', (c) => requireCoordinator().lastReport(str(c, 'connection')))
   handle('ssl:cf-status', () => requireCoordinator().cloudflareStatus())
   handle('ssl:cf-save', (token) => requireCoordinator().saveCloudflareToken(str(token, 'token', 512).trim()))
