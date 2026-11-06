@@ -795,4 +795,124 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
       expect(result.stderr).toContain('auto')
     })
   })
+
+  describe('previewing what would ship', () => {
+    const rows = (out: string, key: string) => out.split('\n').filter((l) => l.startsWith(`${key}\t`)).map((l) => l.split('\t').slice(1))
+    const value = (out: string, key: string) => out.split('\n').find((l) => l.startsWith(`${key}=`))?.slice(key.length + 1)
+    const stateFiles = (name: string) => readdirSync(join(root, 'sites', name)).filter((f) => f !== 'repo.git').sort()
+
+    it('shows only the head commit and its files when nothing is live yet', async () => {
+      writeSite('app', {})
+      const head = await git(work, 'rev-parse', 'HEAD')
+      const result = await runner('preview', 'app')
+      expect(result.code).toBe(0)
+      expect(value(result.stdout, 'FROM')).toBe('')
+      expect(value(result.stdout, 'TO')).toBe(head)
+      expect(value(result.stdout, 'BRANCH')).toBe('main')
+      expect(value(result.stdout, 'TOTAL_COMMITS')).toBe('1')
+      expect(rows(result.stdout, 'COMMIT')).toEqual([[head, expect.stringMatching(/^\d+$/), 'Test', '0', 'first']])
+      expect(rows(result.stdout, 'FILE')).toEqual([['A', '1', '0', '0', 'index.html'], ['A', '2', '0', '0', 'storage/.gitignore']])
+      expect(value(result.stdout, 'TOTAL_FILES')).toBe('2')
+    })
+
+    it('lists the commits and files between the live commit and the branch head', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      const live = await git(work, 'rev-parse', 'HEAD')
+      const migration = await commit({ 'index.html': 'v2\n', 'database/migrations/2026_add.php': '<?php\n' }, 'Add tax region')
+      rmSync(join(work, 'storage', '.gitignore'))
+      const head = await commit({ 'extra.txt': 'x\n' }, 'Add\textra')
+      const result = await runner('preview', 'app')
+      expect(value(result.stdout, 'FROM')).toBe(live)
+      expect(value(result.stdout, 'TO')).toBe(head)
+      expect(value(result.stdout, 'TOTAL_COMMITS')).toBe('2')
+      expect(rows(result.stdout, 'COMMIT').map((c) => [c[0], c[3], c[4]])).toEqual([[head, '0', 'Add extra'], [migration, '1', 'Add tax region']])
+      expect(rows(result.stdout, 'FILE')).toEqual([
+        ['A', '1', '0', '1', 'database/migrations/2026_add.php'],
+        ['A', '1', '0', '0', 'extra.txt'],
+        ['M', '1', '1', '0', 'index.html'],
+        ['D', '0', '2', '0', 'storage/.gitignore']
+      ])
+      expect(value(result.stdout, 'TOTAL_FILES')).toBe('4')
+    })
+
+    it('reports nothing to ship when the live commit is the branch head', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      const result = await runner('preview', 'app')
+      expect(result.code).toBe(0)
+      expect(value(result.stdout, 'FROM')).toBe(value(result.stdout, 'TO'))
+      expect(value(result.stdout, 'TOTAL_COMMITS')).toBe('0')
+      expect(rows(result.stdout, 'COMMIT')).toEqual([])
+      expect(rows(result.stdout, 'FILE')).toEqual([])
+    })
+
+    it('previews the commit waiting for approval rather than the newest one', async () => {
+      writeSite('app', { APPROVE_MIGRATIONS: '1' })
+      await deployWithId('app', 'd1')
+      const pending = await commit({ 'database/migrations/2026_add.php': '<?php\n' }, 'Add table')
+      await deployWithId('app', 'd2')
+      await commit({ 'later.txt': 'x' }, 'Later change')
+      const result = await runner('preview', 'app')
+      expect(value(result.stdout, 'TO')).toBe(pending)
+      expect(value(result.stdout, 'TOTAL_COMMITS')).toBe('1')
+      expect(rows(result.stdout, 'FILE').map((f) => f[4])).toEqual(['database/migrations/2026_add.php'])
+    })
+
+    it('marks migrations under a custom folder', async () => {
+      writeSite('app', { MIGRATIONS_PATH: 'db/migrate/' })
+      await deployWithId('app', 'd1')
+      await commit({ 'db/migrate/001_add.rb': 'x', 'database/migrations/ignored.php': 'x' }, 'Add column')
+      const result = await runner('preview', 'app')
+      expect(rows(result.stdout, 'COMMIT')[0][3]).toBe('1')
+      expect(rows(result.stdout, 'FILE').map((f) => [f[4], f[3]])).toEqual([['db/migrate/001_add.rb', '1'], ['database/migrations/ignored.php', '0']])
+    })
+
+    it('caps the lists, keeps migrations first and still reports the totals', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      for (let i = 0; i < 54; i++) await git(work, 'commit', '--allow-empty', '-q', '-m', `empty ${i}`)
+      const files = Object.fromEntries(Array.from({ length: 204 }, (_, i) => [`src/file-${String(i).padStart(3, '0')}.txt`, 'x']))
+      await commit({ ...files, 'database/migrations/zzz_last.php': '<?php\n' }, 'Many files')
+      const result = await runner('preview', 'app')
+      expect(value(result.stdout, 'TOTAL_COMMITS')).toBe('55')
+      expect(rows(result.stdout, 'COMMIT')).toHaveLength(50)
+      expect(value(result.stdout, 'TOTAL_FILES')).toBe('205')
+      const listed = rows(result.stdout, 'FILE')
+      expect(listed).toHaveLength(200)
+      expect(listed[0][4]).toBe('database/migrations/zzz_last.php')
+    })
+
+    it('changes nothing but the mirror and works while a deploy holds the lock', async () => {
+      writeSite('app', {})
+      await deployWithId('app', 'd1')
+      await commit({ 'index.html': 'v2' })
+      const lock = join(root, 'sites', 'app', 'lock')
+      mkdirSync(lock)
+      writeFileSync(join(lock, 'pid'), String(process.pid))
+      const before = stateFiles('app')
+      const historyBefore = siteFile('app', 'history.tsv')
+      const currentBefore = siteFile('app', 'current')
+      const result = await runner('preview', 'app')
+      expect(result.code).toBe(0)
+      expect(stateFiles('app')).toEqual(before)
+      expect(siteFile('app', 'history.tsv')).toBe(historyBefore)
+      expect(siteFile('app', 'lock/pid')).toBe(String(process.pid))
+      expect(siteFile('app', 'current')).toBe(currentBefore)
+    })
+
+    it('explains when the repository cannot be reached', async () => {
+      writeSite('app', { REPO_URL: join(base, 'missing.git') })
+      const result = await runner('preview', 'app')
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('could not fetch main')
+    })
+
+    it('refuses sites deployed from the PC', async () => {
+      writeSite('app', { SOURCE_MODE: 'pc' })
+      const result = await runner('preview', 'app')
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('PC')
+    })
+  })
 })

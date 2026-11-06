@@ -106,6 +106,35 @@ export interface RunnerInfo {
   bundledVersion: number
 }
 
+export type ShipFileStatus = 'A' | 'M' | 'D' | 'R'
+
+export interface ShipCommit {
+  sha: string
+  subject: string
+  author: string
+  time: number
+  migration: boolean
+}
+
+export interface ShipFile {
+  status: ShipFileStatus
+  path: string
+  added: number | null
+  removed: number | null
+  migration: boolean
+}
+
+export interface ShipPreview {
+  from: string
+  to: string
+  branch: string
+  commits: ShipCommit[]
+  files: ShipFile[]
+  totalCommits: number
+  totalFiles: number
+  truncated: boolean
+}
+
 export interface DeployResult<T = undefined> {
   success: boolean
   data?: T

@@ -4,10 +4,15 @@ import type {
   DeployStage,
   DeployStatus,
   DoctorReport,
+  ShipCommit,
+  ShipFile,
+  ShipFileStatus,
+  ShipPreview,
   SitePathKind,
   SiteState,
   SiteSummary
 } from '../../../src/types/deploy'
+import { makeShipPreview } from './previewShape'
 import { parseSiteFiles } from './siteFiles'
 
 const STATUSES: ReadonlySet<string> = new Set(['running', 'success', 'warning', 'failed', 'waiting', 'reverted', 'cancelled'])
@@ -142,4 +147,43 @@ export function parseDump(text: string): SiteSummary[] {
     state: parseState(sections.STATUS.join('\n')),
     history: parseHistory(sections.HISTORY.join('\n'))
   }))
+}
+
+const FILE_STATUSES: ReadonlySet<string> = new Set(['A', 'M', 'D', 'R'])
+
+function parseShipCommit(row: string): ShipCommit | null {
+  const [sha, time, author, migration, ...subject] = row.split('\t')
+  if (!sha) return null
+  return { sha, time: toNumberOrNull(time) ?? 0, author: author ?? '', migration: migration === '1', subject: subject.join(' ') }
+}
+
+function parseShipFile(row: string): ShipFile | null {
+  const [status, added, removed, migration, ...path] = row.split('\t')
+  if (path.length === 0) return null
+  return {
+    status: (FILE_STATUSES.has(status) ? status : 'M') as ShipFileStatus,
+    path: path.join('\t'),
+    added: toNumberOrNull(added),
+    removed: toNumberOrNull(removed),
+    migration: migration === '1'
+  }
+}
+
+const parseRows = <T>(text: string, key: string, parseRow: (row: string) => T | null): T[] =>
+  tabbedValues(text, key).flatMap((row) => parseRow(row) ?? [])
+
+export function parsePreview(text: string): ShipPreview {
+  const v = parseKeyValues(text)
+  if (!v.TO) throw new Error('The server returned no preview')
+  const commits = parseRows(text, 'COMMIT', parseShipCommit)
+  const files = parseRows(text, 'FILE', parseShipFile)
+  return makeShipPreview({
+    from: v.FROM ?? '',
+    to: v.TO,
+    branch: v.BRANCH ?? '',
+    commits,
+    files,
+    totalCommits: toNumberOrNull(v.TOTAL_COMMITS) ?? commits.length,
+    totalFiles: toNumberOrNull(v.TOTAL_FILES) ?? files.length
+  })
 }

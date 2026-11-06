@@ -1,4 +1,4 @@
-import type { DeployRecord, SiteSummary } from '../../../src/types/deploy'
+import type { DeployRecord, ShipPreview, SiteSummary } from '../../../src/types/deploy'
 import type { RemoteExec } from './DeployService'
 import { DeployService, newDeployId } from './DeployService'
 import type { DeployLocalStore } from './DeployLocalStore'
@@ -81,6 +81,15 @@ export class DeployCoordinator {
     }
     this.track(connectionId, name, id)
     return id
+  }
+
+  async preview(connectionId: string, name: string): Promise<ShipPreview> {
+    const service = this.service(connectionId)
+    const site = (await service.listSites()).find((s) => s.config.name === name)
+    if (!site) throw new Error(`Unknown site ${name}`)
+    if (site.config.sourceMode === 'auto') return service.preview(name)
+    const { repoUrl, branch, migrationsPath } = site.config
+    return this.deps.git.preview({ url: repoUrl, branch, live: site.state.current, pending: site.state.pending, migrationsPath })
   }
 
   async rollback(connectionId: string, name: string, targetId: string): Promise<string> {
