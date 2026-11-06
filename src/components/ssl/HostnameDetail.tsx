@@ -4,6 +4,7 @@ import type { HostnameStatus, SslReport } from '@/types/ssl'
 import { certbotCommand } from '@/utils/ssl/commands'
 import { switchCheck } from '@/utils/ssl/originCa/switchCheck'
 import { verdictHeadline } from '@/utils/ssl/hostRow'
+import { strictOfferZone } from '@/utils/ssl/zoneMode/zoneModeView'
 import { ErrorBanner } from './LoadState'
 import { ActionsCard } from './detail/ActionsCard'
 import { DetailHeader } from './detail/DetailHeader'
@@ -26,13 +27,15 @@ interface HostnameDetailProps {
   onBack: () => void
   onAddHttps: (blockId: string) => void
   onSwitchOrigin: (name: string) => void
+  onSetZoneStrict: (zone: string) => void
   onRefresh: () => Promise<void>
 }
 
-export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onRefresh }: HostnameDetailProps) {
+export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onSetZoneStrict, onRefresh }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
   const block = blocks.find((b) => b.id === host.blockId)
+  const strictZone = strictOfferZone(host.edge)
 
   const force = () => {
     setConfirmForce(false)
@@ -61,6 +64,8 @@ export function HostnameDetail({ connectionId, sessionId, host, report, now, loa
             onAddHttps={onAddHttps}
             originBlockedReason={switchCheck(report, host.blockId).blockedReason}
             onSwitchOrigin={() => onSwitchOrigin(host.name)}
+            strictZone={strictZone}
+            onSetStrict={() => strictZone && onSetZoneStrict(strictZone)}
           />
           <FactsCard host={host} block={block} now={now} />
         </div>

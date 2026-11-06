@@ -134,7 +134,7 @@ function DetailHarness({ host, sslReport, onBack, onSwitchOrigin, onRefresh }: D
   const [open, setOpen] = useState(true)
   if (!open) return <button type="button" onClick={() => setOpen(true)}>Reopen</button>
   const back = () => { onBack(); setOpen(false) }
-  return <HostnameDetail connectionId="conn-1" sessionId="session-1" host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onAddHttps={vi.fn()} onSwitchOrigin={onSwitchOrigin} onRefresh={onRefresh} />
+  return <HostnameDetail connectionId="conn-1" sessionId="session-1" host={host} report={sslReport} now={NOW} loading={false} error={null} run={run} onBack={back} onAddHttps={vi.fn()} onSwitchOrigin={onSwitchOrigin} onSetZoneStrict={vi.fn()} onRefresh={onRefresh} />
 }
 
 function renderDetail(host: HostnameStatus, overrides: Partial<SslReport> = {}, api: Record<string, unknown> = {}) {

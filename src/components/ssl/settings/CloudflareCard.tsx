@@ -48,7 +48,14 @@ function SavedToken({ status, token }: { status: CloudflareStatus; token: Cloudf
   )
 }
 
-function CardBody({ status, token, hostnames }: { status: CloudflareStatus; token: CloudflareToken; hostnames: HostnameStatus[] }) {
+interface CardBodyProps {
+  status: CloudflareStatus
+  token: CloudflareToken
+  hostnames: HostnameStatus[]
+  onSetZoneStrict: (zone: string) => void
+}
+
+function CardBody({ status, token, hostnames, onSetZoneStrict }: CardBodyProps) {
   const connected = status.saved && !status.error
   return (
     <>
@@ -65,12 +72,18 @@ function CardBody({ status, token, hostnames }: { status: CloudflareStatus; toke
       )}
       <StoredNote />
       <PermissionGroups groups={connected ? status.permissions : placeholderGroups()} showState={connected} />
-      {connected && <ZoneList zones={status.zones} hostnames={hostnames} />}
+      {connected && <ZoneList zones={status.zones} hostnames={hostnames} onSetStrict={onSetZoneStrict} />}
     </>
   )
 }
 
-export function CloudflareCard({ hostnames, onChanged }: { hostnames: HostnameStatus[]; onChanged: () => void }) {
+interface CloudflareCardProps {
+  hostnames: HostnameStatus[]
+  onChanged: () => void
+  onSetZoneStrict: (zone: string) => void
+}
+
+export function CloudflareCard({ hostnames, onChanged, onSetZoneStrict }: CloudflareCardProps) {
   const token = useCloudflareToken(onChanged)
   const { data, error, loading, reload } = token.status
   return (
@@ -79,7 +92,7 @@ export function CloudflareCard({ hostnames, onChanged }: { hostnames: HostnameSt
         {data && <TokenChip status={data} />}
         <a className="ml-auto text-xs text-nd-accent hover:underline" href={cloudflareTokenUrl()} target="_blank" rel="noreferrer">Create a token</a>
       </CardHeading>
-      {data && <CardBody status={data} token={token} hostnames={hostnames} />}
+      {data && <CardBody status={data} token={token} hostnames={hostnames} onSetZoneStrict={onSetZoneStrict} />}
       {!data && loading && <LoadingLine text="Checking the token…" />}
       {!data && error && <ErrorLine message={error} onRetry={() => void reload()} />}
     </SettingsCard>

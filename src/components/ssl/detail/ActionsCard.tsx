@@ -6,6 +6,7 @@ import type { CertbotAction, HostnameStatus, ServerFacts } from '@/types/ssl'
 import { ACTION_COPY, actionAvailability, FORCE_COPY, shouldEmphasizeTest } from '@/utils/ssl/certbotActions'
 import { certbotCommand } from '@/utils/ssl/commands'
 import { isMissingServerCertificate } from '@/utils/ssl/addHttps/issueView'
+import { STRICT_LABEL } from '@/utils/ssl/zoneMode/zoneModeView'
 import { Card } from '../Card'
 import { OutputPanel } from './OutputPanel'
 import type { CertbotRun } from './useCertbotRun'
@@ -18,6 +19,8 @@ interface ActionsCardProps {
   onAddHttps: (blockId: string) => void
   originBlockedReason: string | null
   onSwitchOrigin: () => void
+  strictZone: string | null
+  onSetStrict: () => void
 }
 
 export interface ActionRowProps {
@@ -87,7 +90,15 @@ function OriginCaRow({ blockedReason, onStart }: { blockedReason: string | null;
   )
 }
 
-export function ActionsCard({ host, facts, run, onForce, onAddHttps, originBlockedReason, onSwitchOrigin }: ActionsCardProps) {
+function ZoneStrictRow({ zone, onStart }: { zone: string; onStart: () => void }) {
+  return (
+    <ActionRow title={`Set ${zone} to ${STRICT_LABEL}`} note={`Changes the SSL mode for the whole zone, not only this hostname. Every proxied hostname in ${zone} is checked first.`}>
+      <Button variant="secondary" onClick={onStart}>Check zone</Button>
+    </ActionRow>
+  )
+}
+
+export function ActionsCard({ host, facts, run, onForce, onAddHttps, originBlockedReason, onSwitchOrigin, strictZone, onSetStrict }: ActionsCardProps) {
   const availability = actionAvailability(host, facts)
   const isThisCertificate = run.lineage !== null && run.lineage === host.lineage
   const shownAction = run.running ?? run.outcome?.action ?? null
@@ -101,6 +112,7 @@ export function ActionsCard({ host, facts, run, onForce, onAddHttps, originBlock
             ? <AddHttpsRow host={host} onAddHttps={onAddHttps} />
             : <p className="py-2 text-[13px] text-nd-text-secondary">{availability.reason}</p>}
         <OriginCaRow blockedReason={originBlockedReason} onStart={onSwitchOrigin} />
+        {strictZone && <ZoneStrictRow zone={strictZone} onStart={onSetStrict} />}
       </div>
       {availability.allowed && (
         <button
