@@ -5,6 +5,9 @@ const config: Config = {
   darkMode: 'class',
   theme: {
     extend: {
+      opacity: {
+        12: '0.12'
+      },
       colors: {
         nd: {
           bg: {
