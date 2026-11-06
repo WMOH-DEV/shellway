@@ -53,7 +53,7 @@ function PrepareActions({ flow }: { flow: AddHttpsFlow }) {
     <>
       <Hint>About a minute</Hint>
       <Button onClick={() => prepare.setManual(true)} disabled={run.running}>I'll install it myself</Button>
-      <Button variant="primary" onClick={() => void prepare.install()} disabled={run.running}>
+      <Button variant="primary" onClick={() => void prepare.install()} disabled={run.running || prepare.prep.loading}>
         <Download size={13} /> {run.running ? 'Installing…' : 'Install certbot'}
       </Button>
     </>

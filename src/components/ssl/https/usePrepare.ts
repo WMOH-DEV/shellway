@@ -30,7 +30,7 @@ export function usePrepare(connectionId: string): Prepare {
   const plan = useMemo(() => (facts ? installPlan(facts, route) : null), [facts, route])
 
   const install = async () => {
-    if (!plan || plan.blockedReason) return
+    if (!plan || plan.blockedReason || prep.loading) return
     setOutcome(null)
     const { data, error } = await run.start((runId) => sslApi().httpsInstall(connectionId, plan.route, runId))
     setOutcome(installOutcome(data, error))

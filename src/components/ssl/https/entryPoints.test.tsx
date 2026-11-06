@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useHttpsIntentStore } from '@/stores/httpsIntentStore'
@@ -143,7 +143,7 @@ describe('SslView', () => {
     mountView()
     await screen.findByRole('heading', { name: 'SSL' })
     act(() => useHttpsIntentStore.getState().request('conn-1', 'plain.conf:1'))
-    expect(await screen.findByRole('radio', { name: /plain\.example\.com/ })).toBeChecked()
+    expect(within(await screen.findByRole('group', { name: 'Choose a site' })).getByRole('button', { name: /plain\.example\.com/ })).toHaveAttribute('aria-pressed', 'true')
     expect(useHttpsIntentStore.getState().pending).toEqual({})
   })
 })

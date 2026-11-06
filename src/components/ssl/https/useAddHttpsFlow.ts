@@ -29,7 +29,7 @@ export interface AddHttpsFlow {
 }
 
 function canLeave(step: HttpsStep, site: SiteSelection, prepare: Prepare): boolean {
-  if (step === 'site') return site.block !== null && !site.readiness.loading && site.readiness.data !== null && site.selected.length > 0
+  if (step === 'site') return site.block !== null && !site.readiness.loading && site.readiness.error === null && site.readiness.data !== null && site.selected.length > 0
   if (step === 'prepare') return prepare.ready
   return false
 }

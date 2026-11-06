@@ -53,6 +53,12 @@ export function useIssue({ connectionId, sessionId, blockId, names, onIssued }: 
   const request: IssueRequest = { blockId, names, email: email.trim(), redirect, staging }
   const rows = commandRows(request)
   useRememberedEmail(sessionId, setEmail)
+  const target = `${blockId}|${names.join(',')}`
+
+  useEffect(() => {
+    setResult(null)
+    setError(null)
+  }, [target])
 
   const submit = async () => {
     if (!rows) return

@@ -21,8 +21,7 @@ function OptionButton({ on, onClick, children }: { on: boolean; onClick: () => v
   return (
     <button
       type="button"
-      role="radio"
-      aria-checked={on}
+      aria-pressed={on}
       onClick={onClick}
       className={cn(
         'flex items-start gap-3 rounded-[10px] border px-3.5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nd-accent',
@@ -39,7 +38,7 @@ export function SitePicker({ site }: { site: SiteSelection }) {
   return (
     <section aria-label="Site" className="flex flex-col gap-2">
       <CardLabel>Site</CardLabel>
-      <div role="radiogroup" aria-label="Choose a site" className="grid grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))] gap-2">
+      <div role="group" aria-label="Choose a site" className="grid grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))] gap-2">
         {site.options.map((option) => {
           const chip = KIND_CHIP[option.kind]
           return (

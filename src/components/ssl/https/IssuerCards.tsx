@@ -8,11 +8,10 @@ export function IssuerCards({ certbotMissing }: IssuerCardsProps) {
   return (
     <section aria-label="Who issues the certificate" className="flex flex-col gap-2">
       <CardLabel>Who issues the certificate</CardLabel>
-      <div role="radiogroup" aria-label="Certificate issuer" className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-2">
+      <div role="group" aria-label="Certificate issuer" className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-2">
         <button
           type="button"
-          role="radio"
-          aria-checked
+          aria-pressed
           className="flex items-start gap-3 rounded-[10px] border border-nd-accent/70 bg-nd-accent/[.07] p-3.5 text-left"
         >
           <span aria-hidden className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] border-nd-accent">
@@ -29,9 +28,7 @@ export function IssuerCards({ certbotMissing }: IssuerCardsProps) {
         </button>
         <button
           type="button"
-          role="radio"
-          aria-checked={false}
-          aria-disabled
+          aria-pressed={false}
           disabled
           className="flex items-start gap-3 rounded-[10px] border border-nd-border bg-nd-bg-secondary p-3.5 text-left opacity-60"
         >

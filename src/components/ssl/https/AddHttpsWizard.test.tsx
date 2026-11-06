@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mockNovadeck } from '@/test/novadeck'
@@ -100,7 +100,7 @@ function renderWizard(options: { blockId?: string | null; report?: SslReport } =
 const user = () => userEvent.setup()
 
 async function pickDeploySite(u: ReturnType<typeof user>) {
-  await u.click(await screen.findByRole('radio', { name: /example-app/ }))
+  await u.click(await screen.findByRole('button', { name: /example-app/ }))
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'app.example.com' })).toBeChecked())
 }
 
@@ -114,8 +114,8 @@ describe('Add HTTPS step 1', () => {
   it('lists the Deploy site first, matched to its block, then the nginx block', async () => {
     setupBackend()
     renderWizard()
-    await screen.findByRole('radio', { name: /example-app/ })
-    expect(screen.getAllByRole('radio', { name: /example-app|blog\.example\.com|Other hostname/ }).map((r) => r.textContent)).toEqual([
+    await screen.findByRole('button', { name: /example-app/ })
+    expect(screen.getAllByRole('button', { name: /example-app|blog\.example\.com|Other hostname/ }).map((r) => r.textContent)).toEqual([
       'example-appDeploy site/var/www/app · app.conf',
       'blog.example.comnginxblog.conf · no certificate',
       'Other hostname…Must match an nginx server block'
@@ -145,17 +145,43 @@ describe('Add HTTPS step 1', () => {
     expect(backend.readiness).toHaveBeenCalledWith('conn-1', 'session-1', ['app.example.com', 'www.app.example.com', 'old.example.com'])
   })
 
+  it('blocks Continue when checking the names again fails', async () => {
+    const u = user()
+    const backend = setupBackend()
+    renderWizard()
+    await pickDeploySite(u)
+    expect(screen.getByRole('button', { name: /Continue/ })).toBeEnabled()
+    backend.readiness.mockResolvedValueOnce({ success: false, error: 'Connection lost' })
+    await u.click(screen.getByRole('button', { name: /Check again/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled())
+  })
+
+  it('ignores a name check that answers after a newer one', async () => {
+    const u = user()
+    const backend = setupBackend()
+    let answerOld: (value: unknown) => void = () => undefined
+    backend.readiness.mockImplementationOnce(() => new Promise((resolve) => { answerOld = resolve }))
+    backend.readiness.mockResolvedValueOnce({ success: false, error: 'Connection lost' })
+    renderWizard()
+    await u.click(await screen.findByRole('button', { name: /example-app/ }))
+    await u.click(within(screen.getByRole('group', { name: 'Choose a site' })).getByRole('button', { name: /blog\.example\.com/ }))
+    await waitFor(() => expect(backend.readiness).toHaveBeenCalledTimes(2))
+    await act(async () => answerOld({ success: true, data: readiness }))
+    expect(screen.getByText('Connection lost')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+  })
+
   it('opens pre-filled with the block it was started from', async () => {
     setupBackend()
     renderWizard({ blockId: 'blog.conf:1' })
-    expect(await screen.findByRole('radio', { name: /blog\.example\.com/ })).toBeChecked()
+    expect(within(await screen.findByRole('group', { name: 'Choose a site' })).getByRole('button', { name: /blog\.example\.com/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('needs a typed hostname to match an existing server block', async () => {
     const u = user()
     setupBackend()
     renderWizard()
-    await u.click(await screen.findByRole('radio', { name: /Other hostname/ }))
+    await u.click(await screen.findByRole('button', { name: /Other hostname/ }))
     await u.type(screen.getByLabelText('Hostname'), 'missing.example.com')
     expect(screen.getByText('No nginx server block names missing.example.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
@@ -167,9 +193,9 @@ describe('Add HTTPS step 1', () => {
   it('offers Let\'s Encrypt as recommended and Origin CA as disabled', async () => {
     setupBackend()
     renderWizard()
-    const issuer = await screen.findByRole('radiogroup', { name: 'Certificate issuer' })
+    const issuer = await screen.findByRole('group', { name: 'Certificate issuer' })
     expect(within(issuer).getByText('Recommended')).toBeInTheDocument()
-    expect(within(issuer).getByRole('radio', { name: /Cloudflare Origin CA/ })).toBeDisabled()
+    expect(within(issuer).getByRole('button', { name: /Cloudflare Origin CA/ })).toBeDisabled()
     expect(within(issuer).getByText('Available with the Origin CA switch')).toBeInTheDocument()
   })
 })
@@ -323,6 +349,22 @@ describe('Add HTTPS step 3', () => {
     expect(backend.issue).toHaveBeenCalledTimes(1)
     expect(backend.issue.mock.calls[0][2]).toMatchObject({ blockId: 'app.conf:1', names: ['app.example.com', 'www.app.example.com'], email: 'admin@example.com', redirect: true, staging: true })
     expect(screen.getByRole('heading', { name: 'Review and issue' })).toBeInTheDocument()
+  })
+
+  it('drops a failed run once another site is picked', async () => {
+    const u = user()
+    setupBackend({ issueResult: issueFailure({ failedStage: 'staging', hint: 'Port 80 is blocked' }) })
+    renderWizard()
+    await toReview(u)
+    await waitFor(() => expect(screen.getByLabelText("Email for Let's Encrypt")).toHaveValue('admin@example.com'))
+    await u.click(screen.getByRole('button', { name: 'Test and issue certificate' }))
+    await screen.findByRole('alert')
+    await u.click(screen.getByRole('button', { name: 'Back' }))
+    await u.click(within(screen.getByRole('group', { name: 'Choose a site' })).getByRole('button', { name: /blog\.example\.com/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Continue/ })).toBeEnabled())
+    await u.click(screen.getByRole('button', { name: /Continue/ }))
+    await screen.findByRole('heading', { name: 'Review and issue' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('says the file was restored when nginx rejected the change', async () => {
