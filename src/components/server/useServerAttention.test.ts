@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AttentionItem } from '@/types/server/core'
-import { countsByArea, rankAttention, SSL_CRITICAL_ID, withSslCritical, worstLevel } from './useServerAttention'
+import { countsByArea, mergeSitesAttention, rankAttention, SSL_CRITICAL_ID, withSslCritical, worstLevel } from './useServerAttention'
 
 const item = (overrides: Partial<AttentionItem>): AttentionItem => ({
   id: 'x',
@@ -54,5 +54,20 @@ describe('withSslCritical', () => {
 
   it('adds nothing when no certificate is critical', () => {
     expect(withSslCritical([], false)).toEqual([])
+  })
+})
+
+describe('mergeSitesAttention', () => {
+  it('replaces the generic certificate item with per-site items and ranks everything', () => {
+    const generic = item({ id: SSL_CRITICAL_ID, area: 'sites', rank: 170 })
+    const disk = item({ id: 'overview.disk', area: 'overview', rank: 180 })
+    const cert = item({ id: 'sites.cert.app.example.com', area: 'sites', rank: 170 })
+    const deploy = item({ id: 'sites.deploy.shop', area: 'sites', rank: 160 })
+    expect(mergeSitesAttention([generic, disk], [deploy, cert]).map((entry) => entry.id)).toEqual(['overview.disk', 'sites.cert.app.example.com', 'sites.deploy.shop'])
+  })
+
+  it('keeps the generic certificate item when sites report none', () => {
+    const generic = item({ id: SSL_CRITICAL_ID, area: 'sites', rank: 170 })
+    expect(mergeSitesAttention([generic], [item({ id: 'sites.deploy.shop', area: 'sites', rank: 160 })]).map((entry) => entry.id)).toEqual([SSL_CRITICAL_ID, 'sites.deploy.shop'])
   })
 })

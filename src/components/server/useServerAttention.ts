@@ -28,6 +28,13 @@ export function withSslCritical(items: readonly AttentionItem[], sslCritical: bo
   return [...items, SSL_CRITICAL_ITEM]
 }
 
+export function mergeSitesAttention(items: readonly AttentionItem[], sitesItems: readonly AttentionItem[]): AttentionItem[] {
+  const sitesCoverCertificates = sitesItems.some((item) => item.id.startsWith('sites.cert.'))
+  const base = sitesCoverCertificates ? items.filter((item) => item.id !== SSL_CRITICAL_ID) : items
+  const seen = new Set(base.map((item) => item.id))
+  return rankAttention([...base, ...sitesItems.filter((item) => !seen.has(item.id))])
+}
+
 export function rankAttention(items: readonly AttentionItem[]): AttentionItem[] {
   return [...items].sort((a, b) => b.rank - a.rank)
 }

@@ -17,6 +17,8 @@ vi.mock('@/components/deploy/useDeploySites', () => ({
 vi.mock('@/components/ssl/useSslReport', () => ({ useSslReport: () => ({ report: null, loading: false, error: null, refresh: vi.fn() }) }))
 
 const { OverviewPage } = await import('./OverviewPage')
+const { ServerAttentionContext } = await import('../../attentionContext')
+const { AREAS } = await import('@/utils/server/areas')
 
 const NOW = 1_800_000_000
 
@@ -49,7 +51,8 @@ const context = (overrides: Partial<ServerSectionContext> = {}): ServerSectionCo
 })
 
 async function renderPage(ctx: ServerSectionContext) {
-  render(<OverviewPage ctx={ctx} />)
+  const items = AREAS.flatMap((area) => area.attention(state.facts as ServerFacts)).sort((a, b) => b.rank - a.rank)
+  render(<ServerAttentionContext.Provider value={items}><OverviewPage ctx={ctx} /></ServerAttentionContext.Provider>)
   await act(async () => {})
 }
 

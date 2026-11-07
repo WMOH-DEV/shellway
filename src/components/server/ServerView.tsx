@@ -5,6 +5,9 @@ import { useServerNavStore, useServerRoute } from '@/stores/serverNavStore'
 import type { AttentionItem, ServerRoute, ServerSection } from '@/types/server/core'
 import type { ConnectionTab } from '@/types/session'
 import { ActionHost } from './action'
+import { ServerAttentionContext } from './attentionContext'
+import { useSitesAttention } from './sections/sites/useSitesAttention'
+import { mergeSitesAttention } from './useServerAttention'
 import { sectionById } from './sections/registry'
 import type { ServerSectionContext } from './sections/types'
 import { ServerSubNav } from './shell/ServerSubNav'
@@ -35,6 +38,8 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const collapsed = useIsNarrow(rootRef, COLLAPSE_BELOW)
   const sitesRoute = useLastSitesRoute(route)
+  const sitesItems = useSitesAttention({ connectionId: tab.id, sessionId: tab.sessionId, connectionStatus: active ? tab.status : 'disconnected' })
+  const items = useMemo(() => mergeSitesAttention(attention, sitesItems), [attention, sitesItems])
   const onSites = route.section === 'sites'
 
   const navigate = useCallback((next: ServerRoute) => navigateTo(tab.id, next), [navigateTo, tab.id])
@@ -55,6 +60,7 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
   const sectionCtx = useMemo(() => contextFor(route, true), [contextFor, route])
 
   return (
+    <ServerAttentionContext.Provider value={items}>
     <div ref={rootRef} className="flex h-full min-h-0 bg-nd-bg-primary">
       <ServerSubNav
         connectionId={tab.id}
@@ -62,7 +68,7 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
         name={tab.sessionName}
         status={tab.status}
         section={route.section}
-        attention={attention}
+        attention={items}
         collapsed={collapsed}
         onSelect={selectSection}
       />
@@ -82,5 +88,6 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
       </div>
       <ActionHost tabId={tab.id} connectionId={tab.id} sessionKey={tab.sessionId} />
     </div>
+    </ServerAttentionContext.Provider>
   )
 }

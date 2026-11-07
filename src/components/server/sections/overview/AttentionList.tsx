@@ -43,7 +43,7 @@ function EmptyState({ loading }: { loading: boolean }) {
   )
 }
 
-export function AttentionList({ items, loading, onOpen }: { items: AttentionItem[]; loading: boolean; onOpen(route: ServerRoute): void }) {
+export function AttentionList({ items, loading, onOpen }: { items: readonly AttentionItem[]; loading: boolean; onOpen(route: ServerRoute): void }) {
   const worst = worstLevel(items)
   return (
     <SectionCard

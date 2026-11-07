@@ -10,6 +10,6 @@ export function rankAttention(items: AttentionItem[]): AttentionItem[] {
   return [...unique.values()].sort(compare)
 }
 
-export function worstLevel(items: AttentionItem[]): AttentionLevel | null {
+export function worstLevel(items: readonly AttentionItem[]): AttentionLevel | null {
   return items.reduce<AttentionLevel | null>((worst, item) => (worst === null || LEVEL_ORDER[item.level] < LEVEL_ORDER[worst] ? item.level : worst), null)
 }
