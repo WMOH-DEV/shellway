@@ -3,11 +3,9 @@ import type { OriginKeyType } from '../../../types/ssl'
 import { isIssuableName } from '../https/issueCommands'
 import type { WebServerDriver } from '../../webServer/driver'
 import { heredoc } from './heredoc'
+import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED } from './exitCodes'
 
-export const EXIT_REFUSED = 3
-export const EXIT_NGINX_TEST = 4
-export const EXIT_RELOAD = 5
-export const EXIT_RESTORED = 6
+export { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED }
 
 const SHA256 = /^[0-9a-f]{64}$/
 const CERTIFICATE_PEM = /^-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*$/

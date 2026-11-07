@@ -1,5 +1,5 @@
 import type { SiteServer } from '@/types/createSite'
-import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../ssl/originCa/scripts'
+import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../ssl/originCa/exitCodes'
 import { heredoc } from '../ssl/originCa/heredoc'
 import type { WebServerDriver } from '../webServer/driver'
 import { assertConf, assertFolder, assertLineage, assertModule, assertOwner, assertSha256, assertSiteName } from './validate'
