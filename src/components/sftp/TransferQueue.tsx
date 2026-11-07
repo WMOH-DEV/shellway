@@ -123,7 +123,7 @@ function TransferGroupRow({ name, transfers }: { name: string; transfers: Tracke
               {summary.doneFiles} / {summary.totalFiles} files · {formatFileSize(summary.transferredBytes)} / {formatFileSize(summary.totalBytes)}
             </span>
             {summary.failedFiles > 0 && (
-              <span className="text-2xs text-nd-error shrink-0">{summary.failedFiles} failed</span>
+              <span className="text-2xs text-nd-error-fg shrink-0">{summary.failedFiles} failed</span>
             )}
           </div>
           {summary.isRunning && <ProgressBar value={percent} size="sm" className="mt-1" />}
@@ -214,7 +214,7 @@ function TransferRow({ transfer }: { transfer: TrackedTransfer }) {
         {transfer.status === 'failed' && (
           <button
             onClick={() => window.novadeck.sftp.transferRetry(connectionId, transfer.id)}
-            className="p-0.5 rounded text-nd-error hover:text-nd-error-fg transition-colors"
+            className="p-0.5 rounded text-nd-error-fg hover:text-nd-error-fg transition-colors"
           >
             <RotateCw size={11} />
           </button>
@@ -222,7 +222,7 @@ function TransferRow({ transfer }: { transfer: TrackedTransfer }) {
         {(transfer.status === 'active' || transfer.status === 'queued' || transfer.status === 'paused') && (
           <button
             onClick={() => window.novadeck.sftp.transferCancel(connectionId, transfer.id)}
-            className="p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors"
+            className="p-0.5 rounded text-nd-text-muted hover:text-nd-error-fg transition-colors"
           >
             <X size={11} />
           </button>

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { cn } from '@/utils/cn'
 import { usageLevel, type UsageLevel } from '@/utils/usageLevel'
+import { CHART_SWATCH, SERIES, chartColor, type ChartHue } from './chartPalette'
 
 // ── Shared formatting utilities ──
 
@@ -36,9 +37,9 @@ export function formatPercent(val: number): string {
 // ── Color utilities ──
 
 export const LEVEL_TEXT: Record<UsageLevel, string> = {
-  success: 'text-nd-success',
-  warning: 'text-nd-warning',
-  error: 'text-nd-error'
+  success: 'text-nd-success-fg',
+  warning: 'text-nd-warning-fg',
+  error: 'text-nd-error-fg'
 }
 
 const LEVEL_BG: Record<UsageLevel, string> = {
@@ -69,9 +70,9 @@ const getPercentStroke = (pct: number): string => LEVEL_STROKE[usageLevel(pct)]
 
 export function getStatusColor(status: string): string {
   switch (status) {
-    case 'active': case 'running': return 'text-nd-success'
+    case 'active': case 'running': return 'text-nd-success-fg'
     case 'inactive': case 'dead': case 'exited': return 'text-nd-text-muted'
-    case 'failed': return 'text-nd-error'
+    case 'failed': return 'text-nd-error-fg'
     default: return 'text-nd-text-secondary'
   }
 }
@@ -414,13 +415,13 @@ export function MirroredChart({ rxData, txData, height = 80, className }: Mirror
         {/* RX (download — above center) */}
         <polygon
           points={`${rxPoints.join(' ')} ${width},${half} 0,${half}`}
-          fill="rgb(52, 211, 153)"
+          fill={chartColor(SERIES.inbound)}
           fillOpacity={0.1}
         />
         <polyline
           points={rxPoints.join(' ')}
           fill="none"
-          stroke="rgb(52, 211, 153)"
+          stroke={chartColor(SERIES.inbound)}
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -429,13 +430,13 @@ export function MirroredChart({ rxData, txData, height = 80, className }: Mirror
         {/* TX (upload — below center) */}
         <polygon
           points={`${txPoints.join(' ')} ${width},${half} 0,${half}`}
-          fill="rgb(251, 146, 60)"
+          fill={chartColor(SERIES.outbound)}
           fillOpacity={0.1}
         />
         <polyline
           points={txPoints.join(' ')}
           fill="none"
-          stroke="rgb(251, 146, 60)"
+          stroke={chartColor(SERIES.outbound)}
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -482,14 +483,20 @@ interface StatItemProps {
   value: string | number
   subvalue?: string
   valueClass?: string
+  hue?: ChartHue
   className?: string
 }
 
-export function StatItem({ label, value, subvalue, valueClass, className }: StatItemProps) {
+export function SeriesSwatch({ hue }: { hue: ChartHue }) {
+  return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-sm', CHART_SWATCH[hue])} />
+}
+
+export function StatItem({ label, value, subvalue, valueClass, hue, className }: StatItemProps) {
   return (
     <div className={cn('flex flex-col', className)}>
       <span className="text-[10px] text-nd-text-muted uppercase tracking-wider">{label}</span>
-      <span className={cn('text-sm font-semibold tabular-nums', valueClass || 'text-nd-text-primary')}>
+      <span className={cn('flex items-center gap-1.5 text-sm font-semibold tabular-nums', valueClass || 'text-nd-text-primary')}>
+        {hue && <SeriesSwatch hue={hue} />}
         {value}
       </span>
       {subvalue && <span className="text-[10px] text-nd-text-muted tabular-nums">{subvalue}</span>}

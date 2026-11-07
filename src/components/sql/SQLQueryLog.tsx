@@ -211,7 +211,7 @@ function QueryLogToolbar({ entryCount, syntaxHighlight, beauty, onToggleHighligh
         </button>
         <button
           onClick={onClear}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-nd-text-muted hover:text-nd-error hover:bg-nd-error/12 transition-colors"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
           title="Clear query log"
         >
           <Trash2 size={10} />

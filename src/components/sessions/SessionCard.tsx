@@ -185,7 +185,7 @@ export function SessionCard({
             {session.name}
           </p>
           {session.isModified && (
-            <span className="text-2xs text-nd-warning shrink-0">(modified)</span>
+            <span className="text-2xs text-nd-warning-fg shrink-0">(modified)</span>
           )}
         </div>
         <p className="text-2xs text-nd-text-muted truncate">
@@ -204,7 +204,7 @@ export function SessionCard({
                   e.stopPropagation()
                   onDisconnect?.()
                 }}
-                className="p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-bg-tertiary transition-colors"
+                className="p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-bg-tertiary transition-colors"
               >
                 <X size={13} />
               </button>

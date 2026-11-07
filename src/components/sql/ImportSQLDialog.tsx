@@ -555,10 +555,10 @@ export function ImportSQLDialog({
                     </label>
                     <div className="rounded-md bg-nd-surface border border-nd-border px-3 py-2 text-[11px] space-y-0.5">
                       <p className="text-nd-text-primary">
-                        <span className="text-nd-success font-medium">{preflight.present.length}</span>
+                        <span className="text-nd-success-fg font-medium">{preflight.present.length}</span>
                         <span className="text-nd-text-muted"> already present</span>
                         {'  ·  '}
-                        <span className={preflight.missing.length > 0 ? 'text-nd-warning font-medium' : 'text-nd-text-primary'}>
+                        <span className={preflight.missing.length > 0 ? 'text-nd-warning-fg font-medium' : 'text-nd-text-primary'}>
                           {preflight.missing.length}
                         </span>
                         <span className="text-nd-text-muted"> missing</span>
@@ -716,7 +716,7 @@ export function ImportSQLDialog({
               {importErrors.length > 0 && (
                 <button
                   onClick={() => setErrorsExpanded((v) => !v)}
-                  className="flex items-center gap-1 text-nd-error hover:text-nd-error-fg transition-colors"
+                  className="flex items-center gap-1 text-nd-error-fg hover:text-nd-error-fg transition-colors"
                 >
                   {importErrors.length} error{importErrors.length !== 1 ? 's' : ''}
                   <ChevronDown
@@ -758,13 +758,13 @@ export function ImportSQLDialog({
               {isCompleted && importErrors.length === 0 && (
                 <>
                   <CheckCircle size={16} className="text-nd-success" />
-                  <span className="text-sm font-medium text-nd-success">Import completed</span>
+                  <span className="text-sm font-medium text-nd-success-fg">Import completed</span>
                 </>
               )}
               {isCompleted && importErrors.length > 0 && (
                 <>
                   <AlertTriangle size={16} className="text-nd-warning" />
-                  <span className="text-sm font-medium text-nd-warning">
+                  <span className="text-sm font-medium text-nd-warning-fg">
                     Import completed with errors
                   </span>
                 </>
@@ -772,7 +772,7 @@ export function ImportSQLDialog({
               {isFailed && (
                 <>
                   <XCircle size={16} className="text-nd-error" />
-                  <span className="text-sm font-medium text-nd-error">Import failed</span>
+                  <span className="text-sm font-medium text-nd-error-fg">Import failed</span>
                 </>
               )}
               {isCancelled && (
@@ -795,19 +795,19 @@ export function ImportSQLDialog({
                 <>
                   <p>
                     Healed:{' '}
-                    <span className="text-nd-success font-medium">
+                    <span className="text-nd-success-fg font-medium">
                       {progress.stats.healed.toLocaleString()}
                     </span>
                   </p>
                   <p>
                     Skipped:{' '}
-                    <span className={cn('font-medium', progress.stats.skipped > 0 ? 'text-nd-warning' : 'text-nd-text-primary')}>
+                    <span className={cn('font-medium', progress.stats.skipped > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary')}>
                       {progress.stats.skipped.toLocaleString()}
                     </span>
                   </p>
                   <p>
                     Quarantined:{' '}
-                    <span className={cn('font-medium', progress.stats.quarantined > 0 ? 'text-nd-warning' : 'text-nd-text-primary')}>
+                    <span className={cn('font-medium', progress.stats.quarantined > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary')}>
                       {progress.stats.quarantined.toLocaleString()}
                     </span>
                   </p>

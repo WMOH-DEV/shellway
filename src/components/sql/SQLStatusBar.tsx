@@ -141,7 +141,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
                       {formatValue(change.oldValue)}
                     </span>
                     <span className="text-nd-text-muted text-[10px]">→</span>
-                    <span className="text-nd-success truncate max-w-[140px]" title={String(change.newValue ?? '')}>
+                    <span className="text-nd-success-fg truncate max-w-[140px]" title={String(change.newValue ?? '')}>
                       {formatValue(change.newValue)}
                     </span>
                   </div>
@@ -149,7 +149,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
                 {onUndoChange && (
                   <button
                     onClick={() => onUndoChange(change.id)}
-                    className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-error/10 transition-all"
+                    className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/10 transition-all"
                     title="Undo this change"
                   >
                     <Undo2 size={11} />
@@ -163,7 +163,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
         {/* Inserts */}
         {inserts.length > 0 && (
           <div>
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-success bg-nd-success/5">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-nd-success-fg bg-nd-success/5">
               <Plus size={10} className="inline mr-1 -mt-px" />
               Inserts ({inserts.length})
             </div>
@@ -185,7 +185,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
                       {preview.map(([col, val]) => (
                         <span key={col} className="text-nd-text-secondary">
                           <span className="text-nd-text-muted">{col}:</span>{' '}
-                          <span className="text-nd-success">{formatValue(val)}</span>
+                          <span className="text-nd-success-fg">{formatValue(val)}</span>
                         </span>
                       ))}
                       {remaining > 0 && (
@@ -196,7 +196,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
                   {onUndoChange && (
                     <button
                       onClick={() => onUndoChange(change.id)}
-                      className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-error/10 transition-all"
+                      className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/10 transition-all"
                       title="Undo this insert"
                     >
                       <Undo2 size={11} />
@@ -233,7 +233,7 @@ const ChangesReviewPopover = memo(function ChangesReviewPopover({
                   {onUndoChange && (
                     <button
                       onClick={() => onUndoChange(change.id)}
-                      className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-error/10 transition-all"
+                      className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/10 transition-all"
                       title="Undo this delete"
                     >
                       <Undo2 size={11} />
@@ -304,7 +304,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
     >
       {/* Production badge */}
       {isProduction && (
-        <StatusItem className="text-nd-error">
+        <StatusItem className="text-nd-error-fg">
           <AlertTriangle size={11} />
           <Badge variant="error" className="text-[10px] py-0 px-1.5 leading-tight">
             PRODUCTION
@@ -344,7 +344,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
 
       {/* Filter count */}
       {filterCount !== undefined && filterCount > 0 && (
-        <StatusItem className="text-nd-info">
+        <StatusItem className="text-nd-info-fg">
           <Filter size={11} />
           {filterCount} {filterCount === 1 ? 'Filter' : 'Filters'}
         </StatusItem>
@@ -361,7 +361,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
               'flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs transition-colors',
               showReview
                 ? 'text-nd-warning-fg bg-nd-warning/12'
-                : 'text-nd-warning hover:text-nd-warning-fg hover:bg-nd-warning/12'
+                : 'text-nd-warning-fg hover:text-nd-warning-fg hover:bg-nd-warning/12'
             )}
             title="Review pending changes"
           >
@@ -380,7 +380,7 @@ export const SQLStatusBar = memo(function SQLStatusBar({
           <button
             onClick={onSave}
             disabled={isSaving}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-nd-warning hover:text-nd-warning-fg hover:bg-nd-warning/12 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs text-nd-warning-fg hover:text-nd-warning-fg hover:bg-nd-warning/12 transition-colors disabled:opacity-40"
           >
             {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
             Save

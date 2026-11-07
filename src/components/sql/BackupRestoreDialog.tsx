@@ -631,7 +631,7 @@ export function BackupRestoreDialog({
               {isCompleted && operationErrors.length === 0 && (
                 <>
                   <CheckCircle size={16} className="text-nd-success" />
-                  <span className="text-sm font-medium text-nd-success">
+                  <span className="text-sm font-medium text-nd-success-fg">
                     {activeTab === 'backup' ? 'Backup' : 'Restore'} completed
                   </span>
                 </>
@@ -639,7 +639,7 @@ export function BackupRestoreDialog({
               {isCompleted && operationErrors.length > 0 && (
                 <>
                   <AlertTriangle size={16} className="text-nd-warning" />
-                  <span className="text-sm font-medium text-nd-warning">
+                  <span className="text-sm font-medium text-nd-warning-fg">
                     Completed with warnings
                   </span>
                 </>
@@ -647,7 +647,7 @@ export function BackupRestoreDialog({
               {isFailed && (
                 <>
                   <XCircle size={16} className="text-nd-error" />
-                  <span className="text-sm font-medium text-nd-error">
+                  <span className="text-sm font-medium text-nd-error-fg">
                     {activeTab === 'backup' ? 'Backup' : 'Restore'} failed
                   </span>
                 </>
@@ -690,7 +690,7 @@ export function BackupRestoreDialog({
                   </p>
                   <p>
                     Healed:{' '}
-                    <span className="text-nd-success font-medium">
+                    <span className="text-nd-success-fg font-medium">
                       {progress.stats.healed.toLocaleString()}
                     </span>
                   </p>
@@ -699,7 +699,7 @@ export function BackupRestoreDialog({
                     <span
                       className={cn(
                         'font-medium',
-                        progress.stats.skipped > 0 ? 'text-nd-warning' : 'text-nd-text-primary',
+                        progress.stats.skipped > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary',
                       )}
                     >
                       {progress.stats.skipped.toLocaleString()}
@@ -710,7 +710,7 @@ export function BackupRestoreDialog({
                     <span
                       className={cn(
                         'font-medium',
-                        progress.stats.quarantined > 0 ? 'text-nd-warning' : 'text-nd-text-primary',
+                        progress.stats.quarantined > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary',
                       )}
                     >
                       {progress.stats.quarantined.toLocaleString()}

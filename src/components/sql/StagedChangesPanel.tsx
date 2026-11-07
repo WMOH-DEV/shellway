@@ -57,7 +57,7 @@ const ChangeRow = memo(function ChangeRow({
       </pre>
       <button
         onClick={handleUndo}
-        className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-error/10 transition-all"
+        className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/10 transition-all"
         title="Undo this change"
       >
         <Undo2 size={12} />

@@ -800,7 +800,7 @@ export function FilePreview({
     // Error
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-error">
+        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-error-fg">
           <AlertTriangle size={32} />
           <p className="text-sm font-medium">Failed to load file</p>
           <p className="text-xs text-nd-text-muted max-w-md text-center">{error}</p>
@@ -877,16 +877,16 @@ export function FilePreview({
             {name}
           </span>
           {editable && dirty && (
-            <span className="text-xs text-nd-warning shrink-0">● Modified</span>
+            <span className="text-xs text-nd-warning-fg shrink-0">● Modified</span>
           )}
           {editable && saving && (
             <span className="text-xs text-nd-text-muted shrink-0">Saving...</span>
           )}
           {editable && saveSuccess && !saving && (
-            <span className="text-xs text-nd-success shrink-0">Saved</span>
+            <span className="text-xs text-nd-success-fg shrink-0">Saved</span>
           )}
           {saveError && (
-            <span className="text-xs text-nd-error shrink-0 truncate max-w-[200px]" title={saveError}>
+            <span className="text-xs text-nd-error-fg shrink-0 truncate max-w-[200px]" title={saveError}>
               {saveError}
             </span>
           )}
@@ -922,7 +922,7 @@ export function FilePreview({
 
           {/* Partial loading indicator — shown while full content streams in background */}
           {isPartial && fullLoadError && (
-            <span className="flex items-center gap-1.5 text-2xs text-nd-error mr-auto truncate" title={fullLoadError}>
+            <span className="flex items-center gap-1.5 text-2xs text-nd-error-fg mr-auto truncate" title={fullLoadError}>
               <AlertTriangle size={12} className="shrink-0" />
               Showing only the first {formatFileSize(PARTIAL_THRESHOLD)} (read-only) — full load failed: {fullLoadError}
             </span>
@@ -997,7 +997,7 @@ export function FilePreview({
             className={cn(
               'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
               copied
-                ? 'bg-nd-success/15 text-nd-success'
+                ? 'bg-nd-success/15 text-nd-success-fg'
                 : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
             )}
             title="Copy file content"

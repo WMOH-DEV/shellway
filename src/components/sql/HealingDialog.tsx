@@ -311,7 +311,7 @@ export function HealingDialog({ request, onResolve, onDismiss }: HealingDialogPr
                         </span>
                       )}
                       {opt.schemaMutation && (
-                        <span className="text-[10px] uppercase tracking-wider text-nd-warning font-semibold">
+                        <span className="text-[10px] uppercase tracking-wider text-nd-warning-fg font-semibold">
                           Schema change
                         </span>
                       )}

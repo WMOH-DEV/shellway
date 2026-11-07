@@ -190,7 +190,7 @@ export function useSafeModeGate({
           {risk.unboundedCount > 0 && (
             <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-nd-error/[0.07] border border-nd-error/30">
               <TriangleAlert size={14} className="text-nd-error mt-0.5 shrink-0" />
-              <p className="text-xs text-nd-error">
+              <p className="text-xs text-nd-error-fg">
                 {risk.unboundedCount === 1
                   ? '1 statement has no WHERE clause and will affect every row in the table.'
                   : `${risk.unboundedCount} statements have no WHERE clause and will affect every row in their tables.`}

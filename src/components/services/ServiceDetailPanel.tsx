@@ -213,7 +213,7 @@ export function ServiceDetailPanel({
                       variant="ghost"
                       disabled={anyActionPending}
                       onClick={() => handleAction('start')}
-                      className="text-nd-success hover:bg-nd-success/12"
+                      className="text-nd-success-fg hover:bg-nd-success/12"
                     >
                       {pendingAction === 'start' ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                       Start
@@ -226,7 +226,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('stop')}
-                        className="text-nd-error hover:bg-nd-error/12"
+                        className="text-nd-error-fg hover:bg-nd-error/12"
                       >
                         {pendingAction === 'stop' ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
                         Stop
@@ -236,7 +236,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('restart')}
-                        className="text-nd-warning hover:bg-nd-warning/12"
+                        className="text-nd-warning-fg hover:bg-nd-warning/12"
                       >
                         {pendingAction === 'restart' ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
                         Restart
@@ -246,7 +246,7 @@ export function ServiceDetailPanel({
                         variant="ghost"
                         disabled={anyActionPending}
                         onClick={() => handleAction('reload')}
-                        className="text-nd-info hover:bg-nd-info/12"
+                        className="text-nd-info-fg hover:bg-nd-info/12"
                       >
                         {pendingAction === 'reload' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                         Reload
@@ -264,7 +264,7 @@ export function ServiceDetailPanel({
                       disabled={anyActionPending}
                       onClick={() => handleAction(isEnabled ? 'disable' : 'enable')}
                       className={cn(
-                        isEnabled ? 'text-nd-success' : 'text-nd-text-muted'
+                        isEnabled ? 'text-nd-success-fg' : 'text-nd-text-muted'
                       )}
                     >
                       {(pendingAction === 'enable' || pendingAction === 'disable')

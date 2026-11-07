@@ -234,7 +234,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
                     )}
                   />
                   {shortcutError && (
-                    <p className="text-[10px] text-nd-error mt-0.5">{shortcutError}</p>
+                    <p className="text-[10px] text-nd-error-fg mt-0.5">{shortcutError}</p>
                   )}
                 </div>
 
@@ -370,7 +370,7 @@ export function SnippetManager({ open, onClose, onInsert }: SnippetManagerProps)
                           e.stopPropagation()
                           handleDelete(snippet.id)
                         }}
-                        className="p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-surface transition-colors"
+                        className="p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-surface transition-colors"
                       >
                         <Trash2 size={12} />
                       </button>

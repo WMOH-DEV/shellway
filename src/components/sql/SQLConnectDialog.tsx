@@ -559,10 +559,10 @@ export function SQLConnectDialog({
             Test Connection
           </Button>
           {testStatus === 'success' && (
-            <span className="text-xs text-nd-success">Connected successfully</span>
+            <span className="text-xs text-nd-success-fg">Connected successfully</span>
           )}
           {testStatus === 'error' && testError && (
-            <span className="text-xs text-nd-error truncate max-w-[200px]" title={testError}>
+            <span className="text-xs text-nd-error-fg truncate max-w-[200px]" title={testError}>
               {testError}
             </span>
           )}
@@ -571,7 +571,7 @@ export function SQLConnectDialog({
         {/* Error */}
         {error && (
           <div className="rounded-md bg-nd-error/10 border border-nd-error/20 px-3 py-2">
-            <p className="text-xs text-nd-error">{error}</p>
+            <p className="text-xs text-nd-error-fg">{error}</p>
           </div>
         )}
 

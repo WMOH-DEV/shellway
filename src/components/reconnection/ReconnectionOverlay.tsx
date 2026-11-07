@@ -181,7 +181,7 @@ function CountdownTimer({ targetTime }: { targetTime: number }) {
   return (
     <div className="text-xs text-nd-text-muted">
       Next retry in:{' '}
-      <span className="text-nd-warning font-medium tabular-nums">{remaining}s</span>
+      <span className="text-nd-warning-fg font-medium tabular-nums">{remaining}s</span>
     </div>
   )
 }

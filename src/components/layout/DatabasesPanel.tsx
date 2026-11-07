@@ -278,7 +278,7 @@ export function DatabasesPanel({
                       <span
                         role="button"
                         onClick={(e) => handleCloseTab(dbTab.id, e)}
-                        className="p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                        className="p-0.5 rounded text-nd-text-muted hover:text-nd-error-fg transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                         title="Close"
                       >
                         <X size={12} />
@@ -313,7 +313,7 @@ export function DatabasesPanel({
                       <span
                         role="button"
                         onClick={(e) => handleDeleteSaved(db.sessionId, e)}
-                        className="p-0.5 rounded text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                        className="p-0.5 rounded text-nd-text-muted hover:text-nd-error-fg transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                         title="Delete saved connection"
                       >
                         <X size={12} />

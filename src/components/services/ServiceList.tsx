@@ -30,10 +30,10 @@ function getServiceDotColor(active: string, sub: string): string {
 /** Get text color for sub-state */
 function getSubStateColor(sub: string): string {
   switch (sub) {
-    case 'running': return 'text-nd-success'
-    case 'failed': return 'text-nd-error'
+    case 'running': return 'text-nd-success-fg'
+    case 'failed': return 'text-nd-error-fg'
     case 'dead': case 'inactive': return 'text-nd-text-muted'
-    case 'waiting': case 'listening': return 'text-nd-info'
+    case 'waiting': case 'listening': return 'text-nd-info-fg'
     case 'exited': return 'text-nd-text-muted'
     default: return 'text-nd-text-secondary'
   }
@@ -188,7 +188,7 @@ export function ServiceList({
                         <Tooltip content="Restart" side="top">
                           <button
                             onClick={() => onAction(svc.unit, 'restart')}
-                            className="p-1 rounded text-nd-text-muted hover:text-nd-warning hover:bg-nd-warning/12 transition-colors"
+                            className="p-1 rounded text-nd-text-muted hover:text-nd-warning-fg hover:bg-nd-warning/12 transition-colors"
                           >
                             <RotateCw size={12} />
                           </button>
@@ -196,7 +196,7 @@ export function ServiceList({
                         <Tooltip content="Stop" side="top">
                           <button
                             onClick={() => onAction(svc.unit, 'stop')}
-                            className="p-1 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-error/12 transition-colors"
+                            className="p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
                           >
                             <Square size={12} />
                           </button>
@@ -207,7 +207,7 @@ export function ServiceList({
                       <Tooltip content="Start" side="top">
                         <button
                           onClick={() => onAction(svc.unit, 'start')}
-                          className="p-1 rounded text-nd-text-muted hover:text-nd-success hover:bg-nd-success/12 transition-colors"
+                          className="p-1 rounded text-nd-text-muted hover:text-nd-success-fg hover:bg-nd-success/12 transition-colors"
                         >
                           <Play size={12} />
                         </button>

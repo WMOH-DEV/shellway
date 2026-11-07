@@ -149,7 +149,7 @@ function FileList({ preview }: { preview: ShipPreviewData }) {
         <span className="text-xs text-nd-text-muted">{preview.totalFiles}</span>
         <div className="flex-1" />
         {preview.files.length > COLLAPSED_FILE_ROWS && (
-          <button type="button" onClick={() => setExpanded((open) => !open)} className="text-xs text-nd-info hover:underline">
+          <button type="button" onClick={() => setExpanded((open) => !open)} className="text-xs text-nd-info-fg hover:underline">
             {expanded ? 'Show fewer' : 'Show all'}
           </button>
         )}

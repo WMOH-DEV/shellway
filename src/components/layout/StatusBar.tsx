@@ -121,7 +121,7 @@ export function StatusBar() {
         return (
           <div className="flex items-center gap-1.5 animate-fade-in">
             <AlertCircle size={11} className="text-nd-error shrink-0" />
-            <span className="text-2xs text-nd-error truncate max-w-48" title={errorMessage ?? 'Update failed'}>
+            <span className="text-2xs text-nd-error-fg truncate max-w-48" title={errorMessage ?? 'Update failed'}>
               Update failed
             </span>
             <button
@@ -284,7 +284,7 @@ function TransferStatus() {
         {hasFailures
           ? <AlertCircle size={11} className="text-nd-error" />
           : <Check size={11} className="text-nd-success" />}
-        <span className={hasFailures ? 'text-nd-error' : 'text-nd-text-muted'}>{outcome}</span>
+        <span className={hasFailures ? 'text-nd-error-fg' : 'text-nd-text-muted'}>{outcome}</span>
       </button>
     )
   }
@@ -311,7 +311,7 @@ function TransferStatus() {
         <span className="text-nd-text-muted tabular-nums shrink-0">{formatSpeed(summary.speed)}</span>
       )}
       {summary.failedFiles > 0 && (
-        <span className="text-nd-error shrink-0">{summary.failedFiles.toLocaleString()} failed</span>
+        <span className="text-nd-error-fg shrink-0">{summary.failedFiles.toLocaleString()} failed</span>
       )}
       {scanLabel && <span className="text-nd-text-muted truncate max-w-48">{scanLabel}</span>}
     </button>

@@ -89,7 +89,7 @@ export function HostKeyVerifyDialog({
             <div className="flex flex-col gap-0.5">
               <label className="text-2xs font-medium text-nd-text-muted">Current Fingerprint</label>
               <div className="flex items-center gap-2">
-                <code className="text-xs font-mono text-nd-warning bg-nd-bg-sunken px-2 py-1 rounded border border-nd-border flex-1 break-all">
+                <code className="text-xs font-mono text-nd-warning-fg bg-nd-bg-sunken px-2 py-1 rounded border border-nd-border flex-1 break-all">
                   {fingerprint}
                 </code>
                 <button onClick={() => copyFingerprint(fingerprint)} className="p-1 text-nd-text-muted hover:text-nd-text-primary">
@@ -164,7 +164,7 @@ export function HostKeyVerifyDialog({
         </div>
 
         {/* Warning */}
-        <div className="flex items-start gap-2 text-xs text-nd-warning">
+        <div className="flex items-start gap-2 text-xs text-nd-warning-fg">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>Verify this fingerprint with your server administrator before trusting.</span>
         </div>

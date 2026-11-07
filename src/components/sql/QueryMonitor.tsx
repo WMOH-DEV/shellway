@@ -174,7 +174,7 @@ export function QueryMonitor({
                       onClick={() => handleCancel(q.queryId)}
                       className={cn(
                         'shrink-0 p-1 rounded transition-colors',
-                        'text-nd-text-muted hover:text-nd-error hover:bg-nd-error/10'
+                        'text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/10'
                       )}
                     >
                       <X size={14} />
@@ -193,7 +193,7 @@ export function QueryMonitor({
                 className={cn(
                   'flex items-center justify-center gap-1.5 w-full',
                   'h-7 rounded text-xs font-medium transition-colors',
-                  'text-nd-error hover:bg-nd-error/10'
+                  'text-nd-error-fg hover:bg-nd-error/10'
                 )}
               >
                 <XCircle size={13} />

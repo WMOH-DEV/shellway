@@ -41,7 +41,7 @@ function SharedPaths({ paths, onChange }: { paths: string[]; onChange: (paths: s
         ))
       )}
       {!editing && paths.length === 0 && <span className="text-xs italic text-nd-text-muted">Nothing</span>}
-      <button type="button" className="text-xs text-nd-info hover:underline" onClick={toggle}>{editing ? 'Done' : 'Edit'}</button>
+      <button type="button" className="text-xs text-nd-info-fg hover:underline" onClick={toggle}>{editing ? 'Done' : 'Edit'}</button>
     </>
   )
 }

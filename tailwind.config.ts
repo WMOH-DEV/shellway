@@ -47,7 +47,17 @@ const config: Config = {
           info: 'rgb(var(--nd-info) / <alpha-value>)',
           'info-fg': 'rgb(var(--nd-info-fg) / <alpha-value>)',
           cloudflare: 'rgb(var(--nd-cloudflare) / <alpha-value>)',
-          new: 'rgb(var(--nd-new) / <alpha-value>)'
+          new: 'rgb(var(--nd-new) / <alpha-value>)',
+          chart: {
+            blue: 'rgb(var(--nd-chart-blue) / <alpha-value>)',
+            orange: 'rgb(var(--nd-chart-orange) / <alpha-value>)',
+            red: 'rgb(var(--nd-chart-red) / <alpha-value>)',
+            purple: 'rgb(var(--nd-chart-purple) / <alpha-value>)',
+            cyan: 'rgb(var(--nd-chart-cyan) / <alpha-value>)',
+            yellow: 'rgb(var(--nd-chart-yellow) / <alpha-value>)',
+            emerald: 'rgb(var(--nd-chart-emerald) / <alpha-value>)',
+            memory: 'rgb(var(--nd-chart-memory) / <alpha-value>)'
+          }
         }
       },
       fontFamily: {

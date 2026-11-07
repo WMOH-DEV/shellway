@@ -92,7 +92,7 @@ function CheckForUpdatesButton() {
         <span className="text-xs text-nd-text-muted">You're up to date</span>
       )}
       {status === 'ready' && (
-        <span className="text-xs text-nd-success">Update ready — restart to apply</span>
+        <span className="text-xs text-nd-success-fg">Update ready — restart to apply</span>
       )}
     </div>
   )

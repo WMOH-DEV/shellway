@@ -31,7 +31,7 @@ export function RunsAsPanel({ report, loading, path, onOpenServerCheck }: RunsAs
           {warning}
         </span>
       )}
-      <button type="button" className="self-start text-xs text-nd-info hover:underline" onClick={onOpenServerCheck}>
+      <button type="button" className="self-start text-xs text-nd-info-fg hover:underline" onClick={onOpenServerCheck}>
         Open server check
       </button>
     </SidePanel>

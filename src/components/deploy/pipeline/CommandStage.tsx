@@ -60,7 +60,7 @@ export function CommandStage({ connectionId, stage, label, steps, sudoNeeds, oth
         />
       ))}
       <div className="flex flex-wrap items-center gap-x-3 pt-1">
-        <Button size="sm" variant="ghost" className="text-nd-info" onClick={() => add()}>
+        <Button size="sm" variant="ghost" className="text-nd-info-fg" onClick={() => add()}>
           <Plus size={13} /> Add command
         </Button>
         <ServiceRestartPicker connectionId={connectionId} onPick={(unit) => add(`sudo systemctl restart ${unit}`)} />

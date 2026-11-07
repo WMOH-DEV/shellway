@@ -1649,7 +1649,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           icon={<Unplug size={13} />}
           title="Disconnect"
           onClick={handleDisconnect}
-          className="hover:!text-nd-error"
+          className="hover:!text-nd-error-fg"
         />
       </div>
 

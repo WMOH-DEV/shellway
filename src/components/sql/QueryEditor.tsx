@@ -132,7 +132,7 @@ const ResultsHeader = React.memo(function ResultsHeader({
         )}
         {!isLoading && result && !error && (
           <>
-            <span className="text-nd-success font-medium">
+            <span className="text-nd-success-fg font-medium">
               {result.rowCount.toLocaleString()}{" "}
               {result.rowCount === 1 ? "row" : "rows"}
             </span>

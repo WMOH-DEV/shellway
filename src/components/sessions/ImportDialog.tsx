@@ -379,7 +379,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
             {fileError && (
               <div className="rounded-md bg-nd-error/10 border border-nd-error/20 px-3 py-2 flex items-start gap-2">
                 <AlertTriangle size={14} className="text-nd-error shrink-0 mt-0.5" />
-                <p className="text-2xs text-nd-error leading-relaxed">{fileError}</p>
+                <p className="text-2xs text-nd-error-fg leading-relaxed">{fileError}</p>
               </div>
             )}
 
@@ -666,7 +666,7 @@ export function ImportDialog({ open, onClose, onComplete }: ImportDialogProps) {
                 <span className="text-xs text-nd-text-primary flex-1">Settings</span>
                 <span className={cn(
                   'text-2xs font-medium',
-                  results.settingsUpdated ? 'text-nd-success' : 'text-nd-text-muted'
+                  results.settingsUpdated ? 'text-nd-success-fg' : 'text-nd-text-muted'
                 )}>
                   {results.settingsUpdated ? 'Updated' : 'Not changed'}
                 </span>
@@ -817,13 +817,13 @@ function ResultRow({
       <span className="text-xs text-nd-text-primary flex-1">{label}</span>
       <div className="flex items-center gap-3 text-2xs tabular-nums">
         {added > 0 && (
-          <span className="text-nd-success">{added} added</span>
+          <span className="text-nd-success-fg">{added} added</span>
         )}
         {skipped > 0 && (
           <span className="text-nd-text-muted">{skipped} skipped</span>
         )}
         {overwritten > 0 && (
-          <span className="text-nd-warning">{overwritten} overwritten</span>
+          <span className="text-nd-warning-fg">{overwritten} overwritten</span>
         )}
         {added === 0 && skipped === 0 && overwritten === 0 && (
           <span className="text-nd-text-muted">none</span>
@@ -850,7 +850,7 @@ function ResultRowSimple({
       <span className="text-xs text-nd-text-primary flex-1">{label}</span>
       <div className="flex items-center gap-3 text-2xs tabular-nums">
         {added > 0 && (
-          <span className="text-nd-success">{added} added</span>
+          <span className="text-nd-success-fg">{added} added</span>
         )}
         {skipped > 0 && (
           <span className="text-nd-text-muted">{skipped} skipped</span>

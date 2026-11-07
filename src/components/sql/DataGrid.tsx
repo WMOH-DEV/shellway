@@ -416,7 +416,7 @@ function CtxMenuItem({
           className={cn(
             "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
             danger
-              ? "text-nd-error hover:bg-nd-error/10"
+              ? "text-nd-error-fg hover:bg-nd-error/10"
               : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
           )}
         >
@@ -455,7 +455,7 @@ function CtxMenuItem({
       className={cn(
         "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
         danger
-          ? "text-nd-error hover:bg-nd-error/10"
+          ? "text-nd-error-fg hover:bg-nd-error/10"
           : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
       )}
       onClick={onClick}

@@ -101,6 +101,14 @@
   --nd-info-fg: 143 182 255;
   --nd-cloudflare: 243 128 32;
   --nd-new: 196 181 253;
+  --nd-chart-blue: 96 165 250;
+  --nd-chart-orange: 251 146 60;
+  --nd-chart-red: 248 113 113;
+  --nd-chart-purple: 192 132 252;
+  --nd-chart-cyan: 34 211 238;
+  --nd-chart-yellow: 250 204 21;
+  --nd-chart-emerald: 52 211 153;
+  --nd-chart-memory: 168 85 247;
 }
 
 /* ── Density variables ── */
@@ -224,7 +232,7 @@
   --nd-text-primary: 17 22 32;
   --nd-text-secondary: 55 65 81;
   --nd-text-muted: 95 106 126;
-  --nd-text-dim: 100 112 132;
+  --nd-text-dim: 92 104 124;
   --nd-text-faint: 165 174 190;
   --nd-accent: 37 99 235;
   --nd-accent-hover: 29 78 216;
@@ -238,6 +246,14 @@
   --nd-error-fg: 185 35 35;
   --nd-info: 37 99 235;
   --nd-info-fg: 30 80 200;
-  --nd-cloudflare: 243 128 32;
-  --nd-new: 124 92 220;
+  --nd-cloudflare: 194 87 12;
+  --nd-new: 110 80 210;
+  --nd-chart-blue: 37 99 235;
+  --nd-chart-orange: 234 88 12;
+  --nd-chart-red: 220 38 38;
+  --nd-chart-purple: 147 51 234;
+  --nd-chart-cyan: 8 145 178;
+  --nd-chart-yellow: 161 98 7;
+  --nd-chart-emerald: 5 150 105;
+  --nd-chart-memory: 124 58 237;
 }

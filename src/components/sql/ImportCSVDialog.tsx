@@ -799,14 +799,14 @@ export function ImportCSVDialog({
 
                 {/* Unmapped column warning */}
                 {!createTable && mappedCount < totalCsvColumns && mappedCount > 0 && (
-                  <p className="text-[11px] text-nd-warning mt-1.5 flex items-center gap-1">
+                  <p className="text-[11px] text-nd-warning-fg mt-1.5 flex items-center gap-1">
                     <AlertTriangle size={11} />
                     {totalCsvColumns - mappedCount} column{totalCsvColumns - mappedCount !== 1 ? 's' : ''} will be skipped
                   </p>
                 )}
 
                 {!createTable && mappedCount === 0 && dbColumns.length > 0 && (
-                  <p className="text-[11px] text-nd-error mt-1.5 flex items-center gap-1">
+                  <p className="text-[11px] text-nd-error-fg mt-1.5 flex items-center gap-1">
                     <XCircle size={11} />
                     No columns mapped. Map at least one column to import.
                   </p>
@@ -932,7 +932,7 @@ export function ImportCSVDialog({
                 {formatElapsed(elapsed)}
               </span>
               {importErrors.length > 0 && (
-                <span className="text-nd-error">
+                <span className="text-nd-error-fg">
                   {importErrors.length} error{importErrors.length !== 1 ? 's' : ''}
                 </span>
               )}
@@ -955,13 +955,13 @@ export function ImportCSVDialog({
               {isCompleted && importErrors.length === 0 && (
                 <>
                   <CheckCircle size={16} className="text-nd-success" />
-                  <span className="text-sm font-medium text-nd-success">Import completed</span>
+                  <span className="text-sm font-medium text-nd-success-fg">Import completed</span>
                 </>
               )}
               {isCompleted && importErrors.length > 0 && (
                 <>
                   <AlertTriangle size={16} className="text-nd-warning" />
-                  <span className="text-sm font-medium text-nd-warning">
+                  <span className="text-sm font-medium text-nd-warning-fg">
                     Import completed with errors
                   </span>
                 </>
@@ -969,7 +969,7 @@ export function ImportCSVDialog({
               {isFailed && (
                 <>
                   <XCircle size={16} className="text-nd-error" />
-                  <span className="text-sm font-medium text-nd-error">Import failed</span>
+                  <span className="text-sm font-medium text-nd-error-fg">Import failed</span>
                 </>
               )}
               {isCancelled && (
@@ -997,7 +997,7 @@ export function ImportCSVDialog({
                 <span
                   className={cn(
                     'font-medium',
-                    importErrors.length > 0 ? 'text-nd-error' : 'text-nd-text-primary'
+                    importErrors.length > 0 ? 'text-nd-error-fg' : 'text-nd-text-primary'
                   )}
                 >
                   {importErrors.length}

@@ -269,7 +269,7 @@ export function HistoryPanel({
                       <div className="flex items-center gap-1.5 mt-1 text-[10px] text-nd-text-muted">
                         <span>{timeLabel(entry.executedAt)}</span>
                         {entry.error ? (
-                          <span className="flex items-center gap-1 text-nd-error">
+                          <span className="flex items-center gap-1 text-nd-error-fg">
                             <AlertCircle size={9} />
                             ERROR
                           </span>
@@ -309,7 +309,7 @@ export function HistoryPanel({
                         <button
                           onClick={(e) => handleDelete(e, entry.id)}
                           title="Delete this entry"
-                          className="p-0.5 rounded text-nd-text-muted/40 hover:text-nd-error opacity-0 group-hover:opacity-100 transition-colors"
+                          className="p-0.5 rounded text-nd-text-muted/40 hover:text-nd-error-fg opacity-0 group-hover:opacity-100 transition-colors"
                         >
                           <Trash2 size={11} />
                         </button>

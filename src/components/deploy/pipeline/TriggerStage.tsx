@@ -51,7 +51,7 @@ export function TriggerStage({ draft, savedSourceMode, patch, onOpenServerCheck 
       {switchedToAuto && (
         <div className="text-xs text-nd-warning-fg">
           Auto deploys need the server's read-only deploy key.{' '}
-          <button type="button" className="text-nd-info hover:underline" onClick={onOpenServerCheck}>Open server check</button>
+          <button type="button" className="text-nd-info-fg hover:underline" onClick={onOpenServerCheck}>Open server check</button>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2.5 text-xs text-nd-text-muted">

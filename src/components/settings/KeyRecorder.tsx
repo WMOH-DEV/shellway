@@ -107,7 +107,7 @@ export function KeyRecorder({ value, defaultValue, onChange, conflict }: KeyReco
         )}
       </div>
       {conflict && !recording && (
-        <span className="text-nd-error text-[10px] leading-tight">
+        <span className="text-nd-error-fg text-[10px] leading-tight">
           Conflicts with "{conflict.actionLabel}" in {conflict.scope}
         </span>
       )}

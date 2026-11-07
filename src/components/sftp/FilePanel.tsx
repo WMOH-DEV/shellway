@@ -751,7 +751,7 @@ export function FilePanel({
                     useSFTPPathStore.getState().clearPanelHistory(sessionId, type)
                     setShowRecent(false)
                   }}
-                  className="text-2xs text-nd-text-muted hover:text-nd-error transition-colors"
+                  className="text-2xs text-nd-text-muted hover:text-nd-error-fg transition-colors"
                 >
                   Clear
                 </button>

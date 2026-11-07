@@ -492,7 +492,7 @@ export function FileContextMenu({
             className={cn(
               'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
               'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
-              item.danger ? 'text-nd-error' : 'text-nd-text-primary'
+              item.danger ? 'text-nd-error-fg' : 'text-nd-text-primary'
             )}
           >
             <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>

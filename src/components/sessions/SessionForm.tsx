@@ -1261,7 +1261,7 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
                             </div>
                             <button
                               onClick={() => removeStartupCommand(idx)}
-                              className="p-0.5 text-nd-text-muted hover:text-nd-error"
+                              className="p-0.5 text-nd-text-muted hover:text-nd-error-fg"
                             >
                               <Trash2 size={11} />
                             </button>
@@ -1284,7 +1284,7 @@ export function SessionForm({ open, onClose, session, templateDefaults, groups, 
                             <span className="font-mono text-nd-text-primary flex-1 truncate">{val}</span>
                             <button
                               onClick={() => removeEnvVar(key)}
-                              className="p-0.5 text-nd-text-muted hover:text-nd-error"
+                              className="p-0.5 text-nd-text-muted hover:text-nd-error-fg"
                             >
                               <Trash2 size={11} />
                             </button>

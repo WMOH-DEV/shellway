@@ -25,10 +25,10 @@ interface LogToolbarProps {
 
 /** Level filter buttons */
 const levelButtons: { level: LogLevel; icon: typeof Info; label: string; activeColor: string }[] = [
-  { level: 'info', icon: Info, label: 'Info', activeColor: 'bg-nd-info/20 text-nd-info border-nd-info/40' },
-  { level: 'warning', icon: AlertTriangle, label: 'Warning', activeColor: 'bg-nd-warning/20 text-nd-warning border-nd-warning/40' },
-  { level: 'error', icon: XCircle, label: 'Error', activeColor: 'bg-nd-error/20 text-nd-error border-nd-error/40' },
-  { level: 'success', icon: CheckCircle, label: 'Success', activeColor: 'bg-nd-success/20 text-nd-success border-nd-success/40' }
+  { level: 'info', icon: Info, label: 'Info', activeColor: 'bg-nd-info/20 text-nd-info-fg border-nd-info/40' },
+  { level: 'warning', icon: AlertTriangle, label: 'Warning', activeColor: 'bg-nd-warning/20 text-nd-warning-fg border-nd-warning/40' },
+  { level: 'error', icon: XCircle, label: 'Error', activeColor: 'bg-nd-error/20 text-nd-error-fg border-nd-error/40' },
+  { level: 'success', icon: CheckCircle, label: 'Success', activeColor: 'bg-nd-success/20 text-nd-success-fg border-nd-success/40' }
 ]
 
 /** Source filter buttons */

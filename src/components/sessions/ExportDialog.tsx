@@ -228,7 +228,7 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
             {includeCredentials && (
               <div className="rounded-md bg-nd-warning/10 border border-nd-warning/20 px-3 py-2 flex items-start gap-2">
                 <AlertTriangle size={14} className="text-nd-warning shrink-0 mt-0.5" />
-                <p className="text-2xs text-nd-warning leading-relaxed">
+                <p className="text-2xs text-nd-warning-fg leading-relaxed">
                   Credentials will be included. Protect this file with a password.
                 </p>
               </div>
