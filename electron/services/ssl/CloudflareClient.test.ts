@@ -505,9 +505,9 @@ describe('CloudflareClient DNS records', () => {
   const NEW_RECORD = { type: 'A' as const, name: 'New.example.com', content: '203.0.113.10', proxied: true, comment: 'Created by Shellway' }
 
   it('looks up records by exact lower-cased name', async () => {
-    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records?name=new.example.com': ok([{ id: 'r1', type: 'A', name: 'New.example.com', content: '203.0.113.10', proxied: true }]) })
+    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records?name=new.example.com': ok([{ id: 'r1', type: 'A', name: 'New.example.com', content: '203.0.113.10', proxied: true, comment: 'Created by Shellway Create site run-1' }]) })
     const found = await new CloudflareClient(TOKEN, impl).findDnsRecords('z1', 'NEW.example.com')
-    expect(found).toEqual([{ id: 'r1', type: 'A', name: 'new.example.com', content: '203.0.113.10', proxied: true }])
+    expect(found).toEqual([{ id: 'r1', type: 'A', name: 'new.example.com', content: '203.0.113.10', proxied: true, comment: 'Created by Shellway Create site run-1' }])
     expect(calls).toHaveLength(1)
   })
 

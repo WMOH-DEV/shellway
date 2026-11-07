@@ -6,6 +6,11 @@ import pkg from './package.json'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: ['electron-store'] })],
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src')
+      }
+    },
     build: {
       rollupOptions: {
         input: {

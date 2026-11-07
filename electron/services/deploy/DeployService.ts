@@ -9,7 +9,7 @@ import { parseDoctor, parseDump, parseHistory, parseKeyValues, parsePreview } fr
 export type RemoteExec = (command: string, options?: ExecOptions) => Promise<ExecResult>
 
 const HOME_DIR = '"$HOME/.shellway-deploy"'
-const RUNNER = '"$HOME/.shellway-deploy/bin/shellway-deploy"'
+export const RUNNER = '"$HOME/.shellway-deploy/bin/shellway-deploy"'
 const BUNDLED_VERSION = Number(/RUNNER_VERSION=(\d+)/.exec(runnerScript)?.[1] ?? 0)
 const LIST_TIMEOUT_MS = 30_000
 const SETUP_TIMEOUT_MS = 90_000

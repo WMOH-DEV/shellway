@@ -47,7 +47,7 @@ const newestFinish = (summary: SiteSummary): number =>
 
 export class DeployCoordinator {
   private readonly sites = new Map<string, ConnectionSites>()
-  private readonly tracking = new Set<string>()
+  private readonly tracking = new Map<string, Promise<DeployRecord | null>>()
   private watchTimer: ReturnType<typeof setInterval> | null = null
   private watching = false
   private readonly headCheckRetryAt = new Map<string, { failures: number; at: number }>()
@@ -230,25 +230,33 @@ export class DeployCoordinator {
   private track(connectionId: string, name: string, id: string): void {
     const key = `${connectionId}:${name}:${id}`
     if (this.tracking.has(key)) return
-    this.tracking.add(key)
     this.deps.broadcast('deploy:changed', connectionId)
-    void this.pollUntilFinished(connectionId, name, id).finally(() => this.tracking.delete(key))
+    this.tracking.set(key, this.pollUntilFinished(connectionId, name, id).finally(() => this.tracking.delete(key)))
   }
 
-  private async pollUntilFinished(connectionId: string, name: string, id: string): Promise<void> {
+  waitForDeploy(connectionId: string, name: string, id: string): Promise<DeployRecord | null> {
+    return this.tracking.get(`${connectionId}:${name}:${id}`) ?? Promise.resolve(null)
+  }
+
+  private async pollUntilFinished(connectionId: string, name: string, id: string): Promise<DeployRecord | null> {
     let missing = 0
     for (let poll = 0; poll < TRACK_MAX_POLLS; poll++) {
       await sleep(this.deps.trackIntervalMs ?? TRACK_INTERVAL_MS)
-      if (!this.deps.execFor(connectionId)) return
+      if (!this.deps.execFor(connectionId)) return null
       const record = await this.findRecord(connectionId, name, id)
       if (!record) {
         missing += 1
-        if (missing >= TRACK_MAX_MISSING_POLLS) return this.deps.broadcast('deploy:changed', connectionId)
+        if (missing >= TRACK_MAX_MISSING_POLLS) {
+          this.deps.broadcast('deploy:changed', connectionId)
+          return null
+        }
         continue
       }
       if (record.status === 'running') continue
-      return this.finished(connectionId, name, record)
+      this.finished(connectionId, name, record)
+      return record
     }
+    return null
   }
 
   private async findRecord(connectionId: string, name: string, id: string): Promise<DeployRecord | undefined> {

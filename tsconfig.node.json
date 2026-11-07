@@ -14,13 +14,23 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "declaration": true,
-    "types": ["electron-vite/node"]
+    "types": ["electron-vite/node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": [
     "electron/**/*.ts",
     "electron.vite.config.ts",
     "src/types/**/*.ts",
     "src/utils/deploy/githubRepo.ts",
+    "src/utils/deploy/presets.ts",
+    "src/utils/deploy/siteDetail.ts",
+    "src/utils/createSite/**/*.ts",
+    "src/utils/deploy/siteRow.ts",
+    "src/utils/deploy/siteStatus.ts",
+    "src/utils/ssl/time.ts",
     "src/utils/ssl/verdict.ts",
     "src/utils/ssl/commands.ts",
     "src/utils/ssl/renewalHint.ts",

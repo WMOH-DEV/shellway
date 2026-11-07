@@ -157,14 +157,23 @@ export class SslCoordinator {
   }
 
   httpsIssue(connectionId: string, sessionId: string, request: IssueRequest, runId: string): Promise<IssueResult> {
+    return this.issueWith(connectionId, sessionId, request, this.outputTo(runId))
+  }
+
+  issueWith(connectionId: string, sessionId: string, request: IssueRequest, onOutput: (chunk: string) => void): Promise<IssueResult> {
     const exec = this.exec(connectionId)
     const service = this.service(connectionId)
     const hooks = {
       now: this.deps.now,
       rememberEmail: () => this.deps.store.setHttpsEmail(sessionId, request.email),
-      onOutput: this.outputTo(runId)
+      onOutput
     }
     return this.exclusive(connectionId, () => runIssue(exec, () => service.readConfig(), request, hooks))
+  }
+
+  dnsClient(): CloudflareClient | null {
+    const token = this.deps.store.cloudflareToken()
+    return token ? this.deps.cloudflare(token) : null
   }
 
   originPrepare(connectionId: string, sessionId: string, request: SwitchRequest, runId: string): Promise<SwitchPrepared> {

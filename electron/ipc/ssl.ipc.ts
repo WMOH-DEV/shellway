@@ -96,7 +96,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   })
 }
 
-function requireCoordinator(): SslCoordinator {
+export function requireCoordinator(): SslCoordinator {
   if (!coordinator) throw new Error('SSL service is not ready')
   return coordinator
 }

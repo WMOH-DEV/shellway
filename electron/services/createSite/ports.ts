@@ -1,0 +1,36 @@
+import type { RunRecord, ServerTools } from '../../../src/types/createSite'
+import type { DeployRecord, SiteConfig } from '../../../src/types/deploy'
+import type { IssueRequest, IssueResult } from '../../../src/types/ssl'
+import type { RemoteExec } from '../deploy/DeployService'
+import type { DnsRecord, NewDnsRecord } from '../ssl/CloudflareClient'
+
+export interface DnsPort {
+  find: (zoneId: string, name: string) => Promise<DnsRecord[]>
+  create: (zoneId: string, record: NewDnsRecord) => Promise<DnsRecord>
+  remove: (zoneId: string, recordId: string) => Promise<void>
+}
+
+export interface DeployPort {
+  ensureRunner: () => Promise<void>
+  siteNames: () => Promise<string[]>
+  save: (config: SiteConfig) => Promise<void>
+  remove: (name: string) => Promise<void>
+  keygen: (name: string) => Promise<string>
+  repoError: (name: string) => Promise<string | null>
+  deployAndWait: (name: string) => Promise<DeployRecord | null>
+}
+
+export type OutputWriter = (chunk: string) => void
+
+export interface CreateSitePorts {
+  exec: RemoteExec
+  dns: DnsPort | null
+  deploy: DeployPort
+  tools: () => Promise<ServerTools>
+  siteBlockId: (file: string, domain: string) => Promise<string | null>
+  issue: (request: IssueRequest, onOutput: OutputWriter) => Promise<IssueResult>
+  resolves: (name: string, address: string) => Promise<boolean>
+  save: (record: RunRecord) => void
+  output: OutputWriter
+  now: () => number
+}

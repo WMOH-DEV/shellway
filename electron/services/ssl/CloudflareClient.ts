@@ -50,6 +50,7 @@ interface ApiRecord {
   name: string
   content: string
   proxied?: boolean
+  comment?: string | null
 }
 
 export type NewDnsRecordType = 'A' | 'AAAA' | 'CNAME'
@@ -68,6 +69,7 @@ export interface DnsRecord {
   name: string
   content: string
   proxied: boolean
+  comment: string
 }
 
 export interface ProxiedRecord {
@@ -206,7 +208,7 @@ function originCertificateError(err: unknown): Error {
 
 const DNS_EDIT_DENIED = 'The Cloudflare token needs Zone → DNS → Edit to create or remove DNS records.'
 
-const toDnsRecord = (r: ApiRecord): DnsRecord => ({ id: r.id ?? '', type: r.type, name: r.name.toLowerCase(), content: r.content, proxied: r.proxied === true })
+const toDnsRecord = (r: ApiRecord): DnsRecord => ({ id: r.id ?? '', type: r.type, name: r.name.toLowerCase(), content: r.content, proxied: r.proxied === true, comment: r.comment ?? '' })
 
 function deniedAs(message: string, err: unknown): Error {
   return isDenied(err) ? new Error(message) : (err as Error)

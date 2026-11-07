@@ -49,7 +49,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   })
 }
 
-function requireCoordinator(): DeployCoordinator {
+export function requireCoordinator(): DeployCoordinator {
   if (!coordinator) throw new Error('Deploy service is not ready')
   return coordinator
 }
