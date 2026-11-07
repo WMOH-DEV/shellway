@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mockNovadeck } from '@/test/novadeck'
-import type { IssueResult, PrepFacts, SslReport, VerifyResult } from '@/types/ssl'
+import type { IssueResult, NameReadiness, PrepFacts, SslReport, VerifyResult } from '@/types/ssl'
 import { failCheck, issueFailure, issueSuccess, okCheck, readinessRow, readyFacts, ubuntuFacts, verifyResult } from '@/utils/ssl/addHttps/testFixtures'
 import { edgeOf, makeBlock, makeHost, makeReport } from '@/utils/ssl/testReport'
 import { AddHttpsWizard } from './AddHttpsWizard'
@@ -37,9 +37,10 @@ interface BackendOptions {
   afterInstall?: PrepFacts
   issueResult?: IssueResult
   verifyResults?: VerifyResult[]
+  readinessRows?: NameReadiness[]
 }
 
-function setupBackend({ facts = readyFacts, afterInstall = readyFacts, issueResult = issueSuccess(), verifyResults = [verifyResult()] }: BackendOptions = {}): Backend {
+function setupBackend({ facts = readyFacts, afterInstall = readyFacts, issueResult = issueSuccess(), verifyResults = [verifyResult()], readinessRows = readiness }: BackendOptions = {}): Backend {
   let listener: (runId: string, chunk: string) => void = () => undefined
   let installed = false
   const backend: Backend = {
@@ -51,7 +52,7 @@ function setupBackend({ facts = readyFacts, afterInstall = readyFacts, issueResu
     }),
     issue: vi.fn(async () => ({ success: true, data: issueResult })),
     verify: vi.fn(),
-    readiness: vi.fn(async () => ({ success: true, data: readiness })),
+    readiness: vi.fn(async () => ({ success: true, data: readinessRows })),
     emit: (runId, chunk) => listener(runId, chunk)
   }
   const queue = [...verifyResults]
@@ -83,6 +84,8 @@ const defaultReport = (): SslReport => makeReport({
 function renderWizard(options: { blockId?: string | null; report?: SslReport } = {}) {
   const onCancel = vi.fn()
   const onFinished = vi.fn()
+  const onBackToDeploy = vi.fn()
+  const onSetZoneStrict = vi.fn()
   render(
     <AddHttpsWizard
       connectionId="conn-1"
@@ -92,9 +95,11 @@ function renderWizard(options: { blockId?: string | null; report?: SslReport } =
       blockId={options.blockId ?? null}
       onCancel={onCancel}
       onFinished={onFinished}
+      onBackToDeploy={onBackToDeploy}
+      onSetZoneStrict={onSetZoneStrict}
     />
   )
-  return { onCancel, onFinished }
+  return { onCancel, onFinished, onBackToDeploy, onSetZoneStrict }
 }
 
 const user = () => userEvent.setup()
@@ -197,6 +202,17 @@ describe('Add HTTPS step 1', () => {
     expect(within(issuer).getByText('Recommended')).toBeInTheDocument()
     expect(within(issuer).getByRole('button', { name: /Cloudflare Origin CA/ })).toBeDisabled()
     expect(within(issuer).getByText('Available with the Origin CA switch')).toBeInTheDocument()
+  })
+
+  it('drops the recommendation and warns when port 80 is closed for every proxied name', async () => {
+    const u = user()
+    const closed = { port80: failCheck('no answer on port 80 within 5 seconds') }
+    setupBackend({ readinessRows: [readinessRow('app.example.com', closed), readinessRow('www.app.example.com', closed), readiness[2]] })
+    renderWizard()
+    await pickDeploySite(u)
+    const issuer = await screen.findByRole('group', { name: 'Certificate issuer' })
+    await waitFor(() => expect(within(issuer).getByText(/Port 80 is not reachable for these names/)).toBeInTheDocument())
+    expect(within(issuer).queryByText('Recommended')).not.toBeInTheDocument()
   })
 })
 
@@ -427,6 +443,51 @@ describe('Add HTTPS verify', () => {
     await u.click(screen.getByRole('button', { name: /Verify again/ }))
     expect(await screen.findByRole('status')).toHaveTextContent('HTTPS is on and renewal works.')
     expect(backend.verify).toHaveBeenCalledTimes(2)
+  })
+})
+
+async function pickBlog(u: ReturnType<typeof user>) {
+  await u.click(await screen.findByRole('button', { name: /blog\.example\.com/ }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'blog.example.com' })).toBeChecked())
+}
+
+describe('Add HTTPS verify follow-ups', () => {
+  async function toVerified(pickSite: (u: ReturnType<typeof user>) => Promise<void>, report?: SslReport) {
+    const u = user()
+    setupBackend()
+    const handlers = renderWizard({ report })
+    await pickSite(u)
+    await u.click(screen.getByRole('button', { name: /Continue/ }))
+    await screen.findByRole('heading', { name: 'Review and issue' })
+    await waitFor(() => expect(screen.getByLabelText("Email for Let's Encrypt")).toHaveValue('admin@example.com'))
+    await u.click(screen.getByRole('button', { name: 'Test and issue certificate' }))
+    await screen.findByText('HTTPS is on and renewal works.', { exact: false })
+    return { u, ...handlers }
+  }
+
+  it('offers to switch a Flexible or Off zone to Full (strict) once HTTPS works', async () => {
+    const { u, onSetZoneStrict } = await toVerified(pickDeploySite)
+    await u.click(screen.getByRole('button', { name: 'Switch example.com to Full (strict)…' }))
+    expect(onSetZoneStrict).toHaveBeenCalledWith('example.com')
+  })
+
+  it('offers no zone switch when no issued name is proxied with Flexible or Off', async () => {
+    const strictReport = makeReport({ blocks: [blogBlock, appBlock], hostnames: [makeHost({ name: 'blog.example.com', blockId: 'blog.conf:1' })] })
+    await toVerified(pickBlog, strictReport)
+    expect(screen.queryByRole('button', { name: /Switch .* to Full/ })).not.toBeInTheDocument()
+  })
+
+  it('goes back to the Deploy site when the wizard was opened for one', async () => {
+    const { u, onBackToDeploy, onFinished } = await toVerified(pickDeploySite)
+    await u.click(screen.getByRole('button', { name: 'Back to Deploy site' }))
+    expect(onBackToDeploy).toHaveBeenCalledTimes(1)
+    expect(onFinished).not.toHaveBeenCalled()
+  })
+
+  it('has no Deploy site button for a plain nginx site', async () => {
+    const { onBackToDeploy } = await toVerified(pickBlog)
+    expect(screen.queryByRole('button', { name: 'Back to Deploy site' })).not.toBeInTheDocument()
+    expect(onBackToDeploy).not.toHaveBeenCalled()
   })
 })
 

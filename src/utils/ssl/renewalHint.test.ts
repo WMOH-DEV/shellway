@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renewalHint } from './renewalHint'
+import { renewalHint, type HintContext } from './renewalHint'
 
 describe('renewalHint', () => {
   it('recognises a blocked HTTP-01 challenge and keeps the status code', () => {
@@ -32,5 +32,45 @@ describe('renewalHint', () => {
   it('returns null for output it does not know', () => {
     expect(renewalHint('Congratulations, all renewals succeeded.')).toBeNull()
     expect(renewalHint('')).toBeNull()
+  })
+
+  const CONTEXTS: { name: string; context: HintContext; step: string; server: string; block: string }[] = [
+    { name: 'renewal nginx', context: { action: 'renewal', webServer: 'nginx' }, step: 'run Test renewal', server: 'nginx', block: 'an nginx deny' },
+    { name: 'renewal apache', context: { action: 'renewal', webServer: 'apache' }, step: 'run Test renewal', server: 'Apache', block: 'an Apache .htaccess/deny rule' },
+    { name: 'issue nginx', context: { action: 'issue', webServer: 'nginx' }, step: 'issue again', server: 'nginx', block: 'an nginx deny' },
+    { name: 'issue apache', context: { action: 'issue', webServer: 'apache' }, step: 'issue again', server: 'Apache', block: 'an Apache .htaccess/deny rule' }
+  ]
+
+  describe.each(CONTEXTS)('$name', ({ context, step, server, block }) => {
+    it('words the blocked challenge', () => {
+      expect(renewalHint('GET /.well-known/acme-challenge/token returned 404', context)).toBe(
+        `Let's Encrypt could not reach the challenge file (404). A Cloudflare rule or ${block} often blocks /.well-known/. Fix that, then ${step}.`
+      )
+    })
+
+    it('words the DNS problem', () => {
+      expect(renewalHint('DNS problem: NXDOMAIN looking up A for old.example.com', context)).toBe(
+        `The name does not point to this server. Check its DNS record, then ${step}.`
+      )
+    })
+
+    it('words the rate limit the same way', () => {
+      expect(renewalHint('too many certificates (5) already issued', context)).toBe("This is a Let's Encrypt rate limit. Wait before retrying.")
+    })
+
+    it('names the web server for a blocked port 80', () => {
+      expect(renewalHint('Timeout during connect (likely firewall problem)', context)).toBe(
+        `Let's Encrypt could not connect to this server on port 80. Check the firewall and that ${server} is listening.`
+      )
+    })
+
+    it('returns null for unknown output', () => {
+      expect(renewalHint('Congratulations, all renewals succeeded.', context)).toBeNull()
+    })
+  })
+
+  it('defaults to renewal on nginx', () => {
+    expect(renewalHint('Connection refused')).toBe(renewalHint('Connection refused', { action: 'renewal', webServer: 'nginx' }))
+    expect(renewalHint('SERVFAIL')).toContain('run Test renewal')
   })
 })
