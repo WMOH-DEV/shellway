@@ -184,6 +184,7 @@ export function swapLines(sizeGb: number): string[] {
   return [
     "if [ -n \"$(swapon --noheadings --show=NAME)\" ]; then echo 'Swap is already on.'; exit 0; fi",
     "if [ -e /swapfile ]; then echo '/swapfile already exists, so Shellway left it alone.' >&2; exit 1; fi",
+    "trap 'swapon --show=NAME --noheadings | grep -qx /swapfile || rm -f /swapfile' EXIT",
     `fallocate -l ${sizeGb}G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=${sizeGb * 1024}`,
     'chmod 600 /swapfile',
     'mkswap /swapfile',

@@ -1,8 +1,8 @@
 import type { ActionStep } from '@/types/server/core'
 import type { OsInfo } from '@/types/server/identity'
 import { installComposerScript, newPhpPackages } from '../../createSite/php'
-import { APT_ENV, APT_GET } from '../apt'
-import { NODE_MAJORS, POSTGRES_VERSIONS, defaultPhpVersion, findRelease, offeredPhpVersions, releaseSupport, type DebianRelease } from './releases'
+import { APT_ENV, APT_GET, APT_INSTALL } from '../apt'
+import { NODE_DEFAULT, NODE_MAJORS, POSTGRES_VERSIONS, defaultPhpVersion, findRelease, offeredPhpVersions, releaseSupport, type DebianRelease } from './releases'
 import { LONG, SHORT, aptInstall, aptUpdate, enableService, rootStep, unsupported, withSystemd } from './steps'
 import type { ComponentId, InstallRecipe, InstallRequest } from './types'
 
@@ -111,17 +111,34 @@ const NVM_GUARD = [
   'done'
 ]
 
+const NODESOURCE_KEYRING = '/usr/share/keyrings/nodesource.gpg'
+
+const nodeRepoLines = (major: string): string[] => [
+  ...aptInstall(['ca-certificates', 'curl', 'gnupg']),
+  `curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o ${NODESOURCE_KEYRING}`,
+  `chmod a+r ${NODESOURCE_KEYRING}`,
+  'rm -f /etc/apt/sources.list.d/nodesource.list',
+  'cat > /etc/apt/sources.list.d/nodesource.sources <<EOF',
+  'Types: deb',
+  `URIs: https://deb.nodesource.com/node_${major}.x`,
+  'Suites: nodistro',
+  'Components: main',
+  `Signed-By: ${NODESOURCE_KEYRING}`,
+  'EOF',
+  'cat > /etc/apt/preferences.d/nodejs <<EOF',
+  'Package: nodejs',
+  'Pin: origin deb.nodesource.com',
+  'Pin-Priority: 600',
+  'EOF'
+]
+
 const node: ComponentBuilder = (request) => {
   const major = request.version ?? 'lts'
   if (major !== 'lts' && !NODE_MAJORS.includes(major)) return unsupported(`Node.js ${major} is not offered. Pick one of ${NODE_MAJORS.join(', ')}.`)
   return supported([rootStep('node-install', `Install Node.js ${major === 'lts' ? 'LTS' : major} from NodeSource`, [
     ...NVM_GUARD,
-    ...aptInstall(['ca-certificates', 'curl']),
-    'setup_script=$(mktemp)',
-    'trap \'rm -f "$setup_script"\' EXIT',
-    `curl -fsSL https://deb.nodesource.com/setup_${major}.x -o "$setup_script"`,
-    'bash "$setup_script"',
-    `${APT_GET} install nodejs`
+    ...nodeRepoLines(major === 'lts' ? NODE_DEFAULT : major),
+    ...aptInstall(['nodejs'])
   ])], 'https://github.com/nodesource/distributions')
 }
 
@@ -146,7 +163,7 @@ const certbot: ComponentBuilder = (request) => {
     '  ln -sf /snap/bin/certbot /usr/local/bin/certbot',
     'else',
     `  ${APT_GET} update`,
-    `  ${APT_GET} install ${['certbot', ...plugins].join(' ')}`,
+    `  ${APT_INSTALL} ${['certbot', ...plugins].join(' ')}`,
     'fi'
   ])], 'https://certbot.eff.org/instructions?ws=nginx&os=snap')
 }
@@ -154,7 +171,8 @@ const certbot: ComponentBuilder = (request) => {
 const dockerRepoLines = (release: DebianRelease): string[] => [
   ...aptUpdate(),
   `${APT_GET} remove $(dpkg --get-selections ${DOCKER_CONFLICTS[release.family].join(' ')} 2>/dev/null | cut -f1)`,
-  `${APT_GET} install ca-certificates curl`,
+  `${APT_INSTALL} ca-certificates curl`,
+  'rm -f /etc/apt/sources.list.d/docker.list',
   'install -m 0755 -d /etc/apt/keyrings',
   `curl -fsSL https://download.docker.com/linux/${release.family}/gpg -o /etc/apt/keyrings/docker.asc`,
   'chmod a+r /etc/apt/keyrings/docker.asc',

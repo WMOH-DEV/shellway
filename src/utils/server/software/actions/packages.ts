@@ -39,6 +39,15 @@ function alreadyInstalled(params: ComponentParams, facts: ServerFacts): boolean 
   return packages !== null && installedNames(entryFor(params.component), packages).length > 0
 }
 
+const DATABASE_RIVAL: Partial<Record<ComponentId, ComponentId>> = { mysql: 'mariadb', mariadb: 'mysql' }
+
+function rivalBlock(params: ComponentParams, facts: ServerFacts): string | null {
+  const rival = DATABASE_RIVAL[params.component]
+  const packages = okData<PackagesFacts>(facts, PACKAGES_PROBE)
+  if (!rival || !packages || installedNames(entryFor(rival), packages).length === 0) return null
+  return `${entryFor(rival).name} is already installed, and installing ${describe(params)} would remove it. Remove ${entryFor(rival).name} first if you want to switch.`
+}
+
 export const installAction: ActionDefinition<ComponentParams> = {
   type: 'software.install',
   area: 'software',
@@ -51,6 +60,8 @@ export const installAction: ActionDefinition<ComponentParams> = {
     const identity = okData<ServerIdentity>(facts, IDENTITY_PROBE)
     if (!identity) return blockedPlan(title, 'precondition', 'The server OS has not been detected yet. Refresh and try again.')
     if (alreadyInstalled(params, facts)) return blockedPlan(title, 'precondition', `${describe(params)} is already installed.`)
+    const rival = rivalBlock(params, facts)
+    if (rival) return blockedPlan(title, 'precondition', rival)
     const recipe = installRecipe({ component: params.component, version: params.version }, identity.os)
     if (!recipe.supported) return blockedPlan(title, 'unsupported', recipe.reason)
     return softwarePlan(title, `Install ${describe(params)} from ${recipe.source}.`, recipe.steps)
