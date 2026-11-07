@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import type { OsInfo } from '@/types/server/identity'
 import { installRecipe, installSupport, type ComponentId, type InstallRecipe, type InstallRequest } from '.'
@@ -39,6 +40,15 @@ describe('installRecipe', () => {
         expect(step.display).not.toContain('set -e')
         expect(step.label.length).toBeGreaterThan(0)
       }
+    }
+  })
+
+  it.each(SUPPORTED)('produces scripts that dash can parse on $prettyName', (target) => {
+    const requests: InstallRequest[] = [...ALL.map((component) => ({ component })), { component: 'php', version: '8.5' }, { component: 'postgresql', version: '14' }, { component: 'certbot', extras: ['apache'] }]
+    for (const request of requests) {
+      const recipe = installRecipe(request, target)
+      if (!recipe.supported) continue
+      for (const step of recipe.steps) expect(() => execFileSync('dash', ['-n'], { input: step.script }), `${request.component} ${step.id}`).not.toThrow()
     }
   })
 
