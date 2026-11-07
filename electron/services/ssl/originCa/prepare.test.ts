@@ -74,7 +74,7 @@ describe('runPrepare', () => {
 
   it('refuses before touching the server when the switch is not allowed', async () => {
     const { rec, done } = prepare(normal, readyReport({ blocks: [makeBlock({ names: NAMES, tls: false, certPath: '' })] }))
-    await expect(done).rejects.toThrow('no HTTPS server block')
+    await expect(done).rejects.toThrow('no HTTPS configuration')
     expect(rec.calls).toEqual([])
     expect(createOriginCert).not.toHaveBeenCalled()
   })

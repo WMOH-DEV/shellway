@@ -39,8 +39,8 @@ describe('switchCheck', () => {
   })
 
   it('explains each missing precondition in order', () => {
-    expect(switchCheck(ready(), 'gone.conf:1').blockedReason).toBe('This site is no longer in the nginx configuration.')
-    expect(switchCheck(ready({ blocks: [makeBlock({ tls: false, certPath: '' })] }), 'app.conf:9').blockedReason).toBe('This site has no HTTPS server block to switch.')
+    expect(switchCheck(ready(), 'gone.conf:1').blockedReason).toBe('This site is no longer in the web server configuration.')
+    expect(switchCheck(ready({ blocks: [makeBlock({ tls: false, certPath: '' })] }), 'app.conf:9').blockedReason).toBe('This site has no HTTPS configuration to switch.')
     expect(switchCheck(ready({ cloudflare: { ...connectedCloudflare, saved: false } }), 'app.conf:9').blockedReason).toBe('Add a Cloudflare token first.')
     expect(switchCheck(ready({ cloudflare: connectedCloudflare }), 'app.conf:9').blockedReason).toBe('The Cloudflare token needs SSL and Certificates · Edit.')
     const notGranted = { ...connectedCloudflare, permissions: [{ id: 'origin-ca' as const, state: 'not-granted' as const, lines: [] }] }

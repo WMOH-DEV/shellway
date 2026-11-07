@@ -19,7 +19,7 @@ function WhatChanges({ names }: { names: string[] }) {
       <ul className="flex list-disc flex-col gap-1.5 pl-[18px] text-[13px] text-nd-text-secondary">
         <li>Only the certificate your server presents to Cloudflare. Visitors keep seeing Cloudflare's own certificate.</li>
         <li>
-          It covers every name in this server block:{' '}
+          It covers every name in this site:{' '}
           {names.map((name, index) => (
             <span key={name}>{index > 0 && ', '}<span className="font-mono text-[12.5px] text-nd-text-primary">{name}</span></span>
           ))}

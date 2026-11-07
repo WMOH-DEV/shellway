@@ -20,7 +20,7 @@ function Summary({ flow, report, prepared }: { flow: SwitchFlow; report: SslRepo
         <dd className="text-nd-text-primary">{certificateSummary(prepared.keyType, prepared.validityYears)}</dd>
         <dt className="text-nd-text-muted">Valid until</dt>
         <dd className="text-nd-text-primary">{validUntilText(prepared.notAfter)}</dd>
-        <dt className="text-nd-text-muted">Names in this server block</dt>
+        <dt className="text-nd-text-muted">Names in this site</dt>
         <dd>
           <ul className="flex flex-col gap-1.5">
             {nameRows(report, flow.check).map((row) => (
@@ -52,8 +52,8 @@ function DiffCard({ prepared, driver }: { prepared: SwitchPrepared; driver: WebS
   const { added, removed } = diffCounts(prepared.diff)
   return (
     <Card
-      label="nginx change"
-      ariaLabel="nginx change"
+      label={`${driver.label} change`}
+      ariaLabel="site change"
       aside={<span className="flex gap-2 text-xs"><span className="text-nd-success-fg">+{added}</span><span className="text-nd-error-fg">-{removed}</span></span>}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-nd-text-muted">

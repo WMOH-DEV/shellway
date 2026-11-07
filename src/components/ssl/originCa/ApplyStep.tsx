@@ -45,14 +45,14 @@ export function ApplyStep({ flow }: { flow: SwitchFlow }) {
       <StepHeading title="Apply and verify" subtitle={subtitle(flow)} />
       {switchStands && <Notice>The switch is done. Every name now presents the Cloudflare Origin CA certificate.</Notice>}
       {!applyResult && applyError !== null && !applyRun.running && <Failure title="The connection dropped while applying." note="Check the site before trying again." />}
-      {applyResult && !applyResult.ok && <Failure {...switchFailureView(applyResult)} />}
+      {applyResult && !applyResult.ok && <Failure {...switchFailureView(applyResult, flow.driver.label)} />}
       {switchStands && <NameRows names={applyResult.verify} />}
       {(applyRun.running || applyRun.output || applyResult || applyError) && (
         <OutputPanel
           command="sudo -n sh -s"
           output={applyRun.output || applyResult?.output || ''}
           running={applyRun.running}
-          outcome={applyRun.running ? null : applyOutcome(applyResult, applyError)}
+          outcome={applyRun.running ? null : applyOutcome(applyResult, applyError, flow.driver.label)}
         />
       )}
       {undone && <Notice>{`The old site file is back and ${flow.driver.label} is reloaded. certbot's certificate is in use again.`}</Notice>}

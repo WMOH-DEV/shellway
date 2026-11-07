@@ -52,24 +52,24 @@ describe('switchView', () => {
   })
 
   it('says the backup was restored only when it was', () => {
-    expect(switchFailureView(switchFailed({ restored: true })).note).toContain('restored the backup')
-    const unrestored = switchFailureView(switchFailed({ restored: false, failedStage: 'verify' }))
+    expect(switchFailureView(switchFailed({ restored: true }), 'nginx').note).toContain('restored the backup')
+    const unrestored = switchFailureView(switchFailed({ restored: false, failedStage: 'verify' }), 'nginx')
     expect(unrestored.title).toBe('The new certificate did not verify')
     expect(unrestored.note).toContain('not restored automatically')
     expect(unrestored.note).toContain('/etc/ssl/shellway/backups/app.example.com-20261106.conf')
   })
 
   it('says nothing was changed when there is no backup and nothing was restored', () => {
-    const note = switchFailureView(switchFailed({ restored: false, failedStage: 'apply', backupPath: null })).note
+    const note = switchFailureView(switchFailed({ restored: false, failedStage: 'apply', backupPath: null }), 'nginx').note
     expect(note).toContain('Nothing on the server was changed.')
     expect(note).not.toContain('Your original file')
     expect(note).not.toContain('not restored automatically')
   })
 
   it('builds run outcomes for apply, undo and removal', () => {
-    expect(applyOutcome(switchApplied(), null)).toEqual({ success: true, message: 'Switched to Cloudflare Origin CA' })
-    expect(applyOutcome(null, 'Connection lost')).toEqual({ success: false, message: 'The switch could not run: Connection lost' })
-    expect(applyOutcome(null, null)).toBeNull()
+    expect(applyOutcome(switchApplied(), null, 'nginx')).toEqual({ success: true, message: 'Switched to Cloudflare Origin CA' })
+    expect(applyOutcome(null, 'Connection lost', 'nginx')).toEqual({ success: false, message: 'The switch could not run: Connection lost' })
+    expect(applyOutcome(null, null, 'nginx')).toBeNull()
     expect(undoOutcome(switchApplied(), null)?.message).toBe('Switch undone')
     expect(undoOutcome(switchFailed(), null)?.success).toBe(false)
     expect(removeOutcome({ code: 0, output: '' }, null)?.message).toBe('certbot certificate removed')

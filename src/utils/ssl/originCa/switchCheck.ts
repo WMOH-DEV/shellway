@@ -10,7 +10,7 @@ function nameCheck(name: string, host: HostnameStatus | undefined): SwitchName {
 }
 
 function blockedReason(report: SslReport, block: ServerBlock, names: SwitchName[], hosts: HostnameStatus[]): string | null {
-  if (!block.tls || !block.certPath) return 'This site has no HTTPS server block to switch.'
+  if (!block.tls || !block.certPath) return 'This site has no HTTPS configuration to switch.'
   if (!isFullyRead(report.facts)) return CHANGE_NEEDS_FULL_READ
   if (!report.cloudflare.saved) return 'Add a Cloudflare token first.'
   const permission = report.cloudflare.permissions.find((group) => group.id === 'origin-ca')
@@ -23,7 +23,7 @@ function blockedReason(report: SslReport, block: ServerBlock, names: SwitchName[
 
 export function switchCheck(report: SslReport, blockId: string): SwitchCheck {
   const block = report.blocks.find((b) => b.id === blockId)
-  if (!block) return { blockId, names: [], blockedReason: 'This site is no longer in the nginx configuration.' }
+  if (!block) return { blockId, names: [], blockedReason: 'This site is no longer in the web server configuration.' }
   const byName = new Map(report.hostnames.filter((host) => host.blockId === blockId).map((host) => [host.name.toLowerCase(), host]))
   const names = block.names.map((name) => nameCheck(name, byName.get(name.toLowerCase())))
   return { blockId, names, blockedReason: blockedReason(report, block, names, [...byName.values()]) }

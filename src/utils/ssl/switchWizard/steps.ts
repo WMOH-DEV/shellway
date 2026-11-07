@@ -8,7 +8,7 @@ export const SWITCH_STEPS: { id: SwitchStep; title: string }[] = [
   { id: 'explain', title: 'Explain and confirm' },
   { id: 'key', title: 'Key and CSR on server' },
   { id: 'sign', title: 'Cloudflare signs' },
-  { id: 'review', title: 'Review nginx change' },
+  { id: 'review', title: 'Review the change' },
   { id: 'apply', title: 'Apply and verify' }
 ]
 

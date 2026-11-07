@@ -37,7 +37,7 @@ function UndoRow({ item, state }: { item: SwitchLeftover; state: Leftover }) {
     <ActionRow
       title="Undo switch"
       command={item.backupPath ?? undefined}
-      note="Puts the old site file back, tests nginx, reloads and verifies."
+      note="Puts the old site file back, tests the web server config, reloads and verifies."
     >
       <Button disabled={state.busy} onClick={() => void state.undo.undo()}>
         {state.undo.run.running && <Loader2 size={14} className="animate-spin" />}

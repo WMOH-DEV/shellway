@@ -30,10 +30,13 @@ export function nameRows(report: SslReport, check: SwitchCheck): NameRow[] {
   }))
 }
 
-const FAILURE_TITLES: Record<SwitchStage, string> = {
-  apply: 'Applying the change failed',
-  'nginx-test': 'nginx rejected the changed file',
-  verify: 'The new certificate did not verify'
+function failureTitle(stage: SwitchStage, server: string): string {
+  const titles: Record<SwitchStage, string> = {
+    apply: 'Applying the change failed',
+    'nginx-test': `${server} rejected the changed file`,
+    verify: 'The new certificate did not verify'
+  }
+  return titles[stage]
 }
 
 export interface SwitchFailureView {
@@ -41,15 +44,14 @@ export interface SwitchFailureView {
   note: string
 }
 
-function failureNote(result: SwitchResult): string {
-  if (result.restored) return `Shellway restored the backup${result.backupPath ? ` (${result.backupPath})` : ''} and reloaded nginx. The site is back on its old certificate.`
+function failureNote(result: SwitchResult, server: string): string {
+  if (result.restored) return `Shellway restored the backup${result.backupPath ? ` (${result.backupPath})` : ''} and reloaded ${server}. The site is back on its old certificate.`
   if (result.backupPath === null) return 'Nothing on the server was changed. Check the output below.'
   return `The backup was not restored automatically. Your original file is at ${result.backupPath}. Check the output below.`
 }
 
-export function switchFailureView(result: SwitchResult): SwitchFailureView {
-  const title = FAILURE_TITLES[result.failedStage ?? 'apply']
-  return { title, note: failureNote(result) }
+export function switchFailureView(result: SwitchResult, server: string): SwitchFailureView {
+  return { title: failureTitle(result.failedStage ?? 'apply', server), note: failureNote(result, server) }
 }
 
 export interface RunOutcomeView {
@@ -59,8 +61,8 @@ export interface RunOutcomeView {
 
 const couldNotRun = (what: string, error: string): RunOutcomeView => ({ success: false, message: `${what} could not run: ${error}` })
 
-export function applyOutcome(result: SwitchResult | null, error: string | null): RunOutcomeView | null {
-  if (result) return { success: result.ok, message: result.ok ? 'Switched to Cloudflare Origin CA' : switchFailureView(result).title }
+export function applyOutcome(result: SwitchResult | null, error: string | null, server: string): RunOutcomeView | null {
+  if (result) return { success: result.ok, message: result.ok ? 'Switched to Cloudflare Origin CA' : switchFailureView(result, server).title }
   return error ? couldNotRun('The switch', error) : null
 }
 
