@@ -99,6 +99,23 @@ describe('software.install', () => {
   it('requires a PHP version', () => {
     expect(() => action('software.install').validate({ component: 'php' })).toThrow()
   })
+
+  it('defaults the OS family to auto and rejects a bad one', () => {
+    expect(action('software.install').validate({ component: 'apache' })).toEqual({ component: 'apache', osFamily: 'auto' })
+    expect(() => action('software.install').validate({ component: 'apache', osFamily: 'windows' })).toThrow(/OS family/)
+    expect(() => action('software.install').validate({ component: 'apache', osFamily: 5 })).toThrow(/OS family/)
+  })
+
+  it('installs on a misdetected system once the family is chosen', () => {
+    const facts = { ...FACTS, [IDENTITY_PROBE]: identity('other') }
+    expect(plan('software.install', { component: 'apache' }, facts).blocked?.kind).toBe('unsupported')
+    expect(plan('software.install', { component: 'apache', osFamily: 'ubuntu' }, facts).blocked).toBeNull()
+  })
+
+  it('picks the recipe of the chosen family', () => {
+    const result = plan('software.install', { component: 'apache', osFamily: 'rhel' })
+    expect(result.blocked?.kind).toBe('unsupported')
+  })
 })
 
 describe('software.remove', () => {

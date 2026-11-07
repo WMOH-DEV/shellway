@@ -4,7 +4,8 @@ import { fileEditStep } from '../fileEdit'
 import { installRecipe, type ComponentId } from '../install'
 import { SHORT, rootStep } from '../install/steps'
 import { swapSizeGb } from './catalog'
-import { FAIL2BAN_JAIL, SSHD_DROPIN, SUDOERS_FILE, UNATTENDED_FILE } from './inventory'
+import { FAIL2BAN_JAIL, SSHD_DROPIN, UNATTENDED_FILE, sudoersFile } from './inventory'
+import { effectiveDeployUser } from './overrides'
 import type { SecurityId, SetupFiles, SetupInventory, SetupParams } from './types'
 
 export interface SecurityContext {
@@ -19,8 +20,6 @@ export interface SecurityPart {
   problems: string[]
   notes: string[]
 }
-
-export const DEPLOY_USER = 'deploy'
 
 const HOME = /^\/[A-Za-z0-9._/-]{0,200}$/
 
@@ -54,13 +53,14 @@ const merge = (...parts: SecurityPart[]): SecurityPart => ({
 
 const originalSha = (files: SetupFiles, path: string): string | null => files.hashes[path] ?? null
 
-function deployUserLines(home: string): string[] {
+function deployUserLines(user: string, home: string): string[] {
   const source = quote(`${home}/.ssh/authorized_keys`)
   return [
-    `if ! id -u ${DEPLOY_USER} >/dev/null 2>&1; then useradd --create-home --shell /bin/bash ${DEPLOY_USER}; fi`,
-    `usermod -aG sudo ${DEPLOY_USER}`,
-    `deploy_home=$(getent passwd ${DEPLOY_USER} | cut -d: -f6)`,
-    `install -d -m 700 -o ${DEPLOY_USER} -g "$(id -gn ${DEPLOY_USER})" "$deploy_home/.ssh"`,
+    `deploy_user=${quote(user)}`,
+    'if ! id -u "$deploy_user" >/dev/null 2>&1; then useradd --create-home --shell /bin/bash "$deploy_user"; fi',
+    'usermod -aG sudo "$deploy_user"',
+    'deploy_home=$(getent passwd "$deploy_user" | cut -d: -f6)',
+    'install -d -m 700 -o "$deploy_user" -g "$(id -gn "$deploy_user")" "$deploy_home/.ssh"',
     'touch "$deploy_home/.ssh/authorized_keys"',
     `if [ -f ${source} ]; then`,
     '  while IFS= read -r key || [ -n "$key" ]; do',
@@ -68,26 +68,28 @@ function deployUserLines(home: string): string[] {
     '    grep -qxF -- "$key" "$deploy_home/.ssh/authorized_keys" || printf \'%s\\n\' "$key" >> "$deploy_home/.ssh/authorized_keys"',
     `  done < ${source}`,
     'fi',
-    `chown ${DEPLOY_USER}:"$(id -gn ${DEPLOY_USER})" "$deploy_home/.ssh/authorized_keys"`,
+    'chown "$deploy_user":"$(id -gn "$deploy_user")" "$deploy_home/.ssh/authorized_keys"',
     'chmod 600 "$deploy_home/.ssh/authorized_keys"'
   ]
 }
 
-function deployUser({ inventory, files }: SecurityContext): SecurityPart {
-  if (inventory.user === DEPLOY_USER) return note('You are already logged in as deploy, so no deploy user was added.')
-  if (!HOME.test(inventory.home) || inventory.home.includes('..')) return problem('Could not read your home folder, so your SSH keys cannot be copied to deploy.')
-  const notes = inventory.authorizedKeys === 0 ? [`${inventory.user} has no SSH keys on this server, so deploy gets none. Add a key to deploy before logging in as it.`] : []
+function deployUser({ inventory, files, params }: SecurityContext): SecurityPart {
+  const user = effectiveDeployUser(params.deployUser)
+  if (inventory.user === user) return note(`You are already logged in as ${user}, so no deploy user was added.`)
+  if (!HOME.test(inventory.home) || inventory.home.includes('..')) return problem(`Could not read your home folder, so your SSH keys cannot be copied to ${user}.`)
+  const notes = inventory.authorizedKeys === 0 ? [`${inventory.user} has no SSH keys on this server, so ${user} gets none. Add a key to ${user} before logging in as it.`] : []
+  const sudoers = sudoersFile(user)
   return steps([
-    rootStep('deploy-user', `Create the ${DEPLOY_USER} user and copy your SSH keys`, deployUserLines(inventory.home), SHORT),
+    rootStep('deploy-user', `Create the ${user} user and copy your SSH keys`, deployUserLines(user, inventory.home), SHORT),
     fileEditStep({
       id: 'deploy-sudoers',
-      label: `Let ${DEPLOY_USER} use sudo without a password`,
-      path: SUDOERS_FILE,
-      content: `${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL\n`,
-      originalSha256: originalSha(files, SUDOERS_FILE),
+      label: `Let ${user} use sudo without a password`,
+      path: sudoers,
+      content: `${user} ALL=(ALL) NOPASSWD:ALL\n`,
+      originalSha256: originalSha(files, sudoers),
       mode: '0440',
       owner: 'root:root',
-      test: `visudo -cf ${SUDOERS_FILE}`
+      test: `visudo -cf ${sudoers}`
     })
   ], notes)
 }

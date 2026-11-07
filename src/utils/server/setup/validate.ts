@@ -1,4 +1,5 @@
 import { PROFILES, ROWS, ROW_VALUES, SECURITY_ITEMS } from './catalog'
+import { asDeployUser, asOsFamilyOverride } from './overrides'
 import type { ProfileId, RowChoice, RowChoices, SecurityChoices, SetupParams } from './types'
 
 type Raw = Record<string, unknown>
@@ -41,6 +42,8 @@ export function validateSetupParams(value: unknown): SetupParams {
     profile: asProfile(raw.profile),
     rows: asRows(raw.rows),
     security: asSecurity(raw.security),
-    keyLogin: asBoolean(raw.keyLogin, 'keyLogin')
+    keyLogin: asBoolean(raw.keyLogin, 'keyLogin'),
+    deployUser: asDeployUser(raw.deployUser),
+    osFamily: asOsFamilyOverride(raw.osFamily)
   }
 }

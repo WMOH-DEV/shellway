@@ -1,3 +1,5 @@
+import type { OsFamilyOverride } from '../settings/prefs'
+
 export type ProfileId = 'laravel' | 'node' | 'static' | 'docker' | 'custom'
 
 export type RowId = 'web' | 'php' | 'composer' | 'database' | 'redis' | 'node' | 'pm2' | 'supervisor' | 'certbot' | 'docker'
@@ -18,6 +20,8 @@ export interface SetupParams {
   rows: RowChoices
   security: SecurityChoices
   keyLogin: boolean
+  deployUser: string
+  osFamily: OsFamilyOverride
 }
 
 export interface SetupInventory {

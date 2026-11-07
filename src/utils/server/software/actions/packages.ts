@@ -2,6 +2,8 @@ import type { ActionDefinition, ActionPlan, ServerFacts } from '@/types/server/c
 import { IDENTITY_PROBE, type ServerIdentity } from '@/types/server/identity'
 import { aptInstallScript, aptRemoveScript, assertPackageName } from '../../apt'
 import { installRecipe, type ComponentId } from '../../install'
+import { asOsFamilyOverride, withOsFamily } from '../../setup/overrides'
+import type { OsFamilyOverride } from '../../settings/prefs'
 import { CATALOG, catalogEntry, ownsPackage } from '../catalog'
 import { installedPackage } from '../packages'
 import { phpVersion, sitesUsing } from '../php'
@@ -12,6 +14,10 @@ import { asRecord, assertPhpVersion, matching, oneOf } from '../validate'
 export interface ComponentParams {
   component: ComponentId
   version?: string
+}
+
+export interface InstallParams extends ComponentParams {
+  osFamily: OsFamilyOverride
 }
 
 const COMPONENTS = CATALOG.flatMap((entry) => (entry.component ? [entry.component] : []))
@@ -25,6 +31,17 @@ function validateComponent(raw: unknown, allowed: ComponentId[]): ComponentParam
   const component = oneOf(value.component, allowed, 'component')
   if (component === 'php') return { component, version: assertPhpVersion(String(value.version)) }
   return value.version === undefined ? { component } : { component, version: matching(value.version, VERSION, 'version') }
+}
+
+const validateInstall = (raw: unknown): InstallParams => ({
+  ...validateComponent(raw, COMPONENTS),
+  osFamily: asRecord(raw).osFamily === undefined ? 'auto' : asOsFamilyOverride(asRecord(raw).osFamily)
+})
+
+function withOverriddenOs(facts: ServerFacts, osFamily: OsFamilyOverride): ServerFacts {
+  const identity = okData<ServerIdentity>(facts, IDENTITY_PROBE)
+  if (!identity || osFamily === 'auto') return facts
+  return { ...facts, [IDENTITY_PROBE]: { status: 'ok', data: { ...identity, os: withOsFamily(identity.os, osFamily) }, at: facts[IDENTITY_PROBE].at } }
 }
 
 const entryFor = (component: ComponentId): CatalogEntry => CATALOG.find((entry) => entry.component === component) as CatalogEntry
@@ -48,13 +65,14 @@ function rivalBlock(params: ComponentParams, facts: ServerFacts): string | null 
   return `${entryFor(rival).name} is already installed, and installing ${describe(params)} would remove it. Remove ${entryFor(rival).name} first if you want to switch.`
 }
 
-export const installAction: ActionDefinition<ComponentParams> = {
+export const installAction: ActionDefinition<InstallParams> = {
   type: 'software.install',
   area: 'software',
   needs: [IDENTITY_PROBE, PACKAGES_PROBE, PHP_PROBE],
-  validate: (raw) => validateComponent(raw, COMPONENTS),
-  plan(params, facts) {
+  validate: validateInstall,
+  plan(params, original) {
     const title = `Install ${describe(params)}`
+    const facts = withOverriddenOs(original, params.osFamily)
     const os = unsupportedOsMessage(facts)
     if (os) return blockedPlan(title, 'unsupported', os)
     const identity = okData<ServerIdentity>(facts, IDENTITY_PROBE)
