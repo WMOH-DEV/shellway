@@ -6,7 +6,7 @@ import { useSslReport } from '@/components/ssl/useSslReport'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { ServerIdentity } from '@/types/server/identity'
 import { IDENTITY_PROBE } from '@/types/server/identity'
-import { ALL_PROBES, findProbe } from '@/utils/server/areas'
+import { findProbe } from '@/utils/server/areas'
 import { rootFilesystem, type Filesystem } from '@/utils/server/overview/disk'
 import { okData } from '@/utils/server/overview/facts'
 import { isFreshServer } from '@/utils/server/overview/fresh'
@@ -16,6 +16,7 @@ import type { LoadSample } from '@/utils/server/overview/load'
 import { serverInfoRows } from '@/utils/server/overview/serverInfo'
 import { siteRows } from './model/sites'
 import { softwareChips } from '@/utils/server/overview/software'
+import { PACKAGES_PROBE, PHP_PROBE } from '@/utils/server/software/types'
 import type { SystemState } from '@/utils/server/overview/system'
 import { nowSeconds } from '@/utils/ssl/time'
 import { useActionLauncher } from '../../action'
@@ -32,7 +33,7 @@ import { useConnectionLatency } from './useConnectionLatency'
 import { useLiveMonitor } from './useLiveMonitor'
 import { useOverviewAttention } from './useOverviewAttention'
 
-const PAGE_PROBES = [LOAD_PROBE, DISK_PROBE, SYSTEM_PROBE, IDENTITY_PROBE, ...ALL_PROBES.filter((probe) => probe.area === 'software').map((probe) => probe.id)]
+const PAGE_PROBES = [LOAD_PROBE, DISK_PROBE, SYSTEM_PROBE, IDENTITY_PROBE, PACKAGES_PROBE, PHP_PROBE]
   .filter((id) => findProbe(id) !== undefined)
 
 function useRebootDeepLink(ctx: ServerSectionContext, reboot: () => void) {

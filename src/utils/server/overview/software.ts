@@ -1,43 +1,38 @@
 import type { ServerFacts } from '@/types/server/core'
+import { CATALOG, ownsPackage } from '@/utils/server/software/catalog'
+import { PACKAGES_PROBE, PHP_PROBE, type PackagesFacts, type PhpFacts } from '@/utils/server/software/types'
 
 export interface SoftwareChip {
   label: string
   update: boolean
 }
 
-interface InstalledComponent {
-  name: string
-  version: string
-  updateAvailable?: boolean
-  candidate?: string
+const shortVersion = (version: string): string => /^(?:\d+:)?(\d+(?:\.\d+)?)/.exec(version)?.[1] ?? version
+
+function okData<T>(facts: ServerFacts, id: string): T | null {
+  const result = facts[id]
+  return result?.status === 'ok' ? (result.data as T) : null
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const isInstalledComponent = (value: unknown): value is InstalledComponent =>
-  isRecord(value) && typeof value.name === 'string' && typeof value.version === 'string' && value.version !== ''
-
-function componentList(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data
-  if (isRecord(data) && Array.isArray(data.components)) return data.components
-  return []
+function packageChips(packages: PackagesFacts): SoftwareChip[] {
+  return CATALOG.flatMap((entry) => {
+    const installed = packages.installed.find((item) => ownsPackage(entry, item.name))
+    if (!installed || entry.id === 'base') return []
+    const update = installed.candidate !== null && installed.candidate !== installed.version
+    return [{ label: `${entry.name} ${shortVersion(installed.version)}${update ? ' ↑' : ''}`, update }]
+  })
 }
 
-const shortVersion = (version: string): string => /^\d+(\.\d+)?/.exec(version)?.[0] ?? version
-
-const hasUpdate = (component: InstalledComponent): boolean =>
-  component.updateAvailable === true || (typeof component.candidate === 'string' && component.candidate !== '' && component.candidate !== component.version)
-
-function toChip(component: InstalledComponent): SoftwareChip {
-  const update = hasUpdate(component)
-  return { label: `${component.name} ${shortVersion(component.version)}${update ? ' ↑' : ''}`, update }
+function extraChips(packages: PackagesFacts | null, php: PhpFacts | null): SoftwareChip[] {
+  const chips: SoftwareChip[] = (php?.versions ?? []).map((version) => ({ label: `PHP ${version.version}`, update: false }))
+  if (packages?.composerVersion) chips.push({ label: `Composer ${shortVersion(packages.composerVersion)}`, update: false })
+  if (packages?.node.version && !packages.installed.some((item) => item.name === 'nodejs')) chips.push({ label: `Node.js ${shortVersion(packages.node.version)}`, update: false })
+  if (packages?.node.pm2Version) chips.push({ label: `pm2 ${shortVersion(packages.node.pm2Version)}`, update: false })
+  return chips
 }
 
 export function softwareChips(facts: ServerFacts): SoftwareChip[] {
-  const chips = Object.entries(facts)
-    .filter(([id, result]) => id.startsWith('software.') && result.status === 'ok')
-    .flatMap(([, result]) => componentList(result.status === 'ok' ? result.data : null))
-    .filter(isInstalledComponent)
-    .map(toChip)
-  return [...new Map(chips.map((chip) => [chip.label, chip])).values()]
+  const packages = okData<PackagesFacts>(facts, PACKAGES_PROBE)
+  const php = okData<PhpFacts>(facts, PHP_PROBE)
+  return [...(packages ? packageChips(packages) : []), ...extraChips(packages, php)]
 }
