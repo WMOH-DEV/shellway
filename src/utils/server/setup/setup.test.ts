@@ -260,7 +260,9 @@ describe('buildSetupPlan', () => {
 
   it('adds a swap file sized by memory unless swap is on', () => {
     expect(step(buildSetupPlan(paramsFor('static'), factsFor(NOBLE)), 'security.swap').script).toContain('fallocate -l 2G /swapfile')
-    expect(ids(buildSetupPlan(paramsFor('static'), factsFor(NOBLE, { ...FRESH, swapBytes: 1 })))).not.toContain('security.swap')
+    const swapOn = buildSetupPlan(paramsFor('static'), factsFor(NOBLE, { ...FRESH, swapBytes: 1 }))
+    expect(ids(swapOn)).not.toContain('security.swap')
+    expect(swapOn.summary).toContain('apply 4 security changes')
     expect(swapSizeGb(32 * 1024 ** 3)).toBe(4)
   })
 

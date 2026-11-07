@@ -33,6 +33,7 @@ export function SetupForm({ ctx, release, inventory, onFinished, lastRun }: Setu
   const keyLogin = useKeyLogin(ctx.sessionId)
   const launcher = useActionLauncher(ctx)
   const { prefs, error: prefsError } = useServerPrefs(ctx.sessionId)
+  const hasSwap = inventory.swapBytes > 0
   const [profile, setProfile] = useState<ProfileId>('laravel')
   const [rows, setRows] = useState(() => profileRows('laravel', release))
   const [security, setSecurity] = useState<SecurityChoices>(SECURITY_DEFAULTS)
@@ -40,11 +41,11 @@ export function SetupForm({ ctx, release, inventory, onFinished, lastRun }: Setu
   const params: SetupParams = useMemo(() => ({
     profile,
     rows,
-    security: { ...security, passwordLoginOff: security.passwordLoginOff && keyLogin },
+    security: { ...security, passwordLoginOff: security.passwordLoginOff && keyLogin, swap: security.swap && !hasSwap },
     keyLogin,
     deployUser: prefs?.deployUser ?? '',
     osFamily: prefs?.osFamily ?? 'auto'
-  }), [profile, rows, security, keyLogin, prefs])
+  }), [profile, rows, security, keyLogin, hasSwap, prefs])
   const components = useMemo(() => planComponents(rows, inventory), [rows, inventory])
   const summary = useMemo(() => setupSummary(params, inventory), [params, inventory])
   const choices = useMemo(() => rowChoices(release, inventory.commands.includes('snap')), [release, inventory])
@@ -64,7 +65,7 @@ export function SetupForm({ ctx, release, inventory, onFinished, lastRun }: Setu
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-3.5">
           <SoftwareCard profileTitle={profileTitle(profile)} rows={rows} choices={choices} installed={components.installedRows} onChange={changeRow} />
-          <SecurityCard security={params.security} swapGb={swapSizeGb(inventory.memoryBytes)} keyLogin={keyLogin} onChange={changeSecurity} />
+          <SecurityCard security={params.security} swapGb={hasSwap ? null : swapSizeGb(inventory.memoryBytes)} keyLogin={keyLogin} onChange={changeSecurity} />
         </div>
         <SummaryAside summary={summary} onCreateSite={() => ctx.navigate({ section: 'sites' })} />
       </div>

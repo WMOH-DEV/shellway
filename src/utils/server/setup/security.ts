@@ -231,6 +231,7 @@ const BUILDERS: Record<SecurityId, (context: SecurityContext) => SecurityPart> =
 
 const ORDER: readonly SecurityId[] = ['deployUser', 'firewall', 'fail2ban', 'autoUpdates', 'swap', 'passwordLoginOff']
 
-export function securityPart(context: SecurityContext): SecurityPart {
-  return merge(...ORDER.filter((id) => context.params.security[id]).map((id) => BUILDERS[id](context)))
+export function securityPart(context: SecurityContext): SecurityPart & { changes: number } {
+  const parts = ORDER.filter((id) => context.params.security[id]).map((id) => BUILDERS[id](context))
+  return { ...merge(...parts), changes: parts.filter((part) => part.steps.length > 0).length }
 }

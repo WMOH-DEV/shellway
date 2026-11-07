@@ -129,7 +129,7 @@ export function buildSetupPlan(params: SetupParams, facts: ServerFacts): ActionP
   const steps = [grouped('update')(systemUpdateStep()), ...installs.steps, ...security.steps.map(grouped('security'))]
   return {
     ...base,
-    summary: `Install ${pluralize(components.install.length, 'component')} and apply ${pluralize(securityCount(params), 'security change')} on ${read.os.prettyName}.`,
+    summary: `Install ${pluralize(components.install.length, 'component')} and apply ${pluralize(security.changes, 'security change')} on ${read.os.prettyName}.`,
     steps,
     warnings: warningsFor(params, components.alreadyInstalled, [...components.notes, ...security.notes]),
     blocked: problems.length > 0 ? { kind: 'precondition', message: problems.join(' ') } : null
