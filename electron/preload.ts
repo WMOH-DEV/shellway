@@ -1178,6 +1178,8 @@ const api = {
       ipcRenderer.invoke("deploy:register-key", connectionId, name, token, remember) as Promise<DeployResult<{ alreadyAdded: boolean }>>,
     githubTokenSaved: () =>
       ipcRenderer.invoke("deploy:github-token-saved") as Promise<DeployResult<boolean>>,
+    saveGithubToken: (token: string) =>
+      ipcRenderer.invoke("deploy:github-token-save", token) as Promise<DeployResult>,
     clearGithubToken: () =>
       ipcRenderer.invoke("deploy:github-token-clear") as Promise<DeployResult>,
     localGitAvailable: () =>
