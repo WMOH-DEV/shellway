@@ -23,7 +23,7 @@ let lineagesOnServer: CertbotLineage[]
 
 const responder = (call: Call): Answer | undefined => {
   if (call.stdin?.includes('openssl req')) return { code: 0, stdout: CSR }
-  if (call.command === `sudo -n cat '${FILE}'`) return { code: 0, stdout: SITE }
+  if (call.command === `sudo -n base64 -w0 '${FILE}'`) return { code: 0, stdout: Buffer.from(SITE).toString('base64') }
   if (call.stdin?.includes('for f in')) return { code: 0, stdout: `${BACKUP_PATH}\n` }
   if (call.command === `sudo -n cat '${BACKUP_PATH}'`) return { code: 0, stdout: SITE }
   if (call.command.includes('certbot delete')) lineagesOnServer = []

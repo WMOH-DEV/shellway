@@ -9,14 +9,15 @@ import { BACKUP_PATH, CERT_PATH, CSR, FILE, KEY_PATH, NAMES, PEM, SITE, readyRep
 import type { Answer, Call } from './testKit'
 
 const request: SwitchRequest = { blockId: 'app.conf:9', keyType: 'ecc', validityYears: 15 }
-const READ = `sudo -n cat '${FILE}'`
+const READ = `sudo -n base64 -w0 '${FILE}'`
+const siteRead = (text: string | Buffer) => ({ code: 0, stdout: Buffer.from(text).toString('base64') })
 const REMOVE = `sudo -n rm -f '${KEY_PATH}' '${CERT_PATH}'`
 const withoutToken = (script: string | undefined) => script?.replace(/SHELLWAY_[0-9a-f]{32}/g, 'TOKEN')
 const isCsr = (call: Call) => call.stdin?.includes('openssl req') === true
 
 const normal = (call: Call): Answer | undefined => {
   if (isCsr(call)) return { code: 0, stdout: CSR }
-  if (call.command === READ) return { code: 0, stdout: SITE }
+  if (call.command === READ) return siteRead(SITE)
   return undefined
 }
 
@@ -99,9 +100,15 @@ describe('runPrepare', () => {
     expect(rec.calls.at(-1)?.command).toBe(REMOVE)
   })
 
+  it('says the site file is unreadable, not changed, when it is not UTF-8, and cleans up', async () => {
+    const { rec, done } = prepare((call) => (call.command === READ ? siteRead(Buffer.concat([Buffer.from(SITE), Buffer.from([0xe9, 0x0a])])) : normal(call)))
+    await expect(done).rejects.toThrow(`${FILE} has characters Shellway cannot read safely. Edit it by hand.`)
+    expect(rec.calls.at(-1)?.command).toBe(REMOVE)
+  })
+
   it('removes the key and certificate when the certificate lines cannot be swapped', async () => {
     const report = readyReport({ blocks: [makeBlock({ names: NAMES, keyPath: '' })] })
-    const { rec, done } = prepare((call) => (call.command === READ ? { code: 0, stdout: SITE.replace(/ssl_certificate_key[^\n]*\n/, '') } : normal(call)), report)
+    const { rec, done } = prepare((call) => (call.command === READ ? siteRead(SITE.replace(/ssl_certificate_key[^\n]*\n/, '')) : normal(call)), report)
     await expect(done).rejects.toThrow('no ssl_certificate_key line')
     expect(rec.calls.at(-1)?.command).toBe(REMOVE)
   })
@@ -118,13 +125,13 @@ describe('runPrepare', () => {
     }
 
     it.each(Object.keys(edits))('removes the new key and certificate when it has %s', async (label) => {
-      const { rec, done } = prepare((call) => (call.command === READ ? { code: 0, stdout: edits[label](SITE) } : normal(call)))
+      const { rec, done } = prepare((call) => (call.command === READ ? siteRead(edits[label](SITE)) : normal(call)))
       await expect(done).rejects.toThrow(CHANGED)
       expect(rec.calls.at(-1)?.command).toBe(REMOVE)
     })
 
     it('accepts a differently cased name list', async () => {
-      const { done } = prepare((call) => (call.command === READ ? { code: 0, stdout: SITE.replace('app.example.com www', 'APP.example.com www') } : normal(call)))
+      const { done } = prepare((call) => (call.command === READ ? siteRead(SITE.replace('app.example.com www', 'APP.example.com www')) : normal(call)))
       await expect(done).resolves.toMatchObject({ switchId: 'switch-1' })
     })
   })

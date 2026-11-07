@@ -110,9 +110,14 @@ class PrepareRun {
   }
 
   private async readSiteFile(): Promise<string> {
-    const read = await this.runner.run(`sudo -n cat ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS, { stream: false })
-    if (read.code !== 0 || read.stdout === '') throw new Error(`Could not read ${this.block.file} on the server.`)
-    return read.stdout
+    const read = await this.runner.run(`sudo -n base64 -w0 ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS, { stream: false })
+    const encoded = read.stdout.trim()
+    if (read.code !== 0 || encoded === '') throw new Error(`Could not read ${this.block.file} on the server.`)
+    try {
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.from(encoded, 'base64'))
+    } catch {
+      throw new Error(`${this.block.file} has characters Shellway cannot read safely. Edit it by hand.`)
+    }
   }
 
   private assertUnchanged(siteText: string): void {
