@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { GuardRefusal, backupScript, buildGuardedChange, disarmScript, guardPaths, mergeDropIn, revertScript, ufwRuleCommand, validateGuardRequest, type GuardContext } from './guard'
+import { GuardRefusal, backupScript, buildGuardedChange, cleanupScript, disarmScript, guardPaths, mergeDropIn, revertNowScript, revertScript, ufwRuleCommand, validateGuardRequest, type GuardContext } from './guard'
 
 const ctx: GuardContext = {
   root: true,
@@ -69,7 +70,7 @@ describe('buildGuardedChange', () => {
     expect(change.apply).toContain('PermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nSHELLWAY_EOF')
     expect(change.apply).toContain('"$SSHD" -t')
     expect(change.apply).toContain("grep -Eqx 'passwordauthentication no'")
-    expect(change.apply).toContain('systemctl reload ssh 2>/dev/null || systemctl reload sshd')
+    expect(change.apply).toContain('systemctl reload-or-restart ssh 2>/dev/null || systemctl reload-or-restart sshd')
   })
 
   it('restarts ssh.socket on socket activated systems', () => {
@@ -106,13 +107,44 @@ describe('guard scripts', () => {
     const script = revertScript('abcdef01', change)
     expect(script).toContain("restore 3 '/etc/default/ufw'")
     expect(script).toContain('ufw reload; else ufw disable')
-    expect(script.trim().endsWith('touch /var/lib/shellway/revert-abcdef01.done')).toBe(true)
+    expect(script).toContain('touch /var/lib/shellway/revert-abcdef01.done')
+  })
+
+  it('lets only one of the timer, undo now and disarm act', () => {
+    const claim = 'mkdir /var/lib/shellway/revert-abcdef01.claim 2>/dev/null'
+    expect(revertScript('abcdef01', change).split('\n')[1]).toBe(`${claim} || exit 0`)
+    expect(disarmScript('abcdef01')).toContain(`if ${claim}; then`)
+    expect(cleanupScript('abcdef01')).toContain(claim)
+  })
+
+  it('holds one busy lock per server and only releases its own', () => {
+    expect(backupScript('abcdef01', change)).toContain('mkdir /var/lib/shellway/busy 2>/dev/null || {')
+    for (const script of [revertScript('abcdef01', change), disarmScript('abcdef01'), cleanupScript('abcdef01')]) {
+      expect(script).toContain('if [ "$(cat /var/lib/shellway/busy/id 2>/dev/null)" = abcdef01 ]; then rm -rf /var/lib/shellway/busy; fi')
+    }
   })
 
   it('disarms by stopping the timer and reports an undo that already ran', () => {
     const script = disarmScript('abcdef01')
     expect(script).toContain('systemctl stop shellway-revert-abcdef01.timer')
     expect(script).toContain('SHELLWAY_REVERTED=1')
+  })
+
+  it('undo now reports success only after the undo finished, and only then stops the timer', () => {
+    const script = revertNowScript('abcdef01')
+    expect(script.indexOf('sh /var/lib/shellway/revert-abcdef01.sh')).toBeLessThan(script.indexOf('systemctl stop'))
+    expect(script).toMatch(/if \[ -f \/var\/lib\/shellway\/revert-abcdef01\.done \]; then[\s\S]*SHELLWAY_REVERTED=1/)
+  })
+
+  it('refuses a port that another program already listens on', () => {
+    const apply = buildGuardedChange({ kind: 'ssh.port', port: 2222 }, ctx, true).apply
+    expect(apply).toContain("ss -Hltn 'sport = :2222' | grep -q .")
+  })
+
+  it('writes valid sh', () => {
+    for (const script of [backupScript('abcdef01', change), revertScript('abcdef01', change), disarmScript('abcdef01'), revertNowScript('abcdef01'), cleanupScript('abcdef01')]) {
+      expect(() => execFileSync('sh', ['-n'], { input: script })).not.toThrow()
+    }
   })
 
   it('rejects unsafe ids', () => {

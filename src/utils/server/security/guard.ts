@@ -98,6 +98,8 @@ export interface GuardPreview {
 
 const UFW_FILES = ['/etc/ufw/user.rules', '/etc/ufw/user6.rules', '/etc/ufw/ufw.conf', '/etc/default/ufw']
 const STATE_DIR = '/var/lib/shellway'
+const UNDO_WAIT_SECONDS = 15
+const BUSY_STALE_MINUTES = 15
 const RUN_ID = /^[a-z0-9]{8,32}$/
 const COMMENT = /^[A-Za-z0-9 ._,:/()+-]{0,60}$/
 const RULE_RAW_MAX = 300
@@ -113,7 +115,7 @@ export const UFW_RELOAD = 'if [ -x /usr/sbin/ufw ]; then if grep -q "^ENABLED=ye
 export function sshRestartScript(socketActivated: boolean): string {
   return socketActivated
     ? 'systemctl daemon-reload && systemctl restart ssh.socket && systemctl try-reload-or-restart ssh.service'
-    : 'systemctl reload ssh 2>/dev/null || systemctl reload sshd'
+    : 'systemctl reload-or-restart ssh 2>/dev/null || systemctl reload-or-restart sshd'
 }
 
 function validatePortSpec(value: unknown, proto: UfwRuleInput['proto']): string {
@@ -237,7 +239,8 @@ function portChange(ctx: GuardContext, port: number): GuardedChange {
     'A firewall outside the server (your cloud provider) must also allow the new port, otherwise the check fails and the change is undone.',
     'If fail2ban watches SSH, its jail keeps watching the old port until you update it.'
   ]
-  const pre = ctx.ufwInstalled ? [`ufw allow ${port}/tcp`] : []
+  const portFree = `if command -v ss >/dev/null 2>&1 && ss -Hltn 'sport = :${port}' | grep -q .; then echo "Port ${port} is already used by another program on this server. Pick a different port." >&2; exit 5; fi`
+  const pre = [portFree, ...(ctx.ufwInstalled ? [`ufw allow ${port}/tcp`] : [])]
   return sshChange(ctx, 'ssh.port', `Change SSH port to ${port}`, `sshd will listen on port ${port}. Shellway checks a new connection on port ${port} before keeping it.`, { Port: String(port) }, `port ${port}`, {
     pre,
     newPort: port,
@@ -315,6 +318,9 @@ export interface GuardPaths {
   script: string
   pid: string
   done: string
+  failed: string
+  claim: string
+  busy: string
   unit: string
 }
 
@@ -326,19 +332,40 @@ export function guardPaths(id: string): GuardPaths {
     script: `${STATE_DIR}/revert-${id}.sh`,
     pid: `${STATE_DIR}/revert-${id}.pid`,
     done: `${STATE_DIR}/revert-${id}.done`,
+    failed: `${STATE_DIR}/revert-${id}.failed`,
+    claim: `${STATE_DIR}/revert-${id}.claim`,
+    busy: `${STATE_DIR}/busy`,
     unit: `shellway-revert-${id}`
   }
 }
+
+const releaseBusy = (id: string, paths: GuardPaths): string =>
+  `if [ "$(cat ${paths.busy}/id 2>/dev/null)" = ${id} ]; then rm -rf ${paths.busy}; fi`
+
+const stopTimer = (paths: GuardPaths): string[] => [
+  `systemctl stop ${paths.unit}.timer 2>/dev/null`,
+  `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`
+]
+
+const waitForUndo = (paths: GuardPaths): string =>
+  `i=0; while [ ! -f ${paths.done} ] && [ ! -f ${paths.failed} ] && [ "$i" -lt ${UNDO_WAIT_SECONDS} ]; do sleep 1; i=$((i + 1)); done`
 
 export function revertScript(id: string, change: GuardedChange): string {
   const paths = guardPaths(id)
   return [
     '#!/bin/sh',
+    `mkdir ${paths.claim} 2>/dev/null || exit 0`,
     `B=${paths.backup}`,
-    'restore() { if [ -f "$B/$1.absent" ]; then rm -f "$2"; elif [ -f "$B/$1" ]; then cp -a "$B/$1" "$2"; fi; }',
+    'ok=1',
+    'restore() { if [ -f "$B/$1.absent" ]; then rm -f "$2" || ok=0; elif [ -f "$B/$1" ]; then cp -a "$B/$1" "$2" || ok=0; fi; }',
     ...change.files.map((file, index) => `restore ${index} ${shq(file)}`),
+    '(',
+    'set -e',
     change.revertTail,
-    `touch ${paths.done}`
+    ')',
+    '[ "$?" -eq 0 ] || ok=0',
+    `if [ "$ok" = 1 ]; then touch ${paths.done}; else touch ${paths.failed}; fi`,
+    releaseBusy(id, paths)
   ].join('\n')
 }
 
@@ -347,6 +374,11 @@ export function backupScript(id: string, change: GuardedChange): string {
   return [
     'set -e',
     'umask 077',
+    `mkdir -p ${paths.dir}`,
+    `find ${paths.dir} -maxdepth 1 -name busy -mmin +${BUSY_STALE_MINUTES} -exec rm -rf {} + 2>/dev/null || true`,
+    `find ${paths.dir} -maxdepth 1 -name 'revert-*.claim' -mmin +60 -exec rm -rf {} + 2>/dev/null || true`,
+    `mkdir ${paths.busy} 2>/dev/null || { echo "Another firewall or SSH change is still running on this server. Try again in a minute." >&2; exit 9; }`,
+    `echo ${id} > ${paths.busy}/id`,
     `mkdir -p ${paths.backup}`,
     `B=${paths.backup}`,
     'backup() { if [ -e "$2" ]; then cp -a "$2" "$B/$1"; else : > "$B/$1.absent"; fi; }',
@@ -377,32 +409,40 @@ export function armScript(id: string): string {
 export function disarmScript(id: string): string {
   const paths = guardPaths(id)
   return [
-    `systemctl stop ${paths.unit}.timer 2>/dev/null`,
-    `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`,
-    `if systemctl is-active --quiet ${paths.unit}.timer 2>/dev/null; then echo "The undo timer is still running" >&2; exit 1; fi`,
-    `if [ -f ${paths.done} ]; then echo SHELLWAY_REVERTED=1; fi`,
-    `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}`,
-    'echo SHELLWAY_DISARMED=1'
+    `if mkdir ${paths.claim} 2>/dev/null; then`,
+    ...stopTimer(paths).map((line) => `  ${line}`),
+    `  rm -rf ${paths.script} ${paths.pid} ${paths.backup}`,
+    `  ${releaseBusy(id, paths)}`,
+    '  echo SHELLWAY_DISARMED=1',
+    '  exit 0',
+    'fi',
+    waitForUndo(paths),
+    `if [ -f ${paths.done} ]; then rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}; echo SHELLWAY_REVERTED=1; exit 0; fi`,
+    'echo "The automatic undo already started and has not finished." >&2',
+    'exit 1'
   ].join('\n')
 }
 
 export function revertNowScript(id: string): string {
   const paths = guardPaths(id)
   return [
-    `systemctl stop ${paths.unit}.timer 2>/dev/null`,
-    `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`,
     `sh ${paths.script}`,
-    `rm -f ${paths.script} ${paths.pid}`,
-    'echo SHELLWAY_REVERTED=1'
+    waitForUndo(paths),
+    `if [ -f ${paths.done} ]; then`,
+    ...stopTimer(paths).map((line) => `  ${line}`),
+    `  rm -f ${paths.script} ${paths.pid}`,
+    '  echo SHELLWAY_REVERTED=1',
+    'fi'
   ].join('\n')
 }
 
 export function cleanupScript(id: string): string {
   const paths = guardPaths(id)
   return [
-    `systemctl stop ${paths.unit}.timer 2>/dev/null`,
-    `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`,
-    `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}`
+    `mkdir ${paths.claim} 2>/dev/null`,
+    ...stopTimer(paths),
+    `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.failed} ${paths.backup}`,
+    releaseBusy(id, paths)
   ].join('\n')
 }
 
