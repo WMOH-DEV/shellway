@@ -185,4 +185,9 @@ describe('fileEditStep', () => {
     expect(step.display).toBe("cp -p '/etc/nginx/sites-available/app' \"/var/backups/shellway/$SHELLWAY_RUN_ID/etc/nginx/sites-available/app\"\nwrite '/etc/nginx/sites-available/app'\nnginx -t\nsystemctl reload nginx")
     expect(step.script).toContain("'/var/backups/shellway'/\"${SHELLWAY_RUN_ID:?}\"'/etc/nginx/sites-available/app'")
   })
+
+  it('removes run backups older than 30 days and leaves database backups and worker files alone', () => {
+    const script = fileEditStep({ id: 'e', label: 'Edit', path: '/etc/app.conf', content: 'x\n', originalSha256: 'a'.repeat(64) }).script
+    expect(script).toContain("find '/var/backups/shellway' -mindepth 1 -maxdepth 1 -type d -name '????????-????-????-????-????????????' -mtime +30 -exec rm -rf {} +")
+  })
 })

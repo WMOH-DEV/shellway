@@ -19,6 +19,8 @@ export const EXIT_FILE_CHANGED = 74
 export const EXIT_EDIT_REJECTED = 75
 export const EXIT_EDIT_RESTORED = 76
 export const BACKUP_ROOT = '/var/backups/shellway'
+const OLD_RUN_DIR = '????????-????-????-????-????????????'
+const KEEP_BACKUP_DAYS = 30
 
 const SAFE_PATH = /^(\/[A-Za-z0-9._@+=,:~-]+)+$/
 const SHA256 = /^[0-9a-f]{64}$/
@@ -80,6 +82,7 @@ function backup(backupRoot: string, spec: FileEditSpec): string[] {
     'existed=0',
     'if [ -e "$path" ]; then',
     '  existed=1',
+    `  find ${q(backupRoot)} -mindepth 1 -maxdepth 1 -type d -name '${OLD_RUN_DIR}' -mtime +${KEEP_BACKUP_DAYS} -exec rm -rf {} + 2>/dev/null`,
     `  mkdir -p "$(dirname "$backup")" && cp -p "$path" "$backup" || { ${say(`Could not back up ${spec.path}. Nothing was written.`)}; exit 1; }`,
     '  echo "SHELLWAY_STATE backup=$backup"',
     'else',
