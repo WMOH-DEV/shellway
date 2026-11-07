@@ -180,6 +180,15 @@ export class SFTPService extends EventEmitter {
     })
   }
 
+  async copyFile(sourcePath: string, destPath: string): Promise<void> {
+    const bytes = await this.readBytes(sourcePath)
+    const existed = await this.stat(destPath).then(() => true, () => false)
+    await this.writeBytes(destPath, bytes).catch(async (err: unknown) => {
+      if (!existed) await this.unlink(destPath).catch(() => undefined)
+      throw err
+    })
+  }
+
   /** Remove empty directory */
   async rmdir(remotePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -427,11 +436,6 @@ export class SFTPService extends EventEmitter {
     })
   }
 
-  /**
-   * Read a file's bytes with progress reporting.
-   * Emits 'readProgress' events: (readId, transferred, total)
-   * Default max 50 MB for in-app editing.
-   */
   async readBytes(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<Buffer> {
     const stats = await this.stat(remotePath)
     if (stats.size > maxSize) {
@@ -457,12 +461,10 @@ export class SFTPService extends EventEmitter {
     })
   }
 
-  /** Write bytes to a file */
   async writeBytes(remotePath: string, buf: Buffer): Promise<void> {
     // Use low-level open → write → close to avoid both:
     // 1. createWriteStream — broken on Node ≥ 22 (finish event never fires)
     // 2. sftp.writeFile wrapper — hangs on some servers/configurations
-    // Direct protocol calls with a size-based timeout guarantee we never hang forever.
     const TIMEOUT_MS = 30_000 + Math.ceil(buf.length / MIN_WRITE_BYTES_PER_SECOND) * 1000
 
     return new Promise<void>((resolve, reject) => {

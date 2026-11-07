@@ -709,13 +709,7 @@ export function registerSFTPIPC(): void {
     withSftp(connectionId, 'readFile failed', async (sftp) => (await sftp.readBytes(remotePath, maxSize)).toString('base64')))
 
   ipcMain.handle('sftp:copyFile', (_event, connectionId: string, sourcePath: string, destPath: string) =>
-    withSftp(connectionId, 'copy failed', async (sftp) => {
-      const bytes = await sftp.readBytes(sourcePath)
-      await sftp.writeBytes(destPath, bytes).catch(async (err: unknown) => {
-        await sftp.unlink(destPath).catch(() => undefined)
-        throw err
-      })
-    }))
+    withSftp(connectionId, 'copy failed', (sftp) => sftp.copyFile(sourcePath, destPath)))
 
   ipcMain.handle('sftp:downloadToLocal', (_event, connectionId: string, remotePath: string, localPath: string) =>
     withSftp(connectionId, 'download failed', async (sftp) => fsp.writeFile(localPath, await sftp.readBytes(remotePath))))
