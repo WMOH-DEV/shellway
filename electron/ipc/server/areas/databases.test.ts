@@ -1,3 +1,4 @@
+import { testIpcContext } from '../../../services/server/testing/ipcContext'
 import { execFileSync } from 'node:child_process'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeRemoteExec } from '../../../services/server/testing/FakeRemoteExec'
@@ -24,7 +25,7 @@ let fake: FakeRemoteExec
 
 beforeAll(async () => {
   const { registerDatabasesIPC } = await import('./databases')
-  const ctx: ServerIpcContext = { execFor: () => fake.exec, broadcast: vi.fn() }
+  const ctx: ServerIpcContext = testIpcContext({ execFor: () => fake.exec, broadcast: vi.fn() })
   registerDatabasesIPC(ctx)
 })
 

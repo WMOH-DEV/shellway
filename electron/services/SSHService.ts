@@ -118,6 +118,10 @@ export class SSHConnection extends EventEmitter {
    */
   refreshConfig?: () => Promise<SSHConnectionConfig | null>
 
+  cloneConfig(): SSHConnectionConfig {
+    return { ...this.config }
+  }
+
   constructor(id: string, config: SSHConnectionConfig) {
     super()
     this.id = id
