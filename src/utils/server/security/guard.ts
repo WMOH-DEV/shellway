@@ -350,6 +350,7 @@ const releaseBusy = (id: string, paths: GuardPaths): string =>
 
 const stopTimer = (paths: GuardPaths): string[] => [
   `systemctl stop ${paths.unit}.timer 2>/dev/null`,
+  `systemctl reset-failed ${paths.unit}.service 2>/dev/null`,
   `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`
 ]
 
@@ -382,7 +383,7 @@ export function backupScript(id: string, change: GuardedChange): string {
     'umask 077',
     `mkdir -p ${paths.dir}`,
     `find ${paths.dir} -maxdepth 1 -name busy -mmin +${BUSY_STALE_MINUTES} -exec rm -rf {} + 2>/dev/null || true`,
-    `find ${paths.dir} -maxdepth 1 -name 'revert-*.claim' -mmin +60 -exec rm -rf {} + 2>/dev/null || true`,
+    `find ${paths.dir} -maxdepth 1 -name 'revert-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true`,
     `mkdir ${paths.busy} 2>/dev/null || { echo "Another firewall or SSH change is still running on this server. Try again in a minute." >&2; exit 9; }`,
     `echo ${id} > ${paths.busy}/id`,
     `mkdir -p ${paths.backup}`,
@@ -417,13 +418,13 @@ export function disarmScript(id: string): string {
   return [
     `if mkdir ${paths.claim} 2>/dev/null; then`,
     ...stopTimer(paths).map((line) => `  ${line}`),
-    `  rm -rf ${paths.script} ${paths.pid} ${paths.backup}`,
+    `  rm -rf ${paths.pid} ${paths.backup}`,
     `  ${releaseBusy(id, paths)}`,
     '  echo SHELLWAY_DISARMED=1',
     '  exit 0',
     'fi',
     waitForUndo(paths),
-    `if [ -f ${paths.done} ]; then rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}; echo SHELLWAY_REVERTED=1; exit 0; fi`,
+    `if [ -f ${paths.done} ]; then ${stopTimer(paths).join('; ')}; rm -rf ${paths.pid} ${paths.done} ${paths.backup}; echo SHELLWAY_REVERTED=1; exit 0; fi`,
     'echo "The automatic undo already started and has not finished." >&2',
     'exit 1'
   ].join('\n')
@@ -436,7 +437,7 @@ export function revertNowScript(id: string): string {
     waitForUndo(paths),
     `if [ -f ${paths.done} ]; then`,
     ...stopTimer(paths).map((line) => `  ${line}`),
-    `  rm -f ${paths.script} ${paths.pid}`,
+    `  rm -f ${paths.pid}`,
     '  echo SHELLWAY_REVERTED=1',
     'fi'
   ].join('\n')
@@ -447,7 +448,7 @@ export function cleanupScript(id: string): string {
   return [
     `mkdir ${paths.claim} 2>/dev/null`,
     ...stopTimer(paths),
-    `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.failed} ${paths.backup}`,
+    `rm -rf ${paths.pid} ${paths.done} ${paths.failed} ${paths.backup}`,
     releaseBusy(id, paths)
   ].join('\n')
 }
