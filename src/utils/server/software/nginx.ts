@@ -10,18 +10,38 @@ export const NGINX_DEFAULTS: Record<NginxKey, string> = { client_max_body_size: 
 
 export const NGINX_CONF_PATH = '/etc/nginx/nginx.conf'
 
-const INCLUDED_SETTINGS = `for f in /etc/nginx/conf.d/*.conf /etc/nginx/sites-enabled/*; do
-  [ -f "$f" ] && [ -r "$f" ] || continue
-  awk -v f="$f" '{ line = $0; sub(/#.*/, "", line)
-    if (depth == 0 && line ~ /^[ \t]*(${NGINX_KEYS.join('|')})[ \t]+[^;]*;/) { s = line; sub(/^[ \t]+/, "", s); key = s; sub(/[ \t].*$/, "", key); val = s; sub(/^[^ \t]+[ \t]+/, "", val); sub(/[ \t]*;.*$/, "", val); print f "|" key "|" val }
-    depth += gsub(/[{]/, "{", line) - gsub(/[}]/, "}", line) }' "$f"
+const SCAN_FUNCTION = `scan() { awk -v f="$1" -v root="$2" -v want="$3" '{ bare = $0; gsub(/"[^"]*"|\\047[^\\047]*\\047/, "Q", bare); sub(/#.*/, "", bare)
+  if (root && depth == 0 && bare ~ /^[ \t]*http[ \t]*([{]|$)/) http = 1
+  if (root ? http && depth == 1 : depth == 0) {
+    if (want == "inc" && bare ~ /^[ \t]*include[ \t]/) { s = $0; sub(/^[ \t]*include[ \t]+/, "", s); sub(/;.*$/, "", s); gsub(/["\\047 \t]/, "", s); print s }
+    if (want == "set" && bare ~ /^[ \t]*(${NGINX_KEYS.join('|')})[ \t]+[^;]*;/) { s = bare; sub(/^[ \t]+/, "", s); key = s; sub(/[ \t].*$/, "", key); val = s; sub(/^[^ \t]+[ \t]+/, "", val); sub(/[ \t]*;.*$/, "", val); print f "|" key "|" val }
+  }
+  depth += gsub(/[{]/, "{", bare) - gsub(/[}]/, "}", bare)
+  if (root && depth == 0) http = 0 }' "$1"; }`
+
+export const includedSettingsScript = (confDir: string): string => `${SCAN_FUNCTION}
+todo=$(scan '${confDir}/nginx.conf' 1 inc)
+seen=' '
+for round in 1 2 3 4; do
+  next=''
+  for pattern in $todo; do
+    case "$pattern" in /*) ;; *) pattern="${confDir}/$pattern" ;; esac
+    for f in $pattern; do
+      [ -f "$f" ] && [ -r "$f" ] || continue
+      case "$seen" in *" $f "*) continue ;; esac
+      seen="$seen$f "
+      scan "$f" 0 set
+      next="$next $(scan "$f" 0 inc)"
+    done
+  done
+  todo=$next
 done`
 
 export const NGINX_SCRIPT = `if [ ! -x /usr/sbin/nginx ] || [ ! -f ${NGINX_CONF_PATH} ]; then echo '@@none'; exit 0; fi
 echo '@@conf'
 ${fileDump(NGINX_CONF_PATH)}
 echo '@@included'
-${INCLUDED_SETTINGS}
+${includedSettingsScript('/etc/nginx')}
 exit 0
 `
 

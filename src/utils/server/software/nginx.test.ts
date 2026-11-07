@@ -1,6 +1,10 @@
+import { spawnSync } from 'child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import { NGINX_CONF } from './fixtures/nginxConf'
-import { NGINX_SCRIPT, parseIncludedSettings, parseNginx, parseNginxValues, setNginxDirectives } from './nginx'
+import { includedSettingsScript, NGINX_SCRIPT, parseIncludedSettings, parseNginx, parseNginxValues, setNginxDirectives } from './nginx'
 
 const SERVER_BLOCK = NGINX_CONF.slice(NGINX_CONF.indexOf('\tserver {'), NGINX_CONF.indexOf('\tinclude /etc/nginx/conf.d'))
 
@@ -97,5 +101,30 @@ describe('parseIncludedSettings', () => {
   it('keeps the first file per known key and skips unknown or malformed lines', () => {
     const lines = ['/etc/nginx/conf.d/a.conf|gzip|off', '/etc/nginx/conf.d/b.conf|gzip|on', '/etc/nginx/conf.d/a.conf|worker_connections|512', 'garbage', '/etc/nginx/conf.d/a.conf|server_tokens|']
     expect(parseIncludedSettings(lines)).toEqual({ gzip: { value: 'off', path: '/etc/nginx/conf.d/a.conf' } })
+  })
+})
+
+describe('included settings probe', () => {
+  it('follows includes from the http block, ignores server blocks and braces inside quotes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'shellway-nginx-'))
+    try {
+      mkdirSync(join(dir, 'conf.d'))
+      mkdirSync(join(dir, 'sites'))
+      mkdirSync(join(dir, 'snippets'))
+      writeFileSync(join(dir, 'nginx.conf'), `include ${dir}/snippets/top.conf;\nevents {}\nhttp {\n  include conf.d/*.conf;\n  include "${dir}/sites/*";\n  server { include ${dir}/snippets/inner.conf; }\n}\n`)
+      writeFileSync(join(dir, 'conf.d', 'uploads.conf'), 'client_max_body_size 100M; # big\ninclude snippets/nested.conf;\n')
+      writeFileSync(join(dir, 'sites', 'app'), 'server {\n  return 200 "}";\n  gzip off;\n}\nkeepalive_timeout 30s;\n')
+      writeFileSync(join(dir, 'snippets', 'nested.conf'), "server_tokens off;\nlog_format x '{';\n")
+      writeFileSync(join(dir, 'snippets', 'inner.conf'), 'gzip on;\n')
+      writeFileSync(join(dir, 'snippets', 'top.conf'), 'gzip on;\n')
+      const run = spawnSync('/bin/sh', ['-s'], { input: includedSettingsScript(dir), encoding: 'utf8' })
+      expect(parseIncludedSettings(run.stdout.split('\n'))).toEqual({
+        client_max_body_size: { value: '100M', path: join(dir, 'conf.d', 'uploads.conf') },
+        keepalive_timeout: { value: '30s', path: join(dir, 'sites', 'app') },
+        server_tokens: { value: 'off', path: join(dir, 'snippets', 'nested.conf') }
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
