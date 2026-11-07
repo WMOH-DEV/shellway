@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Spinner } from '@/components/ui/Spinner'
+import { PageSpinner } from '@/components/ui/Spinner'
 import { OVERVIEW_ROUTE } from '@/utils/server/overview/ids'
 import type { ServerSectionContext } from '../types'
 import { BackLink } from './BackLink'
@@ -12,8 +12,8 @@ export function MetricsPage({ ctx }: { ctx: ServerSectionContext }) {
       <div className="px-7 pt-[18px]">
         <BackLink onBack={() => ctx.navigate(OVERVIEW_ROUTE)} />
       </div>
-      <div className="min-h-0 flex-1">
-        <Suspense fallback={<div className="flex justify-center py-10"><Spinner /></div>}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Suspense fallback={<PageSpinner />}>
           <MonitorView connectionId={ctx.connectionId} sessionId={ctx.sessionId} connectionStatus={ctx.connectionStatus} />
         </Suspense>
       </div>

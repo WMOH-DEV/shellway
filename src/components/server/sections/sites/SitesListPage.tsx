@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import { Globe, Loader2, Plus, RefreshCw, Rocket, Search } from 'lucide-react'
+import { PageSpinner } from '@/components/ui/Spinner'
+import { Globe, Plus, RefreshCw, Rocket, Search } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { AwayBanner, ErrorBanner, RunnerBanner, SEARCH_COMBO, useSearchShortcut } from '@/components/deploy/SitesOverview'
 import { UnfinishedRunNotice } from '@/components/deploy/createSite/UnfinishedRunNotice'
@@ -97,7 +98,7 @@ export function SitesListPage({ ctx, data, unfinished, onShip }: SitesListPagePr
         {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void deploy.refresh()} />}
         {unfinished && <UnfinishedRunNotice run={unfinished} onOpen={() => ctx.navigate({ section: 'sites', sub: 'create', params: { run: unfinished.id } })} />}
         {away.summary && <AwayBanner summary={away.summary} onReview={() => setFilter('attention')} onDismiss={away.dismiss} />}
-        {!runner && loading && <div className="flex justify-center py-16 text-nd-text-muted"><Loader2 size={20} className="animate-spin" /></div>}
+        {!runner && loading && <PageSpinner />}
         {ready && join.sites.length === 0 && !loading && !error && <EmptySites onCreate={() => ctx.navigate(createRoute())} onAdd={() => ctx.navigate(addRoute())} />}
         {join.sites.length > 0 && (
           <>

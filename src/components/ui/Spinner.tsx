@@ -24,3 +24,11 @@ export function Spinner({ size = 'md', className }: SpinnerProps) {
     />
   )
 }
+
+export function PageSpinner() {
+  return (
+    <div className="flex min-h-40 flex-1 items-center justify-center self-stretch">
+      <Spinner size="md" />
+    </div>
+  )
+}

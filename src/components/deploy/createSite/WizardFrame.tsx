@@ -22,7 +22,7 @@ export function WizardFrame({ subtitle, onBack, aside, footer, children }: Wizar
       <div className="flex-1 overflow-y-auto">
         <div className="flex min-h-full items-stretch gap-8 px-7 py-6">
           {aside && <aside className="flex w-[260px] shrink-0 flex-col gap-5">{aside}</aside>}
-          <main className={cn('min-w-0 max-w-3xl flex-1', !aside && 'mx-auto')}>{children}</main>
+          <main className={cn('flex min-w-0 max-w-3xl flex-1 flex-col', !aside && 'mx-auto')}>{children}</main>
         </div>
       </div>
       {footer && (

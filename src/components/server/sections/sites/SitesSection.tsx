@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Loader2 } from 'lucide-react'
+import { PageSpinner } from '@/components/ui/Spinner'
 import { CreateSiteWizard } from '@/components/deploy/createSite/CreateSiteWizard'
 import { KeySetup } from '@/components/deploy/KeySetup'
 import { SetupWizard } from '@/components/deploy/setup/SetupWizard'
@@ -22,8 +22,6 @@ interface PageProps {
   onShip: (name: string) => void
 }
 
-const Spinner = () => <div className="flex h-full items-center justify-center text-nd-text-muted"><Loader2 size={20} className="animate-spin" /></div>
-
 function Missing({ ctx, what }: { ctx: ServerSectionContext; what: string }) {
   return (
     <SectionPage>
@@ -36,7 +34,7 @@ function Missing({ ctx, what }: { ctx: ServerSectionContext; what: string }) {
 
 function CreatePage({ ctx, data, createRuns }: PageProps) {
   const runId = ctx.route.params?.run
-  if (runId && !createRuns.loaded) return <Spinner />
+  if (runId && !createRuns.loaded) return <PageSpinner />
   const close = () => {
     void data.deploy.refresh()
     void createRuns.refresh()
@@ -73,7 +71,7 @@ function SitePages({ ctx, data, createRuns, onShip }: PageProps) {
       />
     )
   }
-  if (!entry) return data.deploy.runner === null || data.deploy.loading ? <Spinner /> : <Missing ctx={ctx} what={name ?? 'This site'} />
+  if (!entry) return data.deploy.runner === null || data.deploy.loading ? <PageSpinner /> : <Missing ctx={ctx} what={name ?? 'This site'} />
   if (ctx.route.sub === 'key') {
     return <KeySetup connectionId={data.connectionId} site={entry.summary.config} onDone={() => ctx.navigate(siteRoute(entry.summary.config.name))} />
   }

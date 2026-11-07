@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Loader2 } from 'lucide-react'
+import { PageSpinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import type { CreateSiteInput, PlanAction, RunRecord } from '@/types/createSite'
 import { hasServer } from '@/utils/createSite/wizard'
@@ -35,7 +35,7 @@ function Setup(props: SetupProps) {
   const { context, loading, error, reload } = useCreateSiteContext(props.connectionId, props.sessionId)
   if (context && hasServer(context)) return <SetupFlow {...props} context={context} rechecking={loading} onRecheck={() => void reload()} />
   const frame = (body: ReactNode) => <WizardFrame subtitle={`Checking ${props.serverName}`} onBack={props.onCancel}>{body}</WizardFrame>
-  if (loading) return frame(<div className="flex justify-center py-16 text-nd-text-muted"><Loader2 size={20} className="animate-spin" /></div>)
+  if (loading) return frame(<PageSpinner />)
   if (error !== null) return frame(<ContextProblem message={error} onRetry={() => void reload()} />)
   return frame(<ContextProblem message={`Shellway found no nginx or Apache on ${props.serverName}. Create site needs one of them to serve the site.`} />)
 }
