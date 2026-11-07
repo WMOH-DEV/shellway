@@ -89,7 +89,7 @@ describe('services.fix', () => {
   it('chowns the log file, then starts redis', () => {
     const plan = planFix({ fix: 'redis-log-owner', unit: 'redis-server' })
     expect(plan.steps.map((step) => step.id)).toEqual(['own-log', 'start'])
-    expect(plan.steps[0].display).toContain('chown redis:redis /var/log/redis/redis-server.log')
+    expect(plan.steps[0].display).toContain('chown -h redis:redis /var/log/redis/redis-server.log')
     expect(plan.steps[1].script).toContain('systemctl start redis-server.service')
   })
 })

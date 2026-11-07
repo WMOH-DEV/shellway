@@ -18,7 +18,7 @@ describe('sites.domain-add', () => {
     expect(plan.blocked).toBeNull()
     expect(plan.steps.map((s) => s.id)).toEqual(['edit-site-file', 'certificate', 'reload'])
     expect(plan.steps[0].display).toContain('nginx -t')
-    expect(plan.steps[0].display).toContain(`write ${VHOST_REAL_PATH}`)
+    expect(plan.steps[0].display).toContain(`write '${VHOST_REAL_PATH}'`)
     expect(plan.steps[0].diff).toContain('+     server_name app.example.com shop.example.com;')
     expect(plan.steps[1].script).toBe('certbot certonly --nginx --non-interactive --cert-name app.example.com --expand -d app.example.com -d shop.example.com')
     expect(plan.steps[1].root).toBe(true)

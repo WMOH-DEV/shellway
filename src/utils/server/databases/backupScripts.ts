@@ -24,7 +24,8 @@ new_file() {
 dump_mysql() {
   new_file mysql "$1" sql.gz || return 1
   rm -f "$f.failed"
-  { mysqldump --single-transaction --routines --triggers "$1" || : > "$f.failed"; } | gzip > "$f.part"
+  { mysqldump --single-transaction --routines --triggers "$1" || : > "$f.failed"; } | gzip > "$f.part" || : > "$f.failed"
+  [ -e "$f.failed" ] || gzip -t "$f.part" 2>/dev/null || : > "$f.failed"
   if [ -e "$f.failed" ]; then rm -f "$f.part" "$f.failed"; return 1; fi
   mv "$f.part" "$f" && echo "saved $f"
 }
@@ -52,10 +53,11 @@ saved=0
 failed=0
 note=''
 is_name() { case "$1" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac; }
+prune() { find "$B/$1" -maxdepth 1 -type f -name "$2-[0-9]*" -mmin +$((KEEP * 1440)) -delete 2>/dev/null; }
 run_all() {
   for db in $2; do
     is_name "$db" || continue
-    if dump_$1 "$db" >/dev/null; then saved=$((saved + 1)); else failed=$((failed + 1)); note="$note $1:$db"; fi
+    if dump_$1 "$db" >/dev/null; then saved=$((saved + 1)); prune "$1" "$db"; else failed=$((failed + 1)); note="$note $1:$db"; fi
   done
 }
 if command -v mysql >/dev/null 2>&1; then
@@ -71,9 +73,6 @@ if command -v psql >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
   else
     failed=$((failed + 1)); note="$note postgresql:sign-in"
   fi
-fi
-if [ "$failed" -eq 0 ]; then
-  find "$B/mysql" "$B/postgresql" -maxdepth 1 -type f \\( -name '*.sql.gz' -o -name '*.dump' \\) -mmin +$((KEEP * 1440)) -delete 2>/dev/null
 fi
 status=ok
 [ "$failed" -eq 0 ] || status=failed

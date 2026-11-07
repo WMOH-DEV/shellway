@@ -21,8 +21,9 @@ export function validateFix(raw: unknown): FixParams {
 const OWN_LOG = [
   `grep -Eq '^logfile "?${REDIS_LOG}"?$' /etc/redis/redis.conf || { echo "Redis writes its log somewhere else. Check logfile in /etc/redis/redis.conf."; exit 1; }`,
   'install -d -o redis -g redis -m 0750 /var/log/redis',
-  `touch ${REDIS_LOG}`,
-  `chown redis:redis ${REDIS_LOG}`
+  `[ ! -L ${REDIS_LOG} ] || { echo "${REDIS_LOG} is a link to another file. Shellway will not change its owner."; exit 1; }`,
+  `touch -h ${REDIS_LOG}`,
+  `chown -h redis:redis ${REDIS_LOG}`
 ].join('\n')
 
 export function planFix({ unit }: FixParams): ActionPlan {

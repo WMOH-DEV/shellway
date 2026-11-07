@@ -52,7 +52,7 @@ const sites: SiteEnvFacts = {
       readable: true,
       owner: 'deploy:deploy',
       mode: '640',
-      sha256: 'envsha',
+      sha256: 'a'.repeat(64),
       content: 'APP_NAME=Shop\nDB_CONNECTION=sqlite\n# DB_HOST=127.0.0.1\nDB_USERNAME=shop\n',
       db: { connection: 'sqlite', database: '', username: 'shop' }
     }
@@ -149,7 +149,7 @@ describe('databases.create', () => {
 describe('databases.create-user', () => {
   it('creates a user with a grant on MySQL and refuses a grant on PostgreSQL', () => {
     const result = plan(createUserAction, { engine: 'mysql', user: 'report', host: '10.0.0.%', password: PASSWORD, database: 'shop_prod' })
-    expect(scripts(result)).toContain("GRANT ALL PRIVILEGES ON `shop_prod`.* TO 'report'@'10.0.0.%';")
+    expect(scripts(result)).toContain("GRANT ALL PRIVILEGES ON `shop\\_prod`.* TO 'report'@'10.0.0.%';")
     expect(plan(createUserAction, { engine: 'postgresql', user: 'report', password: PASSWORD, database: 'api_prod' }).blocked).not.toBeNull()
   })
 })

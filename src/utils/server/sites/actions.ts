@@ -31,7 +31,7 @@ export interface SiteCommandParams {
   command: string
 }
 
-const OWNER = /^[a-z_][a-z0-9_-]{0,31}$/
+const OWNER = /^[a-z_][a-z0-9_.-]{0,31}$/
 const CERTBOT_TIMEOUT = 300
 const COMMAND_TIMEOUT = 900
 
@@ -169,7 +169,7 @@ export const phpVersionAction: ActionDefinition<PhpVersionParams> = {
 
 function ownerScript(owner: string, user: string, path: string, command: string): string {
   const inFolder = `cd -- ${quote(path)} && ${command}`
-  if (owner === '' || owner === user || !OWNER.test(owner)) return inFolder
+  if (owner === user) return inFolder
   return `sudo -n -u ${owner} -H sh -c ${quote(inFolder)}`
 }
 
@@ -187,6 +187,7 @@ export const siteCommandAction: ActionDefinition<SiteCommandParams> = {
     const inventory = inventoryFrom(facts)
     const ref = inventory?.sites.find((s) => s.name === site)
     if (!inventory || !ref) return blockedPlan(title, summary, 'Shellway could not find this site folder. Check again.')
+    if (ref.owner !== inventory.user && !OWNER.test(ref.owner)) return blockedPlan(title, summary, `Shellway could not tell which user owns ${ref.path}, so it will not run the command. Give the folder a named owner, then check again.`)
     const plan = emptyPlan(title, summary)
     plan.steps.push(commandStep('command', command, ownerScript(ref.owner, inventory.user, ref.path, command), false, COMMAND_TIMEOUT))
     return plan
