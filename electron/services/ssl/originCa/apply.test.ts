@@ -5,15 +5,16 @@ import { runApply } from './apply'
 import type { ApplyDeps } from './apply'
 import { BACKUP_PATH, CERT_PATH, FILE, KEY_PATH, NAMES, originCert, recorder } from './testKit'
 import type { Answer, Call } from './testKit'
+import { nginxDriver } from '../../../../src/utils/webServer/nginx'
 
 const SCRIPT = 'set -e\necho reviewed script\n'
 const SWITCH = 'sudo -n timeout -k 10 60 sh -s'
 const REMOVE = `sudo -n rm -f '${KEY_PATH}' '${CERT_PATH}'`
-const RESTORE = restoreScript({ file: FILE, backupPath: BACKUP_PATH })
-const SETTLE = restoreIfChangedScript({ file: FILE, backupPath: BACKUP_PATH })
+const RESTORE = restoreScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP_PATH })
+const SETTLE = restoreIfChangedScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP_PATH })
 
 const prepared: SwitchPrepared = {
-  switchId: 'switch-1', blockId: 'app.conf:9', file: FILE, blockLine: 9, names: NAMES, certPath: CERT_PATH, keyPath: KEY_PATH,
+  switchId: 'switch-1', webServer: 'nginx', blockId: 'app.conf:9', file: FILE, blockLine: 9, names: NAMES, certPath: CERT_PATH, keyPath: KEY_PATH,
   keyType: 'ecc', validityYears: 15, notAfter: 2_300_000_000, backupPath: BACKUP_PATH, diff: [], script: SCRIPT
 }
 

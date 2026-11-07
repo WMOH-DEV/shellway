@@ -30,6 +30,7 @@ import type { OriginProbe } from './zoneMode/probeOrigin'
 import { preflightZone, setZoneMode, type ZoneChange } from './zoneMode/zoneMode'
 import type { KnownHost, SslLocalStore } from './SslLocalStore'
 import { buildReport, hostnamesOf, isPattern, unknownEdges } from './report'
+import { servingDriver } from '../../../src/utils/webServer'
 
 export interface SslDeps {
   execFor: (connectionId: string) => RemoteExec | null
@@ -215,7 +216,7 @@ export class SslCoordinator {
       const target = leftoverTarget(report, name)
       if (refusal || !leftover || !target) throw new Error(refusal ?? 'This site is no longer in the nginx configuration.')
       const deps = { exec, onOutput: this.outputTo(runId), now: this.deps.now, ...this.verifyDeps(connectionId) }
-      const result = await runUndo(deps, { file: target.block.file, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover })
+      const result = await runUndo(deps, { driver: servingDriver(report.facts), file: target.block.file, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover })
       await this.refresh(connectionId, sessionId)
       return result
     })

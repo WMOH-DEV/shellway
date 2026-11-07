@@ -8,6 +8,7 @@ import { runLineageRemoval, runUndo } from './undo'
 import type { UndoDeps } from './undo'
 import { BACKUP_PATH, CERT_PATH, FILE, KEY_PATH, NAMES, SITE, originCert, readyReport, recorder, switchedReport } from './testKit'
 import type { Answer, Call } from './testKit'
+import { nginxDriver } from '../../../../src/utils/webServer/nginx'
 
 const NEWER = '/etc/ssl/shellway/backups/app.example.com-1800005000.conf'
 const SAVE = '/etc/ssl/shellway/backups/undone/app.example.com-1800000000.conf'
@@ -125,7 +126,7 @@ describe('runUndo', () => {
   let probe: ReturnType<typeof vi.fn>
   let sleep: ReturnType<typeof vi.fn>
   const leftover: SwitchLeftover = { name: 'app.example.com', blockId: 'app.conf:9', lineage: 'app.example.com', lineageShared: false, backupPath: BACKUP_PATH, undoable: true }
-  const SCRIPT = undoScript({ file: FILE, backupPath: BACKUP_PATH, savePath: SAVE })
+  const SCRIPT = undoScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP_PATH, savePath: SAVE })
   const served = (kind: OriginCert['kind']) => async () => Object.fromEntries(NAMES.map((name) => [name, originCert(kind)]))
 
   beforeEach(() => {
@@ -136,7 +137,7 @@ describe('runUndo', () => {
   const undo = (responder: (call: Call) => Answer | undefined = () => undefined) => {
     const rec = recorder(responder)
     const deps: UndoDeps = { exec: rec.exec, onOutput: rec.onOutput, probe, httpGet: async () => ({ status: 200 }), sleep, now: () => 1_800_000_000_000 }
-    return { rec, done: runUndo(deps, { file: FILE, names: NAMES, prefix: 'app.example.com', leftover }) }
+    return { rec, done: runUndo(deps, { driver: nginxDriver, file: FILE, names: NAMES, prefix: 'app.example.com', leftover }) }
   }
 
   it('restores the backup in one root exec and checks the server no longer serves the Origin CA certificate', async () => {
@@ -168,7 +169,7 @@ describe('runUndo', () => {
   })
 
   describe('when the script stops part-way', () => {
-    const SETTLE = restoreIfChangedScript({ file: FILE, backupPath: SAVE })
+    const SETTLE = restoreIfChangedScript({ driver: nginxDriver, file: FILE, backupPath: SAVE })
     const dropped = (settle: Answer | undefined) => (call: Call): Answer | undefined => {
       if (call.stdin === SCRIPT) return new Error('SSH connection is not active')
       return call.stdin === SETTLE ? settle : undefined

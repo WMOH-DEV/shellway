@@ -4,6 +4,7 @@ import { lineageFor } from '@/utils/ssl/https/issueCommands'
 import { commandRows, type CommandRow } from '@/utils/ssl/addHttps/issueView'
 import { sslApi } from '../sslApi'
 import { useStreamedRun, type StreamedRun } from './useStreamedRun'
+import type { WebServerDriver } from '@/utils/webServer'
 
 export interface Issued {
   names: string[]
@@ -30,6 +31,7 @@ interface IssueTarget {
   sessionId: string
   blockId: string
   names: string[]
+  driver: WebServerDriver
   onIssued: (issued: Issued) => void
 }
 
@@ -43,7 +45,7 @@ function useRememberedEmail(sessionId: string, setEmail: Dispatch<SetStateAction
   }, [sessionId, setEmail])
 }
 
-export function useIssue({ connectionId, sessionId, blockId, names, onIssued }: IssueTarget): Issue {
+export function useIssue({ connectionId, sessionId, blockId, names, driver, onIssued }: IssueTarget): Issue {
   const [email, setEmail] = useState('')
   const [redirect, setRedirect] = useState(true)
   const [staging, setStaging] = useState(true)
@@ -51,7 +53,7 @@ export function useIssue({ connectionId, sessionId, blockId, names, onIssued }: 
   const [error, setError] = useState<string | null>(null)
   const run = useStreamedRun()
   const request: IssueRequest = { blockId, names, email: email.trim(), redirect, staging }
-  const rows = commandRows(request)
+  const rows = commandRows(request, driver)
   useRememberedEmail(sessionId, setEmail)
   const target = `${blockId}|${names.join(',')}`
 

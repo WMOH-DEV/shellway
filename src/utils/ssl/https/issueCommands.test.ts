@@ -13,21 +13,21 @@ const request = (overrides: Partial<IssueRequest> = {}): IssueRequest => ({
 
 describe('issue commands', () => {
   it('builds the staging test and the real request with every name and the first name as the lineage', () => {
-    expect(stagingCommand(request())).toBe(
+    expect(stagingCommand(request(), 'nginx')).toBe(
       'sudo -n certbot certonly --nginx --dry-run --non-interactive --agree-tos -m admin@example.com --cert-name app.example.com -d app.example.com -d www.example.com'
     )
-    expect(issueCommand(request())).toBe(
+    expect(issueCommand(request(), 'nginx')).toBe(
       'sudo -n certbot --nginx --non-interactive --agree-tos -m admin@example.com --cert-name app.example.com -d app.example.com -d www.example.com --redirect'
     )
-    expect(issueCommand(request({ redirect: false }))).toMatch(/ --no-redirect$/)
+    expect(issueCommand(request({ redirect: false }), 'nginx')).toMatch(/ --no-redirect$/)
     expect(lineageFor(request())).toBe('app.example.com')
   })
 
   it('refuses names and emails that could change the command', () => {
-    expect(() => issueCommand(request({ names: ['app.example.com; rm -rf /'] }))).toThrow(/cannot get a certificate/)
-    expect(() => issueCommand(request({ names: ['-d evil.example.com'] }))).toThrow()
-    expect(() => stagingCommand(request({ email: 'a@example.com --staging' }))).toThrow(/valid email/)
-    expect(() => stagingCommand(request({ email: "a'$(id)@example.com" }))).toThrow(/valid email/)
+    expect(() => issueCommand(request({ names: ['app.example.com; rm -rf /'] }), 'nginx')).toThrow(/cannot get a certificate/)
+    expect(() => issueCommand(request({ names: ['-d evil.example.com'] }), 'nginx')).toThrow()
+    expect(() => stagingCommand(request({ email: 'a@example.com --staging' }), 'nginx')).toThrow(/valid email/)
+    expect(() => stagingCommand(request({ email: "a'$(id)@example.com" }), 'nginx')).toThrow(/valid email/)
   })
 
   it('explains what is wrong with a request', () => {

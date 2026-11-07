@@ -5,8 +5,8 @@ import { isIssuableName } from '../../../../src/utils/ssl/https/issueCommands'
 import { originPaths } from '../../../../src/utils/ssl/originCa/originPaths'
 import type { OriginPaths } from '../../../../src/utils/ssl/originCa/originPaths'
 import { certWriteScript, csrScript, removeFilesCommand, switchScript } from '../../../../src/utils/ssl/originCa/scripts'
-import { blockIdentity, swapCertLines } from '../../../../src/utils/ssl/originCa/swapCertLines'
 import { switchCheck } from '../../../../src/utils/ssl/originCa/switchCheck'
+import { servingDriver, type WebServerDriver } from '../../../../src/utils/webServer'
 import { shellEscape } from '../../../utils/shellEscape'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink } from '../SslService'
@@ -49,11 +49,13 @@ class PrepareRun {
   private readonly paths: OriginPaths
   private readonly block: ServerBlock
   private readonly names: string[]
+  private readonly driver: WebServerDriver
 
   constructor(private readonly input: PrepareInput, private readonly hooks: PrepareHooks) {
     const target = targetBlock(input.report, input.request)
     this.block = target.block
     this.names = target.names
+    this.driver = servingDriver(input.report.facts)
     this.paths = originPaths(this.names[0], Math.floor(hooks.now() / 1000))
     this.runner = new RemoteRunner(input.exec, hooks.onOutput)
   }
@@ -74,7 +76,7 @@ class PrepareRun {
     await this.writeCertificate(signed.certificate)
     const siteText = await this.readSiteFile()
     this.assertUnchanged(siteText)
-    const swapped = swapCertLines(siteText, this.block.line, this.paths.certPath, this.paths.keyPath)
+    const swapped = this.driver.swapCertLines(siteText, this.block.line, this.paths.certPath, this.paths.keyPath)
     return {
       switchId: this.hooks.newId(),
       blockId: this.block.id,
@@ -88,7 +90,8 @@ class PrepareRun {
       notAfter: signed.notAfter,
       backupPath: this.paths.backupPath,
       diff: swapped.diff,
-      script: switchScript({ file: this.block.file, expectedSha256: sha256(siteText), backupPath: this.paths.backupPath, newText: swapped.text })
+      webServer: this.driver.kind,
+      script: switchScript({ driver: this.driver, file: this.block.file, expectedSha256: sha256(siteText), backupPath: this.paths.backupPath, newText: swapped.text })
     }
   }
 
@@ -117,7 +120,7 @@ class PrepareRun {
 
   private matchesScan(siteText: string): boolean {
     try {
-      const found = blockIdentity(siteText, this.block.line)
+      const found = this.driver.siteIdentity(siteText, this.block.line)
       return found.certPath === this.block.certPath && found.keyPath === this.block.keyPath && sameList(found.names, this.names)
     } catch {
       return false

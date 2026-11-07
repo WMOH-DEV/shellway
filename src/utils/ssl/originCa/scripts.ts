@@ -1,6 +1,7 @@
 import { posix } from 'path'
 import type { OriginKeyType } from '../../../types/ssl'
 import { isIssuableName } from '../https/issueCommands'
+import type { WebServerDriver } from '../../webServer/driver'
 import { heredoc } from './heredoc'
 
 export const EXIT_REFUSED = 3
@@ -36,6 +37,7 @@ export function certWriteScript(pem: string, certPath: string): string {
 }
 
 export interface SwitchScriptInput {
+  driver: WebServerDriver
   file: string
   expectedSha256: string
   backupPath: string
@@ -46,7 +48,7 @@ function revertThenExit(backupPath: string, file: string, message: string, code:
   return `  cat ${q(backupPath)} > ${q(file)}\n  echo ${q(message)} >&2\n  exit ${code}`
 }
 
-export function switchScript({ file, expectedSha256, backupPath, newText }: SwitchScriptInput): string {
+export function switchScript({ driver, file, expectedSha256, backupPath, newText }: SwitchScriptInput): string {
   if (!SHA256.test(expectedSha256)) throw new Error('Invalid checksum')
   const trimNewline = newText.endsWith('\n') ? [] : [`truncate -s -1 ${q(file)}`]
   return [
@@ -59,39 +61,40 @@ export function switchScript({ file, expectedSha256, backupPath, newText }: Swit
     `cp -p ${q(file)} ${q(backupPath)}`,
     `cat > ${q(file)} ${heredoc(newText).trimEnd()}`,
     ...trimNewline,
-    'if ! nginx -t; then',
-    revertThenExit(backupPath, file, 'nginx rejected the new configuration. The original file was put back.', EXIT_NGINX_TEST),
+    `if ! ${driver.testCommand}; then`,
+    revertThenExit(backupPath, file, `${driver.label} rejected the new configuration. The original file was put back.`, EXIT_NGINX_TEST),
     'fi',
-    'if ! nginx -s reload; then',
-    revertThenExit(backupPath, file, 'nginx could not reload. The original file was put back.', EXIT_RELOAD),
+    `if ! ${driver.reloadCommand}; then`,
+    revertThenExit(backupPath, file, `${driver.label} could not reload. The original file was put back.`, EXIT_RELOAD),
     'fi',
     ''
   ].join('\n')
 }
 
-export function restoreScript({ file, backupPath }: Pick<SwitchScriptInput, 'file' | 'backupPath'>): string {
-  return ['set -e', `cat ${q(backupPath)} > ${q(file)}`, 'nginx -t', 'nginx -s reload', ''].join('\n')
+export function restoreScript({ driver, file, backupPath }: Pick<SwitchScriptInput, 'driver' | 'file' | 'backupPath'>): string {
+  return ['set -e', `cat ${q(backupPath)} > ${q(file)}`, driver.testCommand, driver.reloadCommand, ''].join('\n')
 }
 
-export function restoreIfChangedScript({ file, backupPath }: Pick<SwitchScriptInput, 'file' | 'backupPath'>): string {
+export function restoreIfChangedScript({ driver, file, backupPath }: Pick<SwitchScriptInput, 'driver' | 'file' | 'backupPath'>): string {
   return [
     'set -e',
     `if [ ! -f ${q(backupPath)} ] || cmp -s ${q(backupPath)} ${q(file)}; then exit 0; fi`,
     `cat ${q(backupPath)} > ${q(file)}`,
-    'nginx -t',
-    'nginx -s reload',
+    driver.testCommand,
+    driver.reloadCommand,
     `exit ${EXIT_RESTORED}`,
     ''
   ].join('\n')
 }
 
 export interface UndoScriptInput {
+  driver: WebServerDriver
   file: string
   backupPath: string
   savePath: string
 }
 
-export function undoScript({ file, backupPath, savePath }: UndoScriptInput): string {
+export function undoScript({ driver, file, backupPath, savePath }: UndoScriptInput): string {
   return [
     'set -e',
     `if [ ! -f ${q(backupPath)} ]; then`,
@@ -101,11 +104,11 @@ export function undoScript({ file, backupPath, savePath }: UndoScriptInput): str
     `mkdir -p -m 700 ${q(posix.dirname(savePath))}`,
     `cp -p ${q(file)} ${q(savePath)}`,
     `cat ${q(backupPath)} > ${q(file)}`,
-    'if ! nginx -t; then',
-    revertThenExit(savePath, file, 'nginx rejected the restored file. The current file was put back.', EXIT_NGINX_TEST),
+    `if ! ${driver.testCommand}; then`,
+    revertThenExit(savePath, file, `${driver.label} rejected the restored file. The current file was put back.`, EXIT_NGINX_TEST),
     'fi',
-    'if ! nginx -s reload; then',
-    revertThenExit(savePath, file, 'nginx could not reload. The current file was put back.', EXIT_RELOAD),
+    `if ! ${driver.reloadCommand}; then`,
+    revertThenExit(savePath, file, `${driver.label} could not reload. The current file was put back.`, EXIT_RELOAD),
     'fi',
     ''
   ].join('\n')

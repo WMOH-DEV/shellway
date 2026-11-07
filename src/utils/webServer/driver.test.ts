@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest'
+import type { WebServerDriver } from './driver'
+import { webServerDriver } from './index'
+
+interface DriverCase {
+  driver: WebServerDriver
+  file: string
+  blockLine: number
+  names: string[]
+  certPath: string
+  keyPath: string
+  keptLines: string[]
+}
+
+const NGINX_SITE = `server {
+    server_name app.example.com www.app.example.com;
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+`
+
+const CASES: DriverCase[] = [
+  {
+    driver: webServerDriver('nginx'),
+    file: NGINX_SITE,
+    blockLine: 1,
+    names: ['app.example.com', 'www.app.example.com'],
+    certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem',
+    keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem',
+    keptLines: ['include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot', 'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot']
+  }
+]
+
+describe.each(CASES)('$driver.kind driver contract', ({ driver, file, blockLine, names, certPath, keyPath, keptLines }) => {
+  it('reads the names and certificate paths of a site', () => {
+    expect(driver.siteIdentity(file, blockLine)).toEqual({ names, certPath, keyPath })
+  })
+
+  it('replaces only the two certificate lines and keeps the TLS settings lines', () => {
+    const swapped = driver.swapCertLines(file, blockLine, '/etc/ssl/shellway/app.example.com-1.pem', '/etc/ssl/shellway/app.example.com-1.key')
+    expect(driver.siteIdentity(swapped.text, blockLine)).toEqual({ names, certPath: '/etc/ssl/shellway/app.example.com-1.pem', keyPath: '/etc/ssl/shellway/app.example.com-1.key' })
+    for (const line of keptLines) expect(swapped.text).toContain(line)
+    expect(swapped.diff.filter((line) => line.kind === 'remove')).toHaveLength(2)
+    expect(swapped.diff.filter((line) => line.kind === 'add')).toHaveLength(2)
+  })
+
+  it('refuses a certificate path that could break out of the directive', () => {
+    expect(() => driver.swapCertLines(file, blockLine, '/tmp/a; rm -rf /', '/tmp/b')).toThrow()
+  })
+
+  it('has a config test and a reload command', () => {
+    expect(driver.testCommand).not.toBe('')
+    expect(driver.reloadCommand).not.toBe('')
+  })
+})
+
+describe('nginx driver', () => {
+  it('keeps the commands Shellway always used', () => {
+    const nginx = webServerDriver('nginx')
+    expect([nginx.testCommand, nginx.reloadCommand, nginx.label]).toEqual(['nginx -t', 'nginx -s reload', 'nginx'])
+  })
+})

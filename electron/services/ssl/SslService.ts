@@ -1,16 +1,17 @@
 import type { ExecResult } from '../../utils/sshExec'
 import { shellEscape } from '../../utils/shellEscape'
 import type { RemoteExec } from '../deploy/DeployService'
-import type { ActionResult, CertbotAction, CertbotLineage, NginxParse, OriginCert, ServerBlock, ServerFacts, ServerScan } from '../../../src/types/ssl'
+import type { ActionResult, CertbotAction, CertbotLineage, OriginCert, ServerBlock, ServerFacts, ServerScan } from '../../../src/types/ssl'
 import { certbotCommand } from '../../../src/utils/ssl/commands'
-import { hasConfigFiles, parseCertbotCertificates, parseFacts, parseProbes, parseServerBlocks, SECTION_MARK } from './parse'
+import { parseCertbotCertificates, parseFacts, parseProbes, SECTION_MARK } from './parse'
+import { nginxSites } from '../webServer/nginxSites'
+import type { SiteRead } from '../webServer/siteReader'
 import type { ParsedFacts, ProbeTarget } from './parse'
 import { isPattern } from './report'
 
 export type OutputSink = (chunk: string) => void
 
 const FACTS_TIMEOUT_MS = 30_000
-const NGINX_TIMEOUT_MS = 30_000
 const CERTBOT_LIST_TIMEOUT_MS = 60_000
 const PROBE_BASE_TIMEOUT_MS = 20_000
 const PROBE_PER_NAME_TIMEOUT_MS = 12_000
@@ -57,14 +58,6 @@ section JOURNAL
 if [ -n "$timer" ]; then journalctl -u "$service" -n 40 --no-pager 2>/dev/null </dev/null; fi
 `
 
-const READ_NGINX_FILES_SCRIPT = `for file in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
-  if [ -f "$file" ] && [ -r "$file" ]; then
-    printf '\\n# configuration file %s:\\n' "$file"
-    cat "$file" </dev/null
-  fi
-done
-`
-
 function probeScript(targets: ProbeTarget[]): string {
   const calls = targets.map((t, i) => `probe ${i} ${shellEscape(t.address)} ${shellEscape(t.name)}`)
   return `limit=""
@@ -107,20 +100,14 @@ export interface ServerConfig {
 
 const DEFAULT_PROBE_ADDRESS = '127.0.0.1:443'
 
-interface NginxDump {
-  dump: string
-  parse: NginxParse
-}
-
 export class SslService {
   constructor(private readonly exec: RemoteExec) {}
 
   async scan(): Promise<ServerScan> {
     const facts = await this.readFacts()
-    const [nginx, lineages] = await Promise.all([this.readNginx(facts), this.readLineages(facts)])
-    const blocks = parseServerBlocks(nginx.dump)
-    const origins = await this.probeOrigins(blocks, facts)
-    return { facts: { ...facts, nginxParse: nginx.parse }, blocks, lineages, origins }
+    const [sites, lineages] = await Promise.all([this.readSites(facts), this.readLineages(facts)])
+    const origins = await this.probeOrigins(sites.blocks, facts)
+    return { facts: { ...facts, nginxParse: sites.parse }, blocks: sites.blocks, lineages, origins }
   }
 
   async readFacts(): Promise<ParsedFacts> {
@@ -130,8 +117,8 @@ export class SslService {
 
   async readConfig(): Promise<ServerConfig> {
     const facts = await this.readFacts()
-    const nginx = await this.readNginx(facts)
-    return { facts: { ...facts, nginxParse: nginx.parse }, blocks: parseServerBlocks(nginx.dump) }
+    const sites = await this.readSites(facts)
+    return { facts: { ...facts, nginxParse: sites.parse }, blocks: sites.blocks }
   }
 
   async probeNames(names: string[], config: ServerConfig): Promise<Record<string, OriginCert>> {
@@ -163,15 +150,8 @@ export class SslService {
     return block?.probeAddress ?? DEFAULT_PROBE_ADDRESS
   }
 
-  private async readNginx(facts: ParsedFacts): Promise<NginxDump> {
-    const path = facts.paths.nginx
-    if (!path) return { dump: '', parse: 'unavailable' }
-    if (facts.sudo.nginx || facts.sudo.full) {
-      const full = await this.exec(`sudo -n ${shellEscape(path)} -T`, { timeoutMs: NGINX_TIMEOUT_MS })
-      if (full.code === 0 && hasConfigFiles(full.stdout)) return { dump: full.stdout, parse: 'full' }
-    }
-    const files = await this.runScript(READ_NGINX_FILES_SCRIPT, NGINX_TIMEOUT_MS)
-    return hasConfigFiles(files.stdout) ? { dump: files.stdout, parse: 'partial' } : { dump: '', parse: 'unavailable' }
+  private readSites(facts: ParsedFacts): Promise<SiteRead> {
+    return nginxSites.read(this.exec, facts)
   }
 
   private async readLineages(facts: ParsedFacts): Promise<CertbotLineage[]> {

@@ -1,4 +1,4 @@
-import type { IssueRequest } from '../../../types/ssl'
+import type { EditableWebServer, IssueRequest } from '../../../types/ssl'
 
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
 const EMAIL = /^[A-Za-z0-9][A-Za-z0-9._%+-]{0,63}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z]{2,63}$/
@@ -30,12 +30,12 @@ function sharedFlags(request: IssueRequest): string {
   return `--non-interactive --agree-tos -m ${request.email} --cert-name ${lineageFor(request)} ${domains}`
 }
 
-export function stagingCommand(request: IssueRequest): string {
+export function stagingCommand(request: IssueRequest, server: EditableWebServer): string {
   assertValid(request)
-  return `sudo -n certbot certonly --nginx --dry-run ${sharedFlags(request)}`
+  return `sudo -n certbot certonly --${server} --dry-run ${sharedFlags(request)}`
 }
 
-export function issueCommand(request: IssueRequest): string {
+export function issueCommand(request: IssueRequest, server: EditableWebServer): string {
   assertValid(request)
-  return `sudo -n certbot --nginx ${sharedFlags(request)} ${request.redirect ? '--redirect' : '--no-redirect'}`
+  return `sudo -n certbot --${server} ${sharedFlags(request)} ${request.redirect ? '--redirect' : '--no-redirect'}`
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SslReport } from '@/types/ssl'
+import { servingDriver } from '@/utils/webServer'
 import { nextStep, previousStep, stepDetails, type HttpsStep } from '@/utils/ssl/addHttps/steps'
 import { useIssue, type Issue, type Issued } from './useIssue'
 import { usePrepare, type Prepare } from './usePrepare'
@@ -44,6 +45,7 @@ export function useAddHttpsFlow({ connectionId, sessionId, report, initialBlockI
     sessionId,
     blockId: site.block?.id ?? '',
     names: site.selected,
+    driver: servingDriver(report.facts),
     onIssued: (result) => {
       setIssued(result)
       setStep('verify')

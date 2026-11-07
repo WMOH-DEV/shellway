@@ -2,6 +2,7 @@ import type { SwitchPrepared, SwitchResult, SwitchStage, SwitchVerifyName } from
 import {
   EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED, removeFilesCommand, restoreIfChangedScript, restoreScript
 } from '../../../../src/utils/ssl/originCa/scripts'
+import { webServerDriver } from '../../../../src/utils/webServer'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink } from '../SslService'
 import { RemoteRunner, SCRIPT_TIMEOUT_MS, SHORT_TIMEOUT_MS, SUDO_SCRIPT } from './remoteRun'
@@ -48,8 +49,8 @@ class ApplyRun {
   }
 
   private async restore(): Promise<boolean> {
-    const script = restoreScript({ file: this.prepared.file, backupPath: this.prepared.backupPath })
-    const done = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.prepared.backupPath} back, test and reload nginx` })
+    const script = restoreScript({ driver: this.driver(), file: this.prepared.file, backupPath: this.prepared.backupPath })
+    const done = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.prepared.backupPath} back, test and reload ${this.driver().label}` })
     return done.code === 0
   }
 
@@ -64,12 +65,16 @@ class ApplyRun {
   }
 
   private async settle(): Promise<SwitchResult> {
-    const script = restoreIfChangedScript({ file: this.prepared.file, backupPath: this.prepared.backupPath })
+    const script = restoreIfChangedScript({ driver: this.driver(), file: this.prepared.file, backupPath: this.prepared.backupPath })
     const settled = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: 'check whether the site file was changed and put the original back if so' })
     if (settled.code === EXIT_RESTORED) return this.putBack('apply')
     if (settled.code === 0) return this.unchanged('apply')
     this.runner.note(`Could not confirm the state of ${this.prepared.file}. The original is saved at ${this.prepared.backupPath}.`)
     return this.result(false, 'apply', false, [], true)
+  }
+
+  private driver() {
+    return webServerDriver(this.prepared.webServer)
   }
 
   private async discard(): Promise<void> {

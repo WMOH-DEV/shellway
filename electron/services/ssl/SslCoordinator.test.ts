@@ -194,7 +194,7 @@ describe('SslCoordinator', () => {
       return { stdout: '', stdoutBytes: 0, stderr: '', code: 0 }
     }
     deps.serviceFor = () => ({
-      readConfig: async () => ({ facts: { sudo: { full: true } }, blocks: [{ id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', names: ['app.example.com'] }] })
+      readConfig: async () => ({ facts: { nginxParse: 'full', sudo: { full: true } }, blocks: [{ id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', names: ['app.example.com'] }] })
     }) as unknown as SslService
 
     expect(ssl.httpsEmail('s1')).toBe('')

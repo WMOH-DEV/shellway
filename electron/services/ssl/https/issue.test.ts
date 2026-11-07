@@ -20,7 +20,7 @@ const block: ServerBlock = {
 }
 
 const config = (full = true, blocks = [block]): ServerConfig => ({
-  facts: { sudo: { certbot: true, nginx: true, full } } as ServerFacts,
+  facts: { nginxParse: 'full', sudo: { certbot: true, nginx: true, full } } as ServerFacts,
   blocks
 })
 
@@ -45,8 +45,8 @@ function fakeExec(responder: Responder): RemoteExec {
   }
 }
 
-const STAGING = limited(stagingCommand(request))
-const ISSUE = limited(issueCommand(request))
+const STAGING = limited(stagingCommand(request, 'nginx'))
+const ISSUE = limited(issueCommand(request, 'nginx'))
 
 const issue = (responder: Responder = () => undefined, cfg: ServerConfig = config(), req: IssueRequest = request) =>
   runIssue(fakeExec(responder), async () => cfg, req, hooks)
@@ -73,8 +73,8 @@ describe('runIssue', () => {
     expect(result.output).toBe([
       '$ mkdir -p -m 700 /etc/ssl/shellway/backups',
       `$ cp -p '${FILE}' '${BACKUP}'`,
-      `$ ${stagingCommand(request)}`,
-      `$ ${issueCommand(request)}`,
+      `$ ${stagingCommand(request, 'nginx')}`,
+      `$ ${issueCommand(request, 'nginx')}`,
       '$ sudo -n nginx -t',
       'syntax is ok',
       ''
@@ -84,7 +84,7 @@ describe('runIssue', () => {
 
   it('skips the staging run when it is switched off', async () => {
     await issue(() => undefined, config(), { ...request, staging: false })
-    expect(commands).toEqual(['sudo -n sh -s', limited(issueCommand({ ...request, staging: false })), 'sudo -n nginx -t'])
+    expect(commands).toEqual(['sudo -n sh -s', limited(issueCommand({ ...request, staging: false }, 'nginx')), 'sudo -n nginx -t'])
   })
 
   it('stops after a failed staging run without sending the real request', async () => {
@@ -126,7 +126,7 @@ describe('runIssue', () => {
 
   it('limits certbot on the server so it stops before Shellway gives up waiting', async () => {
     await issue()
-    expect(STAGING).toBe(`sudo -n timeout -k 10 570 ${stagingCommand(request).slice('sudo -n '.length)}`)
+    expect(STAGING).toBe(`sudo -n timeout -k 10 570 ${stagingCommand(request, 'nginx').slice('sudo -n '.length)}`)
     expect(commands).toContain(ISSUE)
   })
 

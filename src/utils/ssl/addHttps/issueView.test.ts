@@ -3,24 +3,25 @@ import type { IssueRequest } from '../../../types/ssl'
 import { edgeOf, makeHost, makeOrigin } from '../testReport'
 import { commandRows, isMissingServerCertificate, issueFailureView, nginxChangeLines, weakSslHosts } from './issueView'
 import { issueFailure } from './testFixtures'
+import { nginxDriver } from '../../webServer/nginx'
 
 const request: IssueRequest = { blockId: 'app.conf:1', names: ['app.example.com', 'www.app.example.com'], email: 'admin@example.com', redirect: true, staging: true }
 
 describe('commandRows', () => {
   it('lists the staging test before the real command', () => {
-    const rows = commandRows(request)
+    const rows = commandRows(request, nginxDriver)
     expect(rows?.map((r) => r.tag)).toEqual(['test', 'issue'])
     expect(rows?.[0].command).toContain('--dry-run')
     expect(rows?.[1].command).toContain('--redirect')
   })
 
   it('leaves the staging test out when it is off', () => {
-    expect(commandRows({ ...request, staging: false })?.map((r) => r.tag)).toEqual(['issue'])
+    expect(commandRows({ ...request, staging: false }, nginxDriver)?.map((r) => r.tag)).toEqual(['issue'])
   })
 
   it('returns nothing while the request is not valid', () => {
-    expect(commandRows({ ...request, email: 'nope' })).toBeNull()
-    expect(commandRows({ ...request, names: [] })).toBeNull()
+    expect(commandRows({ ...request, email: 'nope' }, nginxDriver)).toBeNull()
+    expect(commandRows({ ...request, names: [] }, nginxDriver)).toBeNull()
   })
 })
 

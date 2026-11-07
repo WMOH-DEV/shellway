@@ -1,6 +1,7 @@
 import type { ActionResult, SwitchLeftover, SwitchResult, SwitchStage, SwitchVerifyName } from '../../../../src/types/ssl'
 import { undonePath } from '../../../../src/utils/ssl/originCa/originPaths'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED, restoreIfChangedScript, undoScript } from '../../../../src/utils/ssl/originCa/scripts'
+import type { WebServerDriver } from '../../../../src/utils/webServer'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink } from '../SslService'
 import { RemoteRunner, SCRIPT_TIMEOUT_MS, SUDO_SCRIPT } from './remoteRun'
@@ -14,6 +15,7 @@ export interface UndoDeps extends VerifyDeps {
 }
 
 export interface UndoTarget {
+  driver: WebServerDriver
   file: string
   names: string[]
   prefix: string
@@ -34,8 +36,8 @@ class UndoRun {
   }
 
   async execute(): Promise<SwitchResult> {
-    const script = undoScript({ file: this.target.file, backupPath: this.backupPath, savePath: this.savePath })
-    const ran = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.backupPath} back as ${this.target.file}, test and reload nginx` })
+    const script = undoScript({ driver: this.target.driver, file: this.target.file, backupPath: this.backupPath, savePath: this.savePath })
+    const ran = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.backupPath} back as ${this.target.file}, test and reload ${this.target.driver.label}` })
     if (ran.code === 0) return this.verify()
     if (ran.code === EXIT_REFUSED) return this.finish(false, 'apply', false)
     if (ran.code === EXIT_NGINX_TEST) return this.finish(false, 'nginx-test', true)
@@ -46,12 +48,12 @@ class UndoRun {
   private async verify(): Promise<SwitchResult> {
     const verify = await verifyServed(this.deps, this.target.names, false)
     if (servedAsExpected(verify, false)) return this.finish(true, null, false, verify)
-    this.runner.note('nginx is still serving the Cloudflare Origin CA certificate.')
+    this.runner.note(`${this.target.driver.label} is still serving the Cloudflare Origin CA certificate.`)
     return this.finish(false, 'verify', false, verify)
   }
 
   private async settle(): Promise<SwitchResult> {
-    const script = restoreIfChangedScript({ file: this.target.file, backupPath: this.savePath })
+    const script = restoreIfChangedScript({ driver: this.target.driver, file: this.target.file, backupPath: this.savePath })
     const settled = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: 'check whether the site file was changed and put the version from before the undo back if so' })
     if (settled.code === EXIT_RESTORED) return this.finish(false, 'apply', true)
     if (settled.code === 0) return this.finish(false, 'apply', false)

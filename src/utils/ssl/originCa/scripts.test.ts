@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { backupGlob, newestBackup, originPaths, undonePath } from './originPaths'
 import { certWriteScript, csrScript, restoreIfChangedScript, restoreScript, switchScript, undoScript } from './scripts'
 import { heredoc } from './heredoc'
+import { nginxDriver } from '../../webServer/nginx'
 
 const KEY = '/etc/ssl/shellway/app.example.com-1800000000.key'
 const CERT = '/etc/ssl/shellway/app.example.com-1800000000.pem'
@@ -71,7 +72,7 @@ describe('heredoc', () => {
 })
 
 describe('switchScript', () => {
-  const script = switchScript({ file: FILE, expectedSha256: SHA, backupPath: BACKUP, newText: 'server {\n}\n' })
+  const script = switchScript({ driver: nginxDriver, file: FILE, expectedSha256: SHA, backupPath: BACKUP, newText: 'server {\n}\n' })
   const token = /<<'(SHELLWAY_[0-9a-f]{32})'/.exec(script)?.[1] ?? ''
 
   it('refuses a changed file, backs up, writes in place, tests and reloads', () => {
@@ -108,23 +109,23 @@ describe('switchScript', () => {
   })
 
   it('drops the extra newline when the file did not end with one', () => {
-    const bare = switchScript({ file: FILE, expectedSha256: SHA, backupPath: BACKUP, newText: 'server {\n}' })
+    const bare = switchScript({ driver: nginxDriver, file: FILE, expectedSha256: SHA, backupPath: BACKUP, newText: 'server {\n}' })
     expect(bare).toContain(`\n${/<<'(SHELLWAY_[0-9a-f]{32})'/.exec(bare)?.[1]}\ntruncate -s -1 '${FILE}'\n`)
     syntaxOk(bare)
   })
 
   it('refuses a malformed checksum', () => {
-    expect(() => switchScript({ file: FILE, expectedSha256: "x'; rm -rf /", backupPath: BACKUP, newText: 'a\n' })).toThrow('Invalid checksum')
+    expect(() => switchScript({ driver: nginxDriver, file: FILE, expectedSha256: "x'; rm -rf /", backupPath: BACKUP, newText: 'a\n' })).toThrow('Invalid checksum')
   })
 })
 
 describe('restore and undo scripts', () => {
   it('restores the backup, tests and reloads', () => {
-    expect(restoreScript({ file: FILE, backupPath: BACKUP })).toBe(`set -e\ncat '${BACKUP}' > '${FILE}'\nnginx -t\nnginx -s reload\n`)
+    expect(restoreScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP })).toBe(`set -e\ncat '${BACKUP}' > '${FILE}'\nnginx -t\nnginx -s reload\n`)
   })
 
   it('restores only when the file differs from an existing backup, and signals it with exit 6', () => {
-    const script = restoreIfChangedScript({ file: FILE, backupPath: BACKUP })
+    const script = restoreIfChangedScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP })
     expect(script).toContain(`if [ ! -f '${BACKUP}' ] || cmp -s '${BACKUP}' '${FILE}'; then exit 0; fi`)
     expect(script).toContain('exit 6')
     syntaxOk(script)
@@ -132,7 +133,7 @@ describe('restore and undo scripts', () => {
 
   it('saves the current file, restores the backup and puts the current file back when nginx objects', () => {
     const save = undonePath('app.example.com', 1800000500)
-    const script = undoScript({ file: FILE, backupPath: BACKUP, savePath: save })
+    const script = undoScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP, savePath: save })
     expect(script).toContain(`cp -p '${FILE}' '${save}'`)
     expect(script).toContain(`cat '${BACKUP}' > '${FILE}'`)
     expect(script.match(new RegExp(`cat '${save}' > '${FILE}'`, 'g'))).toHaveLength(2)

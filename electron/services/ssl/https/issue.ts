@@ -7,16 +7,14 @@ import type { ExecOptions } from '../../../utils/sshExec'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink, ServerConfig } from '../SslService'
 import { teeOutput } from './teeOutput'
+import { servingDriver, type WebServerDriver } from '../../../../src/utils/webServer'
 import type { OutputLog } from './teeOutput'
 
 const BACKUP_DIR = '/etc/ssl/shellway/backups'
-const NGINX_TEST = 'sudo -n nginx -t'
-const NGINX_RELOAD = 'sudo -n nginx -s reload'
 const CERTBOT_TIMEOUT_MS = 10 * 60_000
 const SHORT_TIMEOUT_MS = 30_000
 const REMOTE_LIMIT_S = CERTBOT_TIMEOUT_MS / 1000 - 30
 const NEEDS_SUDO = 'Issuing a certificate needs passwordless sudo. Run these commands yourself, then Check again.'
-const SITE_GONE = 'This site is no longer in the nginx configuration. Check again.'
 
 export interface IssueHooks {
   now: () => number
@@ -24,10 +22,10 @@ export interface IssueHooks {
   onOutput: OutputSink
 }
 
-function blockFor(request: IssueRequest, config: ServerConfig): ServerBlock {
+function blockFor(request: IssueRequest, config: ServerConfig, driver: WebServerDriver): ServerBlock {
   if (!config.facts.sudo.full) throw new Error(NEEDS_SUDO)
   const block = config.blocks.find((b) => b.id === request.blockId)
-  if (!block) throw new Error(SITE_GONE)
+  if (!block) throw new Error(`This site is no longer in the ${driver.label} configuration. Check again.`)
   const allowed = new Set(block.names.map((name) => name.toLowerCase()))
   const stranger = request.names.find((name) => !allowed.has(name))
   if (stranger !== undefined) throw new Error(`${stranger} is not a name of this site`)
@@ -42,6 +40,7 @@ class IssueRun {
     private readonly exec: RemoteExec,
     private readonly request: IssueRequest,
     private readonly block: ServerBlock,
+    private readonly driver: WebServerDriver,
     private readonly hooks: IssueHooks
   ) {
     this.log = teeOutput(hooks.onOutput)
@@ -50,11 +49,11 @@ class IssueRun {
   async execute(): Promise<IssueResult> {
     if (!(await this.backup())) return this.failure('backup', false)
     if (this.request.staging) {
-      if (!(await this.runCertbot(stagingCommand(this.request)))) return this.failUnlessUnchanged('staging')
+      if (!(await this.runCertbot(stagingCommand(this.request, this.driver.kind)))) return this.failUnlessUnchanged('staging')
       this.rememberEmail()
     }
-    const issued = await this.runCertbot(issueCommand(this.request))
-    const tested = await this.run(NGINX_TEST, SHORT_TIMEOUT_MS)
+    const issued = await this.runCertbot(issueCommand(this.request, this.driver.kind))
+    const tested = await this.run(this.sudo(this.driver.testCommand), SHORT_TIMEOUT_MS)
     if (issued && tested) return this.success()
     if (tested) return this.failUnlessUnchanged('issue')
     const restored = await this.restore()
@@ -106,8 +105,12 @@ class IssueRun {
   private async restore(): Promise<boolean> {
     if (this.backupPath === null) return false
     if (!(await this.run(`sudo -n cp -p ${shellEscape(this.backupPath)} ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS))) return false
-    if (!(await this.run(NGINX_TEST, SHORT_TIMEOUT_MS))) return false
-    return this.run(NGINX_RELOAD, SHORT_TIMEOUT_MS)
+    if (!(await this.run(this.sudo(this.driver.testCommand), SHORT_TIMEOUT_MS))) return false
+    return this.run(this.sudo(this.driver.reloadCommand), SHORT_TIMEOUT_MS)
+  }
+
+  private sudo(command: string): string {
+    return `sudo -n ${command}`
   }
 
   private success(): IssueResult {
@@ -129,6 +132,8 @@ export async function runIssue(
 ): Promise<IssueResult> {
   const invalid = issueRequestError(request)
   if (invalid) throw new Error(invalid)
-  const block = blockFor(request, await readConfig())
-  return new IssueRun(exec, request, block, hooks).execute()
+  const config = await readConfig()
+  const driver = servingDriver(config.facts)
+  const block = blockFor(request, config, driver)
+  return new IssueRun(exec, request, block, driver, hooks).execute()
 }

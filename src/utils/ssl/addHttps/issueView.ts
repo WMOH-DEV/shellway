@@ -1,4 +1,5 @@
 import type { HostnameStatus, IssueRequest, IssueResult, IssueStage } from '../../../types/ssl'
+import type { WebServerDriver } from '../../webServer/driver'
 import { issueCommand, issueRequestError, lineageFor, stagingCommand } from '../https/issueCommands'
 
 export interface CommandRow {
@@ -7,12 +8,12 @@ export interface CommandRow {
   tag: 'test' | 'issue'
 }
 
-export function commandRows(request: IssueRequest): CommandRow[] | null {
+export function commandRows(request: IssueRequest, driver: WebServerDriver): CommandRow[] | null {
   if (issueRequestError(request) !== null) return null
   const staging: CommandRow[] = request.staging
-    ? [{ command: stagingCommand(request), why: "Staging test against Let's Encrypt. Nothing real is requested.", tag: 'test' }]
+    ? [{ command: stagingCommand(request, driver.kind), why: "Staging test against Let's Encrypt. Nothing real is requested.", tag: 'test' }]
     : []
-  return [...staging, { command: issueCommand(request), why: 'Issues the certificate and updates nginx', tag: 'issue' }]
+  return [...staging, { command: issueCommand(request, driver.kind), why: `Issues the certificate and updates ${driver.label}`, tag: 'issue' }]
 }
 
 export function nginxChangeLines(request: IssueRequest): string[] {

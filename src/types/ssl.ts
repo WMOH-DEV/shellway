@@ -163,6 +163,7 @@ export interface NameReadiness {
 export type OsFamily = 'debian' | 'rhel' | 'other'
 export type PackageManager = 'apt' | 'dnf' | 'yum'
 export type WebServerKind = 'nginx' | 'apache' | 'caddy'
+export type EditableWebServer = 'nginx'
 export type CertbotInstallMethod = 'snap' | 'apt' | 'dnf' | 'yum' | 'pip' | 'unknown'
 
 export interface PrepFacts {
@@ -279,6 +280,7 @@ export interface SwitchPrepared {
   backupPath: string
   diff: DiffLine[]
   script: string
+  webServer: EditableWebServer
 }
 
 export type SwitchStage = 'apply' | 'nginx-test' | 'verify'
