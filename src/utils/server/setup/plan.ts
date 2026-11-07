@@ -7,8 +7,8 @@ import { PROFILES } from './catalog'
 import { planComponents, type PlannedComponent } from './components'
 import { FILES_PROBE, INVENTORY_PROBE } from './inventory'
 import { withOsFamily } from './overrides'
-import { securityPart } from './security'
-import type { GroupId, SetupFiles, SetupInventory, SetupParams } from './types'
+import { isAlreadyInPlace, securityPart } from './security'
+import type { GroupId, SecurityId, SetupFiles, SetupInventory, SetupParams } from './types'
 
 export const GROUP_LABELS: Record<GroupId, string> = {
   update: 'System update',
@@ -96,11 +96,12 @@ function componentSteps(planned: PlannedComponent[], os: OsInfo): { steps: Actio
 
 const profileTitle = (params: SetupParams): string => PROFILES.find((profile) => profile.id === params.profile)?.title ?? 'Custom'
 
-const securityCount = (params: SetupParams): number => Object.values(params.security).filter(Boolean).length
+const securityCount = (params: SetupParams, inventory: SetupInventory): number =>
+  (Object.keys(params.security) as SecurityId[]).filter((id) => params.security[id] && !isAlreadyInPlace(id, inventory, params.deployUser)).length
 
 export function setupSummary(params: SetupParams, inventory: SetupInventory): SetupSummary {
   const components = planComponents(params.rows, inventory).install
-  const changes = securityCount(params)
+  const changes = securityCount(params, inventory)
   const minutes = SYSTEM_UPDATE_MINUTES + changes * SECURITY_CHANGE_MINUTES + components.reduce((total, item) => total + MINUTES[item.request.component], 0)
   return { installCount: components.length, securityCount: changes, minutes: Math.ceil(minutes) }
 }

@@ -38,7 +38,6 @@ const INVENTORY_SCRIPT = [
   "awk '/^MemTotal:/ {print \"memKb=\" $2} /^SwapTotal:/ {print \"swapKb=\" $2}' /proc/meminfo",
   'if [ -s "$HOME/.nvm/nvm.sh" ]; then echo "nvm=1"; fi',
   'if [ -r "$HOME/.ssh/authorized_keys" ]; then echo "keys=$(grep -c -E \'^[^#[:space:]]\' "$HOME/.ssh/authorized_keys")"; fi',
-  'echo "installedAt=$(stat -c %Y /etc/machine-id 2>/dev/null)"',
   'echo "wwwSites=$(find /var/www -mindepth 1 -maxdepth 1 -type d ! -name html 2>/dev/null | wc -l)"',
   `for c in ${WATCHED_COMMANDS.join(' ')}; do if command -v "$c" >/dev/null 2>&1; then echo "cmd=$c"; fi; done`,
   'if [ -x /snap/bin/certbot ]; then echo "cmd=certbot"; fi',
@@ -89,7 +88,6 @@ export function parseInventory(stdout: string): SetupInventory {
     swapBytes: (toInt(first('swapKb')) ?? 0) * 1024,
     nvm: first('nvm') === '1',
     authorizedKeys: toInt(first('keys')) ?? 0,
-    installedAt: toInt(first('installedAt')),
     wwwSites: toInt(first('wwwSites')) ?? 0
   }
 }

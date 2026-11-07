@@ -24,7 +24,6 @@ const INVENTORY_OUTPUT = [
   'memKb=8000000',
   'swapKb=0',
   'keys=2',
-  'installedAt=1762300000',
   'wwwSites=0',
   'cmd=snap',
   'pkg=ufw',
@@ -73,14 +72,14 @@ describe('setup probes', () => {
   it('parses the inventory', () => {
     expect(FRESH).toMatchObject({
       clientIp: '203.0.113.10', sshPort: 2222, user: 'ubuntu', home: '/home/ubuntu', memoryBytes: 8_192_000_000, swapBytes: 0,
-      nvm: false, authorizedKeys: 2, installedAt: 1762300000, wwwSites: 0,
+      nvm: false, authorizedKeys: 2, wwwSites: 0,
       packages: ['ufw', 'unattended-upgrades'], commands: ['snap']
     })
   })
 
   it('treats a missing SSH connection and odd values as unknown', () => {
-    const inventory = parseInventory('client=\nport=\nuser=root\nhome=/root\ninstalledAt=\nnvm=1\n')
-    expect(inventory).toMatchObject({ clientIp: null, sshPort: null, installedAt: null, nvm: true, authorizedKeys: 0 })
+    const inventory = parseInventory('client=\nport=\nuser=root\nhome=/root\nnvm=1\n')
+    expect(inventory).toMatchObject({ clientIp: null, sshPort: null, nvm: true, authorizedKeys: 0 })
   })
 
   it('parses managed file hashes and the current fail2ban ignore list', () => {
@@ -336,5 +335,12 @@ describe('security config', () => {
 describe('setupSummary', () => {
   it('counts components, security changes and minutes', () => {
     expect(setupSummary(paramsFor('laravel'), FRESH)).toEqual({ installCount: 8, securityCount: 5, minutes: 11 })
+  })
+
+  it('counts the same security changes as the plan when some are already in place', () => {
+    const inventory = { ...FRESH, user: 'deploy', swapBytes: 1 }
+    const plan = buildSetupPlan(paramsFor('laravel'), factsFor(NOBLE, inventory))
+    expect(setupSummary(paramsFor('laravel'), inventory).securityCount).toBe(3)
+    expect(plan.summary).toContain('apply 3 security changes')
   })
 })

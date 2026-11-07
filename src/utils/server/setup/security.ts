@@ -37,6 +37,11 @@ const problem = (message: string): SecurityPart => ({ steps: [], problems: [mess
 
 const note = (message: string): SecurityPart => ({ steps: [], problems: [], notes: [message] })
 
+export function isAlreadyInPlace(id: SecurityId, inventory: SetupInventory, deployUser: string): boolean {
+  if (id === 'deployUser') return inventory.user === effectiveDeployUser(deployUser)
+  return id === 'swap' && inventory.swapBytes > 0
+}
+
 const isValidIp = (value: string | null): value is string => value !== null && (IPV4.test(value) || (value.includes(':') && IPV6.test(value)))
 
 function installIfMissing(component: ComponentId, packageName: string, { os, inventory }: SecurityContext): SecurityPart {
@@ -75,7 +80,7 @@ function deployUserLines(user: string, home: string): string[] {
 
 function deployUser({ inventory, files, params }: SecurityContext): SecurityPart {
   const user = effectiveDeployUser(params.deployUser)
-  if (inventory.user === user) return note(`You are already logged in as ${user}, so no deploy user was added.`)
+  if (isAlreadyInPlace('deployUser', inventory, params.deployUser)) return note(`You are already logged in as ${user}, so no deploy user was added.`)
   if (!HOME.test(inventory.home) || inventory.home.includes('..')) return problem(`Could not read your home folder, so your SSH keys cannot be copied to ${user}.`)
   const notes = inventory.authorizedKeys === 0 ? [`${inventory.user} has no SSH keys on this server, so ${user} gets none. Add a key to ${user} before logging in as it.`] : []
   const sudoers = sudoersFile(user)
@@ -195,8 +200,8 @@ export function swapLines(sizeGb: number): string[] {
   ]
 }
 
-function swap({ inventory }: SecurityContext): SecurityPart {
-  if (inventory.swapBytes > 0) return note('Swap is already on, so no swap file was added.')
+function swap({ inventory, params }: SecurityContext): SecurityPart {
+  if (isAlreadyInPlace('swap', inventory, params.deployUser)) return note('Swap is already on, so no swap file was added.')
   const size = swapSizeGb(inventory.memoryBytes)
   return steps([rootStep('swap', `Add a ${size} GB swap file`, swapLines(size), { detached: false, timeoutSeconds: 600 })])
 }
