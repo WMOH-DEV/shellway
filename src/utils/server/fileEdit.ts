@@ -99,9 +99,12 @@ function writeNewContent(spec: FileEditSpec): string[] {
     B64_TOKEN,
     ...(spec.mode ? [`chmod ${spec.mode} "$tmp" || ${failed}`] : []),
     ...(spec.owner ? [`chown ${spec.owner} "$tmp" || ${failed}`] : []),
-    `mv -f "$tmp" "$path" || ${failed}`
+    `mv -f "$tmp" "$path" || ${failed}`,
+    STOP_TRAP
   ]
 }
+
+const STOP_TRAP = `trap 'recover "Stopped before finishing."' TERM HUP INT`
 
 function testNewContent(spec: FileEditSpec): string[] {
   if (!spec.test) return []

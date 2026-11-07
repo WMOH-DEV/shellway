@@ -107,22 +107,27 @@ export class DetachedSteps {
   }
 
   async follow(exec: RemoteExec, ref: DetachedRef, watch: DetachedWatch): Promise<DetachedOutcome> {
+    if (watch.stopRequested()) await this.kill(exec, ref)
     if (ref.follow) await this.tail(exec, ref, watch)
     let delay = FIRST_POLL_MS
-    let killed = false
     for (;;) {
-      if (watch.stopRequested() && !killed) {
-        await this.kill(exec, ref)
-        killed = true
-      }
       const status = await this.read(exec, ref, watch)
       if (status.chunkBytes >= CHUNK_BYTES) continue
       if (status.exit !== null) return { kind: 'exit', code: status.exit }
       if (!status.known || !status.alive) return { kind: 'lost' }
-      if (this.deps.now() > this.deadline(ref)) return { kind: 'timeout' }
+      if (watch.stopRequested()) await this.kill(exec, ref)
+      if (this.isPastDeadline(ref)) return { kind: 'timeout' }
       await this.deps.sleep(delay)
       delay = Math.min(Math.round(delay * 1.5), MAX_POLL_MS)
     }
+  }
+
+  isPastDeadline(ref: DetachedRef): boolean {
+    return this.deps.now() > this.deadline(ref)
+  }
+
+  pause(ms: number): Promise<void> {
+    return this.deps.sleep(ms)
   }
 
   private deadline(ref: DetachedRef): number {

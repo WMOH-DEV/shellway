@@ -47,7 +47,7 @@ const exitFile = (id: string) => join(base, 'runs', `${id}.exit`)
 
 describe('shellway-run', () => {
   it('reports its version', () => {
-    expect(call(['version']).stdout.trim()).toBe('1')
+    expect(call(['version']).stdout.trim()).toBe('2')
   })
 
   it('runs a step detached, logs its output and records the exit code', async () => {
@@ -93,4 +93,17 @@ describe('shellway-run', () => {
     await until(() => existsSync(exitFile('run-5')))
     expect(call(['start', 'run-5', '60'], 'true').stderr).toContain('already exists')
   })
+
+  it('cancels a step whose supervisor started too late and removes its script', async () => {
+    writeFileSync(join(fakeBin, 'nohup'), '#!/bin/sh\nsleep 8\nPATH=${PATH#*:}\nexec nohup "$@"\n')
+    chmodSync(join(fakeBin, 'nohup'), 0o755)
+    const started = call(['start', 'run-6', '60'], 'echo should-not-run\n')
+    expect(started.code).toBe(2)
+    const script = join(base, 'runs', 'run-6.sh')
+    expect(existsSync(script)).toBe(true)
+    await until(() => !existsSync(script), 10000)
+    await until(() => !existsSync(join(base, 'runs', 'run-6.cancel')))
+    expect(existsSync(join(base, 'runs', 'run-6.child'))).toBe(false)
+    expect(readFileSync(join(base, 'runs', 'run-6.log'), 'utf8')).toBe('')
+  }, 30000)
 })

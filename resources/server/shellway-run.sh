@@ -3,7 +3,7 @@
 # Runs one long server step detached from the SSH session and reports on it.
 set -u
 
-RUN_VERSION=1
+RUN_VERSION=2
 BASE=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) || exit 1
 RUNS="$BASE/runs"
 CHUNK_BYTES=65536
@@ -26,6 +26,7 @@ SUPERVISOR='runs=$1; id=$2; limit=$3
 own() { if [ "$(id -u)" = 0 ] && [ -n "${SUDO_USER:-}" ]; then chown "$SUDO_USER" "$@" 2>/dev/null; fi; }
 publish() { printf "%s\n" "$2" > "$runs/$id.$1.tmp"; own "$runs/$id.$1.tmp"; mv -f "$runs/$id.$1.tmp" "$runs/$id.$1"; }
 publish pid $$
+if [ -e "$runs/$id.cancel" ]; then rm -f "$runs/$id.sh" "$runs/$id.cancel"; exit 0; fi
 timeout -k 10 "$limit" sh "$runs/$id.sh" >> "$runs/$id.log" 2>&1 </dev/null &
 publish child $!
 wait $!
@@ -66,7 +67,7 @@ cmd_start() {
     sleep 0.1 2>/dev/null || sleep 1
     waited=$((waited + 1))
   done
-  [ -s "$RUNS/$id.pid" ] || die "the step did not start"
+  [ -s "$RUNS/$id.pid" ] || { : > "$RUNS/$id.cancel"; die "the step did not start"; }
   echo "pid=$(cat "$RUNS/$id.pid")"
   if can_follow; then echo follow=1; else echo follow=0; fi
 }

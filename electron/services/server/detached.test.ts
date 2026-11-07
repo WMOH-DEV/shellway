@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ExecTimeoutError } from '../../utils/sshExec'
 import { DetachedSteps, parseRead, parseStart, RUN_BIN } from './DetachedSteps'
 import { action, harness, step } from './testing/engineHarness'
 import type { FakeCall } from './testing/FakeRemoteExec'
@@ -34,7 +35,7 @@ describe('parsers', () => {
   })
 
   it('ships a versioned run helper', () => {
-    expect(DetachedSteps.bundledVersion).toBe(1)
+    expect(DetachedSteps.bundledVersion).toBe(2)
   })
 })
 
@@ -55,7 +56,7 @@ describe('detached steps', () => {
       `${RUN_BIN} read ${run.id}-0 21`,
       'timeout -k 10 30 sh -s'
     ])
-    expect(h.fake.calls[1].stdin).toContain('RUN_VERSION=1')
+    expect(h.fake.calls[1].stdin).toContain('RUN_VERSION=2')
     expect(h.fake.calls[2].stdin).toBe(`export SHELLWAY_RUN_ID='${run.id}'\n{\nrun-install\n} </dev/null\n`)
   })
 
@@ -132,7 +133,7 @@ describe('detached steps', () => {
 
   it('hides output it can no longer redact after a restart', async () => {
     const first = harness([action('software.install', () => [step('install', { detached: true })], { secrets: ['t0ken'] })])
-    first.fake.on(isVersion, { stdout: '1\n' }).on(isStart, { stdout: 'pid=7\nfollow=0\n' }).on(isRead, () => {
+    first.fake.on(isVersion, { stdout: '2\n' }).on(isStart, { stdout: 'pid=7\nfollow=0\n' }).on(isRead, () => {
       first.setConnected(false)
       return new Error('Channel closed')
     })
@@ -174,5 +175,80 @@ describe('detached steps', () => {
     expect(done.status).toBe('stopped')
     expect(h.fake.calls.find(isKill)?.command).toBe(`sudo -n ${RUN_BIN} kill ${run.id}-0`)
     expect(h.fake.calls.some((call) => call.stdin?.includes('undo-install'))).toBe(false)
+  })
+
+  it('kills again on every poll while a stopped step is still alive', async () => {
+    const h = detachedHarness(false)
+    let kills = 0
+    h.fake.on(isKill, () => { kills++; return { stdout: 'killed\n' } })
+    h.fake.on(isRead, () => (kills >= 3 ? status('alive=0 size=0 exit=143') : status('alive=1 size=0 exit=')))
+    const run = await startInstall(h)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    h.engine.stop(run.id)
+    expect((await h.finished(run.id)).status).toBe('stopped')
+    expect(kills).toBe(3)
+  })
+
+  it('sends the kill when stopped while parked, as soon as following resumes', async () => {
+    const h = detachedHarness(false)
+    let killed = false
+    h.fake.on(isKill, () => { killed = true; return { stdout: 'killed\n' } })
+    h.fake.on(isRead, () => {
+      if (h.fake.calls.filter(isRead).length === 1) {
+        h.setConnected(false)
+        return new Error('Channel closed')
+      }
+      return killed ? status('alive=0 size=0 exit=143') : status('alive=1 size=0 exit=')
+    })
+    const run = await startInstall(h)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    h.engine.stop(run.id)
+    expect(h.fake.calls.some(isKill)).toBe(false)
+    h.setConnected(true)
+    h.engine.reattach('c1', 's1')
+    expect((await h.finished(run.id)).status).toBe('stopped')
+    const firstRead = h.fake.calls.findIndex(isRead)
+    expect(isKill(h.fake.calls[firstRead + 1])).toBe(true)
+    expect(h.fake.calls.filter(isKill)).toHaveLength(1)
+  })
+})
+
+describe('detached steps that cannot be watched', () => {
+  const withPrep = (startReply: Parameters<ReturnType<typeof harness>['fake']['on']>[1] = { stdout: 'pid=4242\nfollow=0\n' }) => {
+    const h = harness([action('software.install', () => [step('prep', { rollback: 'undo-prep' }), step('install', { detached: true, timeoutSeconds: 900 })])])
+    h.fake.on(isVersion, { stdout: '2\n' }).on(isStart, startReply)
+    return h
+  }
+
+  it('retries a failing watch slowly, then gives up as lost without undoing anything', async () => {
+    const h = withPrep()
+    h.fake.on(isRead, () => {
+      h.tick(500_000)
+      return new ExecTimeoutError('Command timed out after 30000ms')
+    })
+    const done = await h.finished((await startInstall(h)).id)
+    expect(done.status).toBe('lost')
+    expect(done.failure?.kind).toBe('lost')
+    expect(done.steps.map((s) => s.status)).toEqual(['done', 'failed'])
+    expect(h.fake.calls.filter(isRead)).toHaveLength(3)
+    expect(h.fake.calls.filter(isKill)).toHaveLength(1)
+    expect(h.fake.calls.some((call) => call.stdin?.includes('undo-prep'))).toBe(false)
+  })
+
+  it('keeps following when the watch recovers', async () => {
+    const h = withPrep()
+    const replies = [new Error('Channel open failure'), status('alive=0 size=2 exit=0', 'ok')]
+    h.fake.on(isRead, () => replies.shift() ?? {})
+    const done = await h.finished((await startInstall(h)).id)
+    expect(done.status).toBe('done')
+    expect(h.fake.calls.some(isKill)).toBe(false)
+  })
+
+  it('treats a start that timed out as lost, since the server may have launched it', async () => {
+    const h = withPrep(new ExecTimeoutError('Command timed out after 30000ms'))
+    const done = await h.finished((await startInstall(h)).id)
+    expect(done.failure?.kind).toBe('lost')
+    expect(h.fake.calls.some(isRead)).toBe(false)
+    expect(h.fake.calls.some((call) => call.stdin?.includes('undo-prep'))).toBe(false)
   })
 })

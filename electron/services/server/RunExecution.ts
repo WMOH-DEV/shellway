@@ -2,7 +2,7 @@ import type { ActionPlan, ActionRun, ActionStep, RunFailure, RunOutputChunk, Run
 import { EXIT_FILE_CHANGED } from '../../../src/utils/server/fileEdit'
 import type { RemoteExec } from '../deploy/DeployService'
 import { ExecTimeoutError } from '../../utils/sshExec'
-import type { DetachedSteps } from './DetachedSteps'
+import type { DetachedRef, DetachedSteps } from './DetachedSteps'
 import { Disconnected, isSudoFailure, lastLine, limitedShell, stepInput, TIMEOUT_EXITS } from './remote'
 import type { StoredRun } from './RunStore'
 import { redact, StepOutput } from './StepOutput'
@@ -12,6 +12,7 @@ const EXEC_MARGIN_SECONDS = 20
 const ATTACHED_OUTPUT_LIMIT = 64 * 1024
 const SAVE_EVERY_MS = 10_000
 const NO_EXIT_CODE = -1
+const WATCH_RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 15_000]
 
 const RESTARTED = 'Shellway restarted during this action, so the steps after the long one did not run. Run the action again.'
 const OUTPUT_HIDDEN = '\nShellway restarted, so it can no longer hide the secrets in this output. The rest of it is not shown.\n'
@@ -150,10 +151,20 @@ export class RunExecution {
 
   private async startDetached(index: number, step: ActionStep, output: StepOutput): Promise<StepOutcome> {
     await this.deps.detached.ensureRunner(this.exec, this.run.connectionId)
-    this.record.detached = await this.deps.detached.start(this.exec, `${this.run.id}-${index}`, step.root, step.timeoutSeconds, stepInput(this.run.id, step.script))
+    const started = await this.launch(index, step)
+    if (!started) return { kind: 'lost' }
+    this.record.detached = started
     this.deps.save(this.record)
-    if (this.stopRequested) await this.deps.detached.kill(this.exec, this.record.detached)
     return this.followDetached(output)
+  }
+
+  private async launch(index: number, step: ActionStep): Promise<DetachedRef | null> {
+    try {
+      return await this.deps.detached.start(this.exec, `${this.run.id}-${index}`, step.root, step.timeoutSeconds, stepInput(this.run.id, step.script))
+    } catch (err) {
+      if (err instanceof ExecTimeoutError) return null
+      throw err
+    }
   }
 
   private async followDetached(output: StepOutput): Promise<StepOutcome> {
@@ -166,15 +177,30 @@ export class RunExecution {
       onProgress: () => this.saveNowAndThen(),
       stopRequested: () => this.stopRequested
     }
+    let failures = 0
     for (;;) {
       try {
         return await this.deps.detached.follow(this.exec, ref, watch)
       } catch (err) {
-        if (!(err instanceof Disconnected)) throw err
-        this.deps.save(this.record)
-        await new Promise<void>((resolve) => { this.wakeUp = resolve })
+        if (err instanceof Disconnected) {
+          failures = 0
+          await this.parkUntilResumed()
+        } else {
+          if (this.deps.detached.isPastDeadline(ref)) return this.abandon(ref)
+          await this.deps.detached.pause(WATCH_RETRY_DELAYS_MS[Math.min(failures++, WATCH_RETRY_DELAYS_MS.length - 1)])
+        }
       }
     }
+  }
+
+  private async parkUntilResumed(): Promise<void> {
+    this.deps.save(this.record)
+    await new Promise<void>((resolve) => { this.wakeUp = resolve })
+  }
+
+  private async abandon(ref: DetachedRef): Promise<StepOutcome> {
+    await this.deps.detached.kill(this.exec, ref).catch(() => undefined)
+    return { kind: 'lost' }
   }
 
   private saveNowAndThen(): void {
