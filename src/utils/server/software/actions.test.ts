@@ -50,7 +50,7 @@ describe('software.upgrade', () => {
   it('falls back to upgrading the security packages by name', () => {
     const packages = parsePackages(PACKAGES_UBUNTU)
     const facts = { ...FACTS, [PACKAGES_PROBE]: ok({ ...packages, installed: packages.installed.filter((item) => item.name !== 'unattended-upgrades') }) }
-    expect(plan('software.upgrade', { mode: 'security' }, facts).steps[0].script).toContain("install --only-upgrade 'openssl' 'libssh-4'")
+    expect(plan('software.upgrade', { mode: 'security' }, facts).steps[0].script).toContain("install --only-upgrade --no-remove 'openssl' 'libssh-4'")
   })
 
   it('blocks selected packages that are not in the update list', () => {

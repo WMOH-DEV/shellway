@@ -243,14 +243,14 @@ describe('buildPlan PHP and composer steps', () => {
     const actions = plan(NGINX, { phpVersion: '8.5' }, allTools({ php: php(['8.4'], ['8.5']), composer: false }))
     expect(actions.map((a) => a.id).slice(0, 3)).toEqual(['php', 'composer', 'folder'])
     expect(byId(actions, 'php')).toMatchObject({ summary: 'Install PHP 8.5 with the extensions Laravel needs', chip: 'installs', commands: [ROOT_SHELL] })
-    expect(byId(actions, 'php').script).toContain('install -y php8.5-fpm php8.5-cli')
+    expect(byId(actions, 'php').script).toContain('install -y --no-remove php8.5-fpm php8.5-cli')
     expect(byId(actions, 'composer').script).toContain('php=php8.5;')
   })
 
   it('adds only the missing required packages to an installed version', () => {
     const actions = plan(NGINX, { phpVersion: '8.3' }, allTools({ php: php(['8.3'], [], ['php8.3-zip']) }))
     expect(byId(actions, 'php').summary).toBe('Add php8.3-zip to PHP 8.3')
-    expect(byId(actions, 'php').script).toContain('install -y php8.3-zip\n')
+    expect(byId(actions, 'php').script).toContain('install -y --no-remove php8.3-zip\n')
   })
 
   it('blocks a version the server can neither run nor install', () => {

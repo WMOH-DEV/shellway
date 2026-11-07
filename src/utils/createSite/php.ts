@@ -48,7 +48,7 @@ export function installPhpScript(version: string, packages: string[]): string {
     'set -e',
     'export DEBIAN_FRONTEND=noninteractive',
     'apt-get -o DPkg::Lock::Timeout=120 update',
-    `apt-get -o DPkg::Lock::Timeout=120 install -y ${names.join(' ')}`,
+    `apt-get -o DPkg::Lock::Timeout=120 install -y --no-remove ${names.join(' ')}`,
     `if command -v systemctl >/dev/null 2>&1; then systemctl enable --now php${assertPhpVersion(version)}-fpm; fi`,
     ''
   ].join('\n')

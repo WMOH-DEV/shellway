@@ -43,7 +43,7 @@ function distroSetup(facts: PrepFacts): DistroSetup | null {
   if (facts.os.family === 'debian' && facts.packageManager === 'apt') {
     return {
       prepare: [run('apt-update', 'apt-get update', 'Refreshes the package list')],
-      install: `DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-${plugin}`,
+      install: `DEBIAN_FRONTEND=noninteractive apt-get install -y --no-remove certbot python3-certbot-${plugin}`,
       alwaysEnableTimer: false,
       timer: 'certbot.timer'
     }

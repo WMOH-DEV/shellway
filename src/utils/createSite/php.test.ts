@@ -31,7 +31,7 @@ describe('installPhpScript', () => {
   it('installs only php packages of the chosen version, from apt, and starts FPM', () => {
     const script = installPhpScript('8.5', ['php8.5-fpm', 'php8.5-cli', 'php8.4-fpm', 'evil; rm -rf /'])
     syntaxOk(script)
-    expect(script).toContain('apt-get -o DPkg::Lock::Timeout=120 install -y php8.5-fpm php8.5-cli\n')
+    expect(script).toContain('apt-get -o DPkg::Lock::Timeout=120 install -y --no-remove php8.5-fpm php8.5-cli\n')
     expect(script).toContain('systemctl enable --now php8.5-fpm')
     expect(script).not.toMatch(/add-apt-repository|evil/)
   })

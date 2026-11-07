@@ -252,7 +252,7 @@ describe('Add HTTPS step 2', () => {
     const toggle = screen.getByRole('group', { name: 'Install route' })
     expect(within(toggle).getByRole('button', { name: "Snap (certbot's recommended way)" })).toHaveAttribute('aria-pressed', 'true')
     await u.click(within(toggle).getByRole('button', { name: 'From your distribution' }))
-    expect(screen.getByText('DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx')).toBeInTheDocument()
+    expect(screen.getByText('DEBIAN_FRONTEND=noninteractive apt-get install -y --no-remove certbot python3-certbot-nginx')).toBeInTheDocument()
     expect(screen.queryByText('snap install --classic certbot')).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: "Using your distribution's packages" })).toHaveTextContent(/recommend the snap/)
     expect(screen.queryByRole('region', { name: "Following certbot's guide" })).not.toBeInTheDocument()
@@ -261,7 +261,7 @@ describe('Add HTTPS step 2', () => {
   it('has no route toggle when only one route exists', async () => {
     await toPrepare({ ...ubuntuFacts, snapd: null })
     expect(screen.queryByRole('group', { name: 'Install route' })).not.toBeInTheDocument()
-    expect(screen.getByText('DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx')).toBeInTheDocument()
+    expect(screen.getByText('DEBIAN_FRONTEND=noninteractive apt-get install -y --no-remove certbot python3-certbot-nginx')).toBeInTheDocument()
   })
 
   it('stops with a reason and a link when there is no plan', async () => {

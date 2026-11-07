@@ -45,7 +45,7 @@ function validateUpgrade(raw: unknown): UpgradeParams {
   return { mode, packages: stringList(value.packages, assertPackageName) }
 }
 
-const onlyUpgrade = (names: string[]): string => `${APT_GET} install --only-upgrade ${names.map(shellQuote).join(' ')}`
+const onlyUpgrade = (names: string[]): string => `${APT_GET} install --only-upgrade --no-remove ${names.map(shellQuote).join(' ')}`
 
 function upgradeWarnings(updates: UpdatesFacts, chosen: UpgradePackage[]): string[] {
   const warnings: string[] = []

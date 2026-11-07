@@ -1,4 +1,5 @@
 import type { Readable } from 'stream'
+import { StringDecoder } from 'string_decoder'
 import type { SSHConnection } from '../services/SSHService'
 
 export interface ExecResult {
@@ -97,8 +98,10 @@ export function sshExec(
         })
       }, timeoutMs)
 
-      stream.on('data', (d: Buffer) => { stdout.push(d); onOutput?.(d.toString('utf8')) })
-      stream.stderr.on('data', (d: Buffer) => { stderr.push(d); onOutput?.(d.toString('utf8')) })
+      const outText = new StringDecoder('utf8')
+      const errText = new StringDecoder('utf8')
+      stream.on('data', (d: Buffer) => { stdout.push(d); onOutput?.(outText.write(d)) })
+      stream.stderr.on('data', (d: Buffer) => { stderr.push(d); onOutput?.(errText.write(d)) })
       stream.on('error', (streamErr: Error) => settle(() => reject(streamErr)))
       stream.stderr.on('error', () => {})
       stream.on('close', (code: number) => {

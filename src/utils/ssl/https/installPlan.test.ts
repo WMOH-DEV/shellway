@@ -44,7 +44,7 @@ describe('installPlan', () => {
   it('offers distribution packages on Debian and Ubuntu', () => {
     expect(commands(facts(), 'distro')).toEqual([
       'run apt-get update',
-      'run DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+      'run DEBIAN_FRONTEND=noninteractive apt-get install -y --no-remove certbot python3-certbot-nginx',
       'check certbot --version',
       'check certbot plugins --text | grep -w nginx',
       'check systemctl is-active certbot.timer'
@@ -91,7 +91,7 @@ describe('installPlan', () => {
     expect(commands(snap)).toContain('run systemctl enable --now snap.certbot.renew.timer')
     const apt = facts({ certbot: { path: '/usr/bin/certbot', version: '1.21.0', method: 'apt' }, plugins: ['nginx'] })
     expect(commands(apt, 'distro')).toEqual([
-      'skip DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+      'skip DEBIAN_FRONTEND=noninteractive apt-get install -y --no-remove certbot python3-certbot-nginx',
       'run systemctl enable --now certbot.timer',
       'check certbot --version',
       'check certbot plugins --text | grep -w nginx',
