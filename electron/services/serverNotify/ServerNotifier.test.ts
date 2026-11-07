@@ -63,12 +63,12 @@ describe('ServerNotifier', () => {
     ])
   })
 
-  it('stays quiet when no reboot is needed and falls back to the connection id without a hostname', () => {
+  it('stays quiet when no reboot is needed and says your server without a hostname', () => {
     const { notifier, send } = setup(ALL)
     notifier.observe('server:facts', ['c1', { [REBOOT_PROBE]: reboot(false) }])
     expect(send).not.toHaveBeenCalled()
     notifier.observe('server:facts', ['c9', { [REBOOT_PROBE]: reboot(true) }])
-    expect(send.mock.calls[0][2]).toBe('Shellway: c9 needs a reboot to finish installing updates.')
+    expect(send.mock.calls[0][2]).toBe('Shellway: your server needs a reboot to finish installing updates.')
   })
 
   it('sends service-down only for newly failed services, and again after a recovery', () => {
@@ -126,4 +126,13 @@ describe('ServerNotifier', () => {
     notifier.notify('deploy-failed', 'x')
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('Could not reach the discord address'))
   })
+
+  it('keeps the hostname from an earlier scan when a later scan has no identity', () => {
+    const send = vi.fn(async () => undefined)
+    const notifier = new ServerNotifier({ settings: () => ({ kind: 'ntfy', url: 'https://ntfy.example.com/t', events: ['reboot-required'] }), send, onError: vi.fn() })
+    notifier.observe('server:facts', ['c1', { [IDENTITY_PROBE]: { status: 'ok', at: 1, data: { hostname: 'web-1' } } }])
+    notifier.observe('server:facts', ['c1', { [REBOOT_PROBE]: reboot(true) }])
+    expect(send.mock.calls[0][2]).toBe('Shellway: web-1 needs a reboot to finish installing updates.')
+  })
 })
+

@@ -20,6 +20,7 @@ const SERVICE_PROBES: readonly string[] = [PROBE.systemd, PROBE.supervisor, PROB
 export class ServerNotifier {
   private readonly criticalCounts = new Map<string, number>()
   private readonly rebootRequired = new Map<string, boolean>()
+  private readonly hosts = new Map<string, string>()
   private readonly failedServices = new Map<string, Map<string, Set<string>>>()
 
   constructor(private readonly deps: ServerNotifierDeps) {}
@@ -38,9 +39,15 @@ export class ServerNotifier {
   }
 
   private factsChanged(connectionId: string, facts: ServerFacts): void {
-    const host = probeData<ServerIdentity>(facts, IDENTITY_PROBE)?.hostname || connectionId
+    const host = this.hostOf(connectionId, facts)
     this.rebootChanged(connectionId, host, facts)
     this.servicesChanged(connectionId, host, facts)
+  }
+
+  private hostOf(connectionId: string, facts: ServerFacts): string {
+    const seen = probeData<ServerIdentity>(facts, IDENTITY_PROBE)?.hostname
+    if (seen) this.hosts.set(connectionId, seen)
+    return this.hosts.get(connectionId) ?? 'your server'
   }
 
   private rebootChanged(connectionId: string, host: string, facts: ServerFacts): void {
