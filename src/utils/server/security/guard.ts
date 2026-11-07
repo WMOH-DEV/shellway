@@ -172,7 +172,13 @@ export function validateGuardRequest(raw: unknown): GuardRequest {
   }
 }
 
-const allowSsh = (ctx: GuardContext): string => `ufw allow ${ctx.sshPort}/tcp`
+type ParsedRule = ReturnType<typeof parseUfwRule>
+
+const letsSshIn = (rule: ParsedRule, sshPort: number): boolean =>
+  rule !== null && rule.direction === 'in' && (rule.action === 'allow' || rule.action === 'limit') && ruleTargetsPort(rule.to, sshPort)
+
+const allowSsh = (ctx: GuardContext): string[] =>
+  ctx.ufwRules.some((raw) => letsSshIn(parseUfwRule(raw), ctx.sshPort)) ? [] : [`ufw allow ${ctx.sshPort}/tcp`]
 
 export function ufwRuleCommand(rule: UfwRuleInput): string {
   const proto = rule.proto === 'any' ? '' : ` proto ${rule.proto}`
@@ -193,7 +199,7 @@ function ufwChange(ctx: GuardContext, kind: GuardKind, title: string, summary: s
 
 function ruleRemoval(ctx: GuardContext, rules: UfwRuleRef[]): GuardedChange {
   const parsed = rules.map((ref) => parseUfwRule(ref.raw))
-  if (parsed.some((rule) => rule && rule.direction === 'in' && (rule.action === 'allow' || rule.action === 'limit') && ruleTargetsPort(rule.to, ctx.sshPort))) {
+  if (parsed.some((rule) => letsSshIn(rule, ctx.sshPort))) {
     refuse(`This rule lets you reach SSH on port ${ctx.sshPort}. It is protected and cannot be removed.`)
   }
   const missing = rules.filter((ref) => !ctx.ufwRules.includes(ref.raw))
@@ -201,7 +207,7 @@ function ruleRemoval(ctx: GuardContext, rules: UfwRuleRef[]): GuardedChange {
   const checks = rules.map((ref) => `printf '%s\\n' "$current" | grep -qxF ${shq(ref.raw)} || { echo "The firewall rules changed. Refresh and try again." >&2; exit 3; }`)
   const deletes = [...rules].sort((a, b) => b.number - a.number).map((ref) => `ufw --force delete ${ref.number}`)
   const current = `current=$(ufw status numbered | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')`
-  return ufwChange(ctx, 'ufw.rule.remove', 'Remove firewall rule', rules.map((ref) => ref.raw.replace(/^\[\s*\d+\]\s*/, '')).join('\n'), [current, ...checks, ...deletes, allowSsh(ctx)])
+  return ufwChange(ctx, 'ufw.rule.remove', 'Remove firewall rule', rules.map((ref) => ref.raw.replace(/^\[\s*\d+\]\s*/, '')).join('\n'), [current, ...checks, ...deletes, ...allowSsh(ctx)])
 }
 
 export function mergeDropIn(current: string, settings: Record<string, string | null>): string {
@@ -269,14 +275,14 @@ function rootLoginChange(ctx: GuardContext, value: RootLogin, keyAuth: boolean):
 export function buildGuardedChange(request: GuardRequest, ctx: GuardContext, keyAuth: boolean): GuardedChange {
   switch (request.kind) {
     case 'ufw.enable':
-      return ufwChange(ctx, request.kind, 'Turn the firewall on', `SSH port ${ctx.sshPort} is allowed first, then ufw is turned on.`, [allowSsh(ctx), 'ufw --force enable'])
+      return ufwChange(ctx, request.kind, 'Turn the firewall on', `SSH port ${ctx.sshPort} is allowed first, then ufw is turned on.`, [...allowSsh(ctx), 'ufw --force enable'])
     case 'ufw.rule.add':
       if (blocksPort(request.rule, ctx.sshPort)) refuse(`Port ${ctx.sshPort} is your SSH port. It cannot be blocked.`)
-      return ufwChange(ctx, request.kind, 'Add firewall rule', `${request.rule.action} ${request.rule.port}/${request.rule.proto} from ${request.rule.from}`, [allowSsh(ctx), ufwRuleCommand(request.rule)])
+      return ufwChange(ctx, request.kind, 'Add firewall rule', `${request.rule.action} ${request.rule.port}/${request.rule.proto} from ${request.rule.from}`, [...allowSsh(ctx), ufwRuleCommand(request.rule)])
     case 'ufw.rule.remove':
       return ruleRemoval(ctx, request.rules)
     case 'ufw.default':
-      return ufwChange(ctx, request.kind, `Set default ${request.direction} policy`, `${request.policy} ${request.direction}`, [allowSsh(ctx), `ufw default ${request.policy} ${request.direction}`])
+      return ufwChange(ctx, request.kind, `Set default ${request.direction} policy`, `${request.policy} ${request.direction}`, [...allowSsh(ctx), `ufw default ${request.policy} ${request.direction}`])
     case 'ssh.port':
       return portChange(ctx, request.port)
     case 'ssh.password':

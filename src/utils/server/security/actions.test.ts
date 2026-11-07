@@ -92,6 +92,11 @@ describe('key actions', () => {
     expect(result.blocked?.message).toMatch(/last key/)
   })
 
+  it('refuses to remove keys of the login user when this PC key could not be read', () => {
+    const result = plan('security.keys.remove', { user: 'deploy', fingerprint: 'SHA256:Zz09222222222222222222222222222222222222mm1', protectedFingerprints: [], sessionKeyUnknown: true })
+    expect(result.blocked?.message).toContain('could not read which key this PC logs in with')
+  })
+
   it('removes another key by fingerprint as the login user without sudo', () => {
     const result = plan('security.keys.remove', { user: 'deploy', fingerprint: 'SHA256:Zz09222222222222222222222222222222222222mm1', protectedFingerprints: [DEPLOY_KEY] })
     expect(result.blocked).toBeNull()
@@ -103,7 +108,7 @@ describe('key actions', () => {
   it('adds a key for another user with sudo and refuses duplicates', () => {
     const added = plan('security.keys.add', { user: 'root', key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINew ops' })
     expect(added.steps[0]).toMatchObject({ root: true })
-    expect(added.steps[0].script).toContain('chown \'root\':"$(id -gn \'root\')"')
+    expect(added.steps[0].script).toContain('chown -h \'root\':"$(id -gn \'root\')"')
     expect(plan('security.keys.add', { user: 'root', key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeRootKey other' }).blocked?.message).toMatch(/already/)
   })
 })

@@ -46,7 +46,7 @@ describe('buildGuardedChange', () => {
     const change = buildGuardedChange({ kind: 'ufw.rule.remove', rules: [{ number: 2, raw: ctx.ufwRules[1] }, { number: 3, raw: ctx.ufwRules[2] }] }, ctx, true)
     expect(change.apply).toMatch(/grep -qxF '\[ 2\] 80\/tcp/)
     expect(change.apply.indexOf('ufw --force delete 3')).toBeLessThan(change.apply.indexOf('ufw --force delete 2'))
-    expect(change.apply.indexOf('ufw --force delete 2')).toBeLessThan(change.apply.indexOf('ufw allow 22/tcp'))
+    expect(change.apply).not.toContain('ufw allow 22/tcp')
   })
 
   it('refuses rules that changed since the page loaded', () => {
@@ -59,9 +59,16 @@ describe('buildGuardedChange', () => {
     expect(() => buildGuardedChange({ kind: 'ufw.rule.add', rule: { port: '22', proto: 'udp', from: 'any', action: 'deny', comment: '' } }, ctx, true)).not.toThrow()
   })
 
-  it('always allows SSH before a default deny', () => {
-    const change = buildGuardedChange({ kind: 'ufw.default', direction: 'incoming', policy: 'deny' }, ctx, true)
+  it('allows SSH before a default deny when no rule lets SSH in yet', () => {
+    const change = buildGuardedChange({ kind: 'ufw.default', direction: 'incoming', policy: 'deny' }, { ...ctx, ufwRules: [] }, true)
     expect(change.apply).toContain('ufw allow 22/tcp\nufw default deny incoming')
+  })
+
+  it('keeps an existing SSH rule as it is instead of opening SSH to everyone', () => {
+    const officeOnly = { ...ctx, ufwRules: ['[ 1] 22/tcp                     ALLOW IN    203.0.113.0/24'] }
+    for (const request of [{ kind: 'ufw.enable' }, { kind: 'ufw.default', direction: 'incoming', policy: 'deny' }, { kind: 'ufw.rule.add', rule: { port: '443', proto: 'tcp', from: 'any', action: 'allow', comment: '' } }]) {
+      expect(buildGuardedChange(request as never, officeOnly, true).apply).not.toContain('ufw allow 22/tcp')
+    }
   })
 
   it('writes the SSH drop-in, tests it and checks the effective value', () => {

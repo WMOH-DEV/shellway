@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { randomBytes } from 'crypto'
 import type { ServerResult } from '../../../../src/types/server/core'
 import { validateGuardRequest, type GuardPreview, type GuardRun, type SecuritySessionInfo } from '../../../../src/utils/server/security/guard'
+import type { RemoteExec } from '../../../services/deploy/DeployService'
 import type { ServerIpcContext } from '../../../services/server/context'
 import type { SSHConnectionConfig } from '../../../services/SSHService'
 import { LockoutGuard, previewGuard, type ActivitySink } from '../../../services/serverSecurity/LockoutGuard'
@@ -13,6 +14,7 @@ import { getSSHService } from '../../ssh.ipc'
 const CONNECTION_ID = /^[A-Za-z0-9:._-]{1,128}$/
 const GUARD_UPDATE = 'server:security:guard-update'
 const runs = new Map<string, GuardRun>()
+const starting = new Set<string>()
 
 const fail = (error: unknown): { success: false; error: string } => ({ success: false, error: error instanceof Error ? error.message : String(error) })
 
@@ -43,7 +45,7 @@ async function sessionInfo(connectionId: string): Promise<SecuritySessionInfo> {
 
 const isBusy = (connectionId: string): boolean => {
   const run = runs.get(connectionId)
-  return run !== undefined && (run.outcome === 'running' || run.outcome === 'reverting')
+  return starting.has(connectionId) || (run !== undefined && (run.outcome === 'running' || run.outcome === 'reverting'))
 }
 
 export function registerSecurityIPC(ctx: ServerIpcContext): void {
@@ -79,29 +81,38 @@ export function registerSecurityIPC(ctx: ServerIpcContext): void {
       if (isBusy(connectionId)) throw new Error('Another firewall or SSH change is still running on this server.')
       const exec = ctx.execFor(connectionId)
       if (!exec) throw new Error('Not connected')
-      const config = await verifiableConfig(connectionId)
-      const { keyAuth } = await sessionKeyInfo(config)
-      const runId = randomBytes(8).toString('hex')
-      const guard = new LockoutGuard({
-        exec,
-        login: freshLogin(config),
-        keyAuth,
-        configPort: config.port,
-        connectionId,
-        sessionKey,
-        activity,
-        newId: () => runId,
-        onUpdate: (run) => {
-          runs.set(connectionId, run)
-          ctx.broadcast(GUARD_UPDATE, run)
-        }
+      starting.add(connectionId)
+      const { guard, runId } = await prepareGuard(connectionId, sessionKey, exec).catch((error: unknown) => {
+        starting.delete(connectionId)
+        throw error
       })
-      void guard.execute(request).catch(() => undefined)
+      void guard.execute(request).catch(() => undefined).finally(() => starting.delete(connectionId))
       return { success: true, data: { runId } }
     } catch (error) {
       return fail(error)
     }
   })
+
+  async function prepareGuard(connectionId: string, sessionKey: string, exec: RemoteExec): Promise<{ guard: LockoutGuard; runId: string }> {
+    const config = await verifiableConfig(connectionId)
+    const { keyAuth } = await sessionKeyInfo(config)
+    const runId = randomBytes(8).toString('hex')
+    const guard = new LockoutGuard({
+      exec,
+      login: freshLogin(config),
+      keyAuth,
+      configPort: config.port,
+      connectionId,
+      sessionKey,
+      activity,
+      newId: () => runId,
+      onUpdate: (run) => {
+        runs.set(connectionId, run)
+        ctx.broadcast(GUARD_UPDATE, run)
+      }
+    })
+    return { guard, runId }
+  }
 
   ipcMain.handle('server:security:guard-current', (_event, rawConnectionId: unknown): ServerResult<GuardRun | null> => {
     try {

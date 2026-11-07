@@ -108,12 +108,12 @@ describe('LockoutGuard', () => {
     expect(activity[0]).toMatchObject({ area: 'security', type: 'security.guard.ufw.enable', status: 'done', who: 'you', failure: null })
   })
 
-  it('runs every server script as root and allows the SSH port before enabling ufw', async () => {
+  it('runs every server script as root and keeps the existing SSH rule when enabling ufw', async () => {
     const { guard, fake } = setup()
     await guard.execute(enable)
     const apply = fake.calls.find((call) => classify(call) === 'apply')
     expect(apply?.command).toContain('sudo -n sh -s')
-    expect(apply?.stdin).toMatch(/ufw allow 22\/tcp\nufw --force enable/)
+    expect(apply?.stdin).toMatch(/^set -e\nufw --force enable/)
   })
 
   it('arms with a 60 second systemd timer and a sleep fallback', async () => {

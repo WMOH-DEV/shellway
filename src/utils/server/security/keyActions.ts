@@ -29,12 +29,15 @@ function ownerOf(keys: KeysFacts, user: string): KeyOwner | null {
 
 const keysFile = (owner: KeyOwner): string => shq(`${owner.home.replace(/\/+$/, '')}/.ssh/authorized_keys`)
 const sshDir = (owner: KeyOwner): string => shq(`${owner.home.replace(/\/+$/, '')}/.ssh`)
+const refuseLinks = (owner: KeyOwner): string =>
+  `if [ -L ${sshDir(owner)} ] || [ -L "$F" ]; then echo "The key file or its folder is a link to another file. Shellway will not change it." >&2; exit 4; fi`
 
 export function addKeyScript(owner: KeyOwner, key: string, asOwner: boolean): string {
-  const chown = asOwner ? [] : [`chown ${shq(owner.user)}:"$(id -gn ${shq(owner.user)})" ${sshDir(owner)} "$F"`]
+  const chown = asOwner ? [] : [`chown -h ${shq(owner.user)}:"$(id -gn ${shq(owner.user)})" ${sshDir(owner)} "$F"`]
   return [
     'set -e',
     `F=${keysFile(owner)}`,
+    refuseLinks(owner),
     't=$(mktemp)',
     `printf '%s\\n' ${shq(key)} > "$t"`,
     'if ! ssh-keygen -lf "$t" >/dev/null 2>&1; then rm -f "$t"; echo "This is not a valid public key" >&2; exit 2; fi',
@@ -56,6 +59,7 @@ export function removeKeyScript(owner: KeyOwner, fingerprint: string): string {
   return [
     'set -e',
     `F=${keysFile(owner)}`,
+    refuseLinks(owner),
     'cp -p "$F" "$F.shellway-bak"',
     't=$(mktemp); out=$(mktemp); removed=0',
     'while IFS= read -r line || [ -n "$line" ]; do',
@@ -102,10 +106,12 @@ interface RemoveKeyParams {
   user: string
   fingerprint: string
   protectedFingerprints: string[]
+  sessionKeyUnknown: boolean
 }
 
 function lockoutReason(params: RemoveKeyParams, owner: KeyOwner, ssh: SshFacts | null): string {
   if (params.protectedFingerprints.includes(params.fingerprint)) return 'This is the key this PC uses to log in. Shellway will not remove it.'
+  if (params.sessionKeyUnknown) return `Shellway could not read which key this PC logs in with, so it will not remove keys from ${owner.user} right now. Reconnect and try again.`
   const remaining = owner.keys.filter((key) => key.fingerprint !== params.fingerprint).length
   if (remaining > 0) return ''
   if (!ssh?.effective) return 'Could not check whether password login is on, so the last key stays.'
@@ -119,7 +125,7 @@ const removeKey: ActionDefinition<RemoveKeyParams> = {
   validate(raw) {
     const input = asRecord(raw)
     const protectedFingerprints = Array.isArray(input.protectedFingerprints) ? input.protectedFingerprints.map(assertFingerprint) : []
-    return { user: assertUser(input.user), fingerprint: assertFingerprint(input.fingerprint), protectedFingerprints }
+    return { user: assertUser(input.user), fingerprint: assertFingerprint(input.fingerprint), protectedFingerprints, sessionKeyUnknown: input.sessionKeyUnknown === true }
   },
   plan(params, facts) {
     const keys = factData<KeysFacts>(facts, KEYS_PROBE)

@@ -19,11 +19,21 @@ function isThisPc(key: AuthorizedKey, session: SecuritySessionInfo | null): bool
   return Boolean(key.fingerprint) && (session?.fingerprints.includes(key.fingerprint) ?? false)
 }
 
+function removeParams(user: string, fingerprint: string, ownAccount: boolean, session: SecuritySessionInfo | null) {
+  const usesKey = !session || session.source !== 'none'
+  return {
+    user,
+    fingerprint,
+    protectedFingerprints: ownAccount ? session?.fingerprints ?? [] : [],
+    sessionKeyUnknown: ownAccount && usesKey && (session?.fingerprints.length ?? 0) === 0
+  }
+}
+
 function KeyRow({ owner, item, loginUser, isLast, ssh, actions }: { owner: KeyOwner; item: AuthorizedKey; loginUser: string; isLast: boolean; ssh: SshFacts | null; actions: SecurityActions }) {
   const mine = isThisPc(item, actions.session)
   const guarded = mine && owner.user === loginUser
   const lastWithoutPassword = isLast && ssh?.effective?.passwordAuthentication === false
-  const remove = () => actions.launch('security.keys.remove', { user: owner.user, fingerprint: item.fingerprint, protectedFingerprints: owner.user === loginUser ? actions.session?.fingerprints ?? [] : [] })
+  const remove = () => actions.launch('security.keys.remove', removeParams(owner.user, item.fingerprint, owner.user === loginUser, actions.session))
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-nd-border bg-nd-surface px-3 py-2 hover:border-nd-border-hover">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
