@@ -4,7 +4,9 @@ import type { RemoteExec } from '../deploy/DeployService'
 import type { ActionResult, CertbotAction, CertbotLineage, OriginCert, ServerBlock, ServerFacts, ServerScan } from '../../../src/types/ssl'
 import { certbotCommand } from '../../../src/utils/ssl/commands'
 import { parseCertbotCertificates, parseFacts, parseProbes, SECTION_MARK } from './parse'
+import { apacheSites } from '../webServer/apacheSites'
 import { nginxSites } from '../webServer/nginxSites'
+import { siteServer } from '../../../src/utils/webServer/siteServer'
 import type { SiteRead } from '../webServer/siteReader'
 import type { ParsedFacts, ProbeTarget } from './parse'
 import { isPattern } from './report'
@@ -156,7 +158,8 @@ export class SslService {
   }
 
   private readSites(facts: ParsedFacts): Promise<SiteRead> {
-    return nginxSites.read(this.exec, facts)
+    const reader = siteServer(facts) === 'apache' ? apacheSites : nginxSites
+    return reader.read(this.exec, facts)
   }
 
   private async readLineages(facts: ParsedFacts): Promise<CertbotLineage[]> {
