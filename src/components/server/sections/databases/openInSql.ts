@@ -49,13 +49,23 @@ async function applyPendingDatabase(tabId: string, pending: PendingDatabase): Pr
   toast.error(`Could not open ${pending.database}`, 'Pick it in the SQL tab.')
 }
 
+function releaseClaim(tabId: string): void {
+  const { pendingDatabases, setPendingDatabase } = useSQLStore.getState()
+  if (pendingDatabases[tabId]?.claimed) setPendingDatabase(tabId, null)
+}
+
 function applyReadyPendingDatabases(): void {
   const { pendingDatabases, connections, setPendingDatabase } = useSQLStore.getState()
   for (const [tabId, pending] of Object.entries(pendingDatabases)) {
+    if (pending.claimed) continue
     const expired = Date.now() > pending.expiresAt
-    if (!expired && !hasNewSession(connections[tabId], pending)) continue
-    setPendingDatabase(tabId, null)
-    if (!expired) void applyPendingDatabase(tabId, pending)
+    if (expired) {
+      setPendingDatabase(tabId, null)
+      continue
+    }
+    if (!hasNewSession(connections[tabId], pending)) continue
+    setPendingDatabase(tabId, { ...pending, claimed: true })
+    void applyPendingDatabase(tabId, pending).finally(() => releaseClaim(tabId))
   }
 }
 

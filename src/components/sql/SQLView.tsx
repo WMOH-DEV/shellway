@@ -18,7 +18,7 @@ import {
   HardDrive,
 } from 'lucide-react'
 import { SQLQueryLog } from './SQLQueryLog'
-import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
+import { useSQLConnection, getSQLConnectionState, isOpeningDatabase } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { SQLSidebar } from './SQLSidebar'
 import type { TableContextAction, DatabaseContextAction } from './SchemaSidebar'
@@ -759,7 +759,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         }
 
         // If no database was specified, show picker
-        if (!c.database?.trim()) {
+        if (!c.database?.trim() && !isOpeningDatabase(connectionId)) {
           setDbPickerSessionId(sqlSessId)
           setShowDatabasePicker(true)
         }
@@ -882,9 +882,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── Handle onNeedDatabasePick from connect dialog ──
   const handleNeedDatabasePick = useCallback((sid: string) => {
+    if (isOpeningDatabase(connectionId)) return
     setDbPickerSessionId(sid)
     setShowDatabasePicker(true)
-  }, [])
+  }, [connectionId])
 
   // ── Tab actions ──
   const handleTabSelect = useCallback(

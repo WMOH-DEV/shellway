@@ -80,6 +80,7 @@ export interface PendingDatabase {
   database: string
   staleSessionId: string | null
   expiresAt: number
+  claimed?: boolean
 }
 
 interface SQLStoreState {
@@ -474,6 +475,10 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
 }))
 
 // ── Imperative access helper (for use in callbacks, effects, non-React code) ──
+
+export function isOpeningDatabase(connectionId: string): boolean {
+  return connectionId in useSQLStore.getState().pendingDatabases
+}
 
 export function getSQLConnectionState(connectionId: string): SQLConnectionSlice {
   return getConn(useSQLStore.getState().connections, connectionId)

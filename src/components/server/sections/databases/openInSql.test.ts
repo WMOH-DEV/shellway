@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSQLStore } from '@/stores/sqlStore'
+import { isOpeningDatabase, useSQLStore } from '@/stores/sqlStore'
 import { openInSqlTab } from './openInSql'
 
 const toastMock = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }))
@@ -129,5 +129,32 @@ describe('pending database on connect', () => {
     await openInSqlTab(TAB, 'mysql', 'shop_prod')
     useSQLStore.getState().removeConnection(TAB)
     expect(useSQLStore.getState().pendingDatabases[TAB]).toBeUndefined()
+  })
+
+  it('keeps a claimed entry while the switch runs so the SQL tab does not ask for a database', async () => {
+    let finish: (value: { success: boolean }) => void = () => {}
+    switchDatabase.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    await openInSqlTab(TAB, 'mysql', 'shop_prod')
+
+    finishConnecting('mysql')
+
+    expect(isOpeningDatabase(TAB)).toBe(true)
+    expect(switchDatabase).toHaveBeenCalledTimes(1)
+    finish({ success: true })
+    await flush()
+    expect(isOpeningDatabase(TAB)).toBe(false)
+  })
+
+  it('does not drop a newer request that arrived while an older one was being applied', async () => {
+    let finish: (value: { success: boolean }) => void = () => {}
+    switchDatabase.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    await openInSqlTab(TAB, 'mysql', 'shop_prod')
+    finishConnecting('mysql')
+    useSQLStore.getState().setPendingDatabase(TAB, { engine: 'mysql', database: 'shop_staging', staleSessionId: 'sql-1', expiresAt: Date.now() + 60_000 })
+
+    finish({ success: true })
+    await flush()
+
+    expect(useSQLStore.getState().pendingDatabases[TAB]?.database).toBe('shop_staging')
   })
 })
