@@ -36,7 +36,7 @@ interface IssueTarget {
   onIssued: (issued: Issued) => void
 }
 
-function useRememberedEmail(sessionId: string, setEmail: Dispatch<SetStateAction<string>>): void {
+export function useRememberedEmail(sessionId: string, setEmail: Dispatch<SetStateAction<string>>): void {
   useEffect(() => {
     let active = true
     void sslApi().httpsEmail(sessionId).then(({ success, data }) => {

@@ -28,7 +28,7 @@ export function Section({ title, children }: { title: string; children: ReactNod
   )
 }
 
-function Choice<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string; hint: string }[]; onChange: (v: T) => void }) {
+export function Choice<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string; hint: string }[]; onChange: (v: T) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       {options.map((option) => (
@@ -49,7 +49,7 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
   )
 }
 
-const SOURCE_OPTIONS: { value: SourceMode; label: string; hint: string }[] = [
+export const SOURCE_OPTIONS: { value: SourceMode; label: string; hint: string }[] = [
   { value: 'auto', label: 'Auto on the server', hint: 'The server checks for new commits and deploys by itself, even when your PC is off. Uses a read-only key for this one repo.' },
   { value: 'pc', label: 'From my PC', hint: 'Shellway sends the code over SSH. The server gets no access to your git host. Deploys only while Shellway is open.' }
 ]
@@ -59,7 +59,7 @@ const LAYOUT_OPTIONS: { value: DeployLayout; label: string; hint: string }[] = [
   { value: 'inplace', label: 'In place', hint: 'Updates the folder directly, like a manual git pull. Rollback rebuilds the older commit.' }
 ]
 
-const toInt = (value: string, fallback: number) => {
+export const toInt = (value: string, fallback: number) => {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : fallback
 }

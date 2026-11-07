@@ -96,7 +96,7 @@ function siteAction(input: CreateSiteInput, template: SiteTemplate, driver: WebS
   })
 }
 
-export function dnsRecords(input: CreateSiteInput, serverIp: string, proxied: boolean): DnsRecordPlan[] {
+export function dnsRecords(input: Pick<CreateSiteInput, 'domain' | 'includeWww'>, serverIp: string, proxied: boolean): DnsRecordPlan[] {
   const [domain, www] = siteNames(input)
   const records: DnsRecordPlan[] = [{ type: 'A', name: domain, content: assertIpv4(serverIp), proxied }]
   return www === undefined ? records : [...records, { type: 'CNAME', name: www, content: domain, proxied }]
