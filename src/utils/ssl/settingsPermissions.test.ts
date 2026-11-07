@@ -24,13 +24,14 @@ describe('permission summaries', () => {
       dns: 'Zone → DNS → Read',
       zoneSettingsRead: 'Zone → Zone Settings → Read',
       sslEdit: 'Zone → SSL and Certificates → Edit',
-      zoneSettingsEdit: 'Zone → Zone Settings → Edit'
+      zoneSettingsEdit: 'Zone → Zone Settings → Edit',
+      dnsEdit: 'Zone → DNS → Edit'
     })
   })
 
   it('builds instruction groups from the same labels the client reports', () => {
     const groups = placeholderGroups()
-    expect(groups.map((g) => g.id)).toEqual(['monitoring', 'origin-ca', 'zone-mode'])
+    expect(groups.map((g) => g.id)).toEqual(['monitoring', 'origin-ca', 'zone-mode', 'dns-records'])
     expect(groups[0].lines.map((l) => l.label)).toEqual(PERMISSION_GROUP_META[0].labels)
   })
 })

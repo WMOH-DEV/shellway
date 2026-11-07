@@ -11,7 +11,8 @@ export const PERMISSION_LABELS = {
   dns: 'Zone → DNS → Read',
   zoneSettingsRead: 'Zone → Zone Settings → Read',
   sslEdit: 'Zone → SSL and Certificates → Edit',
-  zoneSettingsEdit: 'Zone → Zone Settings → Edit'
+  zoneSettingsEdit: 'Zone → Zone Settings → Edit',
+  dnsEdit: 'Zone → DNS → Edit'
 } as const
 
 export const ZONE_NOT_VISIBLE_REASON = 'zone not visible to the Cloudflare token'
@@ -44,10 +45,29 @@ interface ApiZone {
 }
 
 interface ApiRecord {
+  id?: string
   type: string
   name: string
   content: string
   proxied?: boolean
+}
+
+export type NewDnsRecordType = 'A' | 'AAAA' | 'CNAME'
+
+export interface NewDnsRecord {
+  type: NewDnsRecordType
+  name: string
+  content: string
+  proxied: boolean
+  comment: string
+}
+
+export interface DnsRecord {
+  id: string
+  type: string
+  name: string
+  content: string
+  proxied: boolean
 }
 
 export interface ProxiedRecord {
@@ -137,7 +157,8 @@ function permissionGroups(zoneRead: PermissionState, probes: Probes): Permission
       permissionLine(PERMISSION_LABELS.zoneSettingsRead, probes.settings)
     ]),
     permissionGroup('origin-ca', [permissionLine(PERMISSION_LABELS.sslEdit, probes.certificates)]),
-    permissionGroup('zone-mode', [permissionLine(PERMISSION_LABELS.zoneSettingsEdit, 'unknown')])
+    permissionGroup('zone-mode', [permissionLine(PERMISSION_LABELS.zoneSettingsEdit, 'unknown')]),
+    permissionGroup('dns-records', [permissionLine(PERMISSION_LABELS.dnsEdit, 'unknown')])
   ]
 }
 
@@ -182,6 +203,10 @@ function originCertificateError(err: unknown): Error {
   }
   return err as Error
 }
+
+const DNS_EDIT_DENIED = 'The Cloudflare token needs Zone → DNS → Edit to create or remove DNS records.'
+
+const toDnsRecord = (r: ApiRecord): DnsRecord => ({ id: r.id ?? '', type: r.type, name: r.name.toLowerCase(), content: r.content, proxied: r.proxied === true })
 
 function deniedAs(message: string, err: unknown): Error {
   return isDenied(err) ? new Error(message) : (err as Error)
@@ -256,6 +281,34 @@ export class CloudflareClient {
       await this.request(`/zones/${zoneId}/settings/ssl`, {}, { value: mode }, 'PATCH')
     } catch (err) {
       throw deniedAs('The Cloudflare token needs Zone Settings · Edit to change the SSL mode.', err)
+    }
+  }
+
+  async findDnsRecords(zoneId: string, name: string): Promise<DnsRecord[]> {
+    try {
+      const reply = await this.request<ApiRecord[]>(`/zones/${zoneId}/dns_records`, { name: name.toLowerCase() })
+      return (reply.result ?? []).map(toDnsRecord)
+    } catch (err) {
+      throw deniedAs('The Cloudflare token needs DNS · Read to look up records.', err)
+    }
+  }
+
+  async createDnsRecord(zoneId: string, record: NewDnsRecord): Promise<DnsRecord> {
+    const body = { type: record.type, name: record.name.toLowerCase(), content: record.content, ttl: 1, proxied: record.proxied, comment: record.comment }
+    try {
+      const reply = await this.request<ApiRecord>(`/zones/${zoneId}/dns_records`, {}, body)
+      if (!reply.result?.id) throw new Error('Cloudflare did not return the new DNS record.')
+      return toDnsRecord(reply.result)
+    } catch (err) {
+      throw deniedAs(DNS_EDIT_DENIED, err)
+    }
+  }
+
+  async deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
+    try {
+      await this.request(`/zones/${zoneId}/dns_records/${encodeURIComponent(recordId)}`, {}, undefined, 'DELETE')
+    } catch (err) {
+      throw deniedAs(DNS_EDIT_DENIED, err)
     }
   }
 

@@ -112,7 +112,7 @@ export interface SslReport {
 }
 
 export type PermissionState = 'granted' | 'missing' | 'not-granted' | 'unknown'
-export type PermissionGroupId = 'monitoring' | 'origin-ca' | 'zone-mode'
+export type PermissionGroupId = 'monitoring' | 'origin-ca' | 'zone-mode' | 'dns-records'
 
 export interface PermissionLine {
   label: string

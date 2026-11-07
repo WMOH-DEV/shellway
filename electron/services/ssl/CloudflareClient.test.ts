@@ -53,14 +53,16 @@ describe('wording shared with the settings screen', () => {
       dns: 'Zone → DNS → Read',
       zoneSettingsRead: 'Zone → Zone Settings → Read',
       sslEdit: 'Zone → SSL and Certificates → Edit',
-      zoneSettingsEdit: 'Zone → Zone Settings → Edit'
+      zoneSettingsEdit: 'Zone → Zone Settings → Edit',
+      dnsEdit: 'Zone → DNS → Edit'
     })
     expect(ZONE_NOT_VISIBLE_REASON).toBe('zone not visible to the Cloudflare token')
     const result = await new CloudflareClient(TOKEN, fakeFetch(healthyRoutes()).impl).check()
     expect(result.permissions.map((g) => g.lines.map((l) => l.label))).toEqual([
       [PERMISSION_LABELS.zone, PERMISSION_LABELS.dns, PERMISSION_LABELS.zoneSettingsRead],
       [PERMISSION_LABELS.sslEdit],
-      [PERMISSION_LABELS.zoneSettingsEdit]
+      [PERMISSION_LABELS.zoneSettingsEdit],
+      [PERMISSION_LABELS.dnsEdit]
     ])
   })
 })
@@ -74,7 +76,8 @@ describe('CloudflareClient.check', () => {
     expect(result.permissions.map((g) => [g.id, g.state])).toEqual([
       ['monitoring', 'granted'],
       ['origin-ca', 'not-granted'],
-      ['zone-mode', 'unknown']
+      ['zone-mode', 'unknown'],
+      ['dns-records', 'unknown']
     ])
     expect(result.permissions[0].lines.map((l) => l.label)).toEqual(['Zone → Zone → Read', 'Zone → DNS → Read', 'Zone → Zone Settings → Read'])
   })
@@ -495,5 +498,48 @@ describe('CloudflareClient zone SSL mode', () => {
     expect(await client.currentSslMode('z1')).toBe('full')
     expect(await client.findZone('EXAMPLE.com')).toEqual(zone)
     await expect(client.findZone('other.example.net')).rejects.toThrow('not a zone in this Cloudflare account')
+  })
+})
+
+describe('CloudflareClient DNS records', () => {
+  const NEW_RECORD = { type: 'A' as const, name: 'New.example.com', content: '203.0.113.10', proxied: true, comment: 'Created by Shellway' }
+
+  it('looks up records by exact lower-cased name', async () => {
+    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records?name=new.example.com': ok([{ id: 'r1', type: 'A', name: 'New.example.com', content: '203.0.113.10', proxied: true }]) })
+    const found = await new CloudflareClient(TOKEN, impl).findDnsRecords('z1', 'NEW.example.com')
+    expect(found).toEqual([{ id: 'r1', type: 'A', name: 'new.example.com', content: '203.0.113.10', proxied: true }])
+    expect(calls).toHaveLength(1)
+  })
+
+  it('creates one record with automatic TTL and the comment, once', async () => {
+    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records': ok({ id: 'r9', type: 'A', name: 'new.example.com', content: '203.0.113.10', proxied: true }) })
+    const created = await new CloudflareClient(TOKEN, impl).createDnsRecord('z1', NEW_RECORD)
+    expect(created.id).toBe('r9')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ type: 'A', name: 'new.example.com', content: '203.0.113.10', ttl: 1, proxied: true, comment: 'Created by Shellway' })
+  })
+
+  it('treats a create reply without an id as a failure', async () => {
+    const { impl } = fakeFetch({ '/zones/z1/dns_records': ok({}) })
+    await expect(new CloudflareClient(TOKEN, impl).createDnsRecord('z1', NEW_RECORD)).rejects.toThrow('did not return the new DNS record')
+  })
+
+  it('names the missing permission when creating is refused, without retrying', async () => {
+    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records': denied() })
+    await expect(new CloudflareClient(TOKEN, impl).createDnsRecord('z1', NEW_RECORD)).rejects.toThrow('Zone → DNS → Edit')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('passes through Cloudflare\'s own message when a record already exists', async () => {
+    const { impl } = fakeFetch({ '/zones/z1/dns_records': { status: 400, body: { success: false, errors: [{ code: 81057, message: 'Record already exists.' }] } } })
+    await expect(new CloudflareClient(TOKEN, impl).createDnsRecord('z1', NEW_RECORD)).rejects.toThrow('Cloudflare answered: Record already exists.')
+  })
+
+  it('deletes only the record id it is given', async () => {
+    const { impl, calls } = fakeFetch({ '/zones/z1/dns_records/r9': ok({ id: 'r9' }) })
+    await new CloudflareClient(TOKEN, impl).deleteDnsRecord('z1', 'r9')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].init.method).toBe('DELETE')
   })
 })
