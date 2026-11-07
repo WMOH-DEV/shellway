@@ -159,7 +159,7 @@ describe('pending database on connect', () => {
   })
 
   it('lets the SQL tab ask for a database when no switch will happen', async () => {
-    await openInSqlTab(TAB, 'postgres', 'shop_prod')
+    await openInSqlTab(TAB, 'postgresql', 'shop_prod')
     finishConnecting('postgres')
     expect(isOpeningDatabase(TAB)).toBe(false)
 
