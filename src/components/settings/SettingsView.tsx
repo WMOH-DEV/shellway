@@ -22,6 +22,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
+import { setClassicTabs } from '@/components/server/shell/classicTabsStore'
+import { closeClassicFeatureWindows } from '@/utils/windowHandoff'
 import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
@@ -141,12 +143,20 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
     [settings, setTheme]
   )
 
+  const changeClassicServerTabs = useCallback((enabled: boolean) => {
+    void update('classicServerTabs', enabled)
+    setClassicTabs(enabled)
+    if (!enabled) void closeClassicFeatureWindows()
+  }, [update])
+
   const handleReset = useCallback(async () => {
     await window.novadeck.settings.reset()
     setSettings(DEFAULT_SETTINGS)
     setTheme(DEFAULT_SETTINGS.theme)
     applyAccentColor(DEFAULT_SETTINGS.accentColor)
     applyDensity(DEFAULT_SETTINGS.density)
+    setClassicTabs(DEFAULT_SETTINGS.classicServerTabs)
+    if (!DEFAULT_SETTINGS.classicServerTabs) void closeClassicFeatureWindows()
     // Sync keybinding store with reset settings
     useKeybindingStore.getState().resetAll()
     toast.info('Settings reset to defaults')
@@ -196,6 +206,16 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 />
                 <CheckForUpdatesButton />
               </SettingsSection>
+
+              <div className="mt-6">
+                <SettingsSection title="Server tab">
+                  <Toggle
+                    checked={settings.classicServerTabs}
+                    onChange={changeClassicServerTabs}
+                    label="Show classic Monitor, Services, Deploy, SSL and Info tabs"
+                  />
+                </SettingsSection>
+              </div>
 
               <div className="mt-6">
                 <SettingsSection title="Notifications">
