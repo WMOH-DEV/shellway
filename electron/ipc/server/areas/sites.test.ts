@@ -1,3 +1,4 @@
+import { testIpcContext } from '../../../services/server/testing/ipcContext'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeRemoteExec } from '../../../services/server/testing/FakeRemoteExec'
 import type { ServerIpcContext } from '../../../services/server/context'
@@ -6,7 +7,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
 
 const { tailSiteLog } = await import('./sites')
 
-const contextWith = (fake: FakeRemoteExec | null): ServerIpcContext => ({ execFor: () => fake?.exec ?? null, broadcast: () => {} })
+const contextWith = (fake: FakeRemoteExec | null): ServerIpcContext => testIpcContext({ execFor: () => fake?.exec ?? null, broadcast: () => {} })
 
 describe('server:sites:tail', () => {
   it('runs one bounded tail over stdin and returns the text', async () => {

@@ -1,3 +1,4 @@
+import { testIpcContext } from '../../../services/server/testing/ipcContext'
 import type { Readable } from 'stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeRemoteExec } from '../../../services/server/testing/FakeRemoteExec'
@@ -10,7 +11,7 @@ const NGINX = { kind: 'systemd', name: 'nginx' }
 
 function context(exec: RemoteExec | null) {
   const broadcast = vi.fn()
-  return { ctx: { execFor: () => exec, broadcast }, broadcast }
+  return { ctx: testIpcContext({ execFor: () => exec, broadcast }), broadcast }
 }
 
 interface Pending {

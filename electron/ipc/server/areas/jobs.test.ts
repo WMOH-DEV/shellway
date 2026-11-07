@@ -1,3 +1,4 @@
+import { testIpcContext } from '../../../services/server/testing/ipcContext'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
@@ -7,7 +8,7 @@ import type { ServerIpcContext } from '../../../services/server/context'
 import { tailJobLog } from './jobs'
 
 function contextWith(fake: FakeRemoteExec | null): ServerIpcContext {
-  return { execFor: () => (fake ? fake.exec : null), broadcast: () => {} }
+  return testIpcContext({ execFor: () => (fake ? fake.exec : null), broadcast: () => {} })
 }
 
 describe('tailJobLog', () => {

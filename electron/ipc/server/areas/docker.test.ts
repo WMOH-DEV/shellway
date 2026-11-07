@@ -1,3 +1,4 @@
+import { testIpcContext } from '../../../services/server/testing/ipcContext'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeRemoteExec } from '../../../services/server/testing/FakeRemoteExec'
 import { MANIFEST_SINGLE } from '../../../../src/utils/server/docker/fixtures/output'
@@ -18,7 +19,7 @@ describe('docker area IPC', () => {
     handlers.clear()
     fake = new FakeRemoteExec()
     broadcast = vi.fn()
-    registerDockerIPC({ execFor: (id) => (id === 'conn-1' ? fake.exec : null), broadcast })
+    registerDockerIPC(testIpcContext({ execFor: (id) => (id === 'conn-1' ? fake.exec : null), broadcast }))
   })
 
   it('streams container logs and reports the end', async () => {
