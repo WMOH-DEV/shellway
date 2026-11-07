@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PACKAGES_NVM, PACKAGES_UBUNTU, PHP_OUTPUT, POOL_SHA, UPDATES_DEBIAN, UPDATES_UBUNTU, USAGE, WWW_CONF } from './fixtures/outputs'
-import { parsePackages } from './packages'
+import { bindingsFor, isPublicBinding, parsePackages } from './packages'
 import { parsePhp, parsePoolSettings } from './php'
 import { parseSearch, searchScript, assertSearchQuery } from './search'
 import { upstreamVersion } from './sections'
@@ -64,6 +64,9 @@ describe('parsePackages', () => {
     expect(facts.certbotSnapVersion).toBe('2.11.0')
     expect(facts.node).toEqual({ version: '20.18.0', source: 'nodesource', nvmVersions: [], pm2Version: '5.4.2' })
     expect(facts.siteCounts).toEqual({ nginx: 2, apache: 0 })
+    expect(bindingsFor(facts, 3306)).toEqual(['127.0.0.1:3306'])
+    expect(bindingsFor(facts, 6379).map(isPublicBinding)).toEqual([true])
+    expect(bindingsFor(facts, 3306).map(isPublicBinding)).toEqual([false])
   })
 
   it('detects nvm when node is not a system package', () => {

@@ -54,6 +54,7 @@ export interface PackagesFacts {
   certbotSnapVersion: string | null
   node: NodeFacts
   siteCounts: { nginx: number; apache: number }
+  listening: string[]
 }
 
 export interface PhpIniFile {

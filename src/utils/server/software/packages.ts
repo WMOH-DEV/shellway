@@ -27,6 +27,8 @@ echo '@@nginx-sites'
 ls /etc/nginx/sites-enabled 2>/dev/null
 echo '@@apache-sites'
 ls /etc/apache2/sites-enabled 2>/dev/null
+echo '@@listen'
+ss -ltnH 2>/dev/null | awk '{print $4}'
 exit 0
 `
 
@@ -93,8 +95,13 @@ export function parsePackages(stdout: string): PackagesFacts {
     composerVersion: nonEmpty(tools.composer),
     certbotSnapVersion: nonEmpty(tools.certbot_snap),
     node: parseNode(tools, versions),
-    siteCounts: { nginx: countSites(sectionLines(sections, 'nginx-sites')), apache: countSites(sectionLines(sections, 'apache-sites')) }
+    siteCounts: { nginx: countSites(sectionLines(sections, 'nginx-sites')), apache: countSites(sectionLines(sections, 'apache-sites')) },
+    listening: [...new Set(sectionLines(sections, 'listen').map((line) => line.trim()))]
   }
 }
 
 export const installedPackage = (facts: PackagesFacts, name: string): InstalledPackage | undefined => facts.installed.find((item) => item.name === name)
+
+export const bindingsFor = (facts: PackagesFacts, port: number): string[] => facts.listening.filter((address) => address.endsWith(`:${port}`))
+
+export const isPublicBinding = (address: string): boolean => /^(0\.0\.0\.0|\*|\[::\]|::):\d+$/.test(address)

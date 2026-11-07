@@ -84,6 +84,12 @@ default
 app.example.com
 api.example.com
 @@apache-sites
+@@listen
+127.0.0.1:3306
+0.0.0.0:22
+[::]:22
+127.0.0.1:3306
+*:6379
 `
 
 export const PACKAGES_NVM = `@@dpkg
