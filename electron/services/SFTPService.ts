@@ -180,9 +180,13 @@ export class SFTPService extends EventEmitter {
     })
   }
 
+  pathExists(remotePath: string): Promise<boolean> {
+    return new Promise((resolve) => this.sftp.lstat(remotePath, (err) => resolve(!err)))
+  }
+
   async copyFile(sourcePath: string, destPath: string): Promise<void> {
     const bytes = await this.readBytes(sourcePath)
-    const existed = await this.stat(destPath).then(() => true, () => false)
+    const existed = await this.pathExists(destPath)
     await this.writeBytes(destPath, bytes).catch(async (err: unknown) => {
       if (!existed) await this.unlink(destPath).catch(() => undefined)
       throw err
