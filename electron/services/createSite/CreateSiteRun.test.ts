@@ -131,7 +131,7 @@ describe('CreateSiteRun', () => {
     expect(record.steps.map((step) => step.id).slice(0, 3)).toEqual(['php', 'composer', 'folder'])
     const execCalls = vi.mocked(ports.exec).mock.calls
     expect(execCalls[0][1]).toMatchObject({ timeoutMs: 900_000 })
-    expect(String(execCalls[0][1]?.stdin)).toContain('install -y php8.5-fpm')
+    expect(String(execCalls[0][1]?.stdin)).toContain('install -y --no-remove php8.5-fpm')
     expect(String(execCalls[1][1]?.stdin)).toContain('getcomposer.org/installer')
   })
 
