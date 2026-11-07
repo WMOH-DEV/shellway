@@ -1,19 +1,13 @@
-import { lazy, Suspense } from 'react'
 import { LayoutDashboard } from 'lucide-react'
-import { ConnectionHealthDashboard } from '@/components/connection/ConnectionHealthDashboard'
 import type { SectionModule, ServerSectionContext } from '../types'
-
-const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then((m) => ({ default: m.MonitorView })))
+import { DiskPage } from './DiskPage'
+import { MetricsPage } from './MetricsPage'
+import { OverviewPage } from './OverviewPage'
 
 function OverviewSection({ ctx }: { ctx: ServerSectionContext }) {
-  if (ctx.route.sub === 'metrics') {
-    return (
-      <Suspense fallback={null}>
-        <MonitorView connectionId={ctx.connectionId} sessionId={ctx.sessionId} connectionStatus={ctx.connectionStatus} />
-      </Suspense>
-    )
-  }
-  return <ConnectionHealthDashboard connectionId={ctx.connectionId} sessionName={ctx.sessionName} status={ctx.connectionStatus} />
+  if (ctx.route.sub === 'metrics') return <MetricsPage ctx={ctx} />
+  if (ctx.route.sub === 'disk') return <DiskPage ctx={ctx} />
+  return <OverviewPage ctx={ctx} />
 }
 
 export const overviewSection: SectionModule = {
