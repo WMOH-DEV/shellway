@@ -122,7 +122,7 @@ class IssueRun {
 
   private failure(failedStage: IssueStage, restored: boolean): IssueResult {
     const output = this.log.text()
-    return { ok: false, failedStage, restored, backupPath: this.backupPath, lineage: null, output, hint: renewalHint(output) }
+    return { ok: false, failedStage, restored, backupPath: this.backupPath, lineage: null, output, hint: renewalHint(output, { action: 'issue', webServer: 'nginx' }) }
   }
 }
 

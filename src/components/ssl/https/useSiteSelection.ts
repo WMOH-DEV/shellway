@@ -18,6 +18,7 @@ export interface SiteSelection {
   otherError: string | null
   block: ServerBlock | null
   title: string | null
+  isDeploySite: boolean
   choices: NameChoice[]
   readiness: SslResource<NameReadiness[]>
   selected: string[]
@@ -73,6 +74,7 @@ export function useSiteSelection(connectionId: string, sessionId: string, report
     otherError: choice === OTHER_SITE && typed !== '' && !block ? `No nginx server block names ${typed}` : null,
     block,
     title: choice === OTHER_SITE ? block?.names[0] ?? null : picked?.title ?? null,
+    isDeploySite: picked?.kind === 'deploy',
     choices,
     readiness,
     selected,

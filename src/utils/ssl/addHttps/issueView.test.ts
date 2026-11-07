@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IssueRequest } from '../../../types/ssl'
 import { edgeOf, makeHost, makeOrigin } from '../testReport'
-import { commandRows, isMissingServerCertificate, issueFailureView, nginxChangeLines, weakSslHosts } from './issueView'
+import { commandRows, isMissingServerCertificate, issueFailureView, nginxChangeLines, weakSslHosts, weakZones } from './issueView'
 import { issueFailure } from './testFixtures'
 import { nginxDriver } from '../../webServer/nginx'
 
@@ -53,8 +53,20 @@ describe('weakSslHosts', () => {
     const strict = makeHost({ name: 'api.example.com', edge: edgeOf({ sslMode: 'strict' }) })
     const dnsOnly = makeHost({ name: 'old.example.com', edge: edgeOf({ state: 'dns-only', sslMode: 'flexible' }) })
     const found = weakSslHosts([flexible, off, strict, dnsOnly], ['app.example.com', 'www.app.example.com', 'api.example.com', 'old.example.com'])
-    expect(found).toEqual([{ name: 'app.example.com', mode: 'Flexible' }, { name: 'www.app.example.com', mode: 'Off' }])
+    expect(found).toEqual([{ name: 'app.example.com', mode: 'Flexible', zone: 'example.com' }, { name: 'www.app.example.com', mode: 'Off', zone: 'example.com' }])
     expect(weakSslHosts([flexible], ['other.example.com'])).toEqual([])
+  })
+})
+
+describe('weakZones', () => {
+  it('lists each zone once and skips hosts without a zone', () => {
+    expect(weakZones([
+      { name: 'app.example.com', mode: 'Flexible', zone: 'example.com' },
+      { name: 'www.example.com', mode: 'Off', zone: 'example.com' },
+      { name: 'app.example.org', mode: 'Flexible', zone: 'example.org' },
+      { name: 'x.example.net', mode: 'Flexible', zone: null }
+    ])).toEqual(['example.com', 'example.org'])
+    expect(weakZones([])).toEqual([])
   })
 })
 

@@ -38,6 +38,7 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
   const run = useCertbotRun(connectionId, recheck)
   const requestedBlockId = useHttpsIntentStore((s) => s.pending[connectionId])
   const consumeIntent = useHttpsIntentStore((s) => s.consume)
+  const requestDeploy = useHttpsIntentStore((s) => s.requestDeploy)
   const addHttps = (blockId?: string) => setScreen({ kind: 'add-https', blockId })
 
   useEffect(() => {
@@ -88,6 +89,8 @@ export function SslView({ connectionId, sessionId, connectionStatus }: SslViewPr
         blockId={screen.blockId ?? null}
         onCancel={backToList}
         onFinished={() => { recheck(); backToList() }}
+        onBackToDeploy={() => { recheck(); backToList(); requestDeploy(connectionId) }}
+        onSetZoneStrict={(zone) => setScreen({ kind: 'zone-mode', zone, returnTo: { kind: 'list' } })}
       />
     )
   }

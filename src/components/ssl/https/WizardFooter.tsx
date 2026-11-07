@@ -8,6 +8,7 @@ interface WizardFooterProps {
   flow: AddHttpsFlow
   onCancel: () => void
   onFinished: () => void
+  onBackToDeploy: () => void
 }
 
 const Hint = ({ children }: { children: ReactNode }) => <span className="text-xs text-nd-text-muted">{children}</span>
@@ -72,7 +73,13 @@ function IssueActions({ flow }: { flow: AddHttpsFlow }) {
   )
 }
 
-function VerifyActions({ flow, onFinished }: { flow: AddHttpsFlow; onFinished: () => void }) {
+interface VerifyActionsProps {
+  flow: AddHttpsFlow
+  onFinished: () => void
+  onBackToDeploy: () => void
+}
+
+function VerifyActions({ flow, onFinished, onBackToDeploy }: VerifyActionsProps) {
   const { verify } = flow
   const passed = verify.result !== null && verifyProblems(verify.result).length === 0
   return (
@@ -80,19 +87,20 @@ function VerifyActions({ flow, onFinished }: { flow: AddHttpsFlow; onFinished: (
       <Button onClick={() => void verify.run()} disabled={verify.loading}>
         <RefreshCw size={13} className={verify.loading ? 'animate-spin' : undefined} /> Verify again
       </Button>
+      {flow.site.isDeploySite && <Button onClick={onBackToDeploy}>Back to Deploy site</Button>}
       <Button variant={passed ? 'primary' : 'secondary'} onClick={onFinished}>Back to hostnames</Button>
     </>
   )
 }
 
-function StepActions({ flow, onFinished }: { flow: AddHttpsFlow; onFinished: () => void }) {
+function StepActions({ flow, onFinished, onBackToDeploy }: VerifyActionsProps) {
   if (flow.step === 'site') return <SiteActions flow={flow} />
   if (flow.step === 'prepare') return <PrepareActions flow={flow} />
   if (flow.step === 'issue') return <IssueActions flow={flow} />
-  return <VerifyActions flow={flow} onFinished={onFinished} />
+  return <VerifyActions flow={flow} onFinished={onFinished} onBackToDeploy={onBackToDeploy} />
 }
 
-export function WizardFooter({ flow, onCancel, onFinished }: WizardFooterProps) {
+export function WizardFooter({ flow, onCancel, onFinished, onBackToDeploy }: WizardFooterProps) {
   const busy = flow.prepare.run.running || flow.issue.run.running
   return (
     <footer className="flex flex-wrap items-center gap-2.5 border-t border-nd-border bg-nd-bg-secondary px-7 py-3">
@@ -100,7 +108,7 @@ export function WizardFooter({ flow, onCancel, onFinished }: WizardFooterProps) 
         ? null
         : <Button onClick={flow.step === 'site' ? onCancel : flow.back} disabled={busy}>{flow.step === 'site' ? 'Cancel' : 'Back'}</Button>}
       <div className="flex-1" />
-      <StepActions flow={flow} onFinished={onFinished} />
+      <StepActions flow={flow} onFinished={onFinished} onBackToDeploy={onBackToDeploy} />
     </footer>
   )
 }

@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { weakSslHosts, weakZones } from '@/utils/ssl/addHttps/issueView'
 import type { SslReport } from '@/types/ssl'
 import { ContextCard } from './ContextCard'
 import { HttpsStepper } from './HttpsStepper'
@@ -18,16 +19,25 @@ interface AddHttpsWizardProps {
   blockId: string | null
   onCancel: () => void
   onFinished: () => void
+  onBackToDeploy: () => void
+  onSetZoneStrict: (zone: string) => void
 }
 
-function StepBody({ flow, report }: { flow: AddHttpsFlow; report: SslReport }) {
-  if (flow.step === 'site') return <SiteStep flow={flow} />
+interface StepBodyProps {
+  flow: AddHttpsFlow
+  report: SslReport
+  onSetZoneStrict: (zone: string) => void
+}
+
+function StepBody({ flow, report, onSetZoneStrict }: StepBodyProps) {
+  if (flow.step === 'site') return <SiteStep flow={flow} report={report} />
   if (flow.step === 'prepare') return <PrepareStep prepare={flow.prepare} />
   if (flow.step === 'issue') return <IssueStep flow={flow} report={report} />
-  return <VerifyStep verify={flow.verify} />
+  const zones = weakZones(weakSslHosts(report.hostnames, flow.issued?.names ?? []))
+  return <VerifyStep verify={flow.verify} strictZones={zones} onSetZoneStrict={onSetZoneStrict} />
 }
 
-export function AddHttpsWizard({ connectionId, sessionId, serverName, report, blockId, onCancel, onFinished }: AddHttpsWizardProps) {
+export function AddHttpsWizard({ connectionId, sessionId, serverName, report, blockId, onCancel, onFinished, onBackToDeploy, onSetZoneStrict }: AddHttpsWizardProps) {
   const flow = useAddHttpsFlow({ connectionId, sessionId, report, initialBlockId: blockId })
   const busy = flow.prepare.run.running || flow.issue.run.running
   return (
@@ -53,12 +63,12 @@ export function AddHttpsWizard({ connectionId, sessionId, serverName, report, bl
             <ContextCard step={flow.step} certbotDocsUrl={flow.prepare.plan?.docsUrl ?? null} route={flow.prepare.plan?.route ?? null} />
           </aside>
           <main className="min-w-0 flex-1">
-            <StepBody flow={flow} report={report} />
+            <StepBody flow={flow} report={report} onSetZoneStrict={onSetZoneStrict} />
           </main>
         </div>
       </div>
 
-      <WizardFooter flow={flow} onCancel={onCancel} onFinished={onFinished} />
+      <WizardFooter flow={flow} onCancel={onCancel} onFinished={onFinished} onBackToDeploy={onBackToDeploy} />
     </div>
   )
 }

@@ -2,9 +2,10 @@ import { CardLabel } from '../Card'
 
 interface IssuerCardsProps {
   certbotMissing: boolean
+  certbotLikelyFails: boolean
 }
 
-export function IssuerCards({ certbotMissing }: IssuerCardsProps) {
+export function IssuerCards({ certbotMissing, certbotLikelyFails }: IssuerCardsProps) {
   return (
     <section aria-label="Who issues the certificate" className="flex flex-col gap-2">
       <CardLabel>Who issues the certificate</CardLabel>
@@ -20,10 +21,15 @@ export function IssuerCards({ certbotMissing }: IssuerCardsProps) {
           <span className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
               <span className="text-[13px] font-semibold text-nd-text-primary">Let's Encrypt with certbot</span>
-              <span className="rounded bg-nd-success/12 px-1.5 py-px text-[11px] font-medium text-nd-success-fg">Recommended</span>
+              {!certbotLikelyFails && <span className="rounded bg-nd-success/12 px-1.5 py-px text-[11px] font-medium text-nd-success-fg">Recommended</span>}
             </span>
             <span className="text-[12.5px] text-nd-text-secondary">Free. Renews by itself every ~60 days. Works with or without Cloudflare.</span>
             {certbotMissing && <span className="text-xs text-nd-warning-fg">certbot isn't installed yet. Shellway will set it up next.</span>}
+            {certbotLikelyFails && (
+              <span className="text-xs text-nd-warning-fg">
+                Port 80 is not reachable for these names, so Let's Encrypt will likely fail. Use the Origin CA switch after adding a certificate, or open port 80.
+              </span>
+            )}
           </span>
         </button>
         <button

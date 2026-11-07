@@ -1,8 +1,10 @@
 import { AlertTriangle, Check } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import type { VerifyName, VerifyResult } from '@/types/ssl'
 import { servedText, verifyProblems } from '@/utils/ssl/addHttps/verifyView'
 import { nowSeconds } from '@/utils/ssl/time'
+import { STRICT_LABEL } from '@/utils/ssl/zoneMode/zoneModeView'
 import { ErrorBanner } from '../LoadState'
 import { CardLabel } from '../Card'
 import { CheckText } from './CheckText'
@@ -61,7 +63,30 @@ function Success() {
   )
 }
 
-export function VerifyStep({ verify }: { verify: Verify }) {
+function StrictOffer({ zones, onSetZoneStrict }: { zones: string[]; onSetZoneStrict: (zone: string) => void }) {
+  if (zones.length === 0) return null
+  return (
+    <section aria-label="Cloudflare zone" className="flex flex-col gap-2.5 rounded-[10px] border border-nd-border bg-nd-surface p-4">
+      <CardLabel>Cloudflare</CardLabel>
+      <span className="text-[13px] text-nd-text-secondary">
+        The zone's SSL mode is Flexible or Off, so Cloudflare does not check this certificate. You can switch it to {STRICT_LABEL} now. Shellway checks every proxied hostname in the zone first.
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {zones.map((zone) => (
+          <Button key={zone} onClick={() => onSetZoneStrict(zone)}>Switch {zone} to {STRICT_LABEL}…</Button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+interface VerifyStepProps {
+  verify: Verify
+  strictZones: string[]
+  onSetZoneStrict: (zone: string) => void
+}
+
+export function VerifyStep({ verify, strictZones, onSetZoneStrict }: VerifyStepProps) {
   const { result, error, loading } = verify
   const problems = result ? verifyProblems(result) : []
   return (
@@ -72,6 +97,7 @@ export function VerifyStep({ verify }: { verify: Verify }) {
       {result && (problems.length === 0 ? <Success /> : <Problems problems={problems} />)}
       {result && <NameRows names={result.names} />}
       {result && <RenewalRows result={result} />}
+      {result && problems.length === 0 && <StrictOffer zones={strictZones} onSetZoneStrict={onSetZoneStrict} />}
     </div>
   )
 }

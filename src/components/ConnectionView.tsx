@@ -133,6 +133,14 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
     if (httpsRequested && tab.activeSubTab !== 'ssl') handleSubTabChange('ssl')
   }, [httpsRequested, tab.activeSubTab, handleSubTabChange])
 
+  const deployRequested = useHttpsIntentStore(s => s.deployReturns[tab.id] === true)
+  const consumeDeploy = useHttpsIntentStore(s => s.consumeDeploy)
+  useEffect(() => {
+    if (!deployRequested) return
+    consumeDeploy(tab.id)
+    if (tab.activeSubTab !== 'deploy') handleSubTabChange('deploy')
+  }, [deployRequested, tab.id, tab.activeSubTab, consumeDeploy, handleSubTabChange])
+
   // Shut down a sub-tab: go to last visited tab, or disconnect if none was visited
   const handleShutdownSubTab = useCallback((subTabId: string) => {
     const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))

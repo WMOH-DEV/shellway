@@ -32,6 +32,7 @@ export const isMissingServerCertificate = (host: HostnameStatus): boolean => hos
 export interface WeakSslHost {
   name: string
   mode: 'Flexible' | 'Off'
+  zone: string | null
 }
 
 const WEAK_MODES = { flexible: 'Flexible', off: 'Off' } as const
@@ -39,9 +40,11 @@ const WEAK_MODES = { flexible: 'Flexible', off: 'Off' } as const
 export function weakSslHosts(hostnames: HostnameStatus[], names: string[]): WeakSslHost[] {
   return hostnames.flatMap(({ name, edge }) => {
     const mode = edge.sslMode === 'flexible' || edge.sslMode === 'off' ? WEAK_MODES[edge.sslMode] : null
-    return names.includes(name) && edge.state === 'proxied' && mode ? [{ name, mode }] : []
+    return names.includes(name) && edge.state === 'proxied' && mode ? [{ name, mode, zone: edge.zone }] : []
   })
 }
+
+export const weakZones = (hosts: WeakSslHost[]): string[] => [...new Set(hosts.flatMap(({ zone }) => (zone ? [zone] : [])))]
 
 const STAGE_TITLES: Record<IssueStage, string> = {
   backup: 'Backing up the nginx file failed',

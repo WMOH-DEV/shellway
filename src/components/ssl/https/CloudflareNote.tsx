@@ -10,7 +10,7 @@ export function CloudflareNote({ hosts }: { hosts: WeakSslHost[] }) {
         {hosts.map((host) => host.name).join(', ')} {hosts.length === 1 ? 'is' : 'are'} proxied and the zone's SSL mode is {modes}. The site keeps working while the certificate is added.
       </span>
       <span className="text-xs text-nd-text-muted">
-        Afterwards you can switch the zone to Full (strict), so Cloudflare checks this certificate too.
+        Once the certificate is in place, the last step offers to switch the zone to Full (strict), so Cloudflare checks this certificate too.
       </span>
     </Card>
   )
