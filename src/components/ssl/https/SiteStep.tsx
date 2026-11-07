@@ -1,6 +1,7 @@
 import type { SslReport } from '@/types/ssl'
 import { certbotLikelyFails } from '@/utils/ssl/addHttps/issuerAdvice'
 import { fileName } from '@/utils/ssl/addHttps/siteOptions'
+import { certbotSetupNote } from '@/utils/ssl/https/installPlan'
 import type { AddHttpsFlow } from './useAddHttpsFlow'
 import { IssuerCards } from './IssuerCards'
 import { NamesCard } from './NamesCard'
@@ -15,7 +16,7 @@ export function SiteStep({ flow, report }: { flow: AddHttpsFlow; report: SslRepo
       <SitePicker site={site} serverLabel={flow.issue.driver.label} />
       {site.block && <NamesCard site={site} fileName={fileName(site.block.file)} />}
       <IssuerCards
-        certbotMissing={prepare.facts !== null && !prepare.ready}
+        setupNote={prepare.facts === null ? null : certbotSetupNote(prepare.facts)}
         certbotLikelyFails={certbotLikelyFails(site.selected, site.readiness.data ?? [], report.hostnames)}
       />
     </div>

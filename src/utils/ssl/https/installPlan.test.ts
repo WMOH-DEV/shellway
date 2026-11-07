@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrepFacts } from '../../../types/ssl'
-import { availableRoutes, installPlan, installScript, isCertbotReady } from './installPlan'
+import { availableRoutes, certbotSetupNote, installPlan, installScript, isCertbotReady } from './installPlan'
 
 const facts = (overrides: Partial<PrepFacts> = {}): PrepFacts => ({
   os: { id: 'ubuntu', versionId: '24.04', family: 'debian', pretty: 'Ubuntu 24.04 LTS' },
@@ -84,6 +84,29 @@ describe('installPlan', () => {
     expect(isCertbotReady(ready)).toBe(true)
     expect(installPlan(ready).needed).toBe(false)
     expect(commands(ready)[0]).toBe('skip snap install --classic certbot')
+  })
+
+  it('turns automatic renewal back on when certbot is installed but its timer is off', () => {
+    const snap = facts({ certbot: { path: '/usr/bin/certbot', version: '5.9.0', method: 'snap' }, plugins: ['nginx'] })
+    expect(commands(snap)).toContain('run systemctl enable --now snap.certbot.renew.timer')
+    const apt = facts({ certbot: { path: '/usr/bin/certbot', version: '1.21.0', method: 'apt' }, plugins: ['nginx'] })
+    expect(commands(apt, 'distro')).toEqual([
+      'skip DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+      'run systemctl enable --now certbot.timer',
+      'check certbot --version',
+      'check certbot plugins --text | grep -w nginx',
+      'check systemctl is-active certbot.timer'
+    ])
+    const ready = facts({ certbot: { path: '/usr/bin/certbot', version: '5.9.0', method: 'snap' }, plugins: ['nginx'], renewalTimer: 'snap.certbot.renew.timer' })
+    expect(commands(ready).some((c) => c.includes('enable'))).toBe(false)
+  })
+
+  it('says which part of certbot is missing', () => {
+    const snap = { path: '/usr/bin/certbot', version: '5.9.0', method: 'snap' as const }
+    expect(certbotSetupNote(facts())).toBe("certbot isn't installed yet. Shellway will set it up next.")
+    expect(certbotSetupNote(facts({ certbot: snap, plugins: ['standalone'] }))).toBe("certbot's nginx plugin is missing. Shellway will add it next.")
+    expect(certbotSetupNote(facts({ certbot: snap, plugins: ['nginx'] }))).toBe("certbot's automatic renewal is off. Shellway will turn it on next.")
+    expect(certbotSetupNote(facts({ certbot: snap, plugins: ['nginx'], renewalTimer: 'snap.certbot.renew.timer' }))).toBeNull()
   })
 
   it('turns the plan into one script that stops at the first failure and skips skipped steps', () => {

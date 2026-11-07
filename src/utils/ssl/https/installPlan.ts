@@ -9,13 +9,14 @@ const ROUTE_ORDER: InstallRoute[] = ['snap', 'distro']
 interface DistroSetup {
   prepare: InstallStep[]
   install: string
-  enableTimer: string | null
+  alwaysEnableTimer: boolean
   timer: string
 }
 
 const run = (id: string, command: string, why: string): InstallStep => ({ id, command, why, status: 'run', skipReason: null })
 const skip = (id: string, command: string, why: string, reason: string): InstallStep => ({ id, command, why, status: 'skip', skipReason: reason })
 const check = (id: string, command: string, why: string): InstallStep => ({ id, command, why, status: 'check', skipReason: null })
+const enableTimer = (timer: string): InstallStep => run('enable-timer', `systemctl enable --now ${timer}`, 'Turns on automatic renewal')
 
 export function certbotPlugin(facts: PrepFacts): Plugin {
   return facts.webServer === 'apache' ? 'apache' : 'nginx'
@@ -25,8 +26,16 @@ export function certbotDocsUrl(facts: PrepFacts): string {
   return `https://certbot.eff.org/instructions?ws=${certbotPlugin(facts)}&os=snap`
 }
 
+export function certbotSetupNote(facts: PrepFacts): string | null {
+  const plugin = certbotPlugin(facts)
+  if (facts.certbot === null) return "certbot isn't installed yet. Shellway will set it up next."
+  if (!facts.plugins.includes(plugin)) return `certbot's ${plugin} plugin is missing. Shellway will add it next.`
+  if (facts.renewalTimer === null) return "certbot's automatic renewal is off. Shellway will turn it on next."
+  return null
+}
+
 export function isCertbotReady(facts: PrepFacts): boolean {
-  return facts.certbot !== null && facts.plugins.includes(certbotPlugin(facts)) && facts.renewalTimer !== null
+  return certbotSetupNote(facts) === null
 }
 
 function distroSetup(facts: PrepFacts): DistroSetup | null {
@@ -35,7 +44,7 @@ function distroSetup(facts: PrepFacts): DistroSetup | null {
     return {
       prepare: [run('apt-update', 'apt-get update', 'Refreshes the package list')],
       install: `DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-${plugin}`,
-      enableTimer: null,
+      alwaysEnableTimer: false,
       timer: 'certbot.timer'
     }
   }
@@ -46,7 +55,7 @@ function distroSetup(facts: PrepFacts): DistroSetup | null {
   return {
     prepare,
     install: `dnf install -y certbot python3-certbot-${plugin}`,
-    enableTimer: 'systemctl enable --now certbot-renew.timer',
+    alwaysEnableTimer: true,
     timer: 'certbot-renew.timer'
   }
 }
@@ -87,6 +96,7 @@ function snapSteps(facts: PrepFacts): InstallStep[] {
       : run('install-snap', 'snap install --classic certbot', installWhy),
     run('link', 'ln -sf /snap/bin/certbot /usr/local/bin/certbot', 'So certbot works from any shell'),
     packagedRemoval(facts),
+    ...(hasSnap && facts.renewalTimer === null ? [enableTimer('snap.certbot.renew.timer')] : []),
     ...checkSteps(plugin, 'snap.certbot.renew.timer')
   ]
 }
@@ -98,7 +108,7 @@ function distroSteps(facts: PrepFacts, setup: DistroSetup): InstallStep[] {
   const steps = installed
     ? [skip('install-packages', setup.install, installWhy, 'Already installed')]
     : [...setup.prepare, run('install-packages', setup.install, installWhy)]
-  if (setup.enableTimer) steps.push(run('enable-timer', setup.enableTimer, 'Turns on automatic renewal'))
+  if (setup.alwaysEnableTimer || (installed && facts.renewalTimer === null)) steps.push(enableTimer(setup.timer))
   return [...steps, ...checkSteps(plugin, setup.timer)]
 }
 
