@@ -30,9 +30,7 @@ import { TabActiveContext } from '@/components/tabActive'
 import { useServerNavStore } from '@/stores/serverNavStore'
 import { useServerAttention, worstLevel } from '@/components/server/useServerAttention'
 import { useClassicTabs } from '@/components/server/shell/classicTabsStore'
-import { DOT_TONE } from '@/components/server/kit'
 import { isClassicSubTab, normalizeSubTab, normalizeSubTabList } from '@/utils/server/legacyTabs'
-import type { AttentionLevel } from '@/types/server/core'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
@@ -56,16 +54,6 @@ const ALL_SUB_TABS: TabItem[] = [
 
 const ALL_SUB_TAB_IDS = ALL_SUB_TABS.map(t => t.id as SubTab)
 const MODERN_SUB_TABS = ALL_SUB_TABS.filter(t => !isClassicSubTab(t.id))
-
-function ServerTabIcon({ level }: { level: AttentionLevel | null }) {
-  const showDot = level === 'error' || level === 'warning'
-  return (
-    <span className="relative inline-flex">
-      <Server size={13} />
-      {showDot && <span role="img" aria-label={`Server needs attention (${level})`} className={cn('absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full', DOT_TONE[level])} />}
-    </span>
-  )
-}
 
 type SubTab = ConnectionTab['activeSubTab']
 
@@ -131,9 +119,10 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
   const subTabsWithState = useMemo(() => {
     return (showClassic ? ALL_SUB_TABS : MODERN_SUB_TABS).map(t => ({
       ...t,
-      icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.id === 'server' ? <ServerTabIcon level={serverLevel} /> : t.icon,
+      icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.icon,
       dimmed: !runningSubTabs.has(t.id),
-      alert: t.id === 'ssl' && sslCritical
+      alert: (t.id === 'ssl' && sslCritical) || (t.id === 'server' && (serverLevel === 'error' || serverLevel === 'warning')),
+      alertTone: t.id === 'server' && serverLevel === 'warning' ? 'warning' as const : 'error' as const
     }))
   }, [showClassic, runningSubTabs, detachedSubTabs, sslCritical, serverLevel])
 
