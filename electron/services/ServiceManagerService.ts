@@ -200,7 +200,7 @@ export class ServiceManagerService {
     try {
       const { stderr, code } = await execCommand(
         conn,
-        `sudo systemctl ${action} ${unit} 2>&1`
+        `sudo -n systemctl ${action} ${unit} 2>&1`
       )
 
       if (code === 0) {
