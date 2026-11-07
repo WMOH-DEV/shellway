@@ -36,7 +36,7 @@ import { DEFAULT_SETTINGS } from '@/types/settings'
 import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
 
 const ACCENT_PRESETS = [
-  '#3b82f6', // Blue (default)
+  '#4f8cff',
   '#8b5cf6', // Violet
   '#ec4899', // Pink
   '#f43f5e', // Rose

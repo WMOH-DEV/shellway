@@ -70,9 +70,11 @@ export interface AppSettings {
   keybindings: Record<string, string>
 }
 
+const LEGACY_DEFAULT_ACCENT = '#3b82f6'
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
-  accentColor: '#3b82f6',
+  accentColor: '#4f8cff',
   density: 'comfortable',
   minimizeToTray: false,
   startOnBoot: false,
@@ -152,11 +154,13 @@ export class SettingsStore {
   /** Get all settings (deep-merges keybindings so new actions get defaults) */
   getAll(): AppSettings {
     const saved = this.store.get('settings') as Partial<AppSettings> | undefined
-    return {
+    const merged = {
       ...DEFAULT_SETTINGS,
       ...saved,
       keybindings: { ...DEFAULT_SETTINGS.keybindings, ...saved?.keybindings }
     }
+    if (merged.accentColor.toLowerCase() === LEGACY_DEFAULT_ACCENT) merged.accentColor = DEFAULT_SETTINGS.accentColor
+    return merged
   }
 
   /** Get a single setting value */

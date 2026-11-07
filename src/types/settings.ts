@@ -96,7 +96,7 @@ export interface AppSettings {
 /** Default settings */
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
-  accentColor: '#3b82f6',
+  accentColor: '#4f8cff',
   density: 'comfortable',
   minimizeToTray: false,
   startOnBoot: false,
