@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { getSSHService } from './ssh.ipc'
 import { broadcast } from '../services/WindowManager'
+import { withServerNotify } from '../services/serverNotify/notifyEvents'
 import { getNotificationService } from '../services/NotificationService'
 import { sshExec } from '../utils/sshExec'
 import type { RemoteExec } from '../services/deploy/DeployService'
@@ -107,7 +108,7 @@ export function registerSslIPC(): void {
     execFor,
     store,
     cloudflare: (token) => new CloudflareClient(token),
-    broadcast,
+    broadcast: withServerNotify(broadcast),
     notify: (title, body) => getNotificationService()?.notifySsl({ title, body }),
     now: () => Date.now()
   })
