@@ -63,6 +63,7 @@ function planView(planId: string, type: string, plan: ActionPlan, expiresAt: num
     steps: plan.steps.map((step) => ({
       id: step.id,
       label: step.label,
+      ...(step.group && { group: step.group }),
       kind: step.kind,
       root: step.root,
       display: redact(step.display, secrets),
@@ -243,7 +244,7 @@ export class ActionEngine {
       status: 'running',
       startedAt: this.deps.now(),
       finishedAt: null,
-      steps: plan.steps.map((step) => ({ id: step.id, label: step.label, display: redact(step.display, secrets), status: 'pending', startedAt: null, finishedAt: null, exitCode: null, output: '' })),
+      steps: plan.steps.map((step) => ({ id: step.id, label: step.label, ...(step.group && { group: step.group }), display: redact(step.display, secrets), status: 'pending', startedAt: null, finishedAt: null, exitCode: null, output: '' })),
       failure: null,
       ...(plan.undo && { undo: plan.undo })
     }

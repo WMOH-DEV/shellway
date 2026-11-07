@@ -18,7 +18,7 @@ export function entryFromRun(run: ActionRun): ActivityEntry {
     who: 'you',
     durationMs: Math.max(0, (run.finishedAt ?? run.startedAt) - run.startedAt),
     status: run.status,
-    steps: run.steps.map((step): ActivityStep => ({ label: step.label, display: step.display, output: tail(step.output), exitCode: step.exitCode, status: step.status })),
+    steps: run.steps.map((step): ActivityStep => ({ label: step.group ? `${step.group} · ${step.label}` : step.label, display: step.display, output: tail(step.output), exitCode: step.exitCode, status: step.status })),
     failure: run.failure,
     undo: run.undo
   }

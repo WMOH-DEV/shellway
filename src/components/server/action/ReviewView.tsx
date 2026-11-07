@@ -5,6 +5,7 @@ import { pluralize } from '@/utils/ssl/time'
 import { CodeBox, Notice } from '../kit'
 import { DrawerBody, DrawerFooter, Spacer } from './DrawerParts'
 import { PlanStepCard } from './PlanStepCard'
+import { StepGroupHeading } from './StepGroupHeading'
 
 const SUDOERS_HINT = [
   'echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/shellway',
@@ -51,7 +52,7 @@ export function ReviewView({ plan, notice, onCancel, onRun }: ReviewViewProps) {
         {plan.warnings.map((warning) => <Notice key={warning} tone="warning">{warning}</Notice>)}
         <p className="text-xs text-nd-text-muted">{pluralize(count, 'step')}, in this order. Nothing runs until you press Run.</p>
         <ol aria-label="Plan" className="flex flex-col gap-2">
-          {plan.steps.map((step, index) => <li key={step.id}><PlanStepCard step={step} index={index} /></li>)}
+          {plan.steps.map((step, index) => <li key={step.id}><StepGroupHeading steps={plan.steps} index={index} /><PlanStepCard step={step} index={index} /></li>)}
         </ol>
       </DrawerBody>
       <DrawerFooter>

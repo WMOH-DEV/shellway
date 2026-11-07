@@ -56,6 +56,14 @@ describe('ActionHost review', () => {
     expect(server.run).not.toHaveBeenCalled()
   })
 
+  it('shows a heading where each group of steps starts', async () => {
+    const plan = makePlan()
+    const grouped = { ...plan, steps: plan.steps.map((step, index) => ({ ...step, group: index === 0 ? 'Web server' : 'Security' })) }
+    await setup({ plan: vi.fn().mockResolvedValue({ success: true, data: grouped }) })
+    const list = within(await screen.findByRole('list', { name: 'Plan' }))
+    expect(list.getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['Web server', 'Security'])
+  })
+
   it('shows warnings from the plan', async () => {
     await setup({ plan: vi.fn().mockResolvedValue({ success: true, data: makePlan({ warnings: ['Port 6379 will listen on localhost only.'] }) }) })
     expect(await screen.findByText('Port 6379 will listen on localhost only.')).toBeInTheDocument()
@@ -96,6 +104,13 @@ describe('ActionHost run', () => {
     expect(screen.getByRole('region', { name: 'Output: Install redis-server' })).toHaveTextContent('Reading package lists...')
     emitRun(makeRun({ steps: [runStep('install', 'Install redis-server', 'done'), runStep('config', 'Set maxmemory', 'running')] }))
     expect(progress().getByRole('listitem', { name: 'Install redis-server: Done' })).toBeInTheDocument()
+    expect(progress().getByRole('listitem', { name: 'Set maxmemory: Running…' })).toBeInTheDocument()
+  })
+
+  it('shows the step groups in the progress list', async () => {
+    await startRun()
+    emitRun(makeRun({ steps: [{ ...runStep('install', 'Install redis-server', 'done'), group: 'Databases' }, { ...runStep('config', 'Set maxmemory', 'running'), group: 'Databases' }] }))
+    expect(progress().getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['Databases'])
     expect(progress().getByRole('listitem', { name: 'Set maxmemory: Running…' })).toBeInTheDocument()
   })
 

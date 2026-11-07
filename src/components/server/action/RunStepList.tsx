@@ -4,6 +4,7 @@ import type { RunStepState, RunStepStatus } from '@/types/server/core'
 import { cn } from '@/utils/cn'
 import { formatSeconds } from '@/utils/deploy/siteStatus'
 import { STEP_STATUS_TEXT, elapsedSeconds } from './runText'
+import { StepGroupHeading } from './StepGroupHeading'
 
 const DOTS: Record<RunStepStatus, { icon: ReactNode; tone: string }> = {
   pending: { icon: <Minus size={12} />, tone: 'bg-nd-surface-raised text-nd-text-muted' },
@@ -30,17 +31,21 @@ function stepTime(step: RunStepState, nowMs: number): string {
   return formatSeconds(elapsedSeconds(step.startedAt, step.finishedAt, nowMs))
 }
 
-function StepRow({ step, nowMs }: { step: RunStepState; nowMs: number }) {
+function StepRow({ steps, index, nowMs }: { steps: RunStepState[]; index: number; nowMs: number }) {
+  const step = steps[index]
   const dot = DOTS[step.status]
   const text = STEP_STATUS_TEXT[step.status]
   return (
-    <li aria-label={`${step.label}: ${text}`} className={cn('grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border px-3.5 py-2.5', CARDS[step.status])}>
-      <span className={cn('flex h-6 w-6 items-center justify-center rounded-full', dot.tone)} aria-hidden>{dot.icon}</span>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className={cn('text-[13px] font-medium', isQuiet(step.status) ? 'text-nd-text-muted' : 'text-nd-text-primary')}>{step.label}</span>
-        <span className={cn('text-xs', step.status === 'failed' ? 'text-nd-error-fg' : 'text-nd-text-muted')}>{text}</span>
+    <li aria-label={`${step.label}: ${text}`}>
+      <StepGroupHeading steps={steps} index={index} />
+      <div className={cn('grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border px-3.5 py-2.5', CARDS[step.status])}>
+        <span className={cn('flex h-6 w-6 items-center justify-center rounded-full', dot.tone)} aria-hidden>{dot.icon}</span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={cn('text-[13px] font-medium', isQuiet(step.status) ? 'text-nd-text-muted' : 'text-nd-text-primary')}>{step.label}</span>
+          <span className={cn('text-xs', step.status === 'failed' ? 'text-nd-error-fg' : 'text-nd-text-muted')}>{text}</span>
+        </div>
+        <span className="font-mono text-xs text-nd-text-muted">{stepTime(step, nowMs)}</span>
       </div>
-      <span className="font-mono text-xs text-nd-text-muted">{stepTime(step, nowMs)}</span>
     </li>
   )
 }
@@ -48,7 +53,7 @@ function StepRow({ step, nowMs }: { step: RunStepState; nowMs: number }) {
 export function RunStepList({ steps, nowMs }: { steps: RunStepState[]; nowMs: number }) {
   return (
     <ol aria-label="Progress" className="flex flex-col gap-1.5">
-      {steps.map((step) => <StepRow key={step.id} step={step} nowMs={nowMs} />)}
+      {steps.map((step, index) => <StepRow key={step.id} steps={steps} index={index} nowMs={nowMs} />)}
     </ol>
   )
 }

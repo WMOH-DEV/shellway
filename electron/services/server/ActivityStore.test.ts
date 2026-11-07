@@ -78,6 +78,12 @@ describe('activity entries', () => {
     expect(result.steps[0].output).toHaveLength(MAX_ACTIVITY_OUTPUT)
   })
 
+  it('keeps the step group in the activity label', () => {
+    const step = { id: 'one', label: 'Install nginx', display: 'apt-get install nginx', status: 'done' as const, startedAt: 1, finishedAt: 2, exitCode: 0, output: '' }
+    const run = { id: 'r1', planId: 'p1', connectionId: 'c1', sessionKey: 's1', type: 'setup.run', area: 'setup' as const, title: 'Set up', status: 'done' as const, startedAt: 1, finishedAt: 2, failure: null, steps: [{ ...step, group: 'Web server' }, { ...step, id: 'two', label: 'Reload' }] }
+    expect(entryFromRun(run).steps.map((entryStep) => entryStep.label)).toEqual(['Web server · Install nginx', 'Reload'])
+  })
+
   it('mirrors finished deploys, automatic ones as auto', () => {
     const deploy: DeployRecord = { id: 'd1', status: 'failed', trigger: 'auto', commit: 'abc', started: 100, finished: 130, warnings: 0, note: 'build failed', subject: '' }
     expect(entryFromDeploy('s1', 'app', deploy)).toMatchObject({ id: 'deploy:app:d1', at: 100_000, durationMs: 30_000, who: 'auto', source: 'deploy', area: 'sites', status: 'failed', failure: { message: 'build failed' } })

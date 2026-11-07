@@ -76,7 +76,7 @@ function readFacts(params: SetupParams, facts: ServerFacts): SetupFacts | PlanBl
 const grouped = (group: GroupId) => (step: ActionStep): ActionStep => ({
   ...step,
   id: `${group}.${step.id}`,
-  label: `${GROUP_LABELS[group]} · ${step.label}`
+  group: GROUP_LABELS[group]
 })
 
 function systemUpdateStep(): ActionStep {

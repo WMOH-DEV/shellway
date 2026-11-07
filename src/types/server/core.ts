@@ -61,6 +61,7 @@ export type ActionStepKind = 'command' | 'file-edit'
 export interface ActionStep {
   id: string
   label: string
+  group?: string
   kind: ActionStepKind
   root: boolean
   script: string
@@ -100,6 +101,7 @@ export interface ActionDefinition<P = unknown> {
 export interface PlanStepView {
   id: string
   label: string
+  group?: string
   kind: ActionStepKind
   root: boolean
   display: string
@@ -125,6 +127,7 @@ export type RunStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped
 export interface RunStepState {
   id: string
   label: string
+  group?: string
   display: string
   status: RunStepStatus
   startedAt: number | null

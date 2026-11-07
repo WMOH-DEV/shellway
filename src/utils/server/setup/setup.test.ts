@@ -186,7 +186,8 @@ describe('buildSetupPlan', () => {
       'security.unattended-config',
       'security.swap'
     ])
-    expect(step(plan, 'web.nginx-install').label).toBe('Web server · Install nginx')
+    expect(step(plan, 'web.nginx-install')).toMatchObject({ label: 'Install nginx', group: 'Web server' })
+    expect(step(plan, 'security.swap').group).toBe('Security')
     expect(step(plan, 'update.upgrade').script).toContain('upgrade --with-new-pkgs')
     expect(step(plan, 'update.upgrade').script).not.toMatch(/dist-upgrade|full-upgrade/)
     expect(plan.summary).toBe('Install 8 components and apply 5 security changes on Ubuntu 24.04.3 LTS.')
