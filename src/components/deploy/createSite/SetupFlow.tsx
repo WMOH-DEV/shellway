@@ -23,7 +23,7 @@ import { ReviewStep } from './ReviewStep'
 import { IfStepFailsCard, SetsUpCard } from './SideCards'
 import { SiteStep } from './SiteStep'
 import { stepDetails } from './stepDetails'
-import { useCreateSiteDraft, type CreateSiteDraftModel } from './useCreateSiteDraft'
+import { useCreateSiteDraft, type CreateSiteDraftModel, type CreateSitePrefill } from './useCreateSiteDraft'
 import { WizardFrame } from './WizardFrame'
 
 export interface SetupFlowProps {
@@ -34,6 +34,7 @@ export interface SetupFlowProps {
   starting: boolean
   startError: string | null
   rechecking: boolean
+  prefill?: CreateSitePrefill
   onCancel: () => void
   onStart: (input: CreateSiteInput, plan: PlanAction[]) => void
   onRecheck: () => void
@@ -113,8 +114,8 @@ function CreateActions({ plan, fullSudo, starting, rechecking, onCreate, onReche
   )
 }
 
-export function SetupFlow({ connectionId, sessionId, serverName, context, starting, startError, rechecking, onCancel, onStart, onRecheck }: SetupFlowProps) {
-  const model = useCreateSiteDraft(connectionId, sessionId, context.tools)
+export function SetupFlow({ connectionId, sessionId, serverName, context, starting, startError, rechecking, prefill, onCancel, onStart, onRecheck }: SetupFlowProps) {
+  const model = useCreateSiteDraft(connectionId, sessionId, context.tools, prefill)
   const [step, setStep] = useState<WizardStep>('site')
   const driver = driverFor(context.server)
   const zone = checkedZone(model)
