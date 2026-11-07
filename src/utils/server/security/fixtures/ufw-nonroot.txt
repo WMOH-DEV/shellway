@@ -1,0 +1,13 @@
+@@root
+no
+@@installed
+yes
+@@conf
+ENABLED=no
+@@verbose
+@@numbered
+@@docker
+no
+@@published
+@@session
+198.51.100.23 51234 203.0.113.10 2222
