@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EXIT_EDIT_REJECTED, EXIT_FILE_CHANGED } from '../../../src/utils/server/fileEdit'
+import { EXIT_EDIT_REJECTED, EXIT_FILE_CHANGED, fileEditStep } from '../../../src/utils/server/fileEdit'
 import { ExecTimeoutError } from '../../utils/sshExec'
 import { PLAN_TTL_MS } from './ActionEngine'
 import { action, harness, step } from './testing/engineHarness'
@@ -45,6 +45,14 @@ describe('ActionEngine.plan', () => {
   it('does not block plans that need no root', async () => {
     const h = harness([action('software.test', () => [step('one')])], { sudo: 'password' })
     expect((await h.engine.plan('c1', 'software.test', {})).blocked).toBeNull()
+  })
+
+  it('blocks a file edit built from a file that was not valid UTF-8, so it cannot write the file back damaged', async () => {
+    const lossy = fileEditStep({ id: 'ini', label: 'Write php.ini', path: '/etc/php/8.3/fpm/php.ini', content: '; caf\uFFFD\nmemory_limit = 256M\n', originalSha256: 'a'.repeat(64) })
+    const h = harness([action('software.test', () => [lossy])])
+    const view = await h.engine.plan('c1', 'software.test', {})
+    expect(view.blocked).toEqual({ kind: 'precondition', message: '/etc/php/8.3/fpm/php.ini has characters Shellway cannot read safely. Edit it by hand.' })
+    await expect(h.engine.run('c1', 's1', view.planId)).rejects.toThrow('cannot read safely')
   })
 
   it('refuses plans with duplicate step ids or bad time limits', async () => {

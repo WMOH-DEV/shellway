@@ -178,8 +178,11 @@ function display(spec: FileEditSpec): string {
   return [...save, `write ${q(spec.path)}`, spec.test, spec.reload, spec.verify].filter(Boolean).join('\n')
 }
 
+const LOSSY_DECODE = '\uFFFD'
+
 export function fileEditStep(spec: FileEditSpec): ActionStep {
   return {
+    ...(spec.content.includes(LOSSY_DECODE) ? { unreadableFile: spec.path } : {}),
     id: spec.id,
     label: spec.label,
     kind: 'file-edit',

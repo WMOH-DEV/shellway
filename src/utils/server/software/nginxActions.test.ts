@@ -65,11 +65,6 @@ describe('software.nginx-settings', () => {
     expect(plan('software.nginx-settings', { values: { gzip: 'off' } }, facts).blocked).toBeNull()
   })
 
-  it('blocks when nginx.conf is not valid UTF-8 so the rewrite cannot corrupt it', () => {
-    const facts = { ...FACTS, [NGINX_PROBE]: nginxFacts(`# caf\uFFFD\n${NGINX_CONF}`) }
-    expect(plan('software.nginx-settings', { values: { gzip: 'off' } }, facts).blocked?.message).toContain('cannot read safely')
-  })
-
   it('blocks without an http block', () => {
     const facts = { ...FACTS, [NGINX_PROBE]: nginxFacts('events {\n}\n') }
     expect(plan('software.nginx-settings', { values: { gzip: 'on' } }, facts).blocked?.message).toContain('no http block')

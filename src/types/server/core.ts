@@ -70,6 +70,7 @@ export interface ActionStep {
   detached?: boolean
   rollback?: string
   cleanExits?: number[]
+  unreadableFile?: string
 }
 
 export interface UndoRef {

@@ -92,6 +92,12 @@ export function sudoHint(reason: string, installed: boolean, user: string): stri
   return `${reason}. Shellway changes the server with "sudo -n", which cannot type a password. ${how}`
 }
 
+function withUnreadableBlock(plan: ActionPlan): ActionPlan {
+  const path = plan.blocked ? undefined : plan.steps.find((step) => step.unreadableFile)?.unreadableFile
+  if (!path) return plan
+  return { ...plan, blocked: { kind: 'precondition', message: `${path} has characters Shellway cannot read safely. Edit it by hand.` } }
+}
+
 function withSudoBlock(plan: ActionPlan, facts: ServerFacts): ActionPlan {
   if (plan.blocked || !plan.steps.some((step) => step.root)) return plan
   const problem = sudoProblem(facts[SUDO_PROBE])
@@ -192,7 +198,7 @@ export class ActionEngine {
     const facts = await this.deps.scan.scan(connectionId, [...new Set([...definition.needs, SUDO_PROBE, IDENTITY_PROBE])], true)
     const plan = definition.plan(params, facts)
     assertPlan(plan)
-    return withSudoBlock(plan, facts)
+    return withSudoBlock(withUnreadableBlock(plan), facts)
   }
 
   private remember(connectionId: string, type: string, params: unknown, plan: ActionPlan): ActionPlanView {
