@@ -32,8 +32,8 @@ const MARKER = '\x1e'
 const MARKER_LINE = /^\x1e(\d+) (phase|step|end) (\S+)$/
 const RUNNER_LINE = /^\[(\d\d:\d\d:\d\d)\] (.*)$/
 const STEP_RESULT = /^(optional )?step failed \(exit \d+\)/
-const ERROR_TEXT = /\b(error|errors|fatal|failed|failure|exception|denied|refusing)\b|\bERR!|could not|cannot|not found/i
-const WARNING_TEXT = /^(warning\b|optional step failed)/i
+const ERROR_TEXT = /\b(error|errors|fatal|failed|failure|exception|denied|refusing)\b|\bERR!|could not|cannot|not found|\[(emerg|alert|crit)\]/i
+const WARNING_TEXT = /^(warning\b|optional step failed|AH00558\b)|\[warn\]|\bnpm warn\b/i
 
 function lineTone(text: string): LineTone {
   if (WARNING_TEXT.test(text)) return 'warning'

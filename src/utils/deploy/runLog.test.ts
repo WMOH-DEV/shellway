@@ -47,6 +47,18 @@ describe('parseRunLog', () => {
     expect(parsed.sections[0].lines.map((l) => l.tone)).toEqual(['error', 'warning', 'plain', 'error'])
   })
 
+  it('reads web server warnings as warnings and nginx emergencies as errors', () => {
+    const parsed = parseRunLog([
+      'nginx: [warn] "ssl_stapling" ignored, issuer certificate not found for certificate "/etc/ssl/a.pem"',
+      "AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 127.0.1.1",
+      'npm WARN deprecated inflight@1.0.6',
+      'nginx: [emerg] unknown directive "sll_certificate" in /etc/nginx/sites-enabled/app.conf:12',
+      'nginx: [crit] SSL_CTX_use_PrivateKey failed',
+      'nginx: configuration file /etc/nginx/nginx.conf test is successful'
+    ].join('\n') + '\n')
+    expect(parsed.sections[0].lines.map((l) => l.tone)).toEqual(['warning', 'warning', 'warning', 'error', 'error', 'plain'])
+  })
+
   it('treats a log without markers as one unstructured block', () => {
     const parsed = parseRunLog('[10:00:00] $ echo hi\nhi\n')
     expect(parsed.structured).toBe(false)
