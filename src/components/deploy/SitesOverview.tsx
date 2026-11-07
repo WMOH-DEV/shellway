@@ -224,7 +224,7 @@ export function SitesOverview({ data, filters, away, serverName, user, starting,
 
         {runner && (!runner.installed || outdated) && <RunnerBanner installed={runner.installed} installing={installing} onInstall={() => void installRunner()} />}
         {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void refresh()} />}
-        {unfinished && <UnfinishedRunNotice domain={unfinished.domain} onOpen={() => createSite.onOpenRun(unfinished)} />}
+        {unfinished && <UnfinishedRunNotice run={unfinished} onOpen={() => createSite.onOpenRun(unfinished)} />}
         {away.summary && <AwayBanner summary={away.summary} onReview={() => setFilter('attention')} onDismiss={away.dismiss} />}
 
         {!runner && loading && (

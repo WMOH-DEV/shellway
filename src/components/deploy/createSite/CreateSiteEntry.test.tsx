@@ -58,4 +58,9 @@ describe('Create site entry in the Deploy overview', () => {
     await user.click(screen.getByRole('button', { name: 'Open' }))
     expect(createSite.onOpenRun).toHaveBeenCalledWith(run)
   })
+
+  it('says a run is still going while it runs', () => {
+    renderOverview({ installed: true, version: 3, bundledVersion: 3 }, makeRun({ phase: 'running' }))
+    expect(screen.getByText('A Create site run for shop.example.com is still going.')).toBeInTheDocument()
+  })
 })
