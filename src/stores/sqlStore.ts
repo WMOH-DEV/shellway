@@ -78,6 +78,8 @@ export interface SQLConnectionSlice {
 export interface PendingDatabase {
   engine: 'mysql' | 'postgres'
   database: string
+  staleSessionId: string | null
+  expiresAt: number
 }
 
 interface SQLStoreState {
@@ -222,13 +224,19 @@ function updateConn(
 
 // ── Store ──
 
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record
+  const { [key]: _removed, ...rest } = record
+  return rest
+}
+
 export const useSQLStore = create<SQLStoreState>((set) => ({
   connections: {},
   pendingDatabases: {},
 
   setPendingDatabase: (connectionId, value) =>
     set((s) => {
-      const { [connectionId]: _removed, ...rest } = s.pendingDatabases
+      const rest = withoutKey(s.pendingDatabases, connectionId)
       return { pendingDatabases: value ? { ...rest, [connectionId]: value } : rest }
     }),
 
@@ -452,7 +460,8 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       connections: {
         ...s.connections,
         [connectionId]: { ...INITIAL_CONNECTION_STATE, pagination: { ...DEFAULT_PAGINATION } }
-      }
+      },
+      pendingDatabases: withoutKey(s.pendingDatabases, connectionId)
     })),
 
   // ── Remove a connection entirely ──
@@ -460,7 +469,7 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
   removeConnection: (connectionId) =>
     set((s) => {
       const { [connectionId]: _, ...rest } = s.connections
-      return { connections: rest }
+      return { connections: rest, pendingDatabases: withoutKey(s.pendingDatabases, connectionId) }
     })
 }))
 

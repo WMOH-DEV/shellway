@@ -70,6 +70,7 @@ export function GithubCard() {
   }
 
   const onSaved = () => {
+    setForgetError(undefined)
     setReplacing(false)
     setSaved(true)
   }

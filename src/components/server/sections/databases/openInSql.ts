@@ -19,6 +19,8 @@ async function switchDatabase(tabId: string, sessionId: string, database: string
   return true
 }
 
+const PENDING_LIFETIME_MS = 10 * 60 * 1000
+
 const OTHER_ENGINE = 'The SQL tab is connected to a different kind of database.'
 
 function sqlType(engine: DbEngine): 'mysql' | 'postgres' {
@@ -30,8 +32,9 @@ function sameEngineSessionId(connection: SQLConnectionSlice | undefined, type: P
   return connection.connectionConfig?.type === type ? connection.sqlSessionId : null
 }
 
-function isFinishedConnecting(connection: SQLConnectionSlice | undefined): boolean {
-  return connection?.connectionStatus === 'connected' && !!connection.sqlSessionId && !!connection.connectionConfig
+function hasNewSession(connection: SQLConnectionSlice | undefined, pending: PendingDatabase): boolean {
+  if (connection?.connectionStatus !== 'connected' || !connection.connectionConfig) return false
+  return !!connection.sqlSessionId && connection.sqlSessionId !== pending.staleSessionId
 }
 
 function toastPickManually(database: string, hint?: string): void {
@@ -49,9 +52,10 @@ async function applyPendingDatabase(tabId: string, pending: PendingDatabase): Pr
 function applyReadyPendingDatabases(): void {
   const { pendingDatabases, connections, setPendingDatabase } = useSQLStore.getState()
   for (const [tabId, pending] of Object.entries(pendingDatabases)) {
-    if (!isFinishedConnecting(connections[tabId])) continue
+    const expired = Date.now() > pending.expiresAt
+    if (!expired && !hasNewSession(connections[tabId], pending)) continue
     setPendingDatabase(tabId, null)
-    void applyPendingDatabase(tabId, pending)
+    if (!expired) void applyPendingDatabase(tabId, pending)
   }
 }
 
@@ -64,6 +68,7 @@ export async function openInSqlTab(tabId: string, engine: DbEngine, database: st
   if (sessionId && engine === 'mysql' && (await switchDatabase(tabId, sessionId, database))) return
   if (sessionId) return toastPickManually(database)
   if (connection?.connectionStatus === 'connected') return toastPickManually(database, OTHER_ENGINE)
-  useSQLStore.getState().setPendingDatabase(tabId, { engine: sqlType(engine), database })
+  const staleSessionId = connection?.sqlSessionId ?? null
+  useSQLStore.getState().setPendingDatabase(tabId, { engine: sqlType(engine), database, staleSessionId, expiresAt: Date.now() + PENDING_LIFETIME_MS })
   toast.info(`Connect to the database server, then Shellway opens ${database}.`)
 }

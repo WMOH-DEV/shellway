@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PageHeader, SectionPage } from '../../kit'
@@ -6,11 +7,16 @@ import { Catalog } from './Catalog'
 import { DetailPanel } from './DetailPanel'
 import { PackageSearch } from './PackageSearch'
 import { UpdatesBanner } from './UpdatesBanner'
+import { useFitScrollParent } from './useFitScrollParent'
 import { useSoftware } from './useSoftware'
+
+const STICKY_GAP_PX = 32
 
 export function SoftwareSection({ ctx }: { ctx: ServerSectionContext }) {
   const state = useSoftware(ctx)
   const panel = ctx.route.sub ?? 'php'
+  const pinned = useRef<HTMLDivElement>(null)
+  const maxHeight = useFitScrollParent(pinned, STICKY_GAP_PX)
   const refresh = (
     <Button size="icon" variant="ghost" aria-label="Refresh" disabled={state.loading} onClick={() => void state.refresh()}>
       <RefreshCw size={15} className={state.loading ? 'animate-spin' : undefined} />
@@ -26,7 +32,7 @@ export function SoftwareSection({ ctx }: { ctx: ServerSectionContext }) {
       <UpdatesBanner state={state} />
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-start gap-4">
         <Catalog ctx={ctx} state={state} selected={panel} />
-        <div className="sticky top-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+        <div ref={pinned} className="sticky top-4 overflow-y-auto" style={{ maxHeight }}>
           <DetailPanel panel={panel} ctx={ctx} state={state} />
         </div>
       </div>
