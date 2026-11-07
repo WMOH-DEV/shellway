@@ -1,6 +1,7 @@
 import type { DiffLine } from '../../../types/ssl'
 
 const CONTEXT_LINES = 3
+const MAX_TABLE_CELLS = 4_000_000
 
 export function splitLines(text: string): string[] {
   const lines = text.split('\n').map((line) => line.replace(/\r$/, ''))
@@ -25,7 +26,15 @@ function lcsTable(a: string[], b: string[]): Uint32Array {
   return table
 }
 
+function replaceAll(a: string[], b: string[], offset: number): DiffLine[] {
+  return [
+    ...a.map((text, index): DiffLine => ({ kind: 'remove', oldLine: offset + index + 1, newLine: null, text })),
+    ...b.map((text, index): DiffLine => ({ kind: 'add', oldLine: null, newLine: offset + index + 1, text }))
+  ]
+}
+
 function diffMiddle(a: string[], b: string[], offset: number): DiffLine[] {
+  if ((a.length + 1) * (b.length + 1) > MAX_TABLE_CELLS) return replaceAll(a, b, offset)
   const width = b.length + 1
   const table = lcsTable(a, b)
   const lines: DiffLine[] = []
@@ -65,8 +74,11 @@ export function lineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
 }
 
 export function withContext(lines: DiffLine[]): DiffLine[] {
-  const changed = lines.flatMap((line, index) => (line.kind === 'same' ? [] : [index]))
-  return lines.filter((_, index) => changed.some((at) => Math.abs(at - index) <= CONTEXT_LINES))
+  const keep = new Uint8Array(lines.length)
+  lines.forEach((line, index) => {
+    if (line.kind !== 'same') keep.fill(1, Math.max(0, index - CONTEXT_LINES), index + CONTEXT_LINES + 1)
+  })
+  return lines.filter((_, index) => keep[index] === 1)
 }
 
 export const changedLines = (oldText: string, newText: string): DiffLine[] => withContext(lineDiff(splitLines(oldText), splitLines(newText)))
