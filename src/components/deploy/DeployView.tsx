@@ -3,7 +3,7 @@ import { toast } from '@/components/ui/Toast'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { RunRecord } from '@/types/createSite'
 import type { ConnectionStatus } from '@/types/session'
-import type { DeployOptions, DeployResult, SiteConfig } from '@/types/deploy'
+import type { SiteConfig } from '@/types/deploy'
 import type { SiteFilter } from '@/utils/deploy/siteRow'
 import { CreateSiteWizard } from './createSite/CreateSiteWizard'
 import { useUnfinishedRun } from './createSite/useUnfinishedRun'
@@ -14,7 +14,8 @@ import { ShipPreview } from './ShipPreview'
 import type { SiteActions } from './SiteRow'
 import { SitesOverview } from './SitesOverview'
 import { useAwaySummary } from './useAwaySummary'
-import { deployApi, useDeploySites } from './useDeploySites'
+import { useDeployActions } from './useDeployActions'
+import { useDeploySites } from './useDeploySites'
 import { useIsVisible } from './useIsVisible'
 
 interface DeployViewProps {
@@ -30,30 +31,13 @@ type Screen =
   | { kind: 'create'; run: RunRecord | null }
   | { kind: 'key'; site: SiteConfig }
 
-function useStartingSites(): [ReadonlySet<string>, (name: string, task: () => Promise<void>) => Promise<void>] {
-  const [starting, setStarting] = useState<ReadonlySet<string>>(new Set())
-  const track = async (name: string, task: () => Promise<void>) => {
-    setStarting((prev) => new Set(prev).add(name))
-    try {
-      await task()
-    } finally {
-      setStarting((prev) => {
-        const next = new Set(prev)
-        next.delete(name)
-        return next
-      })
-    }
-  }
-  return [starting, track]
-}
-
 export function DeployView({ connectionId, sessionId, connectionStatus }: DeployViewProps) {
   const connected = connectionStatus === 'connected'
   const data = useDeploySites(connectionId, sessionId, connected)
   const { sites, pcDrift, refresh } = data
   const [screen, setScreen] = useState<Screen>({ kind: 'list' })
   const [shipping, setShipping] = useState<string | null>(null)
-  const [starting, track] = useStartingSites()
+  const { starting, deployNow, approve, cancel, resume } = useDeployActions(connectionId, refresh)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SiteFilter>('all')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -82,35 +66,13 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
     </div>
   )
 
-  const siteAction = (name: string, call: () => Promise<DeployResult<unknown>>, failure: string, onStarted: () => void) =>
-    track(name, async () => {
-      const result = await call()
-      if (!result.success) {
-        toast.error(failure, result.error)
-        return
-      }
-      onStarted()
-      await refresh()
-    })
-
-  const deployNow = (name: string, options?: DeployOptions) =>
-    void siteAction(name, () => deployApi().deploy(connectionId, name, options), `Could not deploy ${name}`, () => toast.info(`Deploying ${name}…`))
-
-  const approve = (name: string) =>
-    void siteAction(name, () => deployApi().approve(connectionId, name), `Could not approve ${name}`, () => toast.info(`Deploying ${name}…`))
-
   const configOf = (name: string) => sites.find((s) => s.config.name === name)?.config
 
   const actions: SiteActions = {
     open: (name) => setScreen({ kind: 'detail', name }),
     deploy: (name) => setShipping(name),
-    cancel: (name) => void siteAction(name, () => deployApi().cancel(connectionId, name), `Could not cancel ${name}`, () => toast.info(`Cancelling ${name}…`)),
-    resume: (name) => void siteAction(
-      name,
-      () => deployApi().resume(connectionId, name),
-      `Could not resume the auto check for ${name}`,
-      () => toast.success(`Auto check resumed for ${name}`, 'It looks for new commits again within a minute')
-    ),
+    cancel,
+    resume,
     edit: (name) => setScreen({ kind: 'detail', name, tab: 'settings' }),
     keySetup: (name) => {
       const site = configOf(name)

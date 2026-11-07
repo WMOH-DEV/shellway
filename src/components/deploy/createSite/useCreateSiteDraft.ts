@@ -21,8 +21,16 @@ export interface CreateSiteDraftModel {
 
 const autoFolder = (siteName: string): string => (siteName === '' ? '' : folderForName(siteName))
 
-export function useCreateSiteDraft(connectionId: string, sessionId: string, tools: ServerTools): CreateSiteDraftModel {
-  const [fields, setFields] = useState<DraftFields>(() => newDraft(tools))
+export type CreateSitePrefill = Partial<Pick<CreateSiteDraft, 'domain' | 'template' | 'appPort'>>
+
+function prefilledDraft(tools: ServerTools, prefill: CreateSitePrefill): DraftFields {
+  const draft = { ...newDraft(tools), ...prefill }
+  const siteName = draft.domain ? siteNameFromDomain(draft.domain) : draft.siteName
+  return { ...draft, siteName, folder: autoFolder(siteName) }
+}
+
+export function useCreateSiteDraft(connectionId: string, sessionId: string, tools: ServerTools, prefill: CreateSitePrefill = {}): CreateSiteDraftModel {
+  const [fields, setFields] = useState<DraftFields>(() => prefilledDraft(tools, prefill))
   const [email, setEmail] = useState('')
   const [nameEdited, setNameEdited] = useState(false)
   const [folderEdited, setFolderEdited] = useState(false)

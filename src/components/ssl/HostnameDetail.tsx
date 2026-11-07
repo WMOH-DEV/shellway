@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { cn } from '@/utils/cn'
 import { timeAgo } from '@/utils/deploy/siteStatus'
 import type { HostnameStatus, SslReport } from '@/types/ssl'
 import { certbotCommand } from '@/utils/ssl/commands'
@@ -29,9 +30,10 @@ interface HostnameDetailProps {
   onSwitchOrigin: (name: string) => void
   onSetZoneStrict: (zone: string) => void
   onRefresh: () => Promise<void>
+  embedded?: boolean
 }
 
-export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onSetZoneStrict, onRefresh }: HostnameDetailProps) {
+export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onSetZoneStrict, onRefresh, embedded }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
   const block = blocks.find((b) => b.id === host.blockId)
@@ -43,8 +45,8 @@ export function HostnameDetail({ connectionId, sessionId, host, report, now, loa
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-nd-bg-primary">
-      <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-7 pb-7 pt-[18px]">
+    <div className={cn(!embedded && 'h-full overflow-y-auto bg-nd-bg-primary')}>
+      <div className={cn('flex flex-col gap-4', !embedded && 'mx-auto min-h-full w-full max-w-[1400px] px-7 pb-7 pt-[18px]')}>
         <DetailHeader
           name={host.name}
           headline={verdictHeadline(host, now)}

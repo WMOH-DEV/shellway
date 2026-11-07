@@ -10,7 +10,7 @@ import { SiteList } from './SiteList'
 import type { SiteActions } from './SiteRow'
 import { UnfinishedRunNotice } from './createSite/UnfinishedRunNotice'
 
-const SEARCH_COMBO = 'CmdOrCtrl+K'
+export const SEARCH_COMBO = 'CmdOrCtrl+K'
 
 const FILTERS: { id: SiteFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -49,7 +49,7 @@ function isOtherEditable(target: EventTarget | null, own: HTMLElement | null): b
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
-function useSearchShortcut(inputRef: RefObject<HTMLInputElement>): void {
+export function useSearchShortcut(inputRef: RefObject<HTMLInputElement>): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const input = inputRef.current
@@ -73,7 +73,7 @@ function subtitle(data: DeploySites, serverName: string): string {
   return `${count} · ${outdated ? 'runner update available' : 'runner installed'}`
 }
 
-function RunnerBanner({ installed, installing, onInstall }: { installed: boolean; installing: boolean; onInstall: () => void }) {
+export function RunnerBanner({ installed, installing, onInstall }: { installed: boolean; installing: boolean; onInstall: () => void }) {
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-nd-info/30 bg-nd-info/[0.07] px-3.5 py-2.5">
       <AlertTriangle size={15} className="shrink-0 text-nd-info-fg" />
@@ -89,7 +89,7 @@ function RunnerBanner({ installed, installing, onInstall }: { installed: boolean
   )
 }
 
-function ErrorBanner({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+export function ErrorBanner({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
   return (
     <div className="flex items-center gap-3 rounded-[10px] border border-nd-error/30 bg-nd-error/[0.07] px-3.5 py-2.5 text-[13px] text-nd-text-primary">
       <AlertTriangle size={15} className="shrink-0 text-nd-error-fg" />
@@ -104,7 +104,7 @@ const OUTCOME_STYLE: Record<Exclude<AwayOutcome['tone'], 'plain'>, string> = {
   warning: 'text-nd-warning-fg'
 }
 
-function AwayBanner({ summary, onReview, onDismiss }: { summary: AwaySummary; onReview: () => void; onDismiss: () => void }) {
+export function AwayBanner({ summary, onReview, onDismiss }: { summary: AwaySummary; onReview: () => void; onDismiss: () => void }) {
   const { runs, outcomes } = awayParts(summary)
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-nd-border bg-nd-surface py-2.5 pl-3.5 pr-3">

@@ -1,16 +1,10 @@
 import { useState } from 'react'
 import { cn } from '@/utils/cn'
-import { Button } from '@/components/ui/Button'
-import { Modal } from '@/components/ui/Modal'
-import { Splitter } from '@/components/ui/Splitter'
-import { toast } from '@/components/ui/Toast'
-import type { DeployOptions, DeployRecord, DeployResult, RemoteDrift, SiteConfig, SiteSummary } from '@/types/deploy'
-import { shortSha } from '@/utils/deploy/siteStatus'
-import { canRetry, recordTitle, rollbackTarget } from '@/utils/deploy/siteDetail'
+import type { DeployOptions, RemoteDrift, SiteConfig, SiteSummary } from '@/types/deploy'
+import { rollbackTarget } from '@/utils/deploy/siteDetail'
 import { DetailHeader, type DetailActions } from './detail/DetailHeader'
-import { HistoryList } from './detail/HistoryList'
-import { RunPanel } from './detail/RunPanel'
 import { SummaryStrip } from './detail/SummaryStrip'
+import { DeploymentsPane, SiteRunModals, useSiteRuns } from './detail/useSiteRuns'
 import { EnvEditor } from './EnvEditor'
 import { PipelineEditor } from './PipelineEditor'
 import { ServerCheck } from './ServerCheck'
@@ -68,65 +62,11 @@ function TabBar({ tab, onChange, flagged }: { tab: DetailTab; onChange: (tab: De
   )
 }
 
-function rollbackBody(config: SiteConfig, record: DeployRecord): string {
-  const target = `${shortSha(record.commit)} "${recordTitle(record)}"`
-  return config.layout === 'releases'
-    ? `The live site switches back to ${target} and the after-going-live commands run again.`
-    : `The site folder is reset to ${target} and every command runs again.`
-}
-
-function ConfirmModal({ title, body, confirm, danger, onConfirm, onClose }: { title: string; body: string; confirm: string; danger?: boolean; onConfirm: () => void; onClose: () => void }) {
-  return (
-    <Modal open onClose={onClose} title={title}>
-      <p className="text-sm text-nd-text-secondary">{body}</p>
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirm}</Button>
-      </div>
-    </Modal>
-  )
-}
-
 export function SiteDetail({ connectionId, summary, pcDrift, user, starting, initialTab = 'history', onBack, onKeySetup, onDeploy, onDeployNow, onCancel, onSaved, onPipelineSaved, onRemoved }: SiteDetailProps) {
-  const { config, state, history } = summary
+  const { config, state } = summary
   const [tab, setTab] = useState<DetailTab>(initialTab)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState(false)
-  const [rollbackTo, setRollbackTo] = useState<DeployRecord | null>(null)
-  const selected = history.find((r) => r.id === selectedId) ?? history[0]
   const serverCheck = useServerCheck(connectionId, config)
-
-  const runAndSelect = async (action: Promise<DeployResult<string>>, failure: string) => {
-    const result = await action
-    if (!result.success) {
-      toast.error(failure, result.error)
-      return
-    }
-    if (result.data) setSelectedId(result.data)
-    setTab('history')
-  }
-
-  const followNewest = (start: () => void) => () => {
-    setSelectedId(null)
-    setTab('history')
-    start()
-  }
-
-  const rollback = (record: DeployRecord) => {
-    setRollbackTo(null)
-    void runAndSelect(deployApi().rollback(connectionId, config.name, record.id), 'Rollback could not start')
-  }
-
-  const remove = async () => {
-    setConfirmRemove(false)
-    const result = await deployApi().remove(connectionId, config.name)
-    if (!result.success) {
-      toast.error('Could not remove the site', result.error)
-      return
-    }
-    toast.success(`${config.name} removed`, 'Deployed files on the server were left in place')
-    onRemoved()
-  }
+  const runs = useSiteRuns(connectionId, config, () => setTab('history'), onRemoved)
 
   const pipelineSaved = () => {
     onPipelineSaved()
@@ -135,12 +75,12 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
 
   const actions: DetailActions = {
     back: onBack,
-    deploy: followNewest(onDeploy),
-    deployNow: followNewest(() => onDeployNow()),
+    deploy: runs.followNewest(onDeploy),
+    deployNow: runs.followNewest(() => onDeployNow()),
     cancel: onCancel,
-    rollback: setRollbackTo,
+    rollback: runs.askRollback,
     keySetup: onKeySetup,
-    remove: () => setConfirmRemove(true)
+    remove: () => runs.askRemove(true)
   }
 
   return (
@@ -150,22 +90,12 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
         <SummaryStrip summary={summary} pcDrift={pcDrift} user={user} />
         <TabBar tab={tab} onChange={setTab} flagged={serverCheck.hasProblem ? 'check' : null} />
         <div className="min-h-0 flex-1">
-          {tab === 'history' && (
-            <Splitter
-              defaultSplit={30}
-              minSize={280}
-              className="h-full rounded-[10px] border border-nd-border bg-nd-bg-secondary"
-              left={<HistoryList summary={summary} selectedId={selected?.id} onSelect={setSelectedId} onRollback={setRollbackTo} />}
-              right={selected
-                ? <RunPanel key={selected.id} connectionId={connectionId} summary={summary} record={selected} retry={{ allowed: canRetry(selected, summary), disabled: starting || state.busy, onRetry: followNewest(() => onDeployNow(selected.commit ? { commit: selected.commit } : undefined)) }} />
-                : <div className="flex h-full items-center justify-center text-sm text-nd-text-muted">Deploy this site to see its first run here</div>}
-            />
-          )}
+          {tab === 'history' && <DeploymentsPane connectionId={connectionId} summary={summary} runs={runs} starting={starting} onDeployNow={onDeployNow} />}
           {tab === 'pipeline' && (
             <PipelineEditor connectionId={connectionId} summary={summary} onSaved={pipelineSaved} onOpenServerCheck={() => setTab('check')} />
           )}
           {tab === 'env' && (
-            <EnvEditor connectionId={connectionId} site={config.name} canApply={Boolean(state.current) && !state.busy} onApply={() => void runAndSelect(deployApi().apply(connectionId, config.name), 'Could not apply the change')} />
+            <EnvEditor connectionId={connectionId} site={config.name} canApply={Boolean(state.current) && !state.busy} onApply={() => void runs.runAndSelect(deployApi().apply(connectionId, config.name), 'Could not apply the change')} />
           )}
           {tab === 'check' && <ServerCheck site={config} check={serverCheck} />}
           {tab === 'settings' && (
@@ -176,25 +106,7 @@ export function SiteDetail({ connectionId, summary, pcDrift, user, starting, ini
         </div>
       </div>
 
-      {rollbackTo && (
-        <ConfirmModal
-          title={`Roll back ${config.name}?`}
-          body={rollbackBody(config, rollbackTo)}
-          confirm="Roll back"
-          onConfirm={() => rollback(rollbackTo)}
-          onClose={() => setRollbackTo(null)}
-        />
-      )}
-      {confirmRemove && (
-        <ConfirmModal
-          title={`Remove ${config.name}?`}
-          body={`Shellway stops deploying this site and deletes its settings, history and deploy key from the server. The deployed code in ${config.path} is not touched.`}
-          confirm="Remove"
-          danger
-          onConfirm={() => void remove()}
-          onClose={() => setConfirmRemove(false)}
-        />
-      )}
+      <SiteRunModals config={config} runs={runs} />
     </div>
   )
 }

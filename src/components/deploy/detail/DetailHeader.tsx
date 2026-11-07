@@ -29,7 +29,7 @@ interface DetailHeaderProps {
   actions: DetailActions
 }
 
-function CancelButton({ summary, starting, onCancel }: { summary: SiteSummary; starting: boolean; onCancel: () => void }) {
+export function CancelButton({ summary, starting, onCancel }: { summary: SiteSummary; starting: boolean; onCancel: () => void }) {
   const allowed = canCancel(summary)
   const button = (
     <Button onClick={onCancel} disabled={starting || !allowed}>
@@ -39,7 +39,7 @@ function CancelButton({ summary, starting, onCancel }: { summary: SiteSummary; s
   return allowed ? button : <Tooltip content={cancelBlockedReason(summary)}>{button}</Tooltip>
 }
 
-function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeaderProps, 'rollbackTo' | 'connectionId'>) {
+export function DeployButton({ summary, pcDrift, starting, actions }: Omit<DetailHeaderProps, 'rollbackTo' | 'connectionId'>) {
   if (summary.state.pending) {
     return (
       <Button variant="primary" onClick={actions.deploy} disabled={starting}>

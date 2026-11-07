@@ -8,6 +8,7 @@ import { RunScreen } from './RunScreen'
 import { SetupFlow, type SetupFlowProps } from './SetupFlow'
 import { useCreateRun } from './useCreateRun'
 import { useCreateSiteContext } from './useCreateSiteContext'
+import type { CreateSitePrefill } from './useCreateSiteDraft'
 import { WizardFrame } from './WizardFrame'
 
 interface CreateSiteWizardProps {
@@ -15,6 +16,7 @@ interface CreateSiteWizardProps {
   sessionId: string
   serverName: string
   initialRun: RunRecord | null
+  prefill?: CreateSitePrefill
   onClose: () => void
 }
 
@@ -38,7 +40,7 @@ function Setup(props: SetupProps) {
   return frame(<ContextProblem message={`Shellway found no nginx or Apache on ${props.serverName}. Create site needs one of them to serve the site.`} />)
 }
 
-export function CreateSiteWizard({ connectionId, sessionId, serverName, initialRun, onClose }: CreateSiteWizardProps) {
+export function CreateSiteWizard({ connectionId, sessionId, serverName, initialRun, prefill, onClose }: CreateSiteWizardProps) {
   const run = useCreateRun(connectionId, sessionId, initialRun)
   const [plan, setPlan] = useState<PlanAction[] | null>(null)
   const { record } = run
@@ -56,6 +58,7 @@ export function CreateSiteWizard({ connectionId, sessionId, serverName, initialR
       serverName={serverName}
       starting={run.busy}
       startError={run.error}
+      prefill={prefill}
       onCancel={onClose}
       onStart={start}
     />
