@@ -1250,8 +1250,8 @@ const api = {
       ipcRenderer.invoke("ssl:origin-cancel", connectionId, switchId) as Promise<SslResult>,
     originLeftover: (connectionId: string, name: string) =>
       ipcRenderer.invoke("ssl:origin-leftover", connectionId, name) as Promise<SslResult<SwitchLeftover | null>>,
-    originUndo: (connectionId: string, sessionId: string, name: string, runId: string) =>
-      ipcRenderer.invoke("ssl:origin-undo", connectionId, sessionId, name, runId) as Promise<SslResult<SwitchResult>>,
+    originUndo: (connectionId: string, sessionId: string, name: string, revoke: boolean, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-undo", connectionId, sessionId, name, revoke, runId) as Promise<SslResult<SwitchResult>>,
     removeLineage: (connectionId: string, lineage: string, runId: string) =>
       ipcRenderer.invoke("ssl:remove-lineage", connectionId, lineage, runId) as Promise<SslResult<ActionResult>>,
     zonePreflight: (zone: string) => ipcRenderer.invoke("ssl:zone-preflight", zone) as Promise<SslResult<ZonePreflight>>,

@@ -23,7 +23,7 @@ function setupBackend({ leftovers = [leftoverOf()], removeCode = 0, undone = swi
       listener(runId, 'Deleted all files relating to the certificate\n')
       return { success: true, data: { code: removeCode, output: '' } }
     }),
-    undo: vi.fn(async (_c: string, _s: string, _name: string, runId: string) => {
+    undo: vi.fn(async (_c: string, _s: string, _name: string, _revoke: boolean, runId: string) => {
       listener(runId, 'Restoring the site file\n')
       return { success: true, data: undone }
     })
@@ -147,9 +147,20 @@ describe('LeftoverCard', () => {
     const { onChanged } = renderCard()
     await u.click(await screen.findByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Restoring the site file')).toBeInTheDocument()
-    expect(backend.undo).toHaveBeenCalledWith('conn-1', 'session-1', 'app.example.com', expect.any(String))
+    expect(backend.undo).toHaveBeenCalledWith('conn-1', 'session-1', 'app.example.com', true, expect.any(String))
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Switch undone')).toBeInTheDocument()
+  })
+
+  it('asks to revoke the certificate in Cloudflare by default and leaves it when unticked', async () => {
+    const backend = setupBackend()
+    const u = userEvent.setup()
+    renderCard()
+    const box = await screen.findByRole('checkbox', { name: 'Also revoke the certificate in Cloudflare' })
+    expect(box).toBeChecked()
+    await u.click(box)
+    await u.click(screen.getByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(backend.undo).toHaveBeenCalledWith('conn-1', 'session-1', 'app.example.com', false, expect.any(String)))
   })
 
   it('shows a failed undo', async () => {

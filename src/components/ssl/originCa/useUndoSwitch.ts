@@ -8,24 +8,27 @@ export interface UndoSwitch {
   run: StreamedRun
   result: SwitchResult | null
   error: string | null
+  revoke: boolean
+  setRevoke: (revoke: boolean) => void
   undo: () => Promise<void>
 }
 
 export function useUndoSwitch(connectionId: string, sessionId: string, name: string, onFinished?: (result: SwitchResult | null) => void | Promise<void>): UndoSwitch {
   const [result, setResult] = useState<SwitchResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [revoke, setRevoke] = useState(true)
   const run = useStreamedRun()
   const mounted = useMounted()
 
   const undo = async () => {
     setResult(null)
     setError(null)
-    const outcome = await run.start((runId) => sslApi().originUndo(connectionId, sessionId, name, runId))
+    const outcome = await run.start((runId) => sslApi().originUndo(connectionId, sessionId, name, revoke, runId))
     if (!mounted.current) return
     setResult(outcome.data)
     setError(outcome.error)
     await onFinished?.(outcome.data)
   }
 
-  return { run, result, error, undo }
+  return { run, result, error, revoke, setRevoke, undo }
 }

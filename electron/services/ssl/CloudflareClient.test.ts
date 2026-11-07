@@ -345,6 +345,37 @@ describe('CloudflareClient.edges', () => {
   })
 })
 
+describe('CloudflareClient.revokeOriginCert', () => {
+  const PEM = '-----BEGIN CERTIFICATE-----\nMIIBserved\n-----END CERTIFICATE-----\n'
+  const LIST = '/certificates?zone_id=z1&page=1&per_page=20'
+
+  it('finds the certificate the server used, ignoring line breaks, and revokes only that one', async () => {
+    const { impl, calls } = fakeFetch({
+      [LIST]: ok([{ id: 'other', certificate: '-----BEGIN CERTIFICATE-----\nMIIBother\n-----END CERTIFICATE-----' }, { id: 'c9', certificate: PEM.replace(/\n/g, '\r\n') }]),
+      '/certificates/c9': ok({ id: 'c9' })
+    })
+    expect(await new CloudflareClient(TOKEN, impl).revokeOriginCert('z1', PEM)).toBe('c9')
+    expect(calls.map((c) => `${c.init.method} ${c.path}`)).toEqual([`GET ${LIST}`, 'DELETE /certificates/c9'])
+  })
+
+  it('revokes nothing when no certificate in the zone matches', async () => {
+    const { impl, calls } = fakeFetch({ [LIST]: ok([{ id: 'other', certificate: '-----BEGIN CERTIFICATE-----\nMIIBother\n-----END CERTIFICATE-----' }]) })
+    expect(await new CloudflareClient(TOKEN, impl).revokeOriginCert('z1', PEM)).toBeNull()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('skips a matching certificate that is already revoked', async () => {
+    const { impl, calls } = fakeFetch({ [LIST]: ok([{ id: 'c9', certificate: PEM, revoked_at: '2026-11-07T12:00:00Z' }]) })
+    expect(await new CloudflareClient(TOKEN, impl).revokeOriginCert('z1', PEM)).toBeNull()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('explains a 403 plainly', async () => {
+    const { impl } = fakeFetch({ [LIST]: denied() })
+    await expect(new CloudflareClient(TOKEN, impl).revokeOriginCert('z1', PEM)).rejects.toThrow('needs Zone → SSL and Certificates → Edit')
+  })
+})
+
 describe('CloudflareClient.createOriginCert', () => {
   const PEM = '-----BEGIN CERTIFICATE-----\nMIIBsample\n-----END CERTIFICATE-----\n'
   const CSR = '-----BEGIN CERTIFICATE REQUEST-----\nMIIBcsr\n-----END CERTIFICATE REQUEST-----\n'

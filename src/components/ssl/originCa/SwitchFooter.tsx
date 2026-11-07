@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ArrowRight, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { SwitchFlow } from './useSwitchFlow'
+import { RevokeChoice } from './RevokeChoice'
 
 interface SwitchFooterProps {
   flow: SwitchFlow
@@ -60,6 +61,7 @@ function FinishedActions({ flow, onFinished }: { flow: SwitchFlow; onFinished: (
     <>
       <div className="flex-1" />
       {canUndo && <Hint>{UNDO_HINT}</Hint>}
+      {canUndo && <RevokeChoice undo={undo} />}
       {canUndo && (
         <Button onClick={() => void undo.undo()} disabled={undo.run.running}>
           {undo.run.running ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Undo switch

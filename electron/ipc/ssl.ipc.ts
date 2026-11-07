@@ -141,8 +141,8 @@ export function registerSslIPC(): void {
   handle('ssl:origin-cancel', (c, switchId) =>
     requireCoordinator().originCancel(str(c, 'connection'), matching(switchId, SWITCH_ID, 'switch')))
   handle('ssl:origin-leftover', (c, name) => requireCoordinator().originLeftover(str(c, 'connection'), str(name, 'name', 253)))
-  handle('ssl:origin-undo', (c, s, name, runId) =>
-    requireCoordinator().originUndo(str(c, 'connection'), str(s, 'session'), str(name, 'name', 253), matching(runId, RUN_ID, 'run')))
+  handle('ssl:origin-undo', (c, s, name, revoke, runId) =>
+    requireCoordinator().originUndo(str(c, 'connection'), str(s, 'session'), str(name, 'name', 253), revoke === true, matching(runId, RUN_ID, 'run')))
   handle('ssl:remove-lineage', (c, lineage, runId) =>
     requireCoordinator().originRemoveLineage(str(c, 'connection'), matching(lineage, LINEAGE_NAME, 'certificate name'), matching(runId, RUN_ID, 'run')))
   handle('ssl:zone-preflight', (zone) => requireCoordinator().zonePreflight(str(zone, 'zone', 253)))

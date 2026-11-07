@@ -5,6 +5,7 @@ import { removeOutcome, undoOutcome } from '@/utils/ssl/switchWizard/switchView'
 import { Card } from '../Card'
 import { ActionRow } from '../detail/ActionsCard'
 import { OutputPanel } from '../detail/OutputPanel'
+import { RevokeChoice } from './RevokeChoice'
 import { useLeftover, type Leftover } from './useLeftover'
 
 interface LeftoverCardProps {
@@ -39,10 +40,13 @@ function UndoRow({ item, state }: { item: SwitchLeftover; state: Leftover }) {
       command={item.backupPath ?? undefined}
       note="Puts the old site file back, tests the web server config, reloads and verifies."
     >
-      <Button disabled={state.busy} onClick={() => void state.undo.undo()}>
-        {state.undo.run.running && <Loader2 size={14} className="animate-spin" />}
-        Undo
-      </Button>
+      <div className="flex flex-col items-end gap-2">
+        <Button disabled={state.busy} onClick={() => void state.undo.undo()}>
+          {state.undo.run.running && <Loader2 size={14} className="animate-spin" />}
+          Undo
+        </Button>
+        <RevokeChoice undo={state.undo} />
+      </div>
     </ActionRow>
   )
 }

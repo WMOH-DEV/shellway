@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { RemoteExec } from '../deploy/DeployService'
 import type {
   ActionResult, CertbotAction, CloudflareStatus, EdgeInfo, HostnameStatus, InstallRoute, IssueRequest, IssueResult,
-  NameReadiness, OriginCert, PrepFacts, ServerScan, SslMode, SslReport, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult,
+  NameReadiness, OriginCert, PrepFacts, ServerBlock, ServerScan, SslMode, SslReport, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult,
   ZoneModeResult, ZonePreflight
 } from '../../../src/types/ssl'
 import { isIssuableName } from '../../../src/utils/ssl/https/issueCommands'
@@ -23,7 +23,7 @@ import { blocksUsingLineage, leftoverTarget, readLeftover, undoRefusal } from '.
 import { runPrepare } from './originCa/prepare'
 import { PreparedSwitches } from './originCa/preparedSwitches'
 import { SHORT_TIMEOUT_MS } from './originCa/remoteRun'
-import { runLineageRemoval, runUndo } from './originCa/undo'
+import { REVOKE_BY_HAND, runLineageRemoval, runUndo, type RevokePlan } from './originCa/undo'
 import type { VerifyDeps } from './originCa/verifyServed'
 import { SslService } from './SslService'
 import type { OriginProbe } from './zoneMode/probeOrigin'
@@ -215,7 +215,7 @@ export class SslCoordinator {
     return readLeftover(this.exec(connectionId), report, name, Math.floor(this.deps.now() / 1000))
   }
 
-  originUndo(connectionId: string, sessionId: string, name: string, runId: string): Promise<SwitchResult> {
+  originUndo(connectionId: string, sessionId: string, name: string, revoke: boolean, runId: string): Promise<SwitchResult> {
     const exec = this.exec(connectionId)
     return this.exclusive(connectionId, async () => {
       const report = await this.check(connectionId, sessionId)
@@ -225,10 +225,22 @@ export class SslCoordinator {
       const target = leftoverTarget(report, name)
       if (refusal || !leftover || !target) throw new Error(refusal ?? 'This site is no longer in the web server configuration.')
       const deps = { exec, onOutput: this.outputTo(runId), now: this.deps.now, ...this.verifyDeps(connectionId) }
-      const result = await runUndo(deps, { driver: servingDriver(report.facts), file: target.block.file, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover })
+      const revokePlan = revoke ? this.revokePlan(report, name, target.block) : null
+      const result = await runUndo(deps, { driver: servingDriver(report.facts), file: target.block.file, certPath: target.block.certPath, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover, revokePlan })
       await this.refresh(connectionId, sessionId)
       return result
     })
+  }
+
+  private revokePlan(report: SslReport, name: string, block: ServerBlock): RevokePlan {
+    if (report.blocks.some((other) => other.id !== block.id && other.certPath === block.certPath)) {
+      return { skipReason: `${block.certPath} is still used by another site on this server, so it was not revoked in Cloudflare.` }
+    }
+    const zone = report.hostnames.find((host) => host.name.toLowerCase() === name.toLowerCase())?.edge.zone ?? null
+    if (zone === null) return { skipReason: `The Cloudflare zone of ${name} is not known, so the certificate was not revoked. ${REVOKE_BY_HAND}` }
+    const client = this.dnsClient()
+    if (client === null) return { skipReason: `Cloudflare is not connected, so the certificate was not revoked. ${REVOKE_BY_HAND}` }
+    return { revoke: async (pem) => client.revokeOriginCert((await client.findZone(zone)).id, pem) }
   }
 
   originRemoveLineage(connectionId: string, lineage: string, runId: string): Promise<ActionResult> {

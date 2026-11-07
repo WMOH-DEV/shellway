@@ -387,7 +387,7 @@ describe('Switch to Origin CA step 5', () => {
     renderWizard()
     await toApplied(u)
     await u.click(screen.getByRole('button', { name: /Undo switch/ }))
-    await waitFor(() => expect(backend.undo).toHaveBeenCalledWith('conn-1', 'session-1', 'app.example.com', expect.any(String)))
+    await waitFor(() => expect(backend.undo).toHaveBeenCalledWith('conn-1', 'session-1', 'app.example.com', true, expect.any(String)))
     expect(await screen.findByText(/The old site file is back/)).toBeInTheDocument()
     expect(screen.getByText('Switch undone')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Undo switch/ })).not.toBeInTheDocument()

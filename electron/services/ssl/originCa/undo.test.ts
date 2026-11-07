@@ -5,7 +5,7 @@ import { restoreIfChangedScript, undoScript } from '../../../../src/utils/ssl/or
 import { NOW, makeBlock, makeFacts, makeHost } from '../../../../src/utils/ssl/testReport'
 import { blocksUsingLineage, readLeftover, undoRefusal } from './leftover'
 import { runLineageRemoval, runUndo } from './undo'
-import type { UndoDeps } from './undo'
+import type { RevokePlan, UndoDeps } from './undo'
 import { BACKUP_PATH, CERT_PATH, FILE, KEY_PATH, NAMES, SITE, originCert, readyReport, recorder, switchedReport } from './testKit'
 import type { Answer, Call } from './testKit'
 import { nginxDriver } from '../../../../src/utils/webServer/nginx'
@@ -134,11 +134,50 @@ describe('runUndo', () => {
     sleep = vi.fn(async () => {})
   })
 
-  const undo = (responder: (call: Call) => Answer | undefined = () => undefined) => {
+  const undo = (responder: (call: Call) => Answer | undefined = () => undefined, revokePlan: RevokePlan = null) => {
     const rec = recorder(responder)
     const deps: UndoDeps = { exec: rec.exec, onOutput: rec.onOutput, probe, httpGet: async () => ({ status: 200 }), sleep, now: () => 1_800_000_000_000 }
-    return { rec, done: runUndo(deps, { driver: nginxDriver, file: FILE, names: NAMES, prefix: 'app.example.com', leftover }) }
+    return { rec, done: runUndo(deps, { driver: nginxDriver, file: FILE, certPath: CERT_PATH, names: NAMES, prefix: 'app.example.com', leftover, revokePlan }) }
   }
+  const ORIGIN_PEM = '-----BEGIN CERTIFICATE-----\nMIIBorigin\n-----END CERTIFICATE-----\n'
+  const READ_CERT = `sudo -n cat '${CERT_PATH}'`
+  const withCert = (call: Call): Answer | undefined => (call.command === READ_CERT ? { code: 0, stdout: ORIGIN_PEM } : undefined)
+
+  it('revokes the Origin CA certificate the site used once the undo is verified', async () => {
+    const revoke = vi.fn(async () => 'c9')
+    const { rec, done } = undo(withCert, { revoke })
+    const result = await done
+    expect(rec.calls.map((c) => c.command)).toEqual([READ_CERT, SWITCH])
+    expect(revoke).toHaveBeenCalledWith(ORIGIN_PEM)
+    expect(result.ok).toBe(true)
+    expect(result.output).toContain('Revoked the Cloudflare Origin CA certificate (c9)')
+  })
+
+  it('does not revoke when the undo did not finish', async () => {
+    const revoke = vi.fn(async () => 'c9')
+    const result = await undo((call) => withCert(call) ?? (call.stdin === SCRIPT ? { code: 4 } : undefined), { revoke }).done
+    expect(result.ok).toBe(false)
+    expect(revoke).not.toHaveBeenCalled()
+  })
+
+  it('keeps the undo successful and says how to revoke by hand when Cloudflare refuses', async () => {
+    const result = await undo(withCert, { revoke: async () => { throw new Error('The Cloudflare token needs Zone → SSL and Certificates → Edit to revoke the certificate.') } }).done
+    expect(result.ok).toBe(true)
+    expect(result.output).toContain('Could not revoke the certificate in Cloudflare')
+    expect(result.output).toContain('SSL/TLS → Origin Server')
+  })
+
+  it('says when Cloudflare has no matching certificate', async () => {
+    const result = await undo(withCert, { revoke: async () => null }).done
+    expect(result.output).toContain('nothing was revoked')
+  })
+
+  it('only explains why it skipped revoking, without reading the certificate', async () => {
+    const { rec, done } = undo(withCert, { skipReason: 'Cloudflare is not connected, so the certificate was not revoked.' })
+    const result = await done
+    expect(rec.calls.map((c) => c.command)).toEqual([SWITCH])
+    expect(result.output).toContain('Cloudflare is not connected')
+  })
 
   it('restores the backup in one root exec and checks the server no longer serves the Origin CA certificate', async () => {
     const { rec, done } = undo()

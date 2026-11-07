@@ -12,6 +12,8 @@ const REMOVE = `sudo -n rm -f '${KEY_PATH}' '${CERT_PATH}'`
 
 let rec: ReturnType<typeof recorder>
 let createOriginCert: ReturnType<typeof vi.fn>
+let findZone: ReturnType<typeof vi.fn>
+let revokeOriginCert: ReturnType<typeof vi.fn>
 let config: { facts: ReturnType<typeof makeFacts>; blocks: ServerBlock[] }
 let probed: OriginCert['kind']
 let token: string | null
@@ -31,6 +33,8 @@ const responder = (call: Call): Answer | undefined => {
 function build(answer: (call: Call, attempt: number) => Answer | undefined = responder): void {
   rec = recorder(answer)
   createOriginCert = vi.fn(async () => ({ certificate: PEM, notAfter: 2_300_000_000 }))
+  findZone = vi.fn(async (name: string) => ({ id: 'z1', name }))
+  revokeOriginCert = vi.fn(async () => 'c9')
   config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } }), blocks: [] }
   lineagesOnServer = switchedReport().lineages
   broadcast = vi.fn()
@@ -43,7 +47,7 @@ function build(answer: (call: Call, attempt: number) => Answer | undefined = res
   ssl = new SslCoordinator({
     execFor: (id) => (id === 'c1' || id === 'c2' ? rec.exec : null),
     store,
-    cloudflare: () => ({ createOriginCert }) as never,
+    cloudflare: () => ({ createOriginCert, findZone, revokeOriginCert }) as never,
     serviceFor: () => service,
     httpGet: async () => ({ status: 200 }),
     newId: (() => { let n = 0; return () => `switch-${++n}` })(),
@@ -179,7 +183,7 @@ describe('SslCoordinator Origin CA switch', () => {
 
   it('refuses to undo a site that is not on an Origin CA certificate, without touching the file', async () => {
     reportIs(readyReport())
-    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('not using a Cloudflare Origin CA certificate')
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-1')).rejects.toThrow('not using a Cloudflare Origin CA certificate')
     expect(rec.calls).toEqual([])
   })
 
@@ -187,20 +191,45 @@ describe('SslCoordinator Origin CA switch', () => {
     reportIs(switchedReport())
     build((call) => (call.stdin?.includes('for f in') ? { code: 0, stdout: '' } : undefined))
     reportIs(switchedReport())
-    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('backup of the original site file is gone')
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-1')).rejects.toThrow('backup of the original site file is gone')
     build()
     reportIs(switchedReport(-1))
-    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('has expired')
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-1')).rejects.toThrow('has expired')
     expect(rec.calls.every((c) => !c.command.includes('timeout'))).toBe(true)
   })
 
   it('undoes a switch, then refreshes the report', async () => {
     probed = 'letsencrypt'
     const check = reportIs(switchedReport())
-    const result = await ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')
+    const result = await ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-1')
     expect(result.ok).toBe(true)
     expect(check).toHaveBeenCalledTimes(2)
     expect(rec.calls.filter((c) => c.command === 'sudo -n timeout -k 10 60 sh -s')).toHaveLength(1)
+  })
+
+  it('revokes the certificate in the hostname\'s zone when asked, and not otherwise', async () => {
+    probed = 'letsencrypt'
+    build((call) => (call.command === `sudo -n cat '${CERT_PATH}'` ? { code: 0, stdout: PEM } : responder(call)))
+    reportIs(switchedReport())
+    const result = await ssl.originUndo('c1', 's1', 'app.example.com', true, 'run-1')
+    expect(result.ok).toBe(true)
+    expect(findZone).toHaveBeenCalledWith('example.com')
+    expect(revokeOriginCert).toHaveBeenCalledWith('z1', PEM)
+    revokeOriginCert.mockClear()
+    reportIs(switchedReport())
+    await ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-2')
+    expect(revokeOriginCert).not.toHaveBeenCalled()
+  })
+
+  it('does not revoke a certificate another site on the server still uses', async () => {
+    probed = 'letsencrypt'
+    build((call) => (call.command === `sudo -n cat '${CERT_PATH}'` ? { code: 0, stdout: PEM } : responder(call)))
+    const report = switchedReport()
+    report.blocks = [...report.blocks, makeBlock({ id: 'other.conf:1', names: ['other.example.com'], certPath: CERT_PATH, keyPath: KEY_PATH })]
+    reportIs(report)
+    const result = await ssl.originUndo('c1', 's1', 'app.example.com', true, 'run-1')
+    expect(revokeOriginCert).not.toHaveBeenCalled()
+    expect(result.output).toContain('still used by another site')
   })
 
   it('refuses to remove a certbot certificate that a site still uses', async () => {
@@ -222,7 +251,7 @@ describe('SslCoordinator Origin CA switch', () => {
     const report = switchedReport()
     report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } })
     reportIs(report)
-    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole web server configuration')
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', false, 'run-1')).rejects.toThrow('could not read the whole web server configuration')
     expect(rec.calls).toEqual([])
   })
 

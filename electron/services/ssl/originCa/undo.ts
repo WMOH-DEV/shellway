@@ -2,9 +2,10 @@ import type { ActionResult, SwitchLeftover, SwitchResult, SwitchStage, SwitchVer
 import { undonePath } from '../../../../src/utils/ssl/originCa/originPaths'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD, EXIT_RESTORED, restoreIfChangedScript, undoScript } from '../../../../src/utils/ssl/originCa/scripts'
 import type { WebServerDriver } from '../../../../src/utils/webServer'
+import { shellEscape } from '../../../utils/shellEscape'
 import type { RemoteExec } from '../../deploy/DeployService'
 import type { OutputSink } from '../SslService'
-import { RemoteRunner, SCRIPT_TIMEOUT_MS, SUDO_SCRIPT } from './remoteRun'
+import { RemoteRunner, SCRIPT_TIMEOUT_MS, SHORT_TIMEOUT_MS, SUDO_SCRIPT } from './remoteRun'
 import { servedAsExpected, verifyServed } from './verifyServed'
 import type { VerifyDeps } from './verifyServed'
 
@@ -14,13 +15,19 @@ export interface UndoDeps extends VerifyDeps {
   now: () => number
 }
 
+export type RevokePlan = { revoke: (pem: string) => Promise<string | null> } | { skipReason: string } | null
+
 export interface UndoTarget {
   driver: WebServerDriver
   file: string
+  certPath: string
   names: string[]
   prefix: string
   leftover: SwitchLeftover
+  revokePlan: RevokePlan
 }
+
+export const REVOKE_BY_HAND = 'Revoke it in Cloudflare → SSL/TLS → Origin Server.'
 
 const REMOVE_TIMEOUT_MS = 120_000
 
@@ -36,6 +43,31 @@ class UndoRun {
   }
 
   async execute(): Promise<SwitchResult> {
+    const pem = this.target.revokePlan !== null && 'revoke' in this.target.revokePlan ? await this.readCertificate() : null
+    const result = await this.restore()
+    if (result.ok) await this.revoke(pem)
+    return { ...result, output: this.runner.log.text() }
+  }
+
+  private async readCertificate(): Promise<string | null> {
+    const read = await this.runner.run(`sudo -n cat ${shellEscape(this.target.certPath)}`, SHORT_TIMEOUT_MS, { stream: false })
+    return read.code === 0 && read.stdout.includes('BEGIN CERTIFICATE') ? read.stdout : null
+  }
+
+  private async revoke(pem: string | null): Promise<void> {
+    const plan = this.target.revokePlan
+    if (plan === null) return
+    if ('skipReason' in plan) return this.runner.note(plan.skipReason)
+    if (pem === null) return this.runner.note(`Could not read ${this.target.certPath}, so the certificate was not revoked in Cloudflare. ${REVOKE_BY_HAND}`)
+    try {
+      const id = await plan.revoke(pem)
+      this.runner.note(id ? `Revoked the Cloudflare Origin CA certificate (${id}).` : `Cloudflare has no Origin CA certificate matching ${this.target.certPath}, so nothing was revoked.`)
+    } catch (err) {
+      this.runner.note(`Could not revoke the certificate in Cloudflare: ${(err as Error).message} ${REVOKE_BY_HAND}`)
+    }
+  }
+
+  private async restore(): Promise<SwitchResult> {
     const script = undoScript({ driver: this.target.driver, file: this.target.file, backupPath: this.backupPath, savePath: this.savePath })
     const ran = await this.runner.run(SUDO_SCRIPT, SCRIPT_TIMEOUT_MS, { stdin: script, shown: `put ${this.backupPath} back as ${this.target.file}, test and reload ${this.target.driver.label}` })
     if (ran.code === 0) return this.verify()
