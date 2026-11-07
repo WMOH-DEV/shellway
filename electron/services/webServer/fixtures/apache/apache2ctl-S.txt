@@ -1,0 +1,26 @@
+AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 192.0.2.10. Set the 'ServerName' directive globally to suppress this message
+VirtualHost configuration:
+127.0.0.1:8443         api.example.net (/etc/apache2/sites-enabled/api.conf:8)
+*:443                  shop.example.com (/etc/apache2/sites-enabled/shop.example.com-le-ssl.conf:2)
+*:80                   is a NameVirtualHost
+         default server 192.0.2.10 (/etc/apache2/sites-enabled/000-default.conf:1)
+         port 80 namevhost 192.0.2.10 (/etc/apache2/sites-enabled/000-default.conf:1)
+         port 80 namevhost api.example.net (/etc/apache2/sites-enabled/api.conf:1)
+         port 80 namevhost blog.example.org (/etc/apache2/sites-enabled/blog.example.org.conf:1)
+         port 80 namevhost shop.example.com (/etc/apache2/sites-enabled/shop.example.com.conf:1)
+                 alias www.shop.example.com
+ServerRoot: "/etc/apache2"
+Main DocumentRoot: "/var/www/html"
+Main ErrorLog: "/var/log/apache2/error.log"
+Mutex ssl-cache: using_defaults
+Mutex default: dir="/var/run/apache2/" mechanism=default 
+Mutex watchdog-callback: using_defaults
+Mutex rewrite-map: using_defaults
+Mutex ssl-stapling-refresh: using_defaults
+Mutex ssl-stapling: using_defaults
+Mutex proxy: using_defaults
+PidFile: "/var/run/apache2/apache2.pid"
+Define: DUMP_VHOSTS
+Define: DUMP_RUN_CFG
+User: name="www-data" id=33
+Group: name="www-data" id=33
