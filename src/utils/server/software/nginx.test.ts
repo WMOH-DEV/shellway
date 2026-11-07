@@ -68,6 +68,12 @@ describe('setNginxDirectives', () => {
     expect(setNginxDirectives(NGINX_CONF, { gzip: 'on', keepalive_timeout: '65' })).toBe(NGINX_CONF)
   })
 
+  it('works when the opening brace of http is on its own line', () => {
+    const conf = 'http\n# main\n{\n  gzip off;\n  server {\n    gzip on;\n  }\n}\n'
+    expect(parseNginxValues(conf)).toEqual({ gzip: 'off' })
+    expect(setNginxDirectives(conf, { gzip: 'on', server_tokens: 'off' })).toBe('http\n# main\n{\n  server_tokens off;\n  gzip on;\n  server {\n    gzip on;\n  }\n}\n')
+  })
+
   it('returns null when there is no http block', () => {
     expect(setNginxDirectives('events {\n}\n', { gzip: 'on' })).toBeNull()
     expect(setNginxDirectives('# http {\n', { gzip: 'on' })).toBeNull()
@@ -123,6 +129,18 @@ describe('included settings probe', () => {
         keepalive_timeout: { value: '30s', path: join(dir, 'sites', 'app') },
         server_tokens: { value: 'off', path: join(dir, 'snippets', 'nested.conf') }
       })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('follows includes when the opening brace of http is on its own line', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'shellway-nginx-'))
+    try {
+      writeFileSync(join(dir, 'nginx.conf'), 'events {}\nhttp\n{\n  include extra.conf;\n}\n')
+      writeFileSync(join(dir, 'extra.conf'), 'gzip on;\n')
+      const run = spawnSync('/bin/sh', ['-s'], { input: includedSettingsScript(dir), encoding: 'utf8' })
+      expect(parseIncludedSettings(run.stdout.split('\n'))).toEqual({ gzip: { value: 'on', path: join(dir, 'extra.conf') } })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

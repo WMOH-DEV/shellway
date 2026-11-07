@@ -17,7 +17,7 @@ const SCAN_FUNCTION = `scan() { awk -v f="$1" -v root="$2" -v want="$3" '{ bare 
     if (want == "set" && bare ~ /^[ \t]*(${NGINX_KEYS.join('|')})[ \t]+[^;]*;/) { s = bare; sub(/^[ \t]+/, "", s); key = s; sub(/[ \t].*$/, "", key); val = s; sub(/^[^ \t]+[ \t]+/, "", val); sub(/[ \t]*;.*$/, "", val); print f "|" key "|" val }
   }
   depth += gsub(/[{]/, "{", bare) - gsub(/[}]/, "}", bare)
-  if (root && depth == 0) http = 0 }' "$1"; }`
+  if (root && depth == 0 && bare ~ /[}]/) http = 0 }' "$1"; }`
 
 export const includedSettingsScript = (confDir: string): string => `${SCAN_FUNCTION}
 todo=$(scan '${confDir}/nginx.conf' 1 inc)
@@ -47,6 +47,10 @@ exit 0
 
 const HTTP_OPEN = /^\s*http\s*\{\s*$/
 
+const HTTP_KEYWORD = /^\s*http\s*$/
+
+const BRACE_ONLY = /^\s*\{\s*$/
+
 const codeOf = (line: string): string => line.replace(/"[^"]*"|'[^']*'/g, '""').replace(/\$\{[^}]*\}/g, '').replace(/#.*$/, '')
 
 const count = (text: string, char: string): number => text.split(char).length - 1
@@ -59,11 +63,15 @@ interface HttpScan {
 function scanHttp(lines: string[]): HttpScan | null {
   let depth = 0
   let openLine = -1
+  let afterKeyword = false
   const direct: boolean[] = []
   lines.forEach((line, index) => {
     const code = codeOf(line)
     direct.push(openLine >= 0 && depth === 1)
-    if (openLine < 0 && depth === 0 && HTTP_OPEN.test(code)) openLine = index
+    if (openLine < 0 && depth === 0) {
+      if (HTTP_OPEN.test(code) || (afterKeyword && BRACE_ONLY.test(code))) openLine = index
+      else if (code.trim()) afterKeyword = HTTP_KEYWORD.test(code)
+    }
     depth += count(code, '{') - count(code, '}')
   })
   return openLine < 0 ? null : { openLine, direct }
