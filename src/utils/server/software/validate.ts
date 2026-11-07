@@ -1,4 +1,5 @@
 import { assertPhpVersion } from '@/utils/createSite/validate'
+import { NGINX_KEYS, type NginxKey } from './nginx'
 import { INI_KEYS, POOL_KEYS, type IniKey, type PoolKey } from './php'
 
 export { assertPhpVersion }
@@ -49,6 +50,13 @@ const POOL_VALUE: Record<PoolKey, RegExp> = {
   'pm.max_requests': /^\d{1,7}$/
 }
 
+const NGINX_VALUE: Record<NginxKey, RegExp> = {
+  client_max_body_size: /^\d{1,6}[kKmMgG]?$/,
+  keepalive_timeout: /^\d{1,4}s?$/,
+  gzip: /^(on|off)$/,
+  server_tokens: /^(on|off)$/
+}
+
 function settings<K extends string>(raw: unknown, keys: readonly K[], patterns: Record<K, RegExp>): Partial<Record<K, string>> {
   const values = asRecord(raw)
   const entries = Object.entries(values).map(([key, value]) => {
@@ -62,6 +70,10 @@ function settings<K extends string>(raw: unknown, keys: readonly K[], patterns: 
 export const iniSettings = (raw: unknown): Partial<Record<IniKey, string>> => settings(raw, INI_KEYS, INI_VALUE)
 
 export const poolSettings = (raw: unknown): Partial<Record<PoolKey, string>> => settings(raw, POOL_KEYS, POOL_VALUE)
+
+export const nginxSettings = (raw: unknown): Partial<Record<NginxKey, string>> => settings(raw, NGINX_KEYS, NGINX_VALUE)
+
+export const isValidNginxValue = (key: NginxKey, value: string): boolean => NGINX_VALUE[key].test(value)
 
 export const isValidIniValue = (key: IniKey, value: string): boolean => INI_VALUE[key].test(value)
 

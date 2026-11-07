@@ -23,7 +23,7 @@ export const overridePath = (version: string): string => `/etc/php/${version}/fp
 
 export const poolPath = (version: string): string => `/etc/php/${version}/fpm/pool.d/www.conf`
 
-const fileDump = (path: string): string => `if [ -f "${path}" ]; then echo "sha=$(sha256sum "${path}" | cut -d' ' -f1)"; echo "b64=$(base64 -w0 "${path}")"; fi`
+export const fileDump = (path: string): string => `if [ -f "${path}" ]; then echo "sha=$(sha256sum "${path}" | cut -d' ' -f1)"; echo "b64=$(base64 -w0 "${path}")"; fi`
 
 export const PHP_SCRIPT = `if [ ! -d /etc/php ]; then echo '@@none'; exit 0; fi
 echo '@@cli'
@@ -79,7 +79,7 @@ function parseModules(lines: string[]): string[] {
   return [...new Set(lines.filter((line) => !line.startsWith('[')).map(normalizeModule).filter(Boolean))].sort()
 }
 
-function parseFile(lines: string[]): PhpIniFile {
+export function parseFile(lines: string[]): PhpIniFile {
   const values = keyValues(lines)
   return { sha256: values.sha || null, content: decodeBase64(values.b64 ?? '') }
 }
