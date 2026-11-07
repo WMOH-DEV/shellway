@@ -1,0 +1,36 @@
+@@os
+PRETTY_NAME="Ubuntu 24.04.1 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.1 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+UBUNTU_CODENAME=noble
+LOGO=ubuntu-logo
+@@hostname
+web-01
+@@kernel
+6.8.0-45-generic
+@@arch
+x86_64
+@@virt
+kvm
+@@cpus
+2
+@@memory
+MemTotal:        4010652 kB
+@@uptime
+356812.41 701234.88
+@@route
+1.1.1.1 via 203.0.113.1 dev eth0 src 203.0.113.10 uid 1000
+    cache
+@@addresses
+203.0.113.10 10.0.0.5 2001:db8::10
+@@ssh
+198.51.100.7 53122 203.0.113.10 22
+@@user
+deploy
+@@timezone
+Etc/UTC

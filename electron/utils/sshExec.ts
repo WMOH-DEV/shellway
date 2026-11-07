@@ -12,9 +12,12 @@ export interface ExecOptions {
   timeoutMs?: number
   stdin?: string | Buffer | Readable
   onOutput?: (chunk: string) => void
+  maxOutputBytes?: number
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
+
+export class ExecTimeoutError extends Error {}
 
 function feedStdin(stream: any, stdin: ExecOptions['stdin']): void {
   if (stdin === undefined || typeof stdin === 'string' || Buffer.isBuffer(stdin)) {
@@ -25,6 +28,40 @@ function feedStdin(stream: any, stdin: ExecOptions['stdin']): void {
   stdin.pipe(stream)
 }
 
+export class TailBuffer {
+  private chunks: Buffer[] = []
+  private kept = 0
+  private received = 0
+
+  constructor(private readonly limit: number) {}
+
+  push(chunk: Buffer): void {
+    this.received += chunk.length
+    this.chunks.push(chunk)
+    this.kept += chunk.length
+    while (this.kept > this.limit) this.dropFront(this.kept - this.limit)
+  }
+
+  get total(): number {
+    return this.received
+  }
+
+  toBuffer(): Buffer {
+    return Buffer.concat(this.chunks)
+  }
+
+  private dropFront(excess: number): void {
+    const first = this.chunks[0]
+    if (first.length <= excess) {
+      this.chunks.shift()
+      this.kept -= first.length
+      return
+    }
+    this.chunks[0] = first.subarray(excess)
+    this.kept -= excess
+  }
+}
+
 /**
  * Runs a command over an existing SSH connection and collects its output.
  * A `settled` flag guards against double resolution from timeout/close/error races.
@@ -32,7 +69,7 @@ function feedStdin(stream: any, stdin: ExecOptions['stdin']): void {
 export function sshExec(
   conn: SSHConnection,
   command: string,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput }: ExecOptions = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput, maxOutputBytes = Infinity }: ExecOptions = {}
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     if (conn.status !== 'connected') {
@@ -42,8 +79,8 @@ export function sshExec(
     conn._client.exec(command, (err: Error | undefined, stream: any) => {
       if (err) return reject(err)
 
-      const stdout: Buffer[] = []
-      const stderr: Buffer[] = []
+      const stdout = new TailBuffer(maxOutputBytes)
+      const stderr = new TailBuffer(maxOutputBytes)
       let settled = false
 
       const settle = (fn: () => void) => {
@@ -56,7 +93,7 @@ export function sshExec(
       const timer = setTimeout(() => {
         settle(() => {
           stream.destroy()
-          reject(new Error(`Command timed out after ${timeoutMs}ms`))
+          reject(new ExecTimeoutError(`Command timed out after ${timeoutMs}ms`))
         })
       }, timeoutMs)
 
@@ -65,11 +102,10 @@ export function sshExec(
       stream.on('error', (streamErr: Error) => settle(() => reject(streamErr)))
       stream.stderr.on('error', () => {})
       stream.on('close', (code: number) => {
-        const out = Buffer.concat(stdout)
         settle(() => resolve({
-          stdout: out.toString('utf8'),
-          stdoutBytes: out.length,
-          stderr: Buffer.concat(stderr).toString('utf8'),
+          stdout: stdout.toBuffer().toString('utf8'),
+          stdoutBytes: stdout.total,
+          stderr: stderr.toBuffer().toString('utf8'),
           code
         }))
       })

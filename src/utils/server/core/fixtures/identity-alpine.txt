@@ -1,0 +1,26 @@
+@@os
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.20.3
+PRETTY_NAME="Alpine Linux v3.20"
+@@hostname
+tiny
+@@kernel
+6.6.49-0-virt
+@@arch
+aarch64
+@@virt
+@@cpus
+1
+@@memory
+MemTotal:         491520 kB
+@@uptime
+42.00 40.00
+@@route
+@@addresses
+@@ssh
+
+@@user
+deploy
+@@timezone
+/usr/share/zoneinfo/Asia/Tokyo

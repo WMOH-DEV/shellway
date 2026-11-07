@@ -1,0 +1,31 @@
+@@os
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+@@hostname
+app
+@@kernel
+6.1.0-25-amd64
+@@arch
+x86_64
+@@virt
+none
+@@cpus
+4
+@@memory
+MemTotal:        8131200 kB
+@@uptime
+86400.00 340000.12
+@@route
+@@addresses
+203.0.113.10
+@@ssh
+198.51.100.7 60001 203.0.113.10 2222
+@@user
+root
+@@timezone
+Europe/Berlin
