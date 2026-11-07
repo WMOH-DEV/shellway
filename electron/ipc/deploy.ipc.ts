@@ -30,6 +30,15 @@ function str(value: unknown, label: string): string {
   return value
 }
 
+const GITHUB_TOKEN = /^[A-Za-z0-9_]+$/
+
+function githubToken(value: unknown): string {
+  const token = typeof value === 'string' ? value.trim() : ''
+  if (!token) throw new Error('Enter a GitHub token')
+  if (token.length > 255 || !GITHUB_TOKEN.test(token)) throw new Error('This does not look like a GitHub token')
+  return token
+}
+
 const COMMIT_SHA = /^[0-9a-f]{7,64}$/
 
 function deployOptions(value: unknown): DeployOptions {
@@ -118,6 +127,7 @@ export function registerDeployIPC(): void {
   handle('deploy:register-key', (c, name, token, remember) =>
     registerKey(str(c, 'connection'), str(name, 'site'), typeof token === 'string' && token ? token : null, remember === true))
   handle('deploy:github-token-saved', () => localStore!.githubToken() !== null)
+  handle('deploy:github-token-save', (token) => localStore!.setGithubToken(githubToken(token)))
   handle('deploy:github-token-clear', () => localStore!.setGithubToken(null))
   handle('deploy:local-git', () => localGit!.available())
   handle('deploy:drift', (url, branch, live) => localGit!.drift(str(url, 'repository'), str(branch, 'branch'), typeof live === 'string' ? live : ''))
