@@ -35,7 +35,6 @@ export interface SetupInventory {
   swapBytes: number
   nvm: boolean
   authorizedKeys: number
-  deployUserExists: boolean
   installedAt: number | null
   wwwSites: number
 }

@@ -2,7 +2,10 @@ import { useState } from 'react'
 import type { ActionRun, ProbeResult, ServerFacts } from '@/types/server/core'
 import { IDENTITY_PROBE, type ServerIdentity } from '@/types/server/identity'
 import { findRelease, releaseSupport } from '@/utils/server/install/releases'
-import { isFreshServer } from '@/utils/server/setup/fresh'
+import { okData } from '@/utils/server/overview/facts'
+import { isFreshServer } from '@/utils/server/overview/fresh'
+import { SYSTEM_PROBE } from '@/utils/server/overview/ids'
+import type { SystemState } from '@/utils/server/overview/system'
 import { INVENTORY_PROBE } from '@/utils/server/setup/inventory'
 import type { SetupInventory } from '@/utils/server/setup/types'
 import { Notice, PageHeader, ProbeState, SectionPage } from '../../kit'
@@ -11,7 +14,7 @@ import type { ServerSectionContext } from '../types'
 import { SetupForm } from './SetupForm'
 import { SetupSteps } from './SetupSteps'
 
-const PROBES = [IDENTITY_PROBE, INVENTORY_PROBE]
+const PROBES = [IDENTITY_PROBE, INVENTORY_PROBE, SYSTEM_PROBE]
 
 const PICK = 'Pick what it should run; you review every command before anything happens.'
 
@@ -19,7 +22,9 @@ function subtitle(facts: ServerFacts): string {
   const identity = facts[IDENTITY_PROBE]
   if (identity?.status !== 'ok') return PICK
   const name = (identity.data as ServerIdentity).os.prettyName
-  return isFreshServer(facts) ? `Fresh ${name} detected: nothing installed yet. ${PICK}` : `${name} detected. ${PICK}`
+  const siteCount = okData<SetupInventory>(facts[INVENTORY_PROBE])?.wwwSites ?? null
+  const fresh = isFreshServer({ system: okData<SystemState>(facts[SYSTEM_PROBE]), siteCount })
+  return fresh ? `Fresh ${name} detected: nothing installed yet. ${PICK}` : `${name} detected. ${PICK}`
 }
 
 const stepFor = (run: ActionRun | null): number => {

@@ -6,7 +6,6 @@ import { findRelease } from '../install/releases'
 import { setupArea } from '../areas/setup'
 import { SECURITY_DEFAULTS, profileRows, swapSizeGb } from './catalog'
 import { planComponents } from './components'
-import { isFreshServer } from './fresh'
 import { FAIL2BAN_JAIL, FILES_PROBE, INVENTORY_PROBE, SUDOERS_FILE, parseFiles, parseInventory } from './inventory'
 import { buildSetupPlan, setupSummary } from './plan'
 import { fail2banIgnoreList, fail2banJail, firewallPorts, unattendedConfig } from './security'
@@ -74,7 +73,7 @@ describe('setup probes', () => {
   it('parses the inventory', () => {
     expect(FRESH).toMatchObject({
       clientIp: '203.0.113.10', sshPort: 2222, user: 'ubuntu', home: '/home/ubuntu', memoryBytes: 8_192_000_000, swapBytes: 0,
-      nvm: false, authorizedKeys: 2, deployUserExists: false, installedAt: 1762300000, wwwSites: 0,
+      nvm: false, authorizedKeys: 2, installedAt: 1762300000, wwwSites: 0,
       packages: ['ufw', 'unattended-upgrades'], commands: ['snap']
     })
   })
@@ -334,20 +333,5 @@ describe('security config', () => {
 describe('setupSummary', () => {
   it('counts components, security changes and minutes', () => {
     expect(setupSummary(paramsFor('laravel'), FRESH)).toEqual({ installCount: 8, securityCount: 5, minutes: 11 })
-  })
-})
-
-describe('isFreshServer', () => {
-  const now = 1762300000 * 1000 + 86_400_000
-
-  it('is fresh with no web server, no sites and a recent install', () => {
-    expect(isFreshServer({ [INVENTORY_PROBE]: ok(FRESH) }, now)).toBe(true)
-  })
-
-  it('is not fresh with a web server, sites, an old install or no facts', () => {
-    expect(isFreshServer({ [INVENTORY_PROBE]: ok({ ...FRESH, packages: ['nginx'] }) }, now)).toBe(false)
-    expect(isFreshServer({ [INVENTORY_PROBE]: ok({ ...FRESH, wwwSites: 2 }) }, now)).toBe(false)
-    expect(isFreshServer({ [INVENTORY_PROBE]: ok(FRESH) }, now + 90 * 86_400_000)).toBe(false)
-    expect(isFreshServer({}, now)).toBe(false)
   })
 })
