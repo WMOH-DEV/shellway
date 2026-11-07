@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { cn } from '@/utils/cn'
 import { TabActiveContext } from '@/components/tabActive'
-import { useServerNavStore, useServerRoute } from '@/stores/serverNavStore'
+import { followFeatureRoutes, useServerNavStore, useServerRoute } from '@/stores/serverNavStore'
 import type { AttentionItem, ServerRoute, ServerSection } from '@/types/server/core'
 import type { ConnectionTab } from '@/types/session'
 import { ActionHost } from './action'
@@ -41,6 +41,8 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
   const sitesItems = useSitesAttention({ connectionId: tab.id, sessionId: tab.sessionId, connectionStatus: active ? tab.status : 'disconnected' })
   const items = useMemo(() => mergeSitesAttention(attention, sitesItems), [attention, sitesItems])
   const onSites = route.section === 'sites'
+
+  useEffect(() => followFeatureRoutes(), [])
 
   const navigate = useCallback((next: ServerRoute) => navigateTo(tab.id, next), [navigateTo, tab.id])
   const selectSection = useCallback((section: ServerSection) => navigate({ section }), [navigate])

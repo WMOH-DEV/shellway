@@ -60,11 +60,12 @@ function featureWindow({ tabId, subTab }: FeatureWindowRef): BrowserWindow | nul
   return null
 }
 
-export function focusFeatureWindow(ref: FeatureWindowRef): boolean {
+export function focusFeatureWindow(ref: FeatureWindowRef, route?: object): boolean {
   const win = featureWindow(ref)
   if (!win) return false
   if (win.isMinimized()) win.restore()
   win.focus()
+  if (route) win.webContents.send('window:featureRoute', ref, route)
   return true
 }
 

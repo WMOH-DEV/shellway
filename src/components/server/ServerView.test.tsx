@@ -43,7 +43,11 @@ beforeEach(() => {
   mounts.sites = 0
   mounts.overview = 0
   useServerNavStore.setState({ routes: {} })
-  mockNovadeck({ 'server.scan': vi.fn(async () => ({ success: true, data: {} })) })
+  mockNovadeck({
+    'server.scan': vi.fn(async () => ({ success: true, data: {} })),
+    'ssl.lastReport': vi.fn(async () => ({ success: true, data: null })),
+    'deploy.runnerInfo': vi.fn(async () => ({ success: false, error: 'offline' }))
+  })
 })
 
 describe('ServerView', () => {

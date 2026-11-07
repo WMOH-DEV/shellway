@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectionTab } from '@/types/session'
 import { useConnectionStore } from './connectionStore'
-import { DEFAULT_SERVER_ROUTE, serverRouteOf, useServerNavStore } from './serverNavStore'
+import { DEFAULT_SERVER_ROUTE, followFeatureRoutes, serverRouteOf, useServerNavStore } from './serverNavStore'
 
 const focusFeature = vi.fn(async () => true)
 
@@ -56,6 +56,16 @@ describe('serverNavStore', () => {
   it('openServer focuses the Server window when it is detached', () => {
     useConnectionStore.setState({ tabs: [tab({ detachedSubTabs: ['server'] })] })
     useServerNavStore.getState().openServer('tab-1', { section: 'services' })
-    expect(focusFeature).toHaveBeenCalledWith({ tabId: 'tab-1', subTab: 'server' })
+    expect(focusFeature).toHaveBeenCalledWith({ tabId: 'tab-1', subTab: 'server' }, { section: 'services' })
+  })
+
+  it('a detached Server window follows routes sent to it', () => {
+    let deliver: (ref: { tabId: string; subTab: string }, route: unknown) => void = () => {}
+    vi.stubGlobal('window', { novadeck: { window: { onFeatureRoute: (cb: typeof deliver) => { deliver = cb; return () => {} } } } })
+    followFeatureRoutes()
+    deliver({ tabId: 'tab-1', subTab: 'server' }, { section: 'jobs', sub: 'cron' })
+    deliver({ tabId: 'tab-1', subTab: 'sql' }, { section: 'docker' })
+    deliver({ tabId: 'tab-1', subTab: 'server' }, 'bad')
+    expect(serverRouteOf('tab-1')).toEqual({ section: 'jobs', sub: 'cron' })
   })
 })

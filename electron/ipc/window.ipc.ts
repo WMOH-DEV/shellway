@@ -42,7 +42,8 @@ export function registerWindowIPC(): void {
     if (movingShells.length > 0) win.webContents.once('destroyed', () => closeUnattachedShells(movingShells))
   })
 
-  ipcMain.handle('window:focusFeature', (_event, ref: unknown) => isFeatureWindowRef(ref) && focusFeatureWindow(ref))
+  ipcMain.handle('window:focusFeature', (_event, ref: unknown, route?: unknown) =>
+    isFeatureWindowRef(ref) && focusFeatureWindow(ref, typeof route === 'object' && route !== null ? route : undefined))
 
   ipcMain.handle('window:closeFeature', (_event, ref: unknown) => {
     if (isFeatureWindowRef(ref)) closeFeatureWindow(ref)
