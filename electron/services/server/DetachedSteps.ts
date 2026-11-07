@@ -1,5 +1,6 @@
 import runScript from '../../../resources/server/shellway-run.sh?raw'
 import type { RemoteExec } from '../deploy/DeployService'
+import type { OutputCarry } from './StepOutput'
 import { Disconnected } from './remote'
 
 export const RUN_BIN = '"$HOME/.shellway/bin/shellway-run"'
@@ -20,6 +21,7 @@ export interface DetachedRef {
   offset: number
   limitSeconds: number
   startedAt: number
+  carry?: OutputCarry
 }
 
 export type DetachedOutcome = { kind: 'exit'; code: number } | { kind: 'lost' } | { kind: 'timeout' }

@@ -131,6 +131,43 @@ describe('detached steps', () => {
     expect(second.fake.calls.map((call) => call.command)).toEqual([`${RUN_BIN} read ${run.id}-0 0`])
   })
 
+  it('keeps a marker line split by a restart: the rest is hidden and the value is kept', async () => {
+    const first = detachedHarness(false)
+    let reads = 0
+    first.fake.on(isRead, () => {
+      reads++
+      if (reads === 1) return status('alive=1 size=24 exit=', 'saved\nSHELLWAY_STATE back')
+      first.setConnected(false)
+      return new Error('Channel closed')
+    })
+    const run = await startInstall(first)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const second = harness([], { dir: first.dir })
+    second.fake.on(isRead, status('alive=0 size=40 exit=0', 'up=/var/backups/x\ndone\n'))
+    second.engine.reattach('c1', 's1')
+    const done = await second.finished(run.id)
+    expect(done.steps[0].output).toBe('saved\ndone\n')
+    expect(second.store.get(run.id)?.state.install).toEqual({ backup: '/var/backups/x' })
+  })
+
+  it('still records marker values from output it hides after a restart', async () => {
+    const first = harness([action('software.install', () => [step('install', { detached: true })], { secrets: ['t0ken'] })])
+    let reads = 0
+    first.fake.on(isVersion, { stdout: '2\n' }).on(isStart, { stdout: 'pid=7\nfollow=0\n' }).on(isRead, () => {
+      reads++
+      if (reads === 1) return status('alive=1 size=27 exit=', 'SHELLWAY_STATE backup=/b/1\n')
+      first.setConnected(false)
+      return new Error('Channel closed')
+    })
+    const run = await startInstall(first)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const second = harness([], { dir: first.dir })
+    second.fake.on(isRead, status('alive=0 size=50 exit=0', 'SHELLWAY_STATE created=1\n'))
+    second.engine.reattach('c1', 's1')
+    await second.finished(run.id)
+    expect(second.store.get(run.id)?.state.install).toEqual({ backup: '/b/1', created: '1' })
+  })
+
   it('hides output it can no longer redact after a restart', async () => {
     const first = harness([action('software.install', () => [step('install', { detached: true })], { secrets: ['t0ken'] })])
     first.fake.on(isVersion, { stdout: '2\n' }).on(isStart, { stdout: 'pid=7\nfollow=0\n' }).on(isRead, () => {

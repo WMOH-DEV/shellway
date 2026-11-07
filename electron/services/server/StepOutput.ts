@@ -16,6 +16,13 @@ export function redact(text: string, secrets: readonly string[]): string {
 
 export const usableSecrets = (secrets: readonly string[]): string[] => [...new Set(secrets.filter((secret) => secret.length > 0))].sort((a, b) => b.length - a.length)
 
+export interface OutputCarry {
+  held: string
+  partialLine: string
+  lineStart: boolean
+  state: Record<string, string>
+}
+
 export class StepOutput {
   readonly state: Record<string, string> = {}
   private shown: string
@@ -28,11 +35,23 @@ export class StepOutput {
   private readonly secrets: string[]
   private readonly holdBack: number
 
-  constructor(secrets: readonly string[], private readonly emit: (chunk: string) => void, private readonly throttleMs: number, initial = '') {
+  constructor(secrets: readonly string[], private readonly emit: (chunk: string) => void, private readonly throttleMs: number, initial = '', carry?: OutputCarry) {
     this.secrets = usableSecrets(secrets)
     this.holdBack = Math.max(0, (this.secrets[0]?.length ?? 0) - 1)
     this.shown = initial
-    this.lineStart = initial === '' || initial.endsWith('\n')
+    this.lineStart = carry?.lineStart ?? (initial === '' || initial.endsWith('\n'))
+    this.held = carry?.held ?? ''
+    this.partialLine = carry?.partialLine ?? ''
+    Object.assign(this.state, carry?.state)
+  }
+
+  carry(): OutputCarry {
+    const partialLine = couldBeStateLine(this.partialLine) ? this.partialLine : ''
+    return { held: this.held, partialLine, lineStart: this.lineStart, state: { ...this.state } }
+  }
+
+  observe(chunk: string): void {
+    this.captureState(chunk)
   }
 
   get text(): string {

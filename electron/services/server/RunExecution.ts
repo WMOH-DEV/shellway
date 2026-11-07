@@ -5,7 +5,7 @@ import { ExecTimeoutError } from '../../utils/sshExec'
 import type { DetachedRef, DetachedSteps } from './DetachedSteps'
 import { Disconnected, isSudoFailure, lastLine, limitedShell, stepInput, TIMEOUT_EXITS } from './remote'
 import type { StoredRun } from './RunStore'
-import { redact, StepOutput } from './StepOutput'
+import { redact, StepOutput, type OutputCarry } from './StepOutput'
 
 const KILL_AFTER_SECONDS = 10
 const EXEC_MARGIN_SECONDS = 20
@@ -99,11 +99,11 @@ export class RunExecution {
     return this.plan?.secrets ?? []
   }
 
-  private outputFor(state: RunStepState): StepOutput {
+  private outputFor(state: RunStepState, carry?: OutputCarry): StepOutput {
     const output: StepOutput = new StepOutput(this.secrets(), (chunk) => {
       state.output = output.text
       this.deps.output({ runId: this.run.id, stepId: state.id, chunk })
-    }, this.deps.throttleMs, state.output)
+    }, this.deps.throttleMs, state.output, carry)
     return output
   }
 
@@ -114,7 +114,7 @@ export class RunExecution {
       Object.assign(state, { status: 'running', startedAt: this.deps.now() })
       this.deps.publish(this.record)
     }
-    const output = this.outputFor(state)
+    const output = this.outputFor(state, resuming ? this.record.detached?.carry : undefined)
     const outcome = await this.outcomeOf(index, output, resuming)
     output.flush()
     state.output = output.text
@@ -128,7 +128,7 @@ export class RunExecution {
 
   private async outcomeOf(index: number, output: StepOutput, resuming: boolean): Promise<StepOutcome> {
     try {
-      if (resuming) return await this.followDetached(output)
+      if (resuming) return await this.followDetached(output, this.run.steps[index])
       const step = this.planStep(index)
       if (!step) return { kind: 'error', message: RESTARTED }
       return step.detached ? await this.startDetached(index, step, output) : await this.runAttached(step, output)
@@ -155,7 +155,7 @@ export class RunExecution {
     if (!started) return { kind: 'lost' }
     this.record.detached = started
     this.deps.save(this.record)
-    return this.followDetached(output)
+    return this.followDetached(output, this.run.steps[index])
   }
 
   private async launch(index: number, step: ActionStep): Promise<DetachedRef | null> {
@@ -167,14 +167,21 @@ export class RunExecution {
     }
   }
 
-  private async followDetached(output: StepOutput): Promise<StepOutcome> {
+  private async followDetached(output: StepOutput, state: RunStepState): Promise<StepOutcome> {
     const ref = this.record.detached
     if (!ref) return { kind: 'lost' }
     const hidden = this.plan === null && this.record.hasSecrets
     if (hidden) output.note(OUTPUT_HIDDEN)
+    const checkpoint = () => {
+      state.output = output.text
+      ref.carry = output.carry()
+    }
     const watch = {
-      onChunk: (chunk: string) => { if (!hidden) output.push(chunk) },
-      onProgress: () => this.saveNowAndThen(),
+      onChunk: (chunk: string) => (hidden ? output.observe(chunk) : output.push(chunk)),
+      onProgress: () => {
+        checkpoint()
+        this.saveNowAndThen()
+      },
       stopRequested: () => this.stopRequested
     }
     let failures = 0
@@ -184,6 +191,7 @@ export class RunExecution {
       } catch (err) {
         if (err instanceof Disconnected) {
           failures = 0
+          checkpoint()
           await this.parkUntilResumed()
         } else {
           if (this.deps.detached.isPastDeadline(ref)) return this.abandon(ref)
