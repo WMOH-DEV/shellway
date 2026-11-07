@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -21,7 +21,9 @@ interface ServiceLogViewerProps {
   logs: ServiceLogEntry[]
   isLoading: boolean
   onLoadLogs: (lines: number) => void
-  onClose: () => void
+  onClose?: () => void
+  heading?: string
+  toolbarExtra?: ReactNode
 }
 
 const LINE_COUNT_OPTIONS = [
@@ -73,6 +75,8 @@ export function ServiceLogViewer({
   isLoading,
   onLoadLogs,
   onClose,
+  heading,
+  toolbarExtra,
 }: ServiceLogViewerProps) {
   const [lineCount, setLineCount] = useState(100)
   const [follow, setFollow] = useState(true)
@@ -219,7 +223,7 @@ export function ServiceLogViewer({
       terminal.reset()
 
       // Write header
-      terminal.writeln(`${DIM}── Journal logs: ${unit} ──${RESET}`)
+      terminal.writeln(`${DIM}── ${heading ?? `Journal logs: ${unit}`} ──${RESET}`)
       terminal.writeln(`${DIM}${logs.length} entries loaded · Select text to copy · Ctrl+F to search${RESET}`)
       terminal.writeln('')
 
@@ -238,7 +242,7 @@ export function ServiceLogViewer({
     if (followRef.current) {
       terminal.scrollToBottom()
     }
-  }, [logs, unit])
+  }, [logs, unit, heading])
 
   // ── Fit on visibility changes ──
   useEffect(() => {
@@ -404,6 +408,8 @@ export function ServiceLogViewer({
           <span className="text-[10px]">Follow</span>
         </Button>
 
+        {toolbarExtra}
+
         <div className="flex-1" />
 
         {/* Export */}
@@ -416,12 +422,14 @@ export function ServiceLogViewer({
         </Button>
 
         {/* Close */}
-        <Button
-          variant="ghost" size="sm" onClick={onClose}
-          className="h-6 w-6 p-0" title="Close log viewer"
-        >
-          <X size={12} />
-        </Button>
+        {onClose && (
+          <Button
+            variant="ghost" size="sm" onClick={onClose}
+            className="h-6 w-6 p-0" title="Close log viewer"
+          >
+            <X size={12} />
+          </Button>
+        )}
       </div>
 
       {/* ── Search bar (conditionally shown) ── */}
@@ -526,7 +534,8 @@ function formatLogLine(entry: ServiceLogEntry): string {
   const label = PRIORITY_LABELS[priority] || priority.toUpperCase().padStart(5)
 
   // Format: [timestamp] [BADGE] message
-  return `${DIM}${ts}${RESET} ${ansi.badge}${label}${RESET} ${ansi.text}${entry.message}${RESET}`
+  const stamp = ts ? `${DIM}${ts}${RESET} ` : ''
+  return `${stamp}${ansi.badge}${label}${RESET} ${ansi.text}${entry.message}${RESET}`
 }
 
 /** Plain timestamp for export (no ANSI) */
