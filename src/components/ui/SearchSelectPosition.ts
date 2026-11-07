@@ -3,15 +3,21 @@ import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'r
 const GAP = 4
 const VIEWPORT_MARGIN = 8
 
-function computePosition(trigger: HTMLElement, popoverHeight: number): CSSProperties {
+function horizontal(rect: DOMRect): CSSProperties {
+  const inRightHalf = rect.left + rect.width / 2 > window.innerWidth / 2
+  if (inRightHalf) {
+    const rightEdge = Math.min(rect.right, window.innerWidth - VIEWPORT_MARGIN)
+    return { right: window.innerWidth - rightEdge, maxWidth: rightEdge - VIEWPORT_MARGIN }
+  }
+  const left = Math.max(VIEWPORT_MARGIN, rect.left)
+  return { left, maxWidth: window.innerWidth - left - VIEWPORT_MARGIN }
+}
+
+export function computePosition(trigger: HTMLElement, popoverHeight: number): CSSProperties {
   const rect = trigger.getBoundingClientRect()
   const spaceBelow = window.innerHeight - rect.bottom
   const opensAbove = spaceBelow < popoverHeight + GAP + VIEWPORT_MARGIN && rect.top > spaceBelow
-  const base: CSSProperties = {
-    left: Math.max(VIEWPORT_MARGIN, rect.left),
-    minWidth: rect.width,
-    maxWidth: window.innerWidth - VIEWPORT_MARGIN * 2
-  }
+  const base: CSSProperties = { ...horizontal(rect), minWidth: rect.width }
   return opensAbove ? { ...base, bottom: window.innerHeight - rect.top + GAP } : { ...base, top: rect.bottom + GAP }
 }
 
