@@ -76,6 +76,17 @@ describe('StepOutput', () => {
     output.flush()
     expect(chunks).toEqual(['ab', 'c'])
   })
+
+  it('keeps reading a half-received state line after the rest of the output is hidden', () => {
+    const before = new StepOutput([], () => {}, 0)
+    before.push('working\nSHELLWAY_STATE backup=/var/b')
+    const after = new StepOutput([], () => {}, 0, before.text, before.carry())
+    after.conceal('\n[hidden]\n')
+    after.observe('ackups/x\nsecret stuff\n')
+    after.flush()
+    expect(after.state.backup).toBe('/var/backups/x')
+    expect(after.text).toBe('working\n\n[hidden]\n')
+  })
 })
 
 describe('TailBuffer', () => {

@@ -171,7 +171,7 @@ export class RunExecution {
     const ref = this.record.detached
     if (!ref) return { kind: 'lost' }
     const hidden = this.plan === null && this.record.hasSecrets
-    if (hidden) output.note(OUTPUT_HIDDEN)
+    if (hidden) output.conceal(OUTPUT_HIDDEN)
     const checkpoint = () => {
       state.output = output.text
       ref.carry = output.carry()

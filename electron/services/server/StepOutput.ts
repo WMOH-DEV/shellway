@@ -71,6 +71,11 @@ export class StepOutput {
     this.flushPending()
   }
 
+  conceal(notice: string): void {
+    this.held = ''
+    this.display(notice)
+  }
+
   flush(): void {
     this.captureLine(this.partialLine)
     this.partialLine = ''
