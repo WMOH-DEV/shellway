@@ -48,8 +48,13 @@ const api = {
     },
     open: (handoff?: unknown, resources?: string[], feature?: FeatureWindowRef, shellIds?: string[]) =>
       ipcRenderer.invoke("window:open", handoff, resources, feature, shellIds) as Promise<void>,
-    focusFeature: (ref: FeatureWindowRef) =>
-      ipcRenderer.invoke("window:focusFeature", ref) as Promise<boolean>,
+    focusFeature: (ref: FeatureWindowRef, route?: object) =>
+      ipcRenderer.invoke("window:focusFeature", ref, route) as Promise<boolean>,
+    onFeatureRoute: (callback: (ref: FeatureWindowRef, route: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ref: FeatureWindowRef, route: unknown) => callback(ref, route);
+      ipcRenderer.on("window:featureRoute", handler);
+      return () => ipcRenderer.removeListener("window:featureRoute", handler);
+    },
     closeFeature: (ref: FeatureWindowRef) =>
       ipcRenderer.invoke("window:closeFeature", ref) as Promise<void>,
     onFeatureClosed: (callback: (ref: FeatureWindowRef) => void) => {
@@ -154,6 +159,11 @@ const api = {
     update: (updates: unknown) =>
       ipcRenderer.invoke("settings:update", updates),
     reset: () => ipcRenderer.invoke("settings:reset"),
+    onChanged: (callback: (settings: { classicServerTabs?: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, settings: { classicServerTabs?: boolean }) => callback(settings);
+      ipcRenderer.on("settings:changed", handler);
+      return () => ipcRenderer.removeListener("settings:changed", handler);
+    },
   },
 
   // ── Dialogs ──

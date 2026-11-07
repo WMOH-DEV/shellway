@@ -19,7 +19,18 @@ async function readSetting(): Promise<boolean> {
   }
 }
 
+let following = false
+
+function followSettingChanges(): void {
+  if (following) return
+  following = true
+  window.novadeck.settings.onChanged?.((settings) => {
+    if (typeof settings?.classicServerTabs === 'boolean') setClassicTabs(settings.classicServerTabs)
+  })
+}
+
 export function loadClassicTabs(): Promise<boolean> {
+  followSettingChanges()
   pendingLoad ??= readSetting().then((enabled) => {
     if (!useClassicTabsStore.getState().loaded) useClassicTabsStore.setState({ enabled, loaded: true })
     return useClassicTabsStore.getState().enabled
