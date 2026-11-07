@@ -26,7 +26,9 @@ export function SoftwareSection({ ctx }: { ctx: ServerSectionContext }) {
       <UpdatesBanner state={state} />
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-start gap-4">
         <Catalog ctx={ctx} state={state} selected={panel} />
-        <DetailPanel panel={panel} ctx={ctx} state={state} />
+        <div className="sticky top-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+          <DetailPanel panel={panel} ctx={ctx} state={state} />
+        </div>
       </div>
     </SectionPage>
   )
