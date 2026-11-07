@@ -91,10 +91,16 @@ export interface PhpFacts {
   sites: PhpSite[]
 }
 
+export interface NginxIncludedSetting {
+  value: string
+  path: string
+}
+
 export interface NginxFacts {
   installed: boolean
   conf: PhpIniFile
   values: Record<string, string>
+  elsewhere: Record<string, NginxIncludedSetting>
 }
 
 export interface FpmPressure {

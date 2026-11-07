@@ -12,7 +12,7 @@ const SHA = 'c'.repeat(64)
 
 const identity = ok({ os: { family: 'ubuntu', id: 'ubuntu', versionId: '24.04', codename: 'noble', prettyName: 'Ubuntu 24.04 LTS' } })
 
-const nginxFacts = (conf: string) => ok(parseNginx(`@@conf\nsha=${SHA}\nb64=${Buffer.from(conf).toString('base64')}\n`))
+const nginxFacts = (conf: string, included = '') => ok(parseNginx(`@@conf\nsha=${SHA}\nb64=${Buffer.from(conf).toString('base64')}\n@@included\n${included}`))
 
 const FACTS: ServerFacts = { [IDENTITY_PROBE]: identity, [NGINX_PROBE]: nginxFacts(NGINX_CONF) }
 
@@ -57,6 +57,17 @@ describe('software.nginx-settings', () => {
 
   it('blocks when the values are already set', () => {
     expect(plan('software.nginx-settings', { values: { gzip: 'on' } }).blocked?.message).toBe('These values are already set.')
+  })
+
+  it('blocks a setting that an included file defines, so nginx is not left with a duplicate', () => {
+    const facts = { ...FACTS, [NGINX_PROBE]: nginxFacts(NGINX_CONF, '/etc/nginx/conf.d/uploads.conf|client_max_body_size|100M\n') }
+    expect(plan('software.nginx-settings', { values: { client_max_body_size: '64M' } }, facts).blocked?.message).toBe('client_max_body_size is set in /etc/nginx/conf.d/uploads.conf. Change it there.')
+    expect(plan('software.nginx-settings', { values: { gzip: 'off' } }, facts).blocked).toBeNull()
+  })
+
+  it('blocks when nginx.conf is not valid UTF-8 so the rewrite cannot corrupt it', () => {
+    const facts = { ...FACTS, [NGINX_PROBE]: nginxFacts(`# caf\uFFFD\n${NGINX_CONF}`) }
+    expect(plan('software.nginx-settings', { values: { gzip: 'off' } }, facts).blocked?.message).toContain('cannot read safely')
   })
 
   it('blocks without an http block', () => {

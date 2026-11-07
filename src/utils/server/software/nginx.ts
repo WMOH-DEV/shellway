@@ -1,6 +1,6 @@
 import { fileDump, parseFile } from './php'
 import { sectionLines, splitSections } from './sections'
-import type { NginxFacts } from './types'
+import type { NginxFacts, NginxIncludedSetting } from './types'
 
 export const NGINX_KEYS = ['client_max_body_size', 'keepalive_timeout', 'gzip', 'server_tokens'] as const
 
@@ -10,9 +10,18 @@ export const NGINX_DEFAULTS: Record<NginxKey, string> = { client_max_body_size: 
 
 export const NGINX_CONF_PATH = '/etc/nginx/nginx.conf'
 
+const INCLUDED_SETTINGS = `for f in /etc/nginx/conf.d/*.conf /etc/nginx/sites-enabled/*; do
+  [ -f "$f" ] && [ -r "$f" ] || continue
+  awk -v f="$f" '{ line = $0; sub(/#.*/, "", line)
+    if (depth == 0 && line ~ /^[ \t]*(${NGINX_KEYS.join('|')})[ \t]+[^;]*;/) { s = line; sub(/^[ \t]+/, "", s); key = s; sub(/[ \t].*$/, "", key); val = s; sub(/^[^ \t]+[ \t]+/, "", val); sub(/[ \t]*;.*$/, "", val); print f "|" key "|" val }
+    depth += gsub(/[{]/, "{", line) - gsub(/[}]/, "}", line) }' "$f"
+done`
+
 export const NGINX_SCRIPT = `if [ ! -x /usr/sbin/nginx ] || [ ! -f ${NGINX_CONF_PATH} ]; then echo '@@none'; exit 0; fi
 echo '@@conf'
 ${fileDump(NGINX_CONF_PATH)}
+echo '@@included'
+${INCLUDED_SETTINGS}
 exit 0
 `
 
@@ -109,10 +118,23 @@ export function setNginxDirectives(conf: string, values: Partial<Record<NginxKey
   return `${output.join('\n')}\n`
 }
 
-const NOT_INSTALLED: NginxFacts = { installed: false, conf: { sha256: null, content: '' }, values: {} }
+const NOT_INSTALLED: NginxFacts = { installed: false, conf: { sha256: null, content: '' }, values: {}, elsewhere: {} }
+
+const isNginxKey = (key: string): key is NginxKey => (NGINX_KEYS as readonly string[]).includes(key)
+
+export function parseIncludedSettings(lines: string[]): Record<string, NginxIncludedSetting> {
+  const found: Record<string, NginxIncludedSetting> = {}
+  for (const line of lines) {
+    const [path, key, ...rest] = line.split('|')
+    const value = rest.join('|').trim()
+    if (path && key && value && isNginxKey(key) && !found[key]) found[key] = { value, path }
+  }
+  return found
+}
 
 export function parseNginx(stdout: string): NginxFacts {
-  const conf = parseFile(sectionLines(splitSections(stdout), 'conf'))
+  const sections = splitSections(stdout)
+  const conf = parseFile(sectionLines(sections, 'conf'))
   if (!conf.sha256) return NOT_INSTALLED
-  return { installed: true, conf, values: parseNginxValues(conf.content) as Record<string, string> }
+  return { installed: true, conf, values: parseNginxValues(conf.content) as Record<string, string>, elsewhere: parseIncludedSettings(sectionLines(sections, 'included')) }
 }

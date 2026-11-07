@@ -8,6 +8,8 @@ import { asRecord, nginxSettings } from '../validate'
 
 type NginxLookup = NginxFacts | ActionPlan
 
+const UNREADABLE = '\uFFFD'
+
 function nginxOrBlock(title: string, facts: ServerFacts): NginxLookup {
   const os = unsupportedOsMessage(facts)
   if (os) return blockedPlan(title, 'unsupported', os)
@@ -45,8 +47,11 @@ export const nginxSettingsAction: ActionDefinition<NginxSettingsParams> = {
     const title = 'Change nginx settings'
     const lookup = nginxOrBlock(title, facts)
     if (isPlan(lookup)) return lookup
-    const { conf } = lookup
+    const { conf, elsewhere } = lookup
     if (!conf.sha256) return blockedPlan(title, 'precondition', `${NGINX_CONF_PATH} was not found.`)
+    const included = Object.keys(params.values).find((key) => elsewhere[key])
+    if (included) return blockedPlan(title, 'precondition', `${included} is set in ${elsewhere[included].path}. Change it there.`)
+    if (conf.content.includes(UNREADABLE)) return blockedPlan(title, 'precondition', `${NGINX_CONF_PATH} has characters Shellway cannot read safely. Edit it by hand.`)
     const content = setNginxDirectives(conf.content, params.values)
     if (content === null) return blockedPlan(title, 'precondition', `${NGINX_CONF_PATH} has no http block to put these settings in.`)
     const diff = changedLines(conf.content, content)

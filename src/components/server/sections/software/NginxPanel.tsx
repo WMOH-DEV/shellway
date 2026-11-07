@@ -19,16 +19,32 @@ function ServerControls({ run }: { run: SoftwareState['run'] }) {
   )
 }
 
+function IncludedSettings({ elsewhere }: { elsewhere: NginxFacts['elsewhere'] }) {
+  const entries = Object.entries(elsewhere)
+  if (entries.length === 0) return null
+  return (
+    <>
+      {entries.map(([key, setting]) => (
+        <span key={key} className="block">
+          <span className="font-mono text-nd-text-secondary">{key} {setting.value}</span> is set in <span className="font-mono">{setting.path}</span>. Change it there.
+        </span>
+      ))}
+    </>
+  )
+}
+
 function NginxSettings({ nginx, run }: { nginx: NginxFacts; run: SoftwareState['run'] }) {
+  const editable = NGINX_KEYS.filter((key) => !nginx.elsewhere[key])
+  const footnote = <>Backed up, tested with <span className="font-mono">nginx -t</span>, reloaded, and restored if the test fails</>
   return (
     <SettingsCard
       key={`nginx-${nginx.conf.sha256}`}
       title="nginx.conf · http"
-      keys={NGINX_KEYS}
+      keys={editable}
       values={{ ...NGINX_DEFAULTS, ...nginx.values }}
       choices={{ gzip: ['on', 'off'], server_tokens: ['on', 'off'] }}
       isValid={isValidNginxValue}
-      footnote={<>Backed up, tested with <span className="font-mono">nginx -t</span>, reloaded, and restored if the test fails</>}
+      footnote={<span className="flex flex-col gap-2"><IncludedSettings elsewhere={nginx.elsewhere} /><span>{footnote}</span></span>}
       onApply={(changed) => run('software.nginx-settings', { values: changed })}
     />
   )

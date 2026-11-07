@@ -83,6 +83,15 @@ describe('NginxPanel', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
   })
 
+  it('shows a setting defined in an included file as read-only with its file', () => {
+    facts = { ...baseFacts, [NGINX_PROBE]: ok(parseNginx(`${confOutput}@@included\n/etc/nginx/conf.d/uploads.conf|client_max_body_size|100M\n`)) }
+    render(<SoftwareSection ctx={ctx()} />)
+    expect(screen.queryByText('client_max_body_size', { selector: 'label span' })).not.toBeInTheDocument()
+    expect(screen.getByText('/etc/nginx/conf.d/uploads.conf')).toBeInTheDocument()
+    expect(screen.getByText('client_max_body_size 100M')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('65')).toBeInTheDocument()
+  })
+
   it('hides the settings card when nginx.conf could not be read', () => {
     facts = { ...baseFacts, [NGINX_PROBE]: ok(parseNginx('@@none\n')) }
     render(<SoftwareSection ctx={ctx()} />)

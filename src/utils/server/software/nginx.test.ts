@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NGINX_CONF } from './fixtures/nginxConf'
-import { NGINX_SCRIPT, parseNginx, parseNginxValues, setNginxDirectives } from './nginx'
+import { NGINX_SCRIPT, parseIncludedSettings, parseNginx, parseNginxValues, setNginxDirectives } from './nginx'
 
 const SERVER_BLOCK = NGINX_CONF.slice(NGINX_CONF.indexOf('\tserver {'), NGINX_CONF.indexOf('\tinclude /etc/nginx/conf.d'))
 
@@ -80,10 +80,22 @@ describe('nginx probe', () => {
   })
 
   it('reports nginx as not installed when the script found nothing', () => {
-    expect(parseNginx('@@none\n')).toEqual({ installed: false, conf: { sha256: null, content: '' }, values: {} })
+    expect(parseNginx('@@none\n')).toEqual({ installed: false, conf: { sha256: null, content: '' }, values: {}, elsewhere: {} })
+  })
+
+  it('reads settings that included files define at http level', () => {
+    const facts = parseNginx(`@@conf\nsha=${'c'.repeat(64)}\nb64=${base64(NGINX_CONF)}\n@@included\n/etc/nginx/conf.d/uploads.conf|client_max_body_size|100M\n`)
+    expect(facts.elsewhere).toEqual({ client_max_body_size: { value: '100M', path: '/etc/nginx/conf.d/uploads.conf' } })
   })
 
   it('checks the nginx binary by path because sbin is not on every login PATH', () => {
     expect(NGINX_SCRIPT).toContain('/usr/sbin/nginx')
+  })
+})
+
+describe('parseIncludedSettings', () => {
+  it('keeps the first file per known key and skips unknown or malformed lines', () => {
+    const lines = ['/etc/nginx/conf.d/a.conf|gzip|off', '/etc/nginx/conf.d/b.conf|gzip|on', '/etc/nginx/conf.d/a.conf|worker_connections|512', 'garbage', '/etc/nginx/conf.d/a.conf|server_tokens|']
+    expect(parseIncludedSettings(lines)).toEqual({ gzip: { value: 'off', path: '/etc/nginx/conf.d/a.conf' } })
   })
 })
