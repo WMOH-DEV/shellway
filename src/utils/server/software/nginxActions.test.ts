@@ -51,8 +51,8 @@ describe('software.nginx-settings', () => {
     expect(step.script).toContain(SHA)
     expect(step.script).toContain('chmod 0644')
     expect(step.script).toContain('chown root:root')
-    expect(step.diff).toContain('+\tserver_tokens off;')
-    expect(step.diff).toContain('+\tclient_max_body_size 64M;')
+    expect(step.diff).toContain('+ \tserver_tokens off;')
+    expect(step.diff).toContain('+ \tclient_max_body_size 64M;')
   })
 
   it('blocks when the values are already set', () => {

@@ -188,7 +188,7 @@ describe('php actions', () => {
     expect(step.kind).toBe('file-edit')
     expect(step.display).toContain('/etc/php/8.3/fpm/conf.d/99-shellway.ini')
     expect(step.display).toContain('php-fpm8.3 -t')
-    expect(step.diff).toBe('-memory_limit = 256M\n+memory_limit = 512M\n+date.timezone = Europe/Berlin')
+    expect(step.diff).toBe('- memory_limit = 256M\n+ memory_limit = 512M\n+ date.timezone = Europe/Berlin')
   })
 
   it('rejects unknown ini keys and bad values', () => {
@@ -199,7 +199,9 @@ describe('php actions', () => {
   it('edits pool lines in place and uncomments missing ones', () => {
     const result = plan('software.php-fpm-pool', { version: '8.3', settings: { 'pm.max_children': '20', 'pm.max_spare_servers': '6', 'pm.max_requests': '500' } })
     expect(result.blocked).toBeNull()
-    expect(result.steps[0].diff).toBe('-pm.max_children = 5\n+pm.max_children = 20\n-pm.max_spare_servers = 3\n+pm.max_spare_servers = 6\n-;pm.max_requests = 500\n+pm.max_requests = 500')
+    const changed = (result.steps[0].diff ?? '').split('\n').filter((line) => !line.startsWith(' '))
+    expect(changed.filter((line) => line.startsWith('-'))).toEqual(['- pm.max_children = 5', '- pm.max_spare_servers = 3', '- ;pm.max_requests = 500'])
+    expect(changed.filter((line) => line.startsWith('+'))).toEqual(['+ pm.max_children = 20', '+ pm.max_spare_servers = 6', '+ pm.max_requests = 500'])
   })
 
   it('blocks inconsistent dynamic pool settings', () => {
@@ -219,5 +221,13 @@ describe('setDirectives', () => {
 
   it('produces an empty diff when nothing changes', () => {
     expect(changedLines('a = 1\n', setDirectives('a = 1\n', { a: '1' }))).toBe('')
+  })
+})
+
+describe('changedLines', () => {
+  it('shows one inserted line with its context instead of shifting every later line', () => {
+    const before = 'http {\n\tsendfile on;\n\ttcp_nopush on;\n\tgzip on;\n}\n'
+    const after = 'http {\n\tclient_max_body_size 64M;\n\tsendfile on;\n\ttcp_nopush on;\n\tgzip on;\n}\n'
+    expect(changedLines(before, after)).toBe(['  http {', '+ \tclient_max_body_size 64M;', '  \tsendfile on;', '  \ttcp_nopush on;', '  \tgzip on;'].join('\n'))
   })
 })

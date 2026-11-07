@@ -1,5 +1,6 @@
 import type { ActionPlan, ActionStep, PlanBlockKind, ServerFacts } from '@/types/server/core'
 import { IDENTITY_PROBE, type ServerIdentity } from '@/types/server/identity'
+import { changedLines as diffWithContext } from '@/utils/ssl/originCa/diff'
 
 export const okData = <T>(facts: ServerFacts, id: string): T | null => {
   const result = facts[id]
@@ -33,16 +34,10 @@ export function unsupportedOsMessage(facts: ServerFacts): string | null {
   return `Software management is not available on ${identity.os.prettyName} yet. It works on Ubuntu and Debian.`
 }
 
+const DIFF_SIGN = { same: ' ', add: '+', remove: '-' } as const
+
 export function changedLines(before: string, after: string): string {
-  const old = before.split('\n')
-  const next = after.split('\n')
-  const lines: string[] = []
-  for (let index = 0; index < Math.max(old.length, next.length); index++) {
-    if (old[index] === next[index]) continue
-    if (old[index] !== undefined && old[index] !== '') lines.push(`-${old[index]}`)
-    if (next[index] !== undefined && next[index] !== '') lines.push(`+${next[index]}`)
-  }
-  return lines.join('\n')
+  return diffWithContext(before, after).map((line) => `${DIFF_SIGN[line.kind]} ${line.text}`).join('\n')
 }
 
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
