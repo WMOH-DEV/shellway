@@ -33,8 +33,10 @@ export interface SetupFlowProps {
   context: ServerContext
   starting: boolean
   startError: string | null
+  rechecking: boolean
   onCancel: () => void
   onStart: (input: CreateSiteInput, plan: PlanAction[]) => void
+  onRecheck: () => void
 }
 
 type FormStep = Exclude<WizardStep, 'review'>
@@ -79,19 +81,39 @@ function NextActions({ step, problem, onNext }: { step: FormStep; problem: strin
   )
 }
 
-function CreateActions({ plan, fullSudo, starting, onCreate }: { plan: PlanAction[] | string; fullSudo: boolean; starting: boolean; onCreate: (plan: PlanAction[]) => void }) {
-  const ready = Array.isArray(plan)
+interface CreateActionsProps {
+  plan: PlanAction[] | string
+  fullSudo: boolean
+  starting: boolean
+  rechecking: boolean
+  onCreate: (plan: PlanAction[]) => void
+  onRecheck: () => void
+}
+
+function BlockedNote({ rechecking, onRecheck }: Pick<CreateActionsProps, 'rechecking' | 'onRecheck'>) {
   return (
     <>
-      {ready && <PlanFooterNote plan={plan} fullSudo={fullSudo} />}
-      <Button variant="primary" onClick={() => ready && onCreate(plan)} disabled={!ready || starting}>
+      <span className="text-xs text-nd-error-fg">A step is blocked. Fix it on the server, then check again.</span>
+      <Button onClick={onRecheck} disabled={rechecking}>{rechecking ? 'Checking…' : 'Check again'}</Button>
+    </>
+  )
+}
+
+function CreateActions({ plan, fullSudo, starting, rechecking, onCreate, onRecheck }: CreateActionsProps) {
+  const ready = Array.isArray(plan)
+  const blocked = ready && plan.some((action) => action.chip === 'blocked')
+  return (
+    <>
+      {blocked && <BlockedNote rechecking={rechecking} onRecheck={onRecheck} />}
+      {ready && !blocked && <PlanFooterNote plan={plan} fullSudo={fullSudo} />}
+      <Button variant="primary" onClick={() => ready && onCreate(plan)} disabled={!ready || blocked || starting}>
         <Rocket size={13} /> {starting ? 'Starting…' : 'Create site'}
       </Button>
     </>
   )
 }
 
-export function SetupFlow({ connectionId, sessionId, serverName, context, starting, startError, onCancel, onStart }: SetupFlowProps) {
+export function SetupFlow({ connectionId, sessionId, serverName, context, starting, startError, rechecking, onCancel, onStart, onRecheck }: SetupFlowProps) {
   const model = useCreateSiteDraft(connectionId, sessionId, context.tools)
   const [step, setStep] = useState<WizardStep>('site')
   const driver = driverFor(context.server)
@@ -111,7 +133,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
       <div className="flex-1" />
       {startError && <span role="alert" className="max-w-[40%] truncate text-xs text-nd-error-fg" title={startError}>{startError}</span>}
       {isFormStep(step) && <NextActions step={step} problem={stepProblem(step, model, context)} onNext={next} />}
-      {plan !== null && <CreateActions plan={plan} fullSudo={context.fullSudo} starting={starting} onCreate={(ready) => onStart(input(), ready)} />}
+      {plan !== null && <CreateActions plan={plan} fullSudo={context.fullSudo} starting={starting} rechecking={rechecking} onCreate={(ready) => onStart(input(), ready)} onRecheck={onRecheck} />}
     </>
   )
 

@@ -18,7 +18,7 @@ interface CreateSiteWizardProps {
   onClose: () => void
 }
 
-type SetupProps = Omit<SetupFlowProps, 'context'>
+type SetupProps = Omit<SetupFlowProps, 'context' | 'rechecking' | 'onRecheck'>
 
 function ContextProblem({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
@@ -31,7 +31,7 @@ function ContextProblem({ message, onRetry }: { message: string; onRetry?: () =>
 
 function Setup(props: SetupProps) {
   const { context, loading, error, reload } = useCreateSiteContext(props.connectionId, props.sessionId)
-  if (context && hasServer(context)) return <SetupFlow {...props} context={context} />
+  if (context && hasServer(context)) return <SetupFlow {...props} context={context} rechecking={loading} onRecheck={() => void reload()} />
   const frame = (body: ReactNode) => <WizardFrame subtitle={`Checking ${props.serverName}`} onBack={props.onCancel}>{body}</WizardFrame>
   if (loading) return frame(<div className="flex justify-center py-16 text-nd-text-muted"><Loader2 size={20} className="animate-spin" /></div>)
   if (error !== null) return frame(<ContextProblem message={error} onRetry={() => void reload()} />)

@@ -19,6 +19,16 @@ async function enterDomain(user: ReturnType<typeof userEvent.setup>, domain = 's
 
 const continueButton = () => screen.getByRole('button', { name: /Continue/ })
 
+async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
+  await enterDomain(user)
+  await waitFor(() => expect(continueButton()).toBeEnabled())
+  await user.click(continueButton())
+  await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
+  await user.click(continueButton())
+  await screen.findByDisplayValue('admin@example.com')
+  await user.click(continueButton())
+}
+
 describe('Create site, step 1', () => {
   it('disables a template the server cannot run and says why', async () => {
     setup({ 'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext({ tools: allTools({ docker: false }) }) }) })
@@ -101,5 +111,19 @@ describe('Create site, from domain to start', () => {
     await user.click(continueButton())
     await user.click(screen.getByRole('button', { name: /Create site/ }))
     expect(api['createSite.start'].mock.calls[0][2].dns).toEqual({ zoneId: null, zoneName: null, serverIp: '203.0.113.10', proxied: false })
+  })
+
+  it('holds Create while a step is blocked, until a fresh check clears it', async () => {
+    const rhel = { server: { kind: 'apache', layout: 'rhel' } } as const
+    const context = vi.fn()
+      .mockResolvedValueOnce({ success: true, data: makeContext({ ...rhel, tools: allTools({ apacheModules: ['rewrite'] }) }) })
+      .mockResolvedValueOnce({ success: true, data: makeContext(rhel) })
+    const { user } = setup({ 'createSite.context': context })
+    await walkToReview(user)
+    expect(screen.getByRole('region', { name: 'Apache modules' })).toHaveTextContent('blocked')
+    expect(screen.getByRole('button', { name: /Create site/ })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Create site/ })).toBeEnabled())
+    expect(screen.queryByRole('region', { name: 'Apache modules' })).not.toBeInTheDocument()
   })
 })
