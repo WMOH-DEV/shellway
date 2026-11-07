@@ -77,6 +77,11 @@ describe('summarizeGrants', () => {
     expect(summarizeGrants(['GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON `app`.* TO `app`@`%`'])).toEqual(['5 privileges on app'])
   })
 
+  it('reads MySQL 8 root grants that list every privilege as ALL', () => {
+    const privileges = Array.from({ length: 30 }, (_, index) => `PRIV_${index}`).join(',')
+    expect(summarizeGrants([`GRANT ${privileges} ON *.* TO \`root\`@\`localhost\` WITH GRANT OPTION`, "GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION"])).toEqual(['ALL on *.*'])
+  })
+
   it('ignores role grants and USAGE', () => {
     expect(summarizeGrants(['GRANT USAGE ON *.* TO `a`@`%`', 'GRANT `admin`@`%` TO `a`@`%`'])).toEqual([])
   })
