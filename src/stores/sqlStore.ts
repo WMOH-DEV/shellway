@@ -75,8 +75,15 @@ export interface SQLConnectionSlice {
 
 // ── Store shape ──
 
+export interface PendingDatabase {
+  engine: 'mysql' | 'postgres'
+  database: string
+}
+
 interface SQLStoreState {
   connections: Record<string, SQLConnectionSlice>
+  pendingDatabases: Record<string, PendingDatabase>
+  setPendingDatabase: (connectionId: string, value: PendingDatabase | null) => void
 
   // ── Connection actions ──
   setConnectionStatus: (connectionId: string, status: SQLConnectionStatus) => void
@@ -217,6 +224,13 @@ function updateConn(
 
 export const useSQLStore = create<SQLStoreState>((set) => ({
   connections: {},
+  pendingDatabases: {},
+
+  setPendingDatabase: (connectionId, value) =>
+    set((s) => {
+      const { [connectionId]: _removed, ...rest } = s.pendingDatabases
+      return { pendingDatabases: value ? { ...rest, [connectionId]: value } : rest }
+    }),
 
   // ── Connection actions ──
 
