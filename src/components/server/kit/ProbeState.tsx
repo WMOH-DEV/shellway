@@ -6,7 +6,7 @@ import { Notice } from './Notice'
 export function ProbeState<T>({ result, label, children }: { result: ProbeResult<T> | undefined; label: string; children: (data: T) => ReactNode }) {
   if (!result) {
     return (
-      <div className="flex items-center gap-2 py-6 text-[13px] text-nd-text-muted">
+      <div className="flex items-center justify-center gap-2 py-6 text-[13px] text-nd-text-muted">
         <Spinner size="sm" />
         Checking {label}…
       </div>

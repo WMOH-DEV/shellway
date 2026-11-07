@@ -29,7 +29,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen(route: Ser
 function EmptyState({ loading }: { loading: boolean }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
+      <div className="flex items-center justify-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
         <Spinner size="sm" />
         Checking the server…
       </div>

@@ -98,7 +98,7 @@ export function WorkersCard(props: WorkersCardProps) {
   return (
     <SectionCard title="Workers" count={rows.length} flush>
       {checking && (
-        <div className="flex items-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
+        <div className="flex items-center justify-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
           <Spinner size="sm" />
           Checking workers…
         </div>

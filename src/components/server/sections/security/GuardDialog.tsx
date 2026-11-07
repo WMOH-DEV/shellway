@@ -65,7 +65,7 @@ function RunView({ run, onClose }: { run: GuardRun | null; onClose(): void }) {
   const secondsLeft = useSecondsLeft(run?.outcome === 'reverting' ? run.revertAt : null)
   if (!run) {
     return (
-      <div className="flex items-center gap-2 py-4 text-[13px] text-nd-text-muted">
+      <div className="flex items-center justify-center gap-2 py-4 text-[13px] text-nd-text-muted">
         <Spinner size="sm" />
         Starting…
       </div>
@@ -97,7 +97,7 @@ export function GuardDialog({ guard }: { guard: GuardController }) {
   return (
     <Modal open onClose={guard.close} title={title} maxWidth="max-w-xl" closeOnBackdrop={!live} closeOnEscape={!live}>
       {state.phase === 'loading' && (
-        <div className="flex items-center gap-2 py-4 text-[13px] text-nd-text-muted">
+        <div className="flex items-center justify-center gap-2 py-4 text-[13px] text-nd-text-muted">
           <Spinner size="sm" />
           Checking the server…
         </div>

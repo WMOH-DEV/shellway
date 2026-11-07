@@ -51,7 +51,7 @@ function PlanningView({ onCancel }: { onCancel(): void }) {
   return (
     <>
       <DrawerBody>
-        <div role="status" className="flex items-center gap-2 py-6 text-[13px] text-nd-text-muted"><Spinner size="sm" />Preparing the plan…</div>
+        <div role="status" className="flex items-center justify-center gap-2 py-6 text-[13px] text-nd-text-muted"><Spinner size="sm" />Preparing the plan…</div>
       </DrawerBody>
       <DrawerFooter><Spacer /><Button onClick={onCancel}>Cancel</Button></DrawerFooter>
     </>

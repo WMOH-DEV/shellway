@@ -27,7 +27,7 @@ function Checklist({ model }: { model: ReadyCheckModel }) {
   }
   if (!items) {
     return (
-      <div className="flex items-center gap-2.5 px-4 py-3.5 text-xs text-nd-text-muted">
+      <div className="flex items-center justify-center gap-2.5 px-4 py-3.5 text-xs text-nd-text-muted">
         <Spinner size="sm" /> Checking the server…
       </div>
     )

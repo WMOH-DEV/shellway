@@ -7,7 +7,7 @@ import type { ZoneModeFlow } from './useZoneMode'
 
 function Checking({ zone }: { zone: string }) {
   return (
-    <div role="status" className="flex items-center gap-2.5 text-[13px] text-nd-text-secondary">
+    <div role="status" className="flex items-center justify-center gap-2.5 text-[13px] text-nd-text-secondary">
       <Spinner size="sm" />
       Checking every proxied hostname in {zone} from this computer…
     </div>

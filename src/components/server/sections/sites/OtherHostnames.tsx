@@ -31,7 +31,7 @@ export function OtherHostnames({ ctx, data }: { ctx: ServerSectionContext; data:
 
   if (!report) {
     if (error) return <ErrorBanner message={error} retrying={loading} onRetry={() => void refresh()} />
-    return <div className="flex items-center gap-2 py-4 text-[13px] text-nd-text-muted"><Spinner size="sm" /> Checking certificates…</div>
+    return <div className="flex items-center justify-center gap-2 py-4 text-[13px] text-nd-text-muted"><Spinner size="sm" /> Checking certificates…</div>
   }
 
   const notice = webServerNotice(report.facts)

@@ -104,7 +104,7 @@ export function ActivitySection({ ctx }: { ctx: ServerSectionContext }) {
 
 function EmptyState({ loading, filtered }: { loading: boolean; filtered: boolean }) {
   if (loading) {
-    return <div className="flex items-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted"><Spinner size="sm" />Reading the activity log…</div>
+    return <div className="flex items-center justify-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted"><Spinner size="sm" />Reading the activity log…</div>
   }
   return <p className="px-4 py-6 text-[13px] text-nd-text-muted">{filtered ? 'Nothing matches these filters.' : 'Nothing has been done on this server from Shellway yet.'}</p>
 }

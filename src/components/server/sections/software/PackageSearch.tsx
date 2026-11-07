@@ -46,7 +46,7 @@ function Results({ state, onInstall }: { state: SearchState; onInstall(name: str
   if (state.kind === 'idle') return null
   return (
     <div className="absolute right-0 top-full z-20 mt-1.5 w-[440px] rounded-xl border border-nd-border bg-nd-surface p-1.5 shadow-lg">
-      {state.kind === 'loading' && <div className="flex items-center gap-2 px-2.5 py-3 text-[13px] text-nd-text-muted"><Spinner size="sm" />Searching packages…</div>}
+      {state.kind === 'loading' && <div className="flex items-center justify-center gap-2 px-2.5 py-3 text-[13px] text-nd-text-muted"><Spinner size="sm" />Searching packages…</div>}
       {state.kind === 'error' && <p className="px-2.5 py-3 text-[13px] text-nd-error-fg">{state.message}</p>}
       {state.kind === 'done' && state.hits.length === 0 && <p className="px-2.5 py-3 text-[13px] text-nd-text-muted">No packages match.</p>}
       {state.kind === 'done' && state.hits.length > 0 && (

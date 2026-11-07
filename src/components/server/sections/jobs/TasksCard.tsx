@@ -88,7 +88,7 @@ export function TasksCard({ crontabs, timers, now, ...handlers }: TasksCardProps
   return (
     <SectionCard title="Scheduled tasks" count={facts ? subtitle(facts) : undefined} flush>
       {!crontabs && (
-        <div className="flex items-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
+        <div className="flex items-center justify-center gap-2 px-4 py-6 text-[13px] text-nd-text-muted">
           <Spinner size="sm" />
           Reading crontabs…
         </div>

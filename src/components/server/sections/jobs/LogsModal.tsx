@@ -43,7 +43,7 @@ export function LogsModal({ connectionId, request, onClose }: { connectionId: st
         </div>
         {error && <Notice tone="error" title="Could not read the log">{error}</Notice>}
         {text === null && !error && (
-          <div className="flex items-center gap-2 py-6 text-[13px] text-nd-text-muted">
+          <div className="flex items-center justify-center gap-2 py-6 text-[13px] text-nd-text-muted">
             <Spinner size="sm" />
             Reading the log…
           </div>
