@@ -23,7 +23,7 @@ function dockerExec(box: string): RemoteExec {
     const child = spawn(DOCKER, ['exec', '-i', '-u', 'deploy', '-w', '/home/deploy', '-e', 'SSH_CONNECTION=203.0.113.5 50000 172.17.0.2 22', '-e', 'HOME=/home/deploy', '-e', 'USER=deploy', box, 'sh', '-c', command])
     const out: Buffer[] = []
     const err: Buffer[] = []
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new ExecTimeoutError(options.timeoutMs ?? 10_000)) }, options.timeoutMs ?? 10_000)
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new ExecTimeoutError(`Command timed out after ${options.timeoutMs ?? 10_000}ms`)) }, options.timeoutMs ?? 10_000)
     child.stdout.on('data', (chunk: Buffer) => { out.push(chunk); options.onOutput?.(chunk.toString('utf8')) })
     child.stderr.on('data', (chunk: Buffer) => { err.push(chunk); options.onOutput?.(chunk.toString('utf8')) })
     child.on('error', reject)
