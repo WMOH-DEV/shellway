@@ -32,8 +32,9 @@ export function useSoftware(ctx: ServerSectionContext): SoftwareState {
   const launcher = useActionLauncher(ctx)
   const withOsFamily = useWithOsFamily(ctx.sessionId)
   const run = useCallback((type: string, params: unknown) => {
-    const finalParams = type === INSTALL && isRecord(params) ? withOsFamily(params) : params
-    launcher.launch({ type, params: finalParams, onFinished: () => void refresh() })
+    const launch = (finalParams: unknown) => launcher.launch({ type, params: finalParams, onFinished: () => void refresh() })
+    if (type === INSTALL && isRecord(params)) void withOsFamily(params).then(launch)
+    else launch(params)
   }, [launcher, refresh, withOsFamily])
   return {
     updates: facts[UPDATES_PROBE] as ProbeResult<UpdatesFacts> | undefined,

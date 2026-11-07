@@ -99,7 +99,7 @@ export function DatabasesSection({ ctx }: { ctx: ServerSectionContext }) {
     else if (result.data) toast.success('Backup saved', result.data.savedTo)
   }
 
-  const install = (component: ComponentId) => launcher.launch({ type: 'software.install', params: withOsFamily({ component }), onFinished: () => void refresh() })
+  const install = async (component: ComponentId) => launcher.launch({ type: 'software.install', params: await withOsFamily({ component }), onFinished: () => void refresh() })
 
   const tabs: SegmentOption<EngineTab>[] = TABS.map((value) => ({ value, label: engineTabLabel(value, facts) }))
   const canCreate = data?.status === 'ok'

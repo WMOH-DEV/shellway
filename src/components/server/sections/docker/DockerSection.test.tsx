@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerFacts } from '@/types/server/core'
 import { CONTAINERS, DISK_USAGE, IMAGES, STATE_GROUP } from '@/utils/server/docker/fixtures/output'
@@ -10,7 +10,7 @@ import type { ServerSectionContext } from '../types'
 import { DockerSection } from './DockerSection'
 
 const launch = vi.fn()
-vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => (params: Record<string, unknown>) => params }))
+vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => async (params: Record<string, unknown>) => params }))
 vi.mock('@/components/server/action', () => ({ useActionLauncher: () => ({ launch }) }))
 
 const ok = (data: unknown) => ({ status: 'ok' as const, data, at: 0 })
@@ -47,7 +47,7 @@ describe('DockerSection', () => {
     mockServer({ 'docker.state': ok(parseDockerState('@@missing\n')) })
     render(<DockerSection ctx={ctx} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Install Docker' }))
-    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ type: 'software.install', params: { component: 'docker' } }))
+    await waitFor(() => expect(launch).toHaveBeenCalledWith(expect.objectContaining({ type: 'software.install', params: { component: 'docker' } })))
   })
 
   it('groups stacks, links the site and warns about public ports', async () => {

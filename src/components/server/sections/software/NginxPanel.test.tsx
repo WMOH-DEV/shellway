@@ -24,7 +24,7 @@ const baseFacts: ServerFacts = {
 }
 let facts: ServerFacts = baseFacts
 
-vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => (params: Record<string, unknown>) => params }))
+vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => async (params: Record<string, unknown>) => params }))
 vi.mock('../../useServerFacts', () => ({ useServerFacts: () => ({ facts, loading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('../../action', () => ({ useActionLauncher: () => ({ launch }) }))
 

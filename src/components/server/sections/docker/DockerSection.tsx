@@ -155,7 +155,7 @@ export function DockerSection({ ctx }: { ctx: ServerSectionContext }) {
                 {tab === 'networks' && <NetworksTab networks={factData<DockerNetwork[]>(facts, DOCKER_PROBE.networks) ?? []} containers={containers?.items ?? []} />}
               </>
             ) : (
-              <UnavailableState state={data} onInstall={() => launcher.launch({ type: 'software.install', params: withOsFamily({ component: 'docker' }), onFinished: () => void refresh() })} onServices={() => ctx.navigate({ section: 'services' })} />
+              <UnavailableState state={data} onInstall={async () => launcher.launch({ type: 'software.install', params: await withOsFamily({ component: 'docker' }), onFinished: () => void refresh() })} onServices={() => ctx.navigate({ section: 'services' })} />
             )}
           </ProbeState>
         </SectionPage>
