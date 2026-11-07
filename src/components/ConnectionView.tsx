@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink, AppWindow, Rocket, ShieldCheck
+  Terminal, FolderTree, Database, ArrowRightLeft, Activity, Info, ScrollText, Columns, X, Cog, ExternalLink, AppWindow, Rocket, ShieldCheck, Server
 } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 
@@ -27,13 +27,21 @@ import type { ConnectionTab } from '@/types/session'
 import { useSslCritical } from '@/hooks/useSslCritical'
 import { useHttpsIntentStore } from '@/stores/httpsIntentStore'
 import { TabActiveContext } from '@/components/tabActive'
+import { useServerNavStore } from '@/stores/serverNavStore'
+import { useServerAttention, worstLevel } from '@/components/server/useServerAttention'
+import { useClassicTabs } from '@/components/server/shell/classicTabsStore'
+import { DOT_TONE } from '@/components/server/kit'
+import { isClassicSubTab, normalizeSubTab, normalizeSubTabList } from '@/utils/server/legacyTabs'
+import type { AttentionLevel } from '@/types/server/core'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
 const DeployView = lazy(() => import('@/components/deploy/DeployView').then(m => ({ default: m.DeployView })))
 const SslView = lazy(() => import('@/components/ssl/SslView').then(m => ({ default: m.SslView })))
+const ServerView = lazy(() => import('@/components/server/ServerView').then(m => ({ default: m.ServerView })))
 
-const SUB_TABS: TabItem[] = [
+const ALL_SUB_TABS: TabItem[] = [
+  { id: 'server', label: 'Server', icon: <Server size={13} /> },
   { id: 'terminal', label: 'Terminal', icon: <Terminal size={13} /> },
   { id: 'sftp', label: 'SFTP', icon: <FolderTree size={13} /> },
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
@@ -46,6 +54,19 @@ const SUB_TABS: TabItem[] = [
   { id: 'log', label: 'Log', icon: <ScrollText size={13} /> }
 ]
 
+const ALL_SUB_TAB_IDS = ALL_SUB_TABS.map(t => t.id as SubTab)
+const MODERN_SUB_TABS = ALL_SUB_TABS.filter(t => !isClassicSubTab(t.id))
+
+function ServerTabIcon({ level }: { level: AttentionLevel | null }) {
+  const showDot = level === 'error' || level === 'warning'
+  return (
+    <span className="relative inline-flex">
+      <Server size={13} />
+      {showDot && <span role="img" aria-label={`Server needs attention (${level})`} className={cn('absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full', DOT_TONE[level])} />}
+    </span>
+  )
+}
+
 type SubTab = ConnectionTab['activeSubTab']
 
 interface ConnectionViewProps {
@@ -54,7 +75,7 @@ interface ConnectionViewProps {
 }
 
 export function subTabLabel(id: string): string {
-  return SUB_TABS.find((t) => t.id === id)?.label ?? id
+  return ALL_SUB_TABS.find((t) => t.id === id)?.label ?? id
 }
 
 /**
@@ -66,6 +87,9 @@ export function subTabLabel(id: string): string {
  */
 export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
   const { updateTab } = useConnectionStore()
+  const openServer = useServerNavStore(s => s.openServer)
+  const classicTabs = useClassicTabs()
+  const showClassic = classicTabs.enabled
   const {
     bottomPanelTab, setBottomPanelTab, transferQueueOpen, toggleTransferQueue,
     splitViewLayout, splitViewRatio, setSplitView
@@ -85,8 +109,8 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
   // Running sub-tabs — undefined means all running (backward compat)
   const runningSubTabs = useMemo(() => {
     if (soloSubTab) return new Set<string>([soloSubTab])
-    return new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
-  }, [soloSubTab, tab.runningSubTabs])
+    return new Set<string>(normalizeSubTabList(tab.runningSubTabs ?? ALL_SUB_TAB_IDS, showClassic))
+  }, [soloSubTab, tab.runningSubTabs, showClassic])
 
   // Sub-tab history for "switch to last" on shutdown
   const subTabHistoryRef = useRef<string[]>([tab.activeSubTab])
@@ -102,19 +126,21 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
 
   // Build tabs with dimming for shut-down tabs
   const sslCritical = useSslCritical(tab.id, tab.status === 'connected')
+  const attention = useServerAttention(tab.id, tab.status === 'connected')
+  const serverLevel = worstLevel(attention)
   const subTabsWithState = useMemo(() => {
-    return SUB_TABS.map(t => ({
+    return (showClassic ? ALL_SUB_TABS : MODERN_SUB_TABS).map(t => ({
       ...t,
-      icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.icon,
+      icon: detachedSubTabs.has(t.id) ? <AppWindow size={13} /> : t.id === 'server' ? <ServerTabIcon level={serverLevel} /> : t.icon,
       dimmed: !runningSubTabs.has(t.id),
       alert: t.id === 'ssl' && sslCritical
     }))
-  }, [runningSubTabs, detachedSubTabs, sslCritical])
+  }, [showClassic, runningSubTabs, detachedSubTabs, sslCritical, serverLevel])
 
   // Tab change handler — re-activates shut-down tabs on click
   const handleSubTabChange = useCallback((id: string) => {
     const subTab = id as ConnectionTab['activeSubTab']
-    const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
+    const currentRunning = new Set<string>(normalizeSubTabList(tab.runningSubTabs ?? ALL_SUB_TAB_IDS, showClassic))
 
     if (!currentRunning.has(id)) {
       // Re-activate shut-down tab + add to mountedPanels immediately to avoid empty flash
@@ -127,24 +153,33 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
     } else {
       updateTab(tab.id, { activeSubTab: subTab })
     }
-  }, [tab.id, tab.runningSubTabs, updateTab])
+  }, [tab.id, tab.runningSubTabs, showClassic, updateTab])
 
   const httpsRequested = useHttpsIntentStore(s => s.pending[tab.id] !== undefined)
   useEffect(() => {
-    if (httpsRequested && tab.activeSubTab !== 'ssl') handleSubTabChange('ssl')
-  }, [httpsRequested, tab.activeSubTab, handleSubTabChange])
+    if (!httpsRequested || !classicTabs.loaded) return
+    if (!showClassic) openServer(tab.id, { section: 'sites', sub: 'https' })
+    else if (tab.activeSubTab !== 'ssl') handleSubTabChange('ssl')
+  }, [httpsRequested, classicTabs.loaded, showClassic, tab.id, tab.activeSubTab, openServer, handleSubTabChange])
 
   const deployRequested = useHttpsIntentStore(s => s.deployReturns[tab.id] === true)
   const consumeDeploy = useHttpsIntentStore(s => s.consumeDeploy)
   useEffect(() => {
-    if (!deployRequested) return
+    if (!deployRequested || !classicTabs.loaded) return
     consumeDeploy(tab.id)
-    if (tab.activeSubTab !== 'deploy') handleSubTabChange('deploy')
-  }, [deployRequested, tab.id, tab.activeSubTab, consumeDeploy, handleSubTabChange])
+    if (!showClassic) openServer(tab.id, { section: 'sites' })
+    else if (tab.activeSubTab !== 'deploy') handleSubTabChange('deploy')
+  }, [deployRequested, classicTabs.loaded, showClassic, tab.id, tab.activeSubTab, consumeDeploy, openServer, handleSubTabChange])
+
+  useEffect(() => {
+    if (soloSubTab || !classicTabs.loaded) return
+    const { route } = normalizeSubTab(tab.activeSubTab, showClassic)
+    if (route) openServer(tab.id, route)
+  }, [soloSubTab, classicTabs.loaded, showClassic, tab.id, tab.activeSubTab, openServer])
 
   // Shut down a sub-tab: go to last visited tab, or disconnect if none was visited
   const handleShutdownSubTab = useCallback((subTabId: string) => {
-    const currentRunning = new Set(tab.runningSubTabs ?? SUB_TABS.map(t => t.id))
+    const currentRunning = new Set<string>(normalizeSubTabList(tab.runningSubTabs ?? ALL_SUB_TAB_IDS, showClassic))
     currentRunning.delete(subTabId)
 
     // Clear monitor store data when shutting down the monitor tab so it starts fresh next time
@@ -192,7 +227,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
       runningSubTabs: [...currentRunning] as ConnectionTab['activeSubTab'][],
       ...(tab.splitView && (subTabId === 'terminal' || subTabId === 'sftp') ? { splitView: false } : {})
     })
-  }, [tab.id, tab.runningSubTabs, tab.splitView, updateTab, setSplitView])
+  }, [tab.id, tab.runningSubTabs, tab.splitView, showClassic, updateTab, setSplitView])
 
   // Track which panels have been visited — lazy-mount on first visit, then keep alive
   const [mountedPanels, setMountedPanels] = useState<Set<string>>(() => new Set([activeSubTab]))
@@ -409,6 +444,16 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
             </div>
           )}
 
+          {mountedPanels.has('server') && runningSubTabs.has('server') && isHere('server') && (
+            <div className={cn('absolute inset-0 flex flex-col', activeSubTab !== 'server' && 'hidden')}>
+              <TabActiveContext.Provider value={activeSubTab === 'server'}>
+                <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Server...</div>}>
+                  <ServerView tab={tab} active={activeSubTab === 'server'} attention={attention} />
+                </Suspense>
+              </TabActiveContext.Provider>
+            </div>
+          )}
+
           {/* Terminal — mounted when visited AND running, hidden when not active */}
           {!showSplitView && mountedPanels.has('terminal') && runningSubTabs.has('terminal') && isHere('terminal') && (
             <div className={cn(
@@ -447,7 +492,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
           )}
 
           {/* Monitor — conditional render when running (unmounts to stop SSH polling) */}
-          {activeSubTab === 'monitor' && runningSubTabs.has('monitor') && isHere('monitor') && (
+          {showClassic && activeSubTab === 'monitor' && runningSubTabs.has('monitor') && isHere('monitor') && (
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Monitor...</div>}>
                 <MonitorView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
@@ -456,7 +501,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
           )}
 
           {/* Services — conditional render (unmounts to stop polling) */}
-          {activeSubTab === 'services' && runningSubTabs.has('services') && isHere('services') && (
+          {showClassic && activeSubTab === 'services' && runningSubTabs.has('services') && isHere('services') && (
             <div className="absolute inset-0 flex flex-col">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Services...</div>}>
                 <ServiceManagerView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
@@ -464,7 +509,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
             </div>
           )}
 
-          {mountedPanels.has('deploy') && runningSubTabs.has('deploy') && isHere('deploy') && (
+          {showClassic && mountedPanels.has('deploy') && runningSubTabs.has('deploy') && isHere('deploy') && (
             <div className={cn('absolute inset-0 flex flex-col', activeSubTab !== 'deploy' && 'hidden')}>
               <TabActiveContext.Provider value={activeSubTab === 'deploy'}>
                 <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Deploy...</div>}>
@@ -474,7 +519,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
             </div>
           )}
 
-          {mountedPanels.has('ssl') && runningSubTabs.has('ssl') && isHere('ssl') && (
+          {showClassic && mountedPanels.has('ssl') && runningSubTabs.has('ssl') && isHere('ssl') && (
             <div className={cn('absolute inset-0 flex flex-col', activeSubTab !== 'ssl' && 'hidden')}>
               <TabActiveContext.Provider value={activeSubTab === 'ssl'}>
                 <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading SSL...</div>}>
@@ -485,7 +530,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
           )}
 
           {/* Info — Connection Health Dashboard */}
-          {activeSubTab === 'info' && runningSubTabs.has('info') && isHere('info') && (
+          {showClassic && activeSubTab === 'info' && runningSubTabs.has('info') && isHere('info') && (
             <ConnectionHealthDashboard
               connectionId={tab.id}
               sessionName={tab.sessionName}
