@@ -1,0 +1,24 @@
+@@root
+yes
+@@effective
+port 22
+port 2222
+pubkeyauthentication yes
+passwordauthentication yes
+kbdinteractiveauthentication no
+permitrootlogin without-password
+authenticationmethods any
+@@socket
+active
+@@include
+Include /etc/ssh/sshd_config.d/*.conf
+@@dropins
+50-cloud-init.conf
+00-shellway.conf
+@@shellway.sha
+3f3a4f0a3c0a1e7d2b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809123
+@@shellway
+PermitRootLogin prohibit-password
+
+@@session
+198.51.100.23 51234 203.0.113.10 22
