@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { apacheDriver } from './apache'
 import type { WebServerDriver } from './driver'
 import { webServerDriver } from './index'
 
@@ -22,6 +23,19 @@ const NGINX_SITE = `server {
 }
 `
 
+const APACHE_SITE = `<IfModule mod_ssl.c>
+<VirtualHost *:443>
+    ServerName app.example.com
+    ServerAlias www.app.example.com
+    DocumentRoot /var/www/app/current/public
+
+SSLCertificateFile /etc/letsencrypt/live/app.example.com/fullchain.pem
+SSLCertificateKeyFile /etc/letsencrypt/live/app.example.com/privkey.pem
+Include /etc/letsencrypt/options-ssl-apache.conf
+</VirtualHost>
+</IfModule>
+`
+
 const CASES: DriverCase[] = [
   {
     driver: webServerDriver('nginx'),
@@ -31,6 +45,15 @@ const CASES: DriverCase[] = [
     certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem',
     keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem',
     keptLines: ['include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot', 'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot']
+  },
+  {
+    driver: apacheDriver('debian'),
+    file: APACHE_SITE,
+    blockLine: 2,
+    names: ['app.example.com', 'www.app.example.com'],
+    certPath: '/etc/letsencrypt/live/app.example.com/fullchain.pem',
+    keyPath: '/etc/letsencrypt/live/app.example.com/privkey.pem',
+    keptLines: ['Include /etc/letsencrypt/options-ssl-apache.conf']
   }
 ]
 
@@ -61,5 +84,15 @@ describe('nginx driver', () => {
   it('keeps the commands Shellway always used', () => {
     const nginx = webServerDriver('nginx')
     expect([nginx.testCommand, nginx.reloadCommand, nginx.label]).toEqual(['nginx -t', 'nginx -s reload', 'nginx'])
+  })
+})
+
+describe('apache driver', () => {
+  it.each([
+    { layout: 'debian' as const, commands: ['apache2ctl configtest', 'systemctl reload apache2'] },
+    { layout: 'rhel' as const, commands: ['apachectl configtest', 'systemctl reload httpd'] }
+  ])('uses the $layout service commands', ({ layout, commands }) => {
+    const apache = apacheDriver(layout)
+    expect([apache.kind, apache.label, apache.testCommand, apache.reloadCommand]).toEqual(['apache', 'Apache', ...commands])
   })
 })

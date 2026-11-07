@@ -114,7 +114,7 @@ function onlyEdit(edits: Edit[], name: string): Edit {
   return found[0]
 }
 
-function assertSafe(path: string): void {
+export function assertSafe(path: string): void {
   if (!SAFE_PATH.test(path)) throw new Error('The certificate path contains characters that are not allowed.')
 }
 

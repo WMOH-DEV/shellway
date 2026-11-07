@@ -163,7 +163,7 @@ export interface NameReadiness {
 export type OsFamily = 'debian' | 'rhel' | 'other'
 export type PackageManager = 'apt' | 'dnf' | 'yum'
 export type WebServerKind = 'nginx' | 'apache' | 'caddy'
-export type EditableWebServer = 'nginx'
+export type EditableWebServer = 'nginx' | 'apache'
 export type CertbotInstallMethod = 'snap' | 'apt' | 'dnf' | 'yum' | 'pip' | 'unknown'
 
 export interface PrepFacts {

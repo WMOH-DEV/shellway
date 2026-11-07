@@ -1,9 +1,11 @@
 import type { EditableWebServer, ServerFacts } from '../../types/ssl'
+import { apacheDriver } from './apache'
 import type { WebServerDriver } from './driver'
 import { nginxDriver } from './nginx'
 
 const DRIVERS: Record<EditableWebServer, WebServerDriver> = {
-  nginx: nginxDriver
+  nginx: nginxDriver,
+  apache: apacheDriver('debian')
 }
 
 export const webServerDriver = (kind: EditableWebServer): WebServerDriver => DRIVERS[kind]
