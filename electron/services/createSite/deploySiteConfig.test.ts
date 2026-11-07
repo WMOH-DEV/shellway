@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { validateSiteConfig } from '../../../electron/services/deploy/siteFiles'
-import type { TemplateId } from '../../types/createSite'
-import { deploySiteConfig } from './deploySite'
-import { baseInput } from './testFixtures'
+import { validateSiteConfig } from '../deploy/siteFiles'
+import type { TemplateId } from '../../../src/types/createSite'
+import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
+import { baseInput } from '../../../src/utils/createSite/testFixtures'
 
 const TEMPLATE_IDS: TemplateId[] = ['laravel', 'node', 'static', 'php', 'compose', 'blank']
 
