@@ -6,6 +6,7 @@ import { aptUpdate, rootStep } from '../install/steps'
 import { PROFILES } from './catalog'
 import { planComponents, type PlannedComponent } from './components'
 import { FILES_PROBE, INVENTORY_PROBE } from './inventory'
+import { withOsFamily } from './overrides'
 import { securityPart } from './security'
 import type { GroupId, SetupFiles, SetupInventory, SetupParams } from './types'
 
@@ -62,14 +63,14 @@ function factData<T>(facts: ServerFacts, id: string): T | string {
   return result.status === 'unavailable' ? result.reason : result.error
 }
 
-function readFacts(facts: ServerFacts): SetupFacts | PlanBlock {
+function readFacts(params: SetupParams, facts: ServerFacts): SetupFacts | PlanBlock {
   const identity = factData<ServerIdentity>(facts, IDENTITY_PROBE)
   if (typeof identity === 'string') return { kind: 'precondition', message: `Could not read the operating system: ${identity}` }
   const inventory = factData<SetupInventory>(facts, INVENTORY_PROBE)
   if (typeof inventory === 'string') return { kind: 'precondition', message: `Could not check what is installed: ${inventory}` }
   const files = factData<SetupFiles>(facts, FILES_PROBE)
   if (typeof files === 'string') return { kind: 'sudo', message: `Setting up this server needs root or passwordless sudo: ${files}` }
-  return { os: identity.os, inventory, files }
+  return { os: withOsFamily(identity.os, params.osFamily), inventory, files }
 }
 
 const grouped = (group: GroupId) => (step: ActionStep): ActionStep => ({
@@ -116,7 +117,7 @@ const pluralize = (count: number, word: string): string => `${count} ${word}${co
 
 export function buildSetupPlan(params: SetupParams, facts: ServerFacts): ActionPlan {
   const base: ActionPlan = { title: `Set up this server (${profileTitle(params)})`, area: 'setup', summary: '', steps: [], warnings: [], blocked: null, secrets: [] }
-  const read = readFacts(facts)
+  const read = readFacts(params, facts)
   if ('kind' in read) return { ...base, blocked: read }
   const unsupportedReason = installSupport(read.os)
   if (unsupportedReason) return { ...base, blocked: { kind: 'unsupported', message: unsupportedReason } }

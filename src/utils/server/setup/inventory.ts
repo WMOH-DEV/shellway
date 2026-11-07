@@ -1,4 +1,5 @@
 import type { ProbeDefinition } from '@/types/server/core'
+import { DEFAULT_DEPLOY_USER } from './overrides'
 import type { SetupFiles, SetupInventory } from './types'
 
 export const INVENTORY_PROBE = 'setup.inventory'
@@ -7,6 +8,10 @@ export const FILES_PROBE = 'setup.files'
 
 export const SUDOERS_FILE = '/etc/sudoers.d/shellway-deploy'
 
+const SUDOERS_PATH = /^\/etc\/sudoers\.d\/shellway-deploy(-[a-z_][a-z0-9_-]{0,31})?$/
+
+export const sudoersFile = (user: string): string => (user === DEFAULT_DEPLOY_USER ? SUDOERS_FILE : `${SUDOERS_FILE}-${user}`)
+
 export const SSHD_DROPIN = '/etc/ssh/sshd_config.d/00-shellway.conf'
 
 export const FAIL2BAN_JAIL = '/etc/fail2ban/jail.d/shellway.local'
@@ -14,6 +19,8 @@ export const FAIL2BAN_JAIL = '/etc/fail2ban/jail.d/shellway.local'
 export const UNATTENDED_FILE = '/etc/apt/apt.conf.d/52shellway-unattended'
 
 const MANAGED_FILES = [SUDOERS_FILE, SSHD_DROPIN, FAIL2BAN_JAIL, UNATTENDED_FILE]
+
+const isManagedFile = (path: string): boolean => MANAGED_FILES.includes(path) || SUDOERS_PATH.test(path)
 
 const WATCHED_PACKAGES = [
   'nginx', 'apache2', "'php*-fpm'", 'mysql-server', 'mariadb-server', 'postgresql', "'postgresql-[0-9]*'", 'redis-server',
@@ -42,7 +49,7 @@ const INVENTORY_SCRIPT = [
 ].join('\n')
 
 const FILES_SCRIPT = [
-  `for f in ${MANAGED_FILES.join(' ')}; do`,
+  `for f in ${MANAGED_FILES.join(' ')} ${SUDOERS_FILE}-*; do`,
   '  if [ -f "$f" ]; then echo "sha=$(sha256sum "$f" | cut -d" " -f1) $f"; fi',
   'done',
   'if command -v fail2ban-client >/dev/null 2>&1; then',
@@ -94,7 +101,7 @@ export function parseFiles(stdout: string): SetupFiles {
   const hashes: Record<string, string> = {}
   for (const entry of values.get('sha') ?? []) {
     const [sha, path] = entry.split(' ')
-    if (/^[0-9a-f]{64}$/.test(sha) && MANAGED_FILES.includes(path)) hashes[path] = sha
+    if (/^[0-9a-f]{64}$/.test(sha) && isManagedFile(path)) hashes[path] = sha
   }
   return { hashes, fail2banIgnore: (values.get('ignore') ?? []).filter(Boolean) }
 }

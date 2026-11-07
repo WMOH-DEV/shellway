@@ -1,12 +1,11 @@
 import type { ActionRun } from '@/types/server/core'
-import { DEPLOY_USER } from '@/utils/server/setup/security'
 import { Notice } from '../../kit'
 
-const DEPLOY_NEXT = `The ${DEPLOY_USER} user is ready. Shellway keeps logging in as before; to use ${DEPLOY_USER}, check that your key works for it, then change the user in this server's saved settings.`
+const deployNext = (user: string): string => `The ${user} user is ready. Shellway keeps logging in as before; to use ${user}, check that your key works for it, then change the user in this server's saved settings.`
 
-export function RunResult({ run, deployUser }: { run: ActionRun; deployUser: boolean }) {
+export function RunResult({ run, deployUser }: { run: ActionRun; deployUser: string | null }) {
   if (run.status === 'done') {
-    return <Notice tone="success" title="This server is set up">{deployUser ? DEPLOY_NEXT : 'Everything in the plan finished.'}</Notice>
+    return <Notice tone="success" title="This server is set up">{deployUser ? deployNext(deployUser) : 'Everything in the plan finished.'}</Notice>
   }
   if (run.status === 'running') return null
   return (

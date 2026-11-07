@@ -53,10 +53,16 @@ const factsFor = (os: OsInfo, inventory: SetupInventory = FRESH, files: SetupFil
 function paramsFor(profile: ProfileId, os: OsInfo = NOBLE, overrides: Partial<SetupParams> = {}): SetupParams {
   const release = findRelease(os)
   if (!release) throw new Error('unsupported test os')
-  return { profile, rows: profileRows(profile, release), security: { ...SECURITY_DEFAULTS }, keyLogin: true, ...overrides }
+  return { profile, rows: profileRows(profile, release), security: { ...SECURITY_DEFAULTS }, keyLogin: true, deployUser: '', osFamily: 'auto', ...overrides }
 }
 
 const ids = (plan: ActionPlan): string[] => plan.steps.map((step) => step.id)
+
+const sudoersContent = (plan: ActionPlan): string => {
+  const script = step(plan, 'security.deploy-sudoers').script ?? ''
+  const encoded = script.split("<<'SHELLWAY_B64_END'")[1].split('\n').slice(1).join('').split('SHELLWAY_B64_END')[0]
+  return Buffer.from(encoded.replace(/\s/g, ''), 'base64').toString()
+}
 
 const step = (plan: ActionPlan, id: string) => {
   const found = plan.steps.find((item) => item.id === id)
@@ -109,6 +115,20 @@ describe('validateSetupParams', () => {
     expect(() => validateSetupParams({ ...paramsFor('laravel'), security: { swap: true } })).toThrow(/security.deployUser/)
     expect(() => validateSetupParams({ ...paramsFor('laravel'), keyLogin: 'yes' })).toThrow(/keyLogin/)
     expect(() => validateSetupParams(null)).toThrow(/params/)
+  })
+
+  it('accepts a custom deploy user and an OS family override', () => {
+    const params = paramsFor('laravel', NOBLE, { deployUser: 'app', osFamily: 'debian' })
+    expect(validateSetupParams(params)).toEqual(params)
+  })
+
+  it('rejects a bad deploy user or OS family', () => {
+    for (const deployUser of ['App', 'a b', '1app', "app'; rm -rf /; '", 'x'.repeat(33), 5, undefined]) {
+      expect(() => validateSetupParams({ ...paramsFor('laravel'), deployUser })).toThrow()
+    }
+    for (const osFamily of ['windows', 'other', '', 5, undefined]) {
+      expect(() => validateSetupParams({ ...paramsFor('laravel'), osFamily })).toThrow(/OS family/)
+    }
   })
 })
 
@@ -188,9 +208,39 @@ describe('buildSetupPlan', () => {
   it('creates the deploy user with a visudo-checked sudoers drop-in and your keys', () => {
     const plan = buildSetupPlan(paramsFor('static'), factsFor(NOBLE))
     expect(step(plan, 'security.deploy-user').script).toContain("done < '/home/ubuntu/.ssh/authorized_keys'")
-    expect(step(plan, 'security.deploy-user').script).toContain('usermod -aG sudo deploy')
+    expect(step(plan, 'security.deploy-user').script).toContain('usermod -aG sudo "$deploy_user"')
+    expect(step(plan, 'security.deploy-user').script).toContain("deploy_user='deploy'")
     expect(step(plan, 'security.deploy-sudoers')).toMatchObject({ kind: 'file-edit', root: true })
     expect(step(plan, 'security.deploy-sudoers').display).toContain('visudo -cf /etc/sudoers.d/shellway-deploy')
+  })
+
+  it('creates a custom deploy user and grants it sudo through its own drop-in', () => {
+    const plan = buildSetupPlan(paramsFor('static', NOBLE, { deployUser: 'app' }), factsFor(NOBLE))
+    const create = step(plan, 'security.deploy-user')
+    expect(create.script).toContain("deploy_user='app'")
+    expect(create.script).toContain('id -u "$deploy_user"')
+    expect(create.label).toContain('Create the app user')
+    expect(sudoersContent(plan)).toBe('app ALL=(ALL) NOPASSWD:ALL\n')
+    expect(step(plan, 'security.deploy-sudoers').display).toContain('visudo -cf /etc/sudoers.d/shellway-deploy-app')
+  })
+
+  it('checks the existing sudoers drop-in of the chosen user', () => {
+    const path = '/etc/sudoers.d/shellway-deploy-app'
+    const files = { ...NO_FILES, hashes: { [path]: 'a'.repeat(64) } }
+    const plan = buildSetupPlan(paramsFor('static', NOBLE, { deployUser: 'app' }), factsFor(NOBLE, FRESH, files))
+    expect(step(plan, 'security.deploy-sudoers').script).toContain('a'.repeat(64))
+  })
+
+  it('reads sudoers drop-ins of custom users from the probe', () => {
+    const sha = 'b'.repeat(64)
+    const parsed = parseFiles([`sha=${sha} /etc/sudoers.d/shellway-deploy-app`, `sha=${sha} /etc/sudoers.d/shellway-deploy-A;x`, ''].join('\n'))
+    expect(parsed.hashes).toEqual({ '/etc/sudoers.d/shellway-deploy-app': sha })
+  })
+
+  it('skips a custom deploy user when already logged in as it', () => {
+    const plan = buildSetupPlan(paramsFor('static', NOBLE, { deployUser: 'ubuntu' }), factsFor(NOBLE))
+    expect(ids(plan)).not.toContain('security.deploy-user')
+    expect(plan.warnings.join(' ')).toMatch(/already logged in as ubuntu/)
   })
 
   it('skips the deploy user when already logged in as deploy', () => {
@@ -238,6 +288,25 @@ describe('buildSetupPlan', () => {
     const plan = buildSetupPlan(paramsFor('laravel', BOOKWORM), factsFor(BOOKWORM))
     expect(step(plan, 'databases.mysql-install').script).toContain('install --no-remove mariadb-server')
     expect(step(plan, 'languages.php-install').script).toContain('php8.2-fpm')
+  })
+})
+
+describe('setup OS override', () => {
+  const MISDETECTED: OsInfo = { ...NOBLE, family: 'other' }
+
+  it('blocks a system whose family was not detected', () => {
+    expect(buildSetupPlan(paramsFor('static'), factsFor(MISDETECTED)).blocked).toMatchObject({ kind: 'unsupported' })
+  })
+
+  it('uses the chosen family instead of the detected one', () => {
+    const plan = buildSetupPlan(paramsFor('static', NOBLE, { osFamily: 'ubuntu' }), factsFor(MISDETECTED))
+    expect(plan.blocked).toBeNull()
+    expect(ids(plan)).toContain('web.nginx-install')
+  })
+
+  it('picks the recipe of the other family', () => {
+    const plan = buildSetupPlan(paramsFor('static', NOBLE, { osFamily: 'rhel' }), factsFor(NOBLE))
+    expect(plan.blocked).toMatchObject({ kind: 'unsupported' })
   })
 })
 
