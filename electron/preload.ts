@@ -460,8 +460,17 @@ const api = {
       ipcRenderer.invoke("sftp:readFile", connectionId, path, maxSize, readId) as Promise<{
         success: boolean;
         data?: string;
+        notUtf8?: boolean;
         error?: string;
       }>,
+    readFileBase64: (connectionId: string, path: string, maxSize?: number) =>
+      ipcRenderer.invoke("sftp:readFileBase64", connectionId, path, maxSize) as Promise<{ success: boolean; data?: string; error?: string }>,
+    copyFile: (connectionId: string, sourcePath: string, destPath: string) =>
+      ipcRenderer.invoke("sftp:copyFile", connectionId, sourcePath, destPath) as Promise<{ success: boolean; error?: string }>,
+    downloadToLocal: (connectionId: string, remotePath: string, localPath: string) =>
+      ipcRenderer.invoke("sftp:downloadToLocal", connectionId, remotePath, localPath) as Promise<{ success: boolean; error?: string }>,
+    uploadFromLocal: (connectionId: string, localPath: string, remotePath: string) =>
+      ipcRenderer.invoke("sftp:uploadFromLocal", connectionId, localPath, remotePath) as Promise<{ success: boolean; error?: string }>,
     onReadFileProgress: (
       callback: (connectionId: string, readId: string, transferred: number, total: number) => void,
     ) => {

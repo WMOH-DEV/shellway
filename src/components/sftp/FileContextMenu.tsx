@@ -191,9 +191,8 @@ export function FileContextMenu({
                 const name = fileName(entry.path)
                 const tempDir = await window.novadeck.fs.getTempDir()
                 const tempPath = joinPath(tempDir, `shellway-${Date.now()}-${name}`)
-                const result = await window.novadeck.sftp.readFile(connectionId, entry.path)
-                if (result.success && result.data !== undefined) {
-                  await window.novadeck.fs.writeFile(tempPath, result.data)
+                const result = await window.novadeck.sftp.downloadToLocal(connectionId, entry.path, tempPath)
+                if (result.success) {
                   return tempPath
                 } else {
                   toast.error('Failed to read file', result.error || 'Unknown error')
@@ -203,6 +202,7 @@ export function FileContextMenu({
 
               if (filePath) {
                 const picked = await window.novadeck.shell.openWithPicker(filePath)
+                if (picked && isRemote) await onWatchTempFile?.(filePath, entry.path)
                 if (picked && onOpenWithComplete) {
                   const name = fileName(entry.path)
                   const ext = name.includes('.') ? '.' + name.split('.').pop()!.toLowerCase() : ''
@@ -287,11 +287,9 @@ export function FileContextMenu({
                   await window.novadeck.sftp.rename(connectionId, src.path, dest)
                   pasted++
                 } else if (!src.isDirectory) {
-                  const content = await window.novadeck.sftp.readFile(connectionId, src.path)
-                  if (content.success && content.data !== undefined) {
-                    await window.novadeck.sftp.writeFile(connectionId, dest, content.data)
-                    pasted++
-                  }
+                  const copied = await window.novadeck.sftp.copyFile(connectionId, src.path, dest)
+                  if (copied.success) pasted++
+                  else toast.error('Copy failed', copied.error || fileName(src.path))
                 } else {
                   toast.error('Cannot copy', 'Directory copy on remote is not supported')
                 }
@@ -335,13 +333,12 @@ export function FileContextMenu({
                 toast.error('Cannot duplicate', 'Directory duplicate on remote is not supported')
                 break
               }
-              const content = await window.novadeck.sftp.readFile(connectionId, entry.path)
-              if (content.success && content.data !== undefined) {
-                await window.novadeck.sftp.writeFile(connectionId, dupPath, content.data)
+              const copied = await window.novadeck.sftp.copyFile(connectionId, entry.path, dupPath)
+              if (copied.success) {
                 toast.success('Duplicated', `${base} (copy)${ext}`)
                 onRefresh()
               } else {
-                toast.error('Duplicate failed', content.error || 'Could not read file')
+                toast.error('Duplicate failed', copied.error || 'Could not copy file')
               }
             } else {
               const res = await window.novadeck.sftp.localCopy(entry.path, dupPath)

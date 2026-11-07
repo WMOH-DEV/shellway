@@ -426,11 +426,11 @@ export class SFTPService extends EventEmitter {
   }
 
   /**
-   * Read a text file with progress reporting.
+   * Read a file's bytes with progress reporting.
    * Emits 'readProgress' events: (readId, transferred, total)
    * Default max 50 MB for in-app editing.
    */
-  async readFile(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<string> {
+  async readBytes(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<Buffer> {
     const stats = await this.stat(remotePath)
     if (stats.size > maxSize) {
       throw new Error(`File too large: ${stats.size} bytes (max: ${maxSize})`)
@@ -451,18 +451,17 @@ export class SFTPService extends EventEmitter {
         }
       })
       stream.on('error', reject)
-      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+      stream.on('end', () => resolve(Buffer.concat(chunks)))
     })
   }
 
-  /** Write content to a file */
-  async writeFile(remotePath: string, content: string): Promise<void> {
+  /** Write bytes to a file */
+  async writeBytes(remotePath: string, buf: Buffer): Promise<void> {
     // Use low-level open → write → close to avoid both:
     // 1. createWriteStream — broken on Node ≥ 22 (finish event never fires)
     // 2. sftp.writeFile wrapper — hangs on some servers/configurations
     // Direct protocol calls with a 30s timeout guarantee we never hang forever.
     const TIMEOUT_MS = 30_000
-    const buf = Buffer.from(content, 'utf8')
 
     return new Promise<void>((resolve, reject) => {
       let settled = false

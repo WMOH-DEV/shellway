@@ -358,6 +358,7 @@ export function FilePreview({
   // Track whether partial content is showing (full file still loading in background)
   const [isPartial, setIsPartial] = useState(false)
   const [fullLoadError, setFullLoadError] = useState<string | null>(null)
+  const [notUtf8, setNotUtf8] = useState(false)
 
   // ── Editable mode state ──
   const [saving, setSaving] = useState(false)
@@ -396,7 +397,7 @@ export function FilePreview({
   // ── Save handler (editable mode) ──
   const handleSave = useCallback(async () => {
     // editorContentRef.current can be "" (empty file) — only skip if null (not loaded yet)
-    if (!editable || isPartial || editorContentRef.current === null || saving || savingRef.current) return
+    if (!editable || isPartial || notUtf8 || editorContentRef.current === null || saving || savingRef.current) return
     savingRef.current = true
     setSaving(true)
     setSaveError(null)
@@ -417,7 +418,7 @@ export function FilePreview({
       setSaving(false)
       savingRef.current = false
     }
-  }, [editable, isPartial, connectionId, filePath, saving])
+  }, [editable, isPartial, notUtf8, connectionId, filePath, saving])
 
   // Keep the ref in sync so Monaco's addCommand always calls the latest version
   useEffect(() => {
@@ -465,6 +466,7 @@ export function FilePreview({
     setLoading(true)
     setLoadProgress(0)
     setIsPartial(false)
+    setNotUtf8(false)
     setFullLoadError(null)
     setError(null)
     setContent(null)
@@ -517,6 +519,7 @@ export function FilePreview({
           if (result.success && result.data !== undefined) {
             hasFull = true
             setContent(result.data)
+            setNotUtf8(!!result.notUtf8)
             setIsPartial(false)
             // In editable mode, sync editorContentRef so save has full content.
             // The editor was read-only during partial loading, so no user edits to lose.
@@ -537,13 +540,16 @@ export function FilePreview({
       })
     } else {
       // ── Small file or image: load everything at once ──
-      window.novadeck.sftp
-        .readFile(connectionId, filePath, undefined, readId)
+      const read = isImage
+        ? window.novadeck.sftp.readFileBase64(connectionId, filePath)
+        : window.novadeck.sftp.readFile(connectionId, filePath, undefined, readId)
+      read
         .then((result) => {
           if (cancelled) return
           setLoadProgress(100)
           if (result.success && result.data !== undefined) {
             setContent(result.data)
+            setNotUtf8('notUtf8' in result && !!result.notUtf8)
           } else {
             setError(result.error ?? 'Failed to read file')
           }
@@ -682,8 +688,8 @@ export function FilePreview({
   // Monaco editor options
   const editorOptions = useMemo(
     (): MonacoEditor.editor.IStandaloneEditorConstructionOptions => ({
-      readOnly: !editable || isPartial,
-      domReadOnly: !editable || isPartial,
+      readOnly: !editable || isPartial || notUtf8,
+      domReadOnly: !editable || isPartial || notUtf8,
       fontSize: 13,
       // Include system Arabic/RTL-capable fonts in fallback chain for proper BiDi rendering.
       // macOS: 'Geeza Pro' (Arabic), 'SF Mono'; Windows: 'Cascadia Code' has decent Unicode coverage.
@@ -740,7 +746,7 @@ export function FilePreview({
       links: true,
       colorDecorators: true,
     }),
-    [wordWrap, showMinimap, editable, isPartial]
+    [wordWrap, showMinimap, editable, isPartial, notUtf8]
   )
 
   // Determine what to display in the language badge
@@ -933,7 +939,13 @@ export function FilePreview({
               Loading full file... {loadProgress > 0 ? `${loadProgress}%` : ''}
             </span>
           )}
-          {!isPartial && <span className="mr-auto" />}
+          {!isPartial && notUtf8 && (
+            <span className="flex items-center gap-1.5 text-2xs text-nd-warning-fg mr-auto truncate">
+              <AlertTriangle size={12} className="shrink-0" />
+              Not UTF-8 text, so it opens read-only to keep the file intact
+            </span>
+          )}
+          {!isPartial && !notUtf8 && <span className="mr-auto" />}
 
           {/* Word wrap toggle */}
           <button
@@ -975,7 +987,7 @@ export function FilePreview({
           {editable && (
             <button
               onClick={handleSave}
-              disabled={saving || !dirty || isPartial}
+              disabled={saving || !dirty || isPartial || notUtf8}
               className={cn(
                 'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
                 saving

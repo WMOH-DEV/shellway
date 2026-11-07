@@ -1,4 +1,5 @@
 import { ipcMain, shell } from 'electron'
+import { isUtf8 } from 'buffer'
 import { promises as fsp } from 'fs'
 import { join, basename, parse as parsePath, posix } from 'path'
 import { homedir } from 'os'
@@ -453,6 +454,18 @@ export function cleanupAllSFTP(): void {
   }
 }
 
+type SftpResult<T> = { success: true; data: T } | { success: false; error: string }
+
+async function withSftp<T>(connectionId: string, fallback: string, work: (sftp: SFTPService) => Promise<T>): Promise<SftpResult<T>> {
+  const sftp = sftpServices.get(connectionId)
+  if (!sftp) return { success: false, error: 'SFTP not open' }
+  try {
+    return { success: true, data: await work(sftp) }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : fallback }
+  }
+}
+
 /**
  * Register all SFTP IPC handlers.
  */
@@ -668,8 +681,8 @@ export function registerSFTPIPC(): void {
     }
 
     try {
-      const content = await sftp.readFile(remotePath, maxSize, readId)
-      return { success: true, data: content }
+      const bytes = await sftp.readBytes(remotePath, maxSize, readId)
+      return { success: true, data: bytes.toString('utf-8'), notUtf8: !isUtf8(bytes) }
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'readFile failed' }
     } finally {
@@ -685,12 +698,24 @@ export function registerSFTPIPC(): void {
     const sftp = sftpServices.get(connectionId)
     if (!sftp) return { success: false, error: 'SFTP not open' }
     try {
-      await sftp.writeFile(remotePath, content)
+      await sftp.writeBytes(remotePath, Buffer.from(content, 'utf8'))
       return { success: true }
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'writeFile failed' }
     }
   })
+
+  ipcMain.handle('sftp:readFileBase64', (_event, connectionId: string, remotePath: string, maxSize?: number) =>
+    withSftp(connectionId, 'readFile failed', async (sftp) => (await sftp.readBytes(remotePath, maxSize)).toString('base64')))
+
+  ipcMain.handle('sftp:copyFile', (_event, connectionId: string, sourcePath: string, destPath: string) =>
+    withSftp(connectionId, 'copy failed', async (sftp) => sftp.writeBytes(destPath, await sftp.readBytes(sourcePath))))
+
+  ipcMain.handle('sftp:downloadToLocal', (_event, connectionId: string, remotePath: string, localPath: string) =>
+    withSftp(connectionId, 'download failed', async (sftp) => fsp.writeFile(localPath, await sftp.readBytes(remotePath))))
+
+  ipcMain.handle('sftp:uploadFromLocal', (_event, connectionId: string, localPath: string, remotePath: string) =>
+    withSftp(connectionId, 'upload failed', async (sftp) => sftp.writeBytes(remotePath, await fsp.readFile(localPath))))
 
   // ── Create symlink ──
   ipcMain.handle('sftp:symlink', async (_event, connectionId: string, targetPath: string, linkPath: string) => {
