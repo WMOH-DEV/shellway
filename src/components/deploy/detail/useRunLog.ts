@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTabActive } from '../../tabActive'
 import { deployApi } from '../useDeploySites'
 
 const LOG_POLL_MS = 2_000
@@ -8,6 +9,7 @@ export function useRunLog(connectionId: string, site: string, recordId: string, 
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const offsetRef = useRef(0)
+  const active = useTabActive()
 
   useEffect(() => {
     offsetRef.current = 0
@@ -16,6 +18,7 @@ export function useRunLog(connectionId: string, site: string, recordId: string, 
   }, [connectionId, site, recordId])
 
   useEffect(() => {
+    if (!active) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let failedReads = 0
@@ -36,7 +39,7 @@ export function useRunLog(connectionId: string, site: string, recordId: string, 
     }
     void read()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [connectionId, site, recordId, live])
+  }, [connectionId, site, recordId, live, active])
 
   return { text, error }
 }

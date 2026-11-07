@@ -26,6 +26,7 @@ import { useServiceManagerStore } from '@/stores/serviceManagerStore'
 import type { ConnectionTab } from '@/types/session'
 import { useSslCritical } from '@/hooks/useSslCritical'
 import { useHttpsIntentStore } from '@/stores/httpsIntentStore'
+import { TabActiveContext } from '@/components/tabActive'
 
 const MonitorView = lazy(() => import('@/components/monitor/MonitorView').then(m => ({ default: m.MonitorView })))
 const ServiceManagerView = lazy(() => import('@/components/services/ServiceManagerView').then(m => ({ default: m.ServiceManagerView })))
@@ -463,19 +464,23 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
             </div>
           )}
 
-          {activeSubTab === 'deploy' && runningSubTabs.has('deploy') && isHere('deploy') && (
-            <div className="absolute inset-0 flex flex-col">
-              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Deploy...</div>}>
-                <DeployView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
-              </Suspense>
+          {mountedPanels.has('deploy') && runningSubTabs.has('deploy') && isHere('deploy') && (
+            <div className={cn('absolute inset-0 flex flex-col', activeSubTab !== 'deploy' && 'hidden')}>
+              <TabActiveContext.Provider value={activeSubTab === 'deploy'}>
+                <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading Deploy...</div>}>
+                  <DeployView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+                </Suspense>
+              </TabActiveContext.Provider>
             </div>
           )}
 
-          {activeSubTab === 'ssl' && runningSubTabs.has('ssl') && isHere('ssl') && (
-            <div className="absolute inset-0 flex flex-col">
-              <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading SSL...</div>}>
-                <SslView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
-              </Suspense>
+          {mountedPanels.has('ssl') && runningSubTabs.has('ssl') && isHere('ssl') && (
+            <div className={cn('absolute inset-0 flex flex-col', activeSubTab !== 'ssl' && 'hidden')}>
+              <TabActiveContext.Provider value={activeSubTab === 'ssl'}>
+                <Suspense fallback={<div className="flex items-center justify-center h-full text-nd-text-muted text-sm">Loading SSL...</div>}>
+                  <SslView connectionId={tab.id} sessionId={tab.sessionId} connectionStatus={tab.status} />
+                </Suspense>
+              </TabActiveContext.Provider>
             </div>
           )}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@/components/ui/Toast'
 import type { RemoteDrift, RunnerInfo, SiteSummary } from '@/types/deploy'
+import { useTabActive } from '../tabActive'
 
 const BUSY_POLL_MS = 4_000
 const IDLE_POLL_MS = 30_000
@@ -40,6 +41,8 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
   const inFlight = useRef<Promise<void> | null>(null)
   const queued = useRef<Promise<void> | null>(null)
   const driftRunning = useRef(false)
+  const active = useTabActive()
+  const wasActive = useRef(active)
 
   const refreshDrift = useCallback(async (listed: SiteSummary[], force: boolean) => {
     if (driftRunning.current) return
@@ -137,10 +140,15 @@ export function useDeploySites(connectionId: string, sessionId: string, connecte
   const pollMs = error ? IDLE_POLL_MS : isBusy(sites) ? BUSY_POLL_MS : hasAutoSites(sites) ? IDLE_POLL_MS : null
 
   useEffect(() => {
-    if (!connected || pollMs === null) return
+    if (!connected || pollMs === null || !active) return
     const timer = setInterval(() => void load(false), pollMs)
     return () => clearInterval(timer)
-  }, [connected, pollMs, load])
+  }, [connected, pollMs, active, load])
+
+  useEffect(() => {
+    if (active && !wasActive.current && connected) void load(false)
+    wasActive.current = active
+  }, [active, connected, load])
 
   return { runner, sites, pcDrift, loading, installing, error, refresh, installRunner }
 }
