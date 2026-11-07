@@ -214,7 +214,7 @@ export class SslCoordinator {
       const leftover = await readLeftover(exec, report, name, Math.floor(this.deps.now() / 1000))
       const refusal = undoRefusal(leftover)
       const target = leftoverTarget(report, name)
-      if (refusal || !leftover || !target) throw new Error(refusal ?? 'This site is no longer in the nginx configuration.')
+      if (refusal || !leftover || !target) throw new Error(refusal ?? 'This site is no longer in the web server configuration.')
       const deps = { exec, onOutput: this.outputTo(runId), now: this.deps.now, ...this.verifyDeps(connectionId) }
       const result = await runUndo(deps, { driver: servingDriver(report.facts), file: target.block.file, names: target.block.names.map((n) => n.toLowerCase()), prefix: target.prefix, leftover })
       await this.refresh(connectionId, sessionId)

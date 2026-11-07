@@ -2,7 +2,7 @@ import type { ServerBlock, SslReport, SwitchLeftover } from '../../../../src/typ
 import { isIssuableName } from '../../../../src/utils/ssl/https/issueCommands'
 import { isFullyRead } from '../../../../src/utils/ssl/originCa/nginxRead'
 import { backupGlob, isShellwayCertPath, lineageOfPaths, newestBackup } from '../../../../src/utils/ssl/originCa/originPaths'
-import { blockIdentity } from '../../../../src/utils/ssl/originCa/swapCertLines'
+import { servingDriver, type WebServerDriver } from '../../../../src/utils/webServer'
 import { shellEscape } from '../../../utils/shellEscape'
 import type { RemoteExec } from '../../deploy/DeployService'
 import { RemoteRunner, SHORT_TIMEOUT_MS, SUDO_SHELL } from './remoteRun'
@@ -34,12 +34,12 @@ async function newestBackupOnServer(exec: RemoteExec, prefix: string): Promise<s
   return listed.code === 0 ? newestBackup(listed.stdout, prefix) : null
 }
 
-async function lineageInBackup(exec: RemoteExec, backupPath: string, block: ServerBlock): Promise<string | null> {
+async function lineageInBackup(exec: RemoteExec, backupPath: string, block: ServerBlock, driver: WebServerDriver): Promise<string | null> {
   const runner = new RemoteRunner(exec, () => {})
   const read = await runner.run(`sudo -n cat ${shellEscape(backupPath)}`, SHORT_TIMEOUT_MS, { stream: false })
   if (read.code !== 0) return null
   try {
-    const original = blockIdentity(read.stdout, block.line)
+    const original = driver.siteIdentity(read.stdout, block.line)
     const sameSite = original.names.join(' ') === block.names.map((name) => name.toLowerCase()).join(' ')
     return sameSite ? lineageOfPaths(original.certPath, original.keyPath) : null
   } catch {
@@ -52,7 +52,7 @@ export async function readLeftover(exec: RemoteExec, report: SslReport, name: st
   if (!target) return null
   const { block, prefix } = target
   const backupPath = await newestBackupOnServer(exec, prefix)
-  const lineageName = backupPath === null ? target.hostLineage : await lineageInBackup(exec, backupPath, block)
+  const lineageName = backupPath === null ? target.hostLineage : await lineageInBackup(exec, backupPath, block, servingDriver(report.facts))
   const lineage = report.lineages.find((l) => l.name === lineageName)
   if (!lineage) return null
   const stillValid = lineage.notAfter !== null && lineage.notAfter > nowSeconds

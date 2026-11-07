@@ -157,6 +157,26 @@ describe('SslCoordinator Origin CA switch', () => {
     expect(await ssl.originLeftover('c1', 'app.example.com')).toMatchObject({ lineage: 'app.example.com', backupPath: BACKUP_PATH, undoable: true })
   })
 
+  it('reads the original certificate from an Apache backup when Apache serves the site', async () => {
+    const apacheSite = [
+      '# one', '# two', '# three', '# four', '# five', '# six', '# seven', '<IfModule mod_ssl.c>',
+      '<VirtualHost *:443>',
+      '    ServerName app.example.com',
+      '    ServerAlias www.example.com',
+      '    SSLCertificateFile /etc/letsencrypt/live/app.example.com/fullchain.pem',
+      '    SSLCertificateKeyFile /etc/letsencrypt/live/app.example.com/privkey.pem',
+      '    Include /etc/letsencrypt/options-ssl-apache.conf',
+      '</VirtualHost>',
+      '</IfModule>',
+      ''
+    ].join('\n')
+    build((call) => (call.command === `sudo -n cat '${BACKUP_PATH}'` ? { code: 0, stdout: apacheSite } : responder(call)))
+    const report = switchedReport()
+    report.facts = makeFacts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', sudo: { certbot: true, nginx: false, apache: true, full: true } })
+    vi.spyOn(ssl, 'lastReport').mockReturnValue(report)
+    expect(await ssl.originLeftover('c1', 'app.example.com')).toMatchObject({ lineage: 'app.example.com', backupPath: BACKUP_PATH, undoable: true })
+  })
+
   it('refuses to undo a site that is not on an Origin CA certificate, without touching the file', async () => {
     reportIs(readyReport())
     await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('not using a Cloudflare Origin CA certificate')
