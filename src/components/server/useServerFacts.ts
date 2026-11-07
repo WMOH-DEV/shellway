@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ServerFacts } from '@/types/server/core'
+import { listenForFacts, pickFacts, scanFacts, useServerFactsStore } from '@/stores/serverFactsStore'
 import type { ServerSectionContext } from './sections/types'
-import { serverApi } from './serverApi'
 
 export interface FactsState {
   facts: ServerFacts
@@ -11,31 +11,26 @@ export interface FactsState {
 }
 
 export function useServerFacts(ctx: Pick<ServerSectionContext, 'connectionId' | 'active'>, probeIds: readonly string[]): FactsState {
-  const [facts, setFacts] = useState<ServerFacts>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const ids = useRef(probeIds)
   ids.current = probeIds
   const key = probeIds.join(',')
+  const connectionFacts = useServerFactsStore((state) => state.byConnection[ctx.connectionId])
+  const facts = useMemo(() => pickFacts(connectionFacts, ids.current), [connectionFacts, key])
 
   const load = useCallback(async (force: boolean) => {
     setLoading(true)
-    const result = await serverApi().scan(ctx.connectionId, [...ids.current], force)
+    const result = await scanFacts(ctx.connectionId, ids.current, force)
     setLoading(false)
-    if (!result.success) return setError(result.error)
-    setError(null)
-    setFacts((previous) => ({ ...previous, ...result.data }))
+    setError(result.success ? null : result.error)
   }, [ctx.connectionId])
+
+  useEffect(listenForFacts, [])
 
   useEffect(() => {
     if (ctx.active) void load(false)
   }, [ctx.active, key, load])
-
-  useEffect(() => serverApi().onFacts((connectionId, next) => {
-    if (connectionId !== ctx.connectionId) return
-    const wanted = Object.fromEntries(Object.entries(next).filter(([id]) => ids.current.includes(id)))
-    setFacts((previous) => ({ ...previous, ...wanted }))
-  }), [ctx.connectionId])
 
   const refresh = useCallback(() => load(true), [load])
   return { facts, loading, error, refresh }
