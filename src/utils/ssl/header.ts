@@ -1,12 +1,14 @@
 import type { CloudflareStatus, ServerFacts, SslReport } from '../../types/ssl'
 import { timeAgo } from '../deploy/siteStatus'
+import { siteServerLabel } from '../webServer/siteServer'
 import { pluralize } from './time'
 import type { Tone } from './tone'
 
 export function hostnamesSubtitle(report: SslReport, serverName: string, now: number): string {
   const checked = `checked ${timeAgo(report.checkedAt, now)}`
-  if (!report.facts.nginx) return `nginx not found on ${serverName} · ${checked}`
-  return `${pluralize(report.hostnames.length, 'hostname')} served by nginx on ${serverName} · ${checked}`
+  const server = siteServerLabel(report.facts)
+  if (!server) return `nginx or Apache not found on ${serverName} · ${checked}`
+  return `${pluralize(report.hostnames.length, 'hostname')} served by ${server} on ${serverName} · ${checked}`
 }
 
 export interface CloudflareButtonView {
@@ -24,25 +26,24 @@ export function cloudflareButton(cloudflare: CloudflareStatus): CloudflareButton
   return { label: `Cloudflare connected · ${pluralize(cloudflare.zones.length, 'zone')}`, tone: 'success' }
 }
 
-export type NginxNoticeKind = 'missing' | 'partial' | 'unavailable'
+export type WebServerNoticeKind = 'missing' | 'partial' | 'unavailable'
 
-export interface NginxNotice {
-  kind: NginxNoticeKind
+export interface WebServerNotice {
+  kind: WebServerNoticeKind
   text: string
 }
 
-const OTHER_SERVERS = { apache: 'Apache', caddy: 'Caddy' } as const
-
-export function nginxNotice(facts: ServerFacts): NginxNotice | null {
-  if (!facts.nginx) {
-    const other = facts.otherWebServer ? ` ${OTHER_SERVERS[facts.otherWebServer]} is installed here, but Shellway only reads nginx configuration.` : ''
-    return { kind: 'missing', text: `nginx was not found on this server, so there are no hostnames to list.${other}` }
+export function webServerNotice(facts: ServerFacts): WebServerNotice | null {
+  const server = siteServerLabel(facts)
+  if (!server) {
+    const caddy = facts.otherWebServer === 'caddy' ? ' Caddy is installed here, but Shellway only reads nginx and Apache configuration.' : ''
+    return { kind: 'missing', text: `Neither nginx nor Apache was found on this server, so there are no hostnames to list.${caddy}` }
   }
   if (facts.nginxParse === 'partial') {
-    return { kind: 'partial', text: "Part of nginx's configuration could not be read, so some hostnames may be missing from this list." }
+    return { kind: 'partial', text: `Part of ${server}'s configuration could not be read, so some hostnames may be missing from this list.` }
   }
   if (facts.nginxParse === 'unavailable') {
-    return { kind: 'unavailable', text: "nginx's configuration could not be read, so hostnames cannot be listed. Check passwordless sudo for nginx under Server checks." }
+    return { kind: 'unavailable', text: `${server}'s configuration could not be read, so hostnames cannot be listed. Check passwordless sudo for ${server} under Server checks.` }
   }
   return null
 }

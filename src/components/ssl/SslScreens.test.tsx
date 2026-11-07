@@ -109,10 +109,15 @@ describe('HostnamesScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Part of nginx')
   })
 
-  it('explains a server without nginx and names the other web server', () => {
-    renderList({ facts: makeFacts({ nginx: null, otherWebServer: 'apache' }), hostnames: [] })
-    expect(screen.getByText('No nginx on this server')).toBeInTheDocument()
-    expect(screen.getByText(/Apache is installed here/)).toBeInTheDocument()
+  it('explains a server without nginx or Apache and names Caddy', () => {
+    renderList({ facts: makeFacts({ nginx: null, otherWebServer: 'caddy' }), hostnames: [] })
+    expect(screen.getByText('No nginx or Apache on this server')).toBeInTheDocument()
+    expect(screen.getByText(/Caddy is installed here/)).toBeInTheDocument()
+  })
+
+  it('says Apache has no sites when Apache serves but lists none', () => {
+    renderList({ facts: makeFacts({ nginx: null, apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache' }), hostnames: [] })
+    expect(screen.getByText(/Apache has no sites with a server name/)).toBeInTheDocument()
   })
 
   it('explains an nginx with no hostnames', () => {

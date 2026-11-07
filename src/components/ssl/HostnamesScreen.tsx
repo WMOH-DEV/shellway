@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import type { SslReport } from '@/types/ssl'
 import { criticalBanner } from '@/utils/ssl/banner'
-import { hostnamesSubtitle, nginxNotice } from '@/utils/ssl/header'
+import { hostnamesSubtitle, webServerNotice } from '@/utils/ssl/header'
+import { siteServerLabel } from '@/utils/webServer/siteServer'
 import { filterCounts, matchesFilter, type HostFilter } from '@/utils/ssl/hostRow'
 import { CriticalBanner } from './CriticalBanner'
 import { HostFilterBar } from './HostFilterBar'
@@ -39,7 +40,7 @@ export function HostnamesScreen({ report, serverName, now, loading, error, onRef
   const counts = useMemo(() => filterCounts(hostnames), [hostnames])
   const shown = useMemo(() => hostnames.filter((h) => matchesFilter(h, filter)), [hostnames, filter])
   const banner = useMemo(() => criticalBanner(hostnames, now), [hostnames, now])
-  const notice = nginxNotice(facts)
+  const notice = webServerNotice(facts)
 
   return (
     <div className="h-full overflow-y-auto bg-nd-bg-primary">
@@ -55,7 +56,7 @@ export function HostnamesScreen({ report, serverName, now, loading, error, onRef
         {error && <ErrorBanner message={error} retrying={loading} onRetry={onRefresh} />}
         {banner && <CriticalBanner banner={banner} onFix={onOpen} />}
         <ServerStrip facts={facts} now={now} onOpenSettings={onOpenSettings} />
-        {hostnames.length === 0 ? <EmptyHostnames notice={notice} /> : (
+        {hostnames.length === 0 ? <EmptyHostnames notice={notice} serverLabel={siteServerLabel(facts) ?? 'The web server'} /> : (
           <>
             {notice && <PartialNotice notice={notice} />}
             <HostFilterBar value={filter} counts={counts} onChange={setFilter} />

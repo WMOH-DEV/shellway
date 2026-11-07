@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { actionAvailability, actionOutcome, shouldEmphasizeTest } from './certbotActions'
-import { cloudflareButton, hostnamesSubtitle, nginxNotice } from './header'
+import { cloudflareButton, hostnamesSubtitle, webServerNotice } from './header'
 import { serverStrip } from './serverStrip'
 import { formatDay } from './time'
 import { connectedCloudflare, DAY, makeFacts, makeHost, makeReport, NOW } from './testReport'
@@ -37,9 +37,20 @@ describe('header text', () => {
     expect(hostnamesSubtitle(makeReport(), 'Test server', NOW)).toBe('1 hostname served by nginx on Test server · checked 2 min ago')
   })
 
-  it('says nginx is missing instead of counting hostnames', () => {
+  it('says no web server was found instead of counting hostnames', () => {
     const report = makeReport({ facts: makeFacts({ nginx: null }), hostnames: [] })
-    expect(hostnamesSubtitle(report, 'Test server', NOW)).toBe('nginx not found on Test server · checked 2 min ago')
+    expect(hostnamesSubtitle(report, 'Test server', NOW)).toBe('nginx or Apache not found on Test server · checked 2 min ago')
+  })
+
+  it('names Apache when Apache answers on the web ports', () => {
+    const facts = makeFacts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache' })
+    expect(hostnamesSubtitle(makeReport({ facts }), 'Test server', NOW)).toBe('1 hostname served by Apache on Test server · checked 2 min ago')
+    expect(webServerNotice({ ...facts, nginxParse: 'unavailable' })?.text).toContain('passwordless sudo for Apache')
+  })
+
+  it('keeps nginx when both are installed but nginx answers', () => {
+    const facts = makeFacts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'nginx' })
+    expect(hostnamesSubtitle(makeReport({ facts }), 'Test server', NOW)).toContain('served by nginx')
   })
 
   it('summarises the Cloudflare connection', () => {
@@ -49,11 +60,11 @@ describe('header text', () => {
     expect(cloudflareButton({ ...connectedCloudflare, error: 'Invalid token' }).tone).toBe('error')
   })
 
-  it('notes a partial nginx parse, a missing nginx and other web servers', () => {
-    expect(nginxNotice(makeFacts())).toBeNull()
-    expect(nginxNotice(makeFacts({ nginxParse: 'partial' }))?.kind).toBe('partial')
-    expect(nginxNotice(makeFacts({ nginxParse: 'unavailable' }))?.kind).toBe('unavailable')
-    const missing = nginxNotice(makeFacts({ nginx: null, otherWebServer: 'caddy' }))
+  it('notes a partial parse, a missing web server and Caddy', () => {
+    expect(webServerNotice(makeFacts())).toBeNull()
+    expect(webServerNotice(makeFacts({ nginxParse: 'partial' }))?.kind).toBe('partial')
+    expect(webServerNotice(makeFacts({ nginxParse: 'unavailable' }))?.kind).toBe('unavailable')
+    const missing = webServerNotice(makeFacts({ nginx: null, otherWebServer: 'caddy' }))
     expect(missing?.kind).toBe('missing')
     expect(missing?.text).toContain('Caddy is installed here')
   })

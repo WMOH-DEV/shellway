@@ -1,6 +1,7 @@
 import type { AlertSettings, ServerFacts, Verdict } from '../../types/ssl'
 import { sudoersLine } from '../deploy/sudoers'
 import { timeAgo } from '../deploy/siteStatus'
+import { SITE_SERVER_LABELS, siteServer } from '../webServer/siteServer'
 
 export type CheckTone = 'ok' | 'bad' | 'warn' | 'muted'
 
@@ -14,8 +15,6 @@ export interface ServerCheckRow {
 
 export const SSL_SUDOERS_FILE = '/etc/sudoers.d/shellway-ssl'
 
-const OTHER_SERVER_NAMES = { apache: 'Apache', caddy: 'Caddy' } as const
-
 const VERDICT_PHRASES: Record<Verdict, string> = {
   broken: 'broken now',
   'will-break': 'will break soon',
@@ -25,11 +24,20 @@ const VERDICT_PHRASES: Record<Verdict, string> = {
   ok: 'fine'
 }
 
-function nginxRow(facts: ServerFacts): ServerCheckRow {
-  if (facts.nginx) return { id: 'nginx', name: 'nginx', tone: 'ok', detail: facts.nginx, sudoers: null }
-  const other = facts.otherWebServer
-  const detail = other ? `not found · ${OTHER_SERVER_NAMES[other]} is monitored only` : 'not found'
-  return { id: 'nginx', name: 'nginx', tone: other ? 'warn' : 'bad', detail, sudoers: null }
+function webServerRow(facts: ServerFacts): ServerCheckRow {
+  const kind = siteServer(facts)
+  if (kind === 'apache') return { id: 'web-server', name: 'Apache', tone: 'ok', detail: facts.apache?.version ?? 'installed', sudoers: null }
+  if (kind === 'nginx') return { id: 'web-server', name: 'nginx', tone: 'ok', detail: facts.nginx ?? 'installed', sudoers: null }
+  const caddy = facts.otherWebServer === 'caddy'
+  const detail = caddy ? 'nginx or Apache not found · Caddy is not read' : 'nginx or Apache not found'
+  return { id: 'web-server', name: 'Web server', tone: caddy ? 'warn' : 'bad', detail, sudoers: null }
+}
+
+function webSudoRow(facts: ServerFacts): ServerCheckRow {
+  const kind = siteServer(facts) ?? 'nginx'
+  const path = facts.paths[kind]
+  const tool = path?.split('/').pop() ?? SITE_SERVER_LABELS[kind]
+  return sudoRow(`sudo-${kind}`, `sudo -n ${tool}`, facts.sudo[kind], path, facts.user, tool)
 }
 
 function opensslRow(facts: ServerFacts): ServerCheckRow {
@@ -70,12 +78,12 @@ function fullSudoRow({ sudo }: ServerFacts): ServerCheckRow {
 
 export function serverCheckRows(facts: ServerFacts, now: number): ServerCheckRow[] {
   return [
-    nginxRow(facts),
+    webServerRow(facts),
     opensslRow(facts),
     certbotRow(facts),
     renewalRow(facts, facts.certbot !== null, now),
     sudoRow('sudo-certbot', 'sudo -n certbot', facts.sudo.certbot, facts.paths.certbot, facts.user, 'certbot'),
-    sudoRow('sudo-nginx', 'sudo -n nginx', facts.sudo.nginx, facts.paths.nginx, facts.user, 'nginx'),
+    webSudoRow(facts),
     fullSudoRow(facts)
   ]
 }

@@ -27,10 +27,17 @@ describe('serverCheckRows', () => {
     expect(serverCheckRows(facts(), NOW).map((r) => r.tone)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok'])
   })
 
-  it('names another web server when nginx is missing', () => {
-    const r = row(facts({ nginx: null, otherWebServer: 'caddy' }), 'nginx')
+  it('names Caddy when neither nginx nor Apache is there', () => {
+    const r = row(facts({ nginx: null, otherWebServer: 'caddy' }), 'web-server')
     expect(r.tone).toBe('warn')
     expect(r.detail).toContain('Caddy')
+  })
+
+  it('checks Apache and its sudo when Apache answers on the web ports', () => {
+    const f = facts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', paths: { certbot: '/usr/bin/certbot', nginx: null, apache: '/usr/sbin/apache2ctl' } })
+    expect(row(f, 'web-server')).toMatchObject({ name: 'Apache', tone: 'ok', detail: '2.4.62' })
+    expect(row(f, 'sudo-apache')).toMatchObject({ name: 'sudo -n apache2ctl', tone: 'bad' })
+    expect(row(f, 'sudo-apache').sudoers).toContain('/usr/sbin/apache2ctl')
   })
 
   it('treats a missing certbot as a warning and openssl as a failure', () => {

@@ -1,5 +1,6 @@
 import type { ServerFacts } from '../../types/ssl'
 import { timeAgo } from '../deploy/siteStatus'
+import { SITE_SERVER_LABELS, siteServer } from '../webServer/siteServer'
 import { formatDay } from './time'
 import type { Tone } from './tone'
 
@@ -31,11 +32,15 @@ function renewalItem(facts: ServerFacts, now: number): StripItem {
   return { key: 'renewal', parts: withMono(mechanism, 'no run recorded'), tone: 'neutral' }
 }
 
-function sudoItem({ sudo }: ServerFacts): StripItem {
-  if (sudo.certbot && sudo.nginx) return { key: 'sudo', parts: plain('sudo for certbot, nginx'), tone: 'success' }
-  if (sudo.certbot) return { key: 'sudo', parts: plain('sudo for certbot only'), tone: 'warning' }
-  if (sudo.nginx) return { key: 'sudo', parts: plain('sudo for nginx only'), tone: 'warning' }
-  return { key: 'sudo', parts: plain('no passwordless sudo for certbot or nginx'), tone: 'warning' }
+function sudoItem(facts: ServerFacts): StripItem {
+  const kind = siteServer(facts) ?? 'nginx'
+  const server = SITE_SERVER_LABELS[kind]
+  const { certbot } = facts.sudo
+  const web = facts.sudo[kind]
+  if (certbot && web) return { key: 'sudo', parts: plain(`sudo for certbot, ${server}`), tone: 'success' }
+  if (certbot) return { key: 'sudo', parts: plain('sudo for certbot only'), tone: 'warning' }
+  if (web) return { key: 'sudo', parts: plain(`sudo for ${server} only`), tone: 'warning' }
+  return { key: 'sudo', parts: plain(`no passwordless sudo for certbot or ${server}`), tone: 'warning' }
 }
 
 function fullSudoItem({ sudo }: ServerFacts): StripItem {
