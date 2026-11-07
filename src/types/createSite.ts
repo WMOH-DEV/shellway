@@ -96,9 +96,12 @@ export interface CreatedResources {
   siteFile: { path: string; enabledLink: string | null; sha256: string } | null
   modulesEnabled: string[]
   dnsRecords: CreatedDnsRecord[]
+  httpsSiteFile: { path: string; sha256: string } | null
   certificate: { lineage: string; issuedByRun: boolean } | null
   deploySite: string | null
 }
+
+export type RunPhase = 'running' | 'stopped' | 'failed' | 'done' | 'removing' | 'removed' | 'remove-failed'
 
 export interface RunRecord {
   id: string
@@ -106,6 +109,46 @@ export interface RunRecord {
   domain: string
   createdAt: number
   server: SiteServer
+  input: CreateSiteInput
   steps: RunStep[]
   created: CreatedResources
+  phase: RunPhase
+  current: PlanActionId | null
+  error: string | null
+  deployKey: string | null
+}
+
+export interface CloudflareZoneRef {
+  id: string
+  name: string
+}
+
+export interface CreateSiteContext {
+  server: SiteServer | null
+  tools: ServerTools
+  serverIp: string | null
+  owner: string
+  fullSudo: boolean
+  zones: CloudflareZoneRef[]
+  dnsEdit: boolean
+  deploySiteNames: string[]
+}
+
+export interface ExistingDnsRecord {
+  type: string
+  name: string
+  content: string
+}
+
+export interface NameCheck {
+  zone: CloudflareZoneRef | null
+  records: ExistingDnsRecord[]
+  servedBy: string | null
+}
+
+export type ResumeMode = 'retry' | 'continue'
+
+export interface CreateSiteOutput {
+  runId: string
+  chunk: string
 }

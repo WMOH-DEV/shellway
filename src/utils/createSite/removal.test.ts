@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest'
 import type { CreatedDnsRecord, CreatedResources, RunRecord } from '@/types/createSite'
 import { removalSteps, type RemovalStep } from './removal'
 import { ROOT_SHELL, removeFolderScript, removeSiteScript } from './siteScripts'
-import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, type ServerCase } from './testFixtures'
+import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, baseInput, type ServerCase } from './testFixtures'
 
 const SHA = createHash('sha256').update('server {}\n').digest('hex')
 const A: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', type: 'A' }
 const CNAME: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', type: 'CNAME' }
 const ORDER: RemovalStep['kind'][] = ['deploy-site', 'certificate', 'dns-record', 'site-file', 'folder']
 
-const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, modulesEnabled: [], dnsRecords: [], certificate: null, deploySite: null }
+const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 const siteFileFor = ({ server }: ServerCase): CreatedResources['siteFile'] => {
   if (server.kind === 'nginx') return { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA }
@@ -24,8 +24,13 @@ const record = (c: ServerCase, created: Partial<CreatedResources>): RunRecord =>
   domain: 'shop.example.com',
   createdAt: 1_800_000_000_000,
   server: c.server,
+  input: baseInput({ server: c.server }),
   steps: [],
-  created: { ...NO_RESOURCES, ...created }
+  created: { ...NO_RESOURCES, ...created },
+  phase: 'failed',
+  current: null,
+  error: null,
+  deployKey: null
 })
 
 const everything = (c: ServerCase): Partial<CreatedResources> => ({
@@ -108,7 +113,7 @@ describe('removalSteps only ever touches what the run created', () => {
             choices.modulesEnabled.flatMap((modulesEnabled) =>
               choices.withSiteFile.map((withSiteFile) => ({
                 c,
-                created: { deploySite, certificate, dnsRecords, folder, modulesEnabled, siteFile: withSiteFile ? siteFileFor(c) : null } as CreatedResources
+                created: { deploySite, certificate, dnsRecords, folder, modulesEnabled, siteFile: withSiteFile ? siteFileFor(c) : null, httpsSiteFile: null } as CreatedResources
               }))
             )
           )
