@@ -22,7 +22,7 @@ function CheckRow({ item }: { item: ReadyItem }) {
         {!passed && <span className="text-2xs text-nd-text-muted">{item.detail}</span>}
         {!passed && item.code && (
           <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded bg-nd-bg-sunken p-2 font-mono text-2xs text-nd-text-primary">{item.code}</code>
+            <code className="flex-1 whitespace-pre-wrap break-all rounded bg-nd-bg-sunken p-2 font-mono text-2xs text-nd-text-primary">{item.code}</code>
             <Button size="icon" variant="ghost" aria-label="Copy" onClick={() => void copyText(item.code ?? '')}><Copy size={13} /></Button>
           </div>
         )}
