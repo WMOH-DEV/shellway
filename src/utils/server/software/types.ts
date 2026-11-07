@@ -4,6 +4,7 @@ export const UPDATES_PROBE = 'software.updates'
 export const PACKAGES_PROBE = 'software.packages'
 export const PHP_PROBE = 'software.php'
 export const USAGE_PROBE = 'software.usage'
+export const NGINX_PROBE = 'software.nginx'
 
 export interface UpgradePackage {
   name: string
@@ -88,6 +89,12 @@ export interface PhpFacts {
   versions: PhpVersionFacts[]
   installable: string[]
   sites: PhpSite[]
+}
+
+export interface NginxFacts {
+  installed: boolean
+  conf: PhpIniFile
+  values: Record<string, string>
 }
 
 export interface FpmPressure {

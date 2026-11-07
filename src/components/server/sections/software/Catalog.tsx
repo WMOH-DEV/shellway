@@ -28,7 +28,7 @@ function rowAction(row: CatalogRow, ctx: ServerSectionContext, state: SoftwareSt
   if (row.updatePackages.length > 0) return { label: 'Update', primary: true, onClick: () => state.run('software.upgrade', { mode: 'selected', packages: row.updatePackages }) }
   if (entry.id === 'docker') return { label: 'Open', onClick: () => ctx.navigate({ section: 'docker' }) }
   if (DATABASES.has(entry.id)) return { label: 'Open', onClick: () => ctx.navigate({ section: 'databases' }) }
-  return { label: entry.id === 'nginx' || entry.id === 'apache' ? 'Configure' : 'Manage', onClick: open }
+  return { label: entry.id === 'nginx' ? 'Configure' : 'Manage', onClick: open }
 }
 
 function CatalogItem({ row, ctx, state, selected }: { row: CatalogRow; ctx: ServerSectionContext; state: SoftwareState; selected: boolean }) {

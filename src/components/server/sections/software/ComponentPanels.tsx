@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/Button'
+import type { ServerSection } from '@/types/server/core'
 import { removableComponent } from '@/utils/server/software/actions/packages'
 import { catalogRow, type CatalogRow } from '@/utils/server/software/catalogView'
 import { bindingsFor, isPublicBinding } from '@/utils/server/software/packages'
@@ -15,7 +16,7 @@ interface PanelProps {
   state: SoftwareState
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <Label>{label}</Label>
@@ -24,9 +25,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-const rowFor = (entry: CatalogEntry, packages: PackagesFacts, state: SoftwareState): CatalogRow => catalogRow(entry, { packages, php: state.phpData, usage: state.usageData })
+export const rowFor = (entry: CatalogEntry, packages: PackagesFacts, state: SoftwareState): CatalogRow => catalogRow(entry, { packages, php: state.phpData, usage: state.usageData })
 
-function InstallCard({ entry, run, extra }: { entry: CatalogEntry; run: SoftwareState['run']; extra?: Record<string, string> }) {
+export function InstallCard({ entry, run, extra }: { entry: CatalogEntry; run: SoftwareState['run']; extra?: Record<string, string> }) {
   const install = entry.component ? <Button size="sm" variant="primary" onClick={() => run('software.install', { component: entry.component, ...extra })}>Install</Button> : null
   return (
     <SectionCard title={entry.name} aside={install}>
@@ -35,7 +36,7 @@ function InstallCard({ entry, run, extra }: { entry: CatalogEntry; run: Software
   )
 }
 
-function Actions({ row, run }: { row: CatalogRow; run: SoftwareState['run'] }) {
+export function Actions({ row, run }: { row: CatalogRow; run: SoftwareState['run'] }) {
   const canRemove = row.entry.component && removableComponent(row.entry.id)
   return (
     <div className="flex items-center gap-2">
@@ -45,18 +46,55 @@ function Actions({ row, run }: { row: CatalogRow; run: SoftwareState['run'] }) {
   )
 }
 
+export function ComponentFacts({ row }: { row: CatalogRow }) {
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      <Fact label="Version"><span className="font-mono">{row.version ?? 'unknown'}</span></Fact>
+      <Fact label="Status">{row.detail}</Fact>
+      <Fact label="Update">{row.update ?? 'up to date'}</Fact>
+    </div>
+  )
+}
+
+interface ManagedIn {
+  section: ServerSection
+  title: string
+  button: string
+}
+
+const MANAGED_IN: Record<string, ManagedIn> = {
+  docker: { section: 'docker', title: 'Containers live in the Docker section', button: 'Open Docker' },
+  certbot: { section: 'sites', title: 'Certificates and renewals live in Sites', button: 'Open Sites' },
+  ufw: { section: 'security', title: 'Firewall rules live in Security', button: 'Open Security' },
+  fail2ban: { section: 'security', title: 'Jails and bans live in Security', button: 'Open Security' },
+  'unattended-upgrades': { section: 'security', title: 'Automatic updates are set in Security', button: 'Open Security' },
+  supervisor: { section: 'jobs', title: 'Programs live in Cron & workers', button: 'Open Cron & workers' }
+}
+
+function ManagedNotice({ id, ctx }: { id: string; ctx: ServerSectionContext }) {
+  const target = MANAGED_IN[id]
+  if (!target) return null
+  return <Notice tone="info" title={target.title} action={<Button size="sm" onClick={() => ctx.navigate({ section: target.section })}>{target.button}</Button>} />
+}
+
+export function ServicesLink({ service, ctx }: { service: string | undefined; ctx: ServerSectionContext }) {
+  if (!service) return null
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex-1 text-xs text-nd-text-muted">Start, stop and logs for <span className="font-mono">{service}</span> are in Services.</span>
+      <Button size="sm" onClick={() => ctx.navigate({ section: 'services' })}>Open Services</Button>
+    </div>
+  )
+}
+
 export function ComponentPanel({ entry, packages, ctx, state }: PanelProps) {
   const row = rowFor(entry, packages, state)
   if (!row.installed) return <InstallCard entry={entry} run={state.run} />
   return (
     <SectionCard title={entry.name} aside={<Actions row={row} run={state.run} />}>
-      <div className="grid grid-cols-3 gap-4">
-        <Fact label="Version"><span className="font-mono">{row.version ?? 'unknown'}</span></Fact>
-        <Fact label="Status">{row.detail}</Fact>
-        <Fact label="Update">{row.update ?? 'up to date'}</Fact>
-      </div>
-      {entry.id === 'docker' && <Notice tone="info" title="Containers live in the Docker section" action={<Button size="sm" onClick={() => ctx.navigate({ section: 'docker' })}>Open Docker</Button>} />}
-      {entry.service && <p className="text-xs text-nd-text-muted">Start, stop and logs for <span className="font-mono">{entry.service}</span> are in Services.</p>}
+      <ComponentFacts row={row} />
+      <ManagedNotice id={entry.id} ctx={ctx} />
+      <ServicesLink service={entry.service} ctx={ctx} />
     </SectionCard>
   )
 }
