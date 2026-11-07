@@ -157,4 +157,15 @@ describe('pending database on connect', () => {
 
     expect(useSQLStore.getState().pendingDatabases[TAB]?.database).toBe('shop_staging')
   })
+
+  it('lets the SQL tab ask for a database when no switch will happen', async () => {
+    await openInSqlTab(TAB, 'postgres', 'shop_prod')
+    finishConnecting('postgres')
+    expect(isOpeningDatabase(TAB)).toBe(false)
+
+    useSQLStore.setState({ connections: {}, pendingDatabases: {} })
+    await openInSqlTab(TAB, 'mysql', 'shop_prod')
+    useSQLStore.getState().setConnectionConfig(TAB, { type: 'postgres' } as never)
+    expect(isOpeningDatabase(TAB)).toBe(false)
+  })
 })

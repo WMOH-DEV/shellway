@@ -477,7 +477,8 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
 // ── Imperative access helper (for use in callbacks, effects, non-React code) ──
 
 export function isOpeningDatabase(connectionId: string): boolean {
-  return connectionId in useSQLStore.getState().pendingDatabases
+  const { pendingDatabases, connections } = useSQLStore.getState()
+  return pendingDatabases[connectionId]?.engine === 'mysql' && connections[connectionId]?.connectionConfig?.type === 'mysql'
 }
 
 export function getSQLConnectionState(connectionId: string): SQLConnectionSlice {
