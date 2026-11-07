@@ -8,7 +8,10 @@ export interface Availability {
   reason: string
 }
 
-const INSTALLABLE: ReadonlySet<ToolId> = new Set(['composer', 'pm2'])
+function canInstall(tool: ToolId, tools: ServerTools): boolean {
+  if (tool === 'php-fpm') return tools.php.installable.length > 0
+  return tool === 'composer' || tool === 'pm2'
+}
 
 const MISSING_NAME: Record<ToolId, string> = {
   'php-fpm': 'PHP-FPM',
@@ -21,7 +24,7 @@ const MISSING_NAME: Record<ToolId, string> = {
 function foundName(tool: ToolId, tools: ServerTools): string | null {
   switch (tool) {
     case 'php-fpm':
-      return tools.phpFpm === null ? null : `PHP ${tools.phpFpm}-fpm`
+      return tools.php.installed.length === 0 ? null : `PHP-FPM ${tools.php.installed.join(', ')}`
     case 'node':
       return tools.node === null ? null : `node ${tools.node}`
     default:
@@ -35,9 +38,10 @@ export function templateAvailability(template: TemplateId, tools: ServerTools): 
   const needs = TEMPLATES[template].needs
   if (needs.length === 0) return { state: 'ok', reason: 'Nothing else needed' }
   const missing = needs.filter((tool) => foundName(tool, tools) === null)
-  const blocker = missing.find((tool) => !INSTALLABLE.has(tool))
+  const blocker = missing.find((tool) => !canInstall(tool, tools))
   if (blocker !== undefined) return { state: 'blocked', reason: `${MISSING_NAME[blocker]} not installed` }
   const found = needs.flatMap((tool) => foundName(tool, tools) ?? [])
   if (missing.length === 0) return { state: 'ok', reason: `${joined(found)} found` }
-  return { state: 'installs', reason: `${joined(found)} found · ${joined(missing)} will be installed` }
+  const installs = `${joined(missing.map((tool) => MISSING_NAME[tool]))} will be installed`
+  return { state: 'installs', reason: found.length === 0 ? installs : `${joined(found)} found · ${installs}` }
 }

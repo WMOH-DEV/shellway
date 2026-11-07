@@ -122,6 +122,31 @@ describe('CreateSiteRun', () => {
     for (const call of calls) expect(output).toContain(call.stdin.trimEnd().split('\n').map((line) => `  ${line}`).join('\n'))
   })
 
+  it('installs PHP and composer first, as root, with time for apt and downloads', async () => {
+    const tools = allTools({ php: { installed: ['8.4'], installable: ['8.5'], missingPackages: { '8.4': [] } }, composer: false })
+    ports.tools = vi.fn(async () => tools)
+    const full = baseInput({ server: NGINX.server, phpVersion: '8.5' })
+    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver).run('start')
+    expect(record.phase).toBe('done')
+    expect(record.steps.map((step) => step.id).slice(0, 3)).toEqual(['php', 'composer', 'folder'])
+    const execCalls = vi.mocked(ports.exec).mock.calls
+    expect(execCalls[0][1]).toMatchObject({ timeoutMs: 900_000 })
+    expect(String(execCalls[0][1]?.stdin)).toContain('install -y php8.5-fpm')
+    expect(String(execCalls[1][1]?.stdin)).toContain('getcomposer.org/installer')
+  })
+
+  it('stops at the PHP step when apt fails, before anything else is made', async () => {
+    const tools = allTools({ php: { installed: [], installable: ['8.5'], missingPackages: {} } })
+    ports.tools = vi.fn(async () => tools)
+    ports.exec = vi.fn(async () => failed('E: Unable to locate package php8.5-fpm'))
+    const full = baseInput({ server: NGINX.server, phpVersion: '8.5' })
+    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver).run('start')
+    expect(record.phase).toBe('failed')
+    expect(statuses(record).php).toBe('failed')
+    expect(record.error).toBe('E: Unable to locate package php8.5-fpm')
+    expect(record.created.folder).toBeNull()
+  })
+
   it('stops instead of changing a certificate that was already on the server', async () => {
     certificateOnServer = true
     const record = await startRun(NGINX).run('start')

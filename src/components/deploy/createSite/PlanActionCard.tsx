@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, ChevronDown, ChevronRight, Cloud, Folder, LayoutGrid, Lock, Play, Server, type LucideIcon } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, Cloud, Code, Folder, LayoutGrid, Lock, Package, Play, Server, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { PlanAction, PlanActionId, PlanChip } from '@/types/createSite'
 import { cn } from '@/utils/cn'
@@ -12,6 +12,8 @@ interface PlanActionCardProps {
 }
 
 const ICONS: Record<PlanActionId, LucideIcon> = {
+  php: Code,
+  composer: Package,
   folder: Folder,
   modules: LayoutGrid,
   site: Server,

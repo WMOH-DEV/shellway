@@ -3,16 +3,21 @@ import type { ServerTools, TemplateId } from '@/types/createSite'
 import { templateAvailability } from './availability'
 import { allTools } from './testFixtures'
 
-const NOTHING: Partial<ServerTools> = { phpFpm: null, composer: false, node: null, pm2: false, docker: false }
+const NO_PHP = { installed: [], installable: [], missingPackages: {} }
+const CAN_INSTALL_PHP = { installed: [], installable: ['8.5'], missingPackages: {} }
+
+const NOTHING: Partial<ServerTools> = { php: NO_PHP, composer: false, node: null, pm2: false, docker: false }
 
 describe('templateAvailability', () => {
   it.each([
-    ['laravel', {}, 'ok', 'PHP 8.3-fpm and composer found'],
-    ['laravel', { composer: false }, 'installs', 'PHP 8.3-fpm found · composer will be installed'],
-    ['laravel', { phpFpm: null }, 'blocked', 'PHP-FPM not installed'],
-    ['laravel', { phpFpm: null, composer: false }, 'blocked', 'PHP-FPM not installed'],
-    ['php', {}, 'ok', 'PHP 8.3-fpm and composer found'],
-    ['php', { phpFpm: '8.2', composer: false }, 'installs', 'PHP 8.2-fpm found · composer will be installed'],
+    ['laravel', {}, 'ok', 'PHP-FPM 8.3 and composer found'],
+    ['laravel', { composer: false }, 'installs', 'PHP-FPM 8.3 found · composer will be installed'],
+    ['laravel', { php: NO_PHP }, 'blocked', 'PHP-FPM not installed'],
+    ['laravel', { php: NO_PHP, composer: false }, 'blocked', 'PHP-FPM not installed'],
+    ['laravel', { php: CAN_INSTALL_PHP, composer: false }, 'installs', 'PHP-FPM and composer will be installed'],
+    ['laravel', { php: { installed: ['8.4', '8.3'], installable: [], missingPackages: {} } }, 'ok', 'PHP-FPM 8.4, 8.3 and composer found'],
+    ['php', {}, 'ok', 'PHP-FPM 8.3 and composer found'],
+    ['php', { php: { installed: ['8.2'], installable: [], missingPackages: {} }, composer: false }, 'installs', 'PHP-FPM 8.2 found · composer will be installed'],
     ['node', {}, 'ok', 'node 20 and pm2 found'],
     ['node', { pm2: false }, 'installs', 'node 20 found · pm2 will be installed'],
     ['node', { node: null }, 'blocked', 'node not installed'],

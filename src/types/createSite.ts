@@ -5,8 +5,14 @@ export type TemplateId = 'laravel' | 'node' | 'static' | 'php' | 'compose' | 'bl
 
 export type SiteServer = { kind: 'nginx' } | { kind: 'apache'; layout: ApacheLayout }
 
+export interface PhpTools {
+  installed: string[]
+  installable: string[]
+  missingPackages: Record<string, string[]>
+}
+
 export interface ServerTools {
-  phpFpm: string | null
+  php: PhpTools
   composer: boolean
   node: string | null
   pm2: boolean
@@ -47,7 +53,7 @@ export interface CreateSiteInput {
   healthPath: string
 }
 
-export type PlanActionId = 'folder' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
+export type PlanActionId = 'php' | 'composer' | 'folder' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 

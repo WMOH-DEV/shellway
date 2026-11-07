@@ -43,7 +43,7 @@ export const baseInput = (overrides: Partial<CreateSiteInput> = {}): CreateSiteI
 })
 
 export const allTools = (overrides: Partial<ServerTools> = {}): ServerTools => ({
-  phpFpm: '8.3',
+  php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] } },
   composer: true,
   node: '20',
   pm2: true,

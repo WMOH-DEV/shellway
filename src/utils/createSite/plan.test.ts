@@ -229,3 +229,37 @@ describe('planMeta', () => {
     expect(planMeta(actions)).toEqual({ minutes: 4, needsFullSudo: false })
   })
 })
+
+describe('buildPlan PHP and composer steps', () => {
+  const php = (installed: string[], installable: string[], missing: string[] = []) =>
+    ({ installed, installable, missingPackages: Object.fromEntries(installed.map((v) => [v, missing])) })
+
+  it('adds nothing when the chosen PHP and composer are already there', () => {
+    expect(plan(NGINX).map((a) => a.id)).not.toContain('php')
+    expect(plan(NGINX).map((a) => a.id)).not.toContain('composer')
+  })
+
+  it('installs a PHP version from the server package sources first, then composer', () => {
+    const actions = plan(NGINX, { phpVersion: '8.5' }, allTools({ php: php(['8.4'], ['8.5']), composer: false }))
+    expect(actions.map((a) => a.id).slice(0, 3)).toEqual(['php', 'composer', 'folder'])
+    expect(byId(actions, 'php')).toMatchObject({ summary: 'Install PHP 8.5 with the extensions Laravel needs', chip: 'installs', commands: [ROOT_SHELL] })
+    expect(byId(actions, 'php').script).toContain('install -y php8.5-fpm php8.5-cli')
+    expect(byId(actions, 'composer').script).toContain('php=php8.5;')
+  })
+
+  it('adds only the missing required packages to an installed version', () => {
+    const actions = plan(NGINX, { phpVersion: '8.3' }, allTools({ php: php(['8.3'], [], ['php8.3-zip']) }))
+    expect(byId(actions, 'php').summary).toBe('Add php8.3-zip to PHP 8.3')
+    expect(byId(actions, 'php').script).toContain('install -y php8.3-zip\n')
+  })
+
+  it('blocks a version the server can neither run nor install', () => {
+    expect(byId(plan(NGINX, { phpVersion: '8.6' }), 'php')).toMatchObject({ chip: 'blocked', script: null })
+  })
+
+  it('leaves PHP and composer out of templates that do not use them', () => {
+    const ids = plan(NGINX, { template: 'static' }, allTools({ php: php([], []), composer: false })).map((a) => a.id)
+    expect(ids).not.toContain('php')
+    expect(ids).not.toContain('composer')
+  })
+})

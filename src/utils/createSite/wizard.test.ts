@@ -47,7 +47,7 @@ describe('newDraft', () => {
   it('starts on the first template the server can run, with its PHP version', () => {
     expect(newDraft(allTools()).template).toBe('laravel')
     expect(newDraft(allTools()).phpVersion).toBe('8.3')
-    expect(newDraft(allTools({ phpFpm: null, node: null })).template).toBe('static')
+    expect(newDraft(allTools({ php: { installed: [], installable: [], missingPackages: {} }, node: null })).template).toBe('static')
   })
 })
 

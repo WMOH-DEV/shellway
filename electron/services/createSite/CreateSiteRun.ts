@@ -13,6 +13,7 @@ import type { ExecResult } from '../../utils/sshExec'
 import type { CreateSitePorts } from './ports'
 
 const ROOT_TIMEOUT_MS = 120_000
+const INSTALL_TIMEOUT_MS = 900_000
 const SHORT_TIMEOUT_MS = 30_000
 const DNS_COMMENT = 'Created by Shellway Create site'
 const NOT_THERE = 'shellway: not there'
@@ -87,6 +88,8 @@ export class CreateSiteRun {
 
   private execute(action: PlanAction): Promise<void> {
     switch (action.id) {
+      case 'php': return this.install(action, `Installing PHP ${this.input.phpVersion} failed.`)
+      case 'composer': return this.install(action, 'Installing composer failed.')
       case 'folder': return this.createFolder(action)
       case 'modules': return this.enableModules(action)
       case 'site': return this.createSite(action)
@@ -95,6 +98,10 @@ export class CreateSiteRun {
       case 'deploys': return this.addDeploySite()
       case 'first-deploy': return this.firstDeploy()
     }
+  }
+
+  private async install(action: PlanAction, fallback: string): Promise<void> {
+    this.mustSucceed(await this.root(action, INSTALL_TIMEOUT_MS), fallback)
   }
 
   private async createFolder(action: PlanAction): Promise<void> {
@@ -238,9 +245,9 @@ export class CreateSiteRun {
     }
   }
 
-  private async root(action: PlanAction): Promise<ExecResult> {
+  private async root(action: PlanAction, timeoutMs = ROOT_TIMEOUT_MS): Promise<ExecResult> {
     if (action.script === null) throw new Error(action.note || `${action.title} cannot run from Shellway.`)
-    return this.rootScript(action.script, ROOT_TIMEOUT_MS)
+    return this.rootScript(action.script, timeoutMs)
   }
 
   private rootScript(script: string, timeoutMs: number): Promise<ExecResult> {

@@ -4,8 +4,9 @@ import { newSite, siteNameFromPath } from '../deploy/presets'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
+import { phpNeed } from './php'
 import { TEMPLATES, usesPhp } from './templates'
-import { assertDomain, assertFolder, assertPhpVersion, assertPort, assertSiteName } from './validate'
+import { assertDomain, assertFolder, assertPort, assertSiteName } from './validate'
 
 export const WIZARD_STEPS = ['site', 'code', 'domain', 'review'] as const
 
@@ -51,6 +52,8 @@ const DEFAULT_APP_PORT = 3000
 const MAX_POLL_MINUTES = 60
 
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
+  php: 'site',
+  composer: 'site',
   folder: 'site',
   modules: 'site',
   site: 'site',
@@ -82,7 +85,7 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     siteName: '',
     folder: '',
     template: firstUsableTemplate(tools),
-    phpVersion: tools.phpFpm ?? '',
+    phpVersion: tools.php.installed[0] ?? tools.php.installable[0] ?? '',
     appPort: DEFAULT_APP_PORT,
     repoUrl: '',
     branch,
@@ -117,7 +120,7 @@ function templateProblem(draft: CreateSiteDraft, tools: ServerTools): string | n
   const template = TEMPLATES[draft.template]
   const availability = templateAvailability(draft.template, tools)
   if (availability.state === 'blocked') return `${template.label} cannot be used here: ${availability.reason}`
-  if (usesPhp(template) && fails(() => assertPhpVersion(draft.phpVersion))) return 'Enter a PHP version such as 8.3'
+  if (usesPhp(template) && phpNeed(tools.php, draft.phpVersion).kind === 'unavailable') return 'Pick a PHP version'
   if (template.proxiesToApp && fails(() => assertPort(draft.appPort))) return 'Enter an app port from 1 to 65535'
   return null
 }

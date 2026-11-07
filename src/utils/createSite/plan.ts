@@ -5,6 +5,7 @@ import { repoLabel } from '../deploy/siteDetail'
 import { issueCommand, stagingCommand } from '../ssl/https/issueCommands'
 import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
+import { installComposerScript, installPhpScript, phpNeed } from './php'
 import { ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, sitePaths } from './siteScripts'
 import { TEMPLATES, siteFileText, usesPhp, type SiteTemplate } from './templates'
 import { siteNames } from './templates/shared'
@@ -19,6 +20,8 @@ const asRoot = (script: string): Pick<PlanAction, 'commands' | 'script'> => ({ c
 const MANUAL_DNS_NOTE = 'No Cloudflare zone for this domain. Create the record at your DNS provider, then press Check again.'
 
 const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
+  php: 'PHP',
+  composer: 'Composer',
   folder: 'Folder',
   modules: 'Apache modules',
   dns: 'DNS record',
@@ -29,7 +32,49 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
+const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
+
+function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
+  if (!usesPhp(template)) return []
+  const version = assertPhpVersion(input.phpVersion)
+  const need = phpNeed(tools.php, version)
+  switch (need.kind) {
+    case 'none':
+      return []
+    case 'unavailable':
+      return [action({ id: 'php', title: TITLES.php, summary: `PHP ${version} is not installed`, chip: 'blocked', note: `This server's package sources do not offer PHP ${version}. Pick another version.` })]
+    case 'install':
+      return [action({
+        id: 'php',
+        title: TITLES.php,
+        summary: `Install PHP ${version} with the extensions Laravel needs`,
+        chip: 'installs',
+        ...asRoot(installPhpScript(version, need.packages)),
+        note: "Installed with apt from this server's own package sources. Shellway does not add any repository."
+      })]
+    case 'add':
+      return [action({
+        id: 'php',
+        title: TITLES.php,
+        summary: `Add ${need.packages.join(', ')} to PHP ${version}`,
+        chip: 'installs',
+        ...asRoot(installPhpScript(version, need.packages)),
+        note: `Installed with apt. PHP ${version}-FPM reloads afterwards, which other sites using PHP ${version} share.`
+      })]
+  }
+}
+
+function composerAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
+  if (!template.needs.includes('composer') || tools.composer) return []
+  return [action({
+    id: 'composer',
+    title: TITLES.composer,
+    summary: 'Install composer from getcomposer.org into /usr/local/bin',
+    chip: 'installs',
+    ...asRoot(installComposerScript(input.phpVersion)),
+    note: 'The installer runs only if it matches the checksum published at composer.github.io.'
+  })]
+}
 
 function folderAction({ folder, owner }: CreateSiteInput): PlanAction {
   return action({
@@ -185,6 +230,8 @@ function firstDeployAction(input: CreateSiteInput): PlanAction {
 export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: WebServerDriver): PlanAction[] {
   const template = TEMPLATES[input.template]
   return [
+    ...phpAction(input, template, tools),
+    ...composerAction(input, template, tools),
     folderAction(input),
     ...modulesActions(input, template, tools),
     siteAction(input, template, driver),
