@@ -25,6 +25,7 @@ describe('findHint', () => {
     ['supervisor backoff', input('supervisor', 'shop-queue:default_00', ['PHP Fatal error: Class "Redis" not found'], {}, 'Exited too quickly (process log may have details)'), 'supervisor-backoff', 'logs'],
     ['pm2 errored', input('pm2', 'admin', []), 'pm2-errored', 'logs'],
     ['start limit', input('systemd', 'acme-api', ['acme-api.service: Start request repeated too quickly.']), 'start-limit', 'control'],
+    ['fail2ban without an SSH log file', input('systemd', 'fail2ban', ['fail2ban [52]: ERROR   Failed during configuration: Have not found any log file for sshd jail']), 'fail2ban-no-log', 'route'],
     ['permission denied on a folder', input('systemd', 'acme-api', ['open /srv/acme/storage/app.sock: Permission denied']), 'permission-denied', null]
   ])('%s', (_name, hintInput, id, fixKind) => {
     const hint = findHint(hintInput)

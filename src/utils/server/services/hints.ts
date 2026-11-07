@@ -49,6 +49,13 @@ function deniedPath(log: string): string | null {
 
 const RULES: HintRule[] = [
   {
+    id: 'fail2ban-no-log',
+    match: (input, log) => {
+      if (input.item.name !== 'fail2ban' || !/Have not found any log file for \w+ jail/i.test(log)) return null
+      return { text: 'fail2ban cannot find the SSH log file. Newer Debian and Ubuntu systems keep SSH logins in the journal, so the jail needs backend = systemd. Set up fail2ban from Security to fix it.', fix: { kind: 'route', label: 'Open Security', route: { section: 'security' } } }
+    }
+  },
+  {
     id: 'php-fpm-bind',
     match: (input, log) => {
       if (!/^php[\d.]*-fpm$/.test(input.item.name) || !/unable to bind listening socket/i.test(log)) return null
