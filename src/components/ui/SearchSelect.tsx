@@ -25,6 +25,15 @@ export interface SearchSelectProps {
 }
 
 const SEARCHABLE_THRESHOLD = 6
+const LIST_MAX_HEIGHT = 280
+const OPTION_HEIGHT = 28
+const LIST_PADDING = 8
+const SEARCH_HEIGHT = 32
+
+function estimatedHeight(optionCount: number, searchable: boolean): number {
+  const list = Math.min(LIST_MAX_HEIGHT, Math.max(optionCount, 1) * OPTION_HEIGHT + LIST_PADDING)
+  return list + (searchable ? SEARCH_HEIGHT : 0)
+}
 
 function filterOptions(options: SearchSelectOption[], query: string): SearchSelectOption[] {
   const needle = query.trim().toLowerCase()
@@ -171,8 +180,8 @@ export function SearchSelect({
   const triggerId = `${baseId}-trigger`
   const listId = `${baseId}-list`
   const optionId = useCallback((index: number) => `${baseId}-option-${index}`, [baseId])
-  const position = usePopoverPosition(triggerRef, open)
   const searchable = options.length > SEARCHABLE_THRESHOLD
+  const position = usePopoverPosition(triggerRef, open, estimatedHeight(options.length, searchable))
   const visibleOptions = useMemo(() => filterOptions(options, query), [options, query])
   const selected = options.find((option) => option.value === value)
 
