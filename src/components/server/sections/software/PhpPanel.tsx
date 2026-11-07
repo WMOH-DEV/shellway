@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { cn } from '@/utils/cn'
 import { INI_KEYS, POOL_KEYS, sitesUsing, type IniKey, type PoolKey } from '@/utils/server/software/php'
 import type { FpmPressure, PhpFacts, PhpVersionFacts, ServiceState } from '@/utils/server/software/types'
@@ -22,9 +23,14 @@ function AddVersion({ installable, run }: { installable: string[]; run: Software
   if (installable.length === 0) return null
   return (
     <div className="flex items-center gap-2">
-      <select value={choice} onChange={(event) => setChoice(event.target.value)} aria-label="PHP version to add" className="h-7 rounded-[7px] border border-nd-border bg-nd-bg-sunken px-2 font-mono text-xs text-nd-text-primary">
-        {installable.map((version) => <option key={version} value={version}>PHP {version}</option>)}
-      </select>
+      <SearchSelect
+        value={choice}
+        onChange={setChoice}
+        options={installable.map((version) => ({ value: version, label: `PHP ${version}` }))}
+        aria-label="PHP version to add"
+        mono
+        className="h-7 w-32 rounded-[7px] border-nd-border px-2 text-xs"
+      />
       <Button size="sm" onClick={() => run('software.install', { component: 'php', version: choice })}>Add version</Button>
     </div>
   )

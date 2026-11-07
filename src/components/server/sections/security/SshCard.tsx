@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { ProbeResult } from '@/types/server/core'
 import { validateGuardRequest, type GuardRequest } from '@/utils/server/security/guard'
 import type { KeysFacts } from '@/utils/server/security/keys'
@@ -54,7 +54,7 @@ function EditModal({ editing, setEditing, onSubmit }: { editing: Editing; setEdi
   }
   return (
     <FormModal open={editing !== null} title={editing?.kind === 'root' ? 'Root login' : 'SSH port'} submitLabel="Review" error={error} onClose={close} onSubmit={submit}>
-      {editing?.kind === 'root' && <Select label="Who can log in as root" options={ROOT_OPTIONS} value={editing.value} onChange={(event) => setEditing({ kind: 'root', value: event.target.value })} />}
+      {editing?.kind === 'root' && <SearchSelect label="Who can log in as root" options={ROOT_OPTIONS} value={editing.value} onChange={(value) => setEditing({ kind: 'root', value })} />}
       {editing?.kind === 'port' && <Input label="New SSH port" className="font-mono" inputMode="numeric" value={editing.value} onChange={(event) => setEditing({ kind: 'port', value: event.target.value })} autoFocus />}
     </FormModal>
   )

@@ -43,7 +43,8 @@ describe('CreateDatabaseDialog', () => {
   it('fills names from the site, masks the password in the SQL and submits the site', () => {
     const onSubmit = vi.fn()
     render(<CreateDatabaseDialog data={mysql} sites={[site]} password={PASSWORD} onClose={vi.fn()} onSubmit={onSubmit} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'admin-example' } })
+    fireEvent.click(screen.getByRole('button', { name: /For site/ }))
+    fireEvent.click(screen.getByRole('option', { name: 'admin-example' }))
     expect(input('shop_prod')).toHaveValue('admin_example_prod')
     expect(screen.getByText(/CREATE USER 'admin_example'@'localhost' IDENTIFIED BY '••••';/)).toBeInTheDocument()
     expect(document.body.textContent).not.toContain(PASSWORD)

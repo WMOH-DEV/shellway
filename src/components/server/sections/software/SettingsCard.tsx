@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect, type SearchSelectOption } from '@/components/ui/SearchSelect'
 import { cn } from '@/utils/cn'
 import { changedValues } from '@/utils/server/software/phpView'
 import { SectionCard } from '../../kit'
@@ -17,6 +18,11 @@ interface SettingsCardProps<K extends string> {
 
 const fieldClass = 'h-8 w-full rounded-[7px] border bg-nd-bg-sunken px-2 font-mono text-xs text-nd-text-primary outline-none focus:border-nd-accent'
 
+function choiceOptions(options: string[], current: string): SearchSelectOption[] {
+  const known = options.map((option) => ({ value: option, label: option }))
+  return options.includes(current) ? known : [{ value: current, label: current || 'not set' }, ...known]
+}
+
 export function SettingsCard<K extends string>({ title, keys, values, choices, isValid, footnote, aside, onApply }: SettingsCardProps<K>) {
   const [edited, setEdited] = useState<Partial<Record<K, string>>>(values)
   const changed = changedValues(values, edited)
@@ -33,10 +39,7 @@ export function SettingsCard<K extends string>({ title, keys, values, choices, i
             <label key={key} className="flex min-w-0 flex-col gap-1">
               <span className="truncate font-mono text-xs text-nd-text-muted">{key}</span>
               {options ? (
-                <select value={value} onChange={(event) => set(key, event.target.value)} className={cn(fieldClass, 'border-nd-border')}>
-                  {!options.includes(value) && <option value={value}>{value || 'not set'}</option>}
-                  {options.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
+                <SearchSelect value={value} onChange={(next) => set(key, next)} options={choiceOptions(options, value)} mono className="h-8 rounded-[7px] border-nd-border px-2 text-xs" />
               ) : (
                 <input value={value} placeholder="not set" onChange={(event) => set(key, event.target.value)} aria-invalid={bad} className={cn(fieldClass, bad ? 'border-nd-error' : 'border-nd-border')} />
               )}

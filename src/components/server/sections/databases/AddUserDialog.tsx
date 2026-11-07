@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { CreateUserParams } from '@/utils/server/databases/actions/create'
 import { DIALECT } from '@/utils/server/databases/dialect'
 import { DB_HOST, DB_USER, MASK } from '@/utils/server/databases/identifiers'
@@ -41,7 +41,7 @@ export function AddUserDialog({ data, password, onClose, onSubmit }: Props) {
               <TextInput mono value={host} onChange={setHost} />
             </Field>
             <Field label="Can use">
-              <Select value={database} onChange={(event) => setDatabase(event.target.value)} options={[{ value: '', label: 'No database yet' }, ...userDatabases(data).map((name) => ({ value: name, label: name }))]} />
+              <SearchSelect value={database} onChange={setDatabase} options={[{ value: '', label: 'No database yet' }, ...userDatabases(data).map((name) => ({ value: name, label: name }))]} />
             </Field>
           </>
         )}

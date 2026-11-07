@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { ServerCheck } from '@/components/deploy/ServerCheck'
 import { SiteForm } from '@/components/deploy/SiteForm'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { toast } from '@/components/ui/Toast'
 import { vhostFor } from '@/utils/server/sites/inventory'
 import { siteFile } from '@/utils/server/sites/join'
@@ -29,14 +30,14 @@ function PhpVersionCard({ page }: { page: SitePageProps }) {
     <SectionCard title="PHP version">
       <p className="text-[13px] text-nd-text-muted">This site runs on PHP {current} through PHP-FPM. Switching edits the socket in the site file, tests the config and reloads the web server.</p>
       <div className="flex items-center gap-2">
-        <select
+        <SearchSelect
           aria-label="PHP version"
           value={version}
-          onChange={(e) => setVersion(e.target.value)}
-          className="h-8 rounded-md border border-nd-border-hover bg-nd-bg-sunken px-2 font-mono text-[13px] text-nd-text-primary"
-        >
-          {versions.map((v) => <option key={v} value={v}>PHP {v}{v === current ? ' (current)' : ''}</option>)}
-        </select>
+          onChange={setVersion}
+          options={versions.map((v) => ({ value: v, label: `PHP ${v}${v === current ? ' (current)' : ''}` }))}
+          mono
+          className="w-44 px-2 text-[13px]"
+        />
         <Button variant="primary" onClick={switchVersion} disabled={version === current}>Switch</Button>
       </div>
       {versions.length <= 1 && <span className="text-xs text-nd-text-muted">Install another PHP version in Software to switch.</span>}

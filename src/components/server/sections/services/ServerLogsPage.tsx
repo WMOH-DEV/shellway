@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { SystemLogId } from '@/utils/server/services/logChannel'
 import { SYSTEM_LOGS } from '@/utils/server/services/logSources'
 import { PageHeader, SectionPage } from '../../kit'
@@ -27,7 +27,7 @@ export function ServerLogsPage({ ctx }: { ctx: ServerSectionContext }) {
         leading={back}
         title="Server logs"
         subtitle="Read the server's own logs. Go live to see new lines as they are written."
-        actions={<Select aria-label="Log source" value={id} options={OPTIONS} onChange={(event) => setId(event.target.value as SystemLogId)} />}
+        actions={<SearchSelect aria-label="Log source" value={id} options={OPTIONS} onChange={(next) => setId(next as SystemLogId)} />}
       />
       <div className="h-[68vh] min-h-[360px]">
         <LogPanel ctx={ctx} source={{ kind: 'system', id }} />
