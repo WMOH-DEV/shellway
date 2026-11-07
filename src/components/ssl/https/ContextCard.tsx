@@ -40,7 +40,7 @@ export function ContextCard({ step, certbotDocsUrl, route }: ContextCardProps) {
   if (step === 'issue') {
     return (
       <Frame label="Why test first">
-        <span className="text-[12.5px] text-nd-text-secondary">Let's Encrypt limits failed and repeated requests. The staging test catches DNS, port 80 and nginx problems without using up those limits.</span>
+        <span className="text-[12.5px] text-nd-text-secondary">Let's Encrypt limits failed and repeated requests. The staging test catches DNS, port 80 and web server problems without using up those limits.</span>
       </Frame>
     )
   }

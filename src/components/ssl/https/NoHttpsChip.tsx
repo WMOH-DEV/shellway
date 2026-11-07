@@ -14,7 +14,7 @@ export function NoHttpsChip({ connectionId, path, healthUrl }: NoHttpsChipProps)
   return (
     <button
       type="button"
-      title="This site's nginx block has no certificate. Open the SSL tab to add HTTPS."
+      title="This site has no HTTPS certificate on the server. Open the SSL tab to add HTTPS."
       onClick={() => request(connectionId, block.id)}
       className="shrink-0 rounded bg-nd-warning/12 px-1.5 py-px text-xs text-nd-warning-fg transition-colors hover:bg-nd-warning/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nd-accent"
     >

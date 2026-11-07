@@ -27,11 +27,11 @@ function Notice({ children }: { children: string }) {
 
 function subtitle(flow: SwitchFlow): string {
   const { undo } = flow
-  if (undo.run.running) return 'Putting the old site file back, testing nginx, reloading it and checking the result.'
+  if (undo.run.running) return `Putting the old site file back, testing ${flow.driver.label}, reloading it and checking the result.`
   if (undo.result?.ok) return 'The switch was undone. certbot\'s certificate is in use again.'
   if (undo.result || undo.error !== null) return 'Undoing the switch did not finish. Check the output below.'
-  if (flow.applyRun.running) return 'Backing up the site file, replacing the certificate lines, reloading nginx and checking the result.'
-  if (flow.applyResult?.ok) return 'nginx now presents the Cloudflare Origin CA certificate.'
+  if (flow.applyRun.running) return `Backing up the site file, replacing the certificate lines, reloading ${flow.driver.label} and checking the result.`
+  if (flow.applyResult?.ok) return `${flow.driver.label} now presents the Cloudflare Origin CA certificate.`
   return 'Shellway runs the script once and checks what visitors get.'
 }
 
@@ -55,7 +55,7 @@ export function ApplyStep({ flow }: { flow: SwitchFlow }) {
           outcome={applyRun.running ? null : applyOutcome(applyResult, applyError)}
         />
       )}
-      {undone && <Notice>The old site file is back and nginx is reloaded. certbot's certificate is in use again.</Notice>}
+      {undone && <Notice>{`The old site file is back and ${flow.driver.label} is reloaded. certbot's certificate is in use again.`}</Notice>}
       {undo.result && !undo.result.ok && <Failure title="Undoing the switch failed" note="Check the output below." />}
       {hasUndo && (
         <OutputPanel

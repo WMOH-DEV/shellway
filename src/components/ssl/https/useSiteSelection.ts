@@ -6,6 +6,7 @@ import { blockForHostname } from '@/utils/ssl/https/siteMatch'
 import { siteOptions, type DeploySiteRef, type SiteOption } from '@/utils/ssl/addHttps/siteOptions'
 import { sslApi } from '../sslApi'
 import { useSslResource, type SslResource } from '../settings/useSslResource'
+import { siteServerLabel } from '@/utils/webServer/siteServer'
 
 export const OTHER_SITE = 'other'
 
@@ -71,7 +72,7 @@ export function useSiteSelection(connectionId: string, sessionId: string, report
     choose: setChoice,
     otherText,
     setOtherText,
-    otherError: choice === OTHER_SITE && typed !== '' && !block ? `No nginx server block names ${typed}` : null,
+    otherError: choice === OTHER_SITE && typed !== '' && !block ? `No site in the ${siteServerLabel(report.facts) ?? 'web server'} configuration names ${typed}` : null,
     block,
     title: choice === OTHER_SITE ? block?.names[0] ?? null : picked?.title ?? null,
     isDeploySite: picked?.kind === 'deploy',

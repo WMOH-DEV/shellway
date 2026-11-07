@@ -188,7 +188,7 @@ describe('Add HTTPS step 1', () => {
     renderWizard()
     await u.click(await screen.findByRole('button', { name: /Other hostname/ }))
     await u.type(screen.getByLabelText('Hostname'), 'missing.example.com')
-    expect(screen.getByText('No nginx server block names missing.example.com')).toBeInTheDocument()
+    expect(screen.getByText('No site in the nginx configuration names missing.example.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
     await u.clear(screen.getByLabelText('Hostname'))
     await u.type(screen.getByLabelText('Hostname'), 'blog.example.com')

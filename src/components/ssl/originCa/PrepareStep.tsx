@@ -44,7 +44,7 @@ export function PrepareStep({ flow }: { flow: SwitchFlow }) {
           <div className="flex flex-col gap-1">
             <span className="font-medium text-nd-error-fg">The certificate could not be created</span>
             <span>{prepareError}</span>
-            <span className="text-nd-text-primary">Nothing in nginx was changed.</span>
+            <span className="text-nd-text-primary">Nothing in {flow.driver.label} was changed.</span>
           </div>
         </div>
       )}

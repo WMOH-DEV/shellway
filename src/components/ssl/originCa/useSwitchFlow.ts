@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { OriginKeyType, OriginValidityYears, SslReport, SwitchCheck, SwitchPrepared, SwitchResult } from '@/types/ssl'
 import { switchCheck } from '@/utils/ssl/originCa/switchCheck'
 import { prepareStage, stepDetails, type SwitchStep } from '@/utils/ssl/switchWizard/steps'
+import { servingDriver, type WebServerDriver } from '@/utils/webServer'
 import { sslApi } from '../sslApi'
 import { useStreamedRun, type StreamedRun } from '../https/useStreamedRun'
 import { useMounted } from './useMounted'
@@ -26,6 +27,7 @@ export interface SwitchFlow {
   years: OriginValidityYears
   setYears: (years: OriginValidityYears) => void
   check: SwitchCheck
+  driver: WebServerDriver
   prepared: SwitchPrepared | null
   prepareRun: StreamedRun
   prepareError: string | null
@@ -134,6 +136,7 @@ export function useSwitchFlow({ connectionId, sessionId, report, hostName, block
     years,
     setYears,
     check,
+    driver: servingDriver(report.facts),
     prepared,
     prepareRun,
     prepareError,

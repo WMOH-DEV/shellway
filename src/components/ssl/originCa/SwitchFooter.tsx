@@ -18,7 +18,7 @@ function ExplainActions({ flow, onCancel }: { flow: SwitchFlow; onCancel: () => 
     <>
       <Button onClick={onCancel}>Cancel</Button>
       <div className="flex-1" />
-      <Hint>Nothing changes in nginx yet</Hint>
+      <Hint>Nothing changes in {flow.driver.label} yet</Hint>
       <Button variant="primary" onClick={() => void flow.prepare()} disabled={flow.check.blockedReason !== null}>
         Continue <ArrowRight size={13} />
       </Button>

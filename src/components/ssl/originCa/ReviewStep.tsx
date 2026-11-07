@@ -8,6 +8,7 @@ import { Card } from '../Card'
 import { StepHeading } from '../https/StepHeading'
 import { BlockedNotice } from './BlockedNotice'
 import type { SwitchFlow } from './useSwitchFlow'
+import type { WebServerDriver } from '@/utils/webServer'
 
 const Mono = ({ children }: { children: string }) => <span className="font-mono text-nd-text-primary">{children}</span>
 
@@ -47,7 +48,7 @@ const ROW_TONE: Record<DiffLine['kind'], string> = {
 
 const ROW_SIGN: Record<DiffLine['kind'], string> = { same: ' ', add: '+', remove: '-' }
 
-function DiffCard({ prepared }: { prepared: SwitchPrepared }) {
+function DiffCard({ prepared, driver }: { prepared: SwitchPrepared; driver: WebServerDriver }) {
   const { added, removed } = diffCounts(prepared.diff)
   return (
     <Card
@@ -57,7 +58,7 @@ function DiffCard({ prepared }: { prepared: SwitchPrepared }) {
     >
       <div className="flex flex-wrap items-baseline gap-x-3 text-xs text-nd-text-muted">
         <span className="break-all font-mono text-nd-text-secondary">{prepared.file}</span>
-        <span>server block at line {prepared.blockLine}</span>
+        <span>{driver.kind === 'apache' ? 'VirtualHost' : 'server block'} at line {prepared.blockLine}</span>
       </div>
       <div className="flex flex-col rounded-lg bg-nd-bg-sunken py-2 font-mono text-[11.5px] leading-[1.75]">
         {prepared.diff.map((line, index) => (
@@ -73,7 +74,7 @@ function DiffCard({ prepared }: { prepared: SwitchPrepared }) {
   )
 }
 
-function RootSteps({ prepared }: { prepared: SwitchPrepared }) {
+function RootSteps({ prepared, driver }: { prepared: SwitchPrepared; driver: WebServerDriver }) {
   const [showScript, setShowScript] = useState(false)
   return (
     <Card
@@ -87,7 +88,7 @@ function RootSteps({ prepared }: { prepared: SwitchPrepared }) {
       <ol className="flex list-decimal flex-col gap-1.5 pl-[18px] text-[13px] text-nd-text-secondary">
         <li>Back up the site file to <Mono>{prepared.backupPath}</Mono></li>
         <li>Replace the two certificate lines</li>
-        <li><Mono>nginx -t</Mono>, then reload. If the test fails, the backup is restored.</li>
+        <li><Mono>{driver.testCommand}</Mono>, then reload. If the test fails, the backup is restored.</li>
         <li>
           Verify: the server presents the new certificate, and{' '}
           {prepared.names.map((name, index) => <span key={name}>{index > 0 && ', '}<Mono>{`https://${name}/`}</Mono></span>)}{' '}
@@ -102,11 +103,11 @@ function RootSteps({ prepared }: { prepared: SwitchPrepared }) {
 export function ReviewStep({ flow, report, prepared }: { flow: SwitchFlow; report: SslReport; prepared: SwitchPrepared }) {
   return (
     <div className="flex flex-col gap-4">
-      <StepHeading title="Review the nginx change" subtitle="Cloudflare signed the certificate. Nothing in nginx has changed yet." />
+      <StepHeading title={`Review the ${flow.driver.label} change`} subtitle={`Cloudflare signed the certificate. Nothing in ${flow.driver.label} has changed yet.`} />
       {flow.check.blockedReason && <BlockedNotice reason={flow.check.blockedReason} />}
       <Summary flow={flow} report={report} prepared={prepared} />
-      <DiffCard prepared={prepared} />
-      <RootSteps prepared={prepared} />
+      <DiffCard prepared={prepared} driver={flow.driver} />
+      <RootSteps prepared={prepared} driver={flow.driver} />
     </div>
   )
 }
