@@ -1,6 +1,6 @@
-import type { ServerFacts } from '../../types/ssl'
+import type { EditableWebServer, ServerFacts } from '../../types/ssl'
 
-export type SiteServer = 'nginx' | 'apache'
+type SiteServer = EditableWebServer
 
 type SiteServerFacts = Pick<ServerFacts, 'nginx' | 'apache' | 'serving'>
 

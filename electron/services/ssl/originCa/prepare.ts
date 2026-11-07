@@ -91,6 +91,7 @@ class PrepareRun {
       backupPath: this.paths.backupPath,
       diff: swapped.diff,
       webServer: this.driver.kind,
+      apacheLayout: this.driver.kind === 'apache' ? this.input.report.facts.apache?.layout ?? null : null,
       script: switchScript({ driver: this.driver, file: this.block.file, expectedSha256: sha256(siteText), backupPath: this.paths.backupPath, newText: swapped.text })
     }
   }

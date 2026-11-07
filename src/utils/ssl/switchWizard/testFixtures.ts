@@ -34,6 +34,7 @@ export const SWITCH_DIFF: DiffLine[] = [
 export const preparedSwitch = (overrides: Partial<SwitchPrepared> = {}): SwitchPrepared => ({
   switchId: 'switch-1',
   webServer: 'nginx',
+  apacheLayout: null,
   blockId: switchBlock.id,
   file: switchBlock.file,
   blockLine: 9,

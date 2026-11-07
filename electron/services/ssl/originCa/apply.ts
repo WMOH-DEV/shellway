@@ -74,7 +74,7 @@ class ApplyRun {
   }
 
   private driver() {
-    return webServerDriver(this.prepared.webServer)
+    return webServerDriver(this.prepared.webServer, this.prepared.apacheLayout)
   }
 
   private async discard(): Promise<void> {

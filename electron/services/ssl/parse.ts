@@ -1,4 +1,5 @@
 import type { ApacheFacts, CertKind, CertbotLineage, OriginCert, RenewalInfo, RenewalMechanism, ServerBlock, ServerFacts, ServingWebServer } from '../../../src/types/ssl'
+import { splitConfigFiles } from '../../../src/utils/webServer/configDump'
 import { parseKeyValues } from '../deploy/parse'
 
 export const SECTION_MARK = '@@SW@@'
@@ -179,23 +180,6 @@ function serverBlock(file: string, server: Statement): ServerBlock {
     probeAddress: probeAddress(listens),
     root: directives(server, 'root')[0]?.args[0] ?? null
   }
-}
-
-const FILE_MARKER = /^# configuration file (.+):$/
-
-interface ConfigFile {
-  path: string
-  content: string
-}
-
-function splitConfigFiles(dump: string): ConfigFile[] {
-  const files: { path: string; lines: string[] }[] = []
-  for (const line of dump.split('\n')) {
-    const marker = FILE_MARKER.exec(line.replace(/\r$/, ''))
-    if (marker) files.push({ path: marker[1], lines: [] })
-    else if (files.length > 0) files[files.length - 1].lines.push(line)
-  }
-  return files.map((f) => ({ path: f.path, content: f.lines.join('\n') }))
 }
 
 export function hasConfigFiles(dump: string): boolean {

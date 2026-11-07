@@ -14,7 +14,7 @@ const RESTORE = restoreScript({ driver: nginxDriver, file: FILE, backupPath: BAC
 const SETTLE = restoreIfChangedScript({ driver: nginxDriver, file: FILE, backupPath: BACKUP_PATH })
 
 const prepared: SwitchPrepared = {
-  switchId: 'switch-1', webServer: 'nginx', blockId: 'app.conf:9', file: FILE, blockLine: 9, names: NAMES, certPath: CERT_PATH, keyPath: KEY_PATH,
+  switchId: 'switch-1', webServer: 'nginx', apacheLayout: null, blockId: 'app.conf:9', file: FILE, blockLine: 9, names: NAMES, certPath: CERT_PATH, keyPath: KEY_PATH,
   keyType: 'ecc', validityYears: 15, notAfter: 2_300_000_000, backupPath: BACKUP_PATH, diff: [], script: SCRIPT
 }
 
