@@ -16,13 +16,16 @@ interface LogicalLine {
 
 const isSpace = (ch: string) => ch === ' ' || ch === '\t'
 
+const CONTINUED = /(?:^|[^\\])\\\r?$/
+
+export const UNBALANCED_SECTIONS = "This file's sections (such as <VirtualHost> or <IfModule>) do not open and close in order, so Shellway will not edit it."
+
 function logicalLines(text: string): LogicalLine[] {
   const found: LogicalLine[] = []
   let open = false
   splitLines(text).forEach((raw, index) => {
-    const trimmed = raw.trimEnd()
-    const continues = trimmed.endsWith('\\')
-    const part = continues ? trimmed.slice(0, -1) : raw
+    const continues = CONTINUED.test(raw)
+    const part = continues ? raw.replace(/\\\r?$/, '') : raw
     const last = found[found.length - 1]
     if (open) found[found.length - 1] = { text: last.text + part, line: last.line, lastLine: index + 1 }
     else found.push({ text: part, line: index + 1, lastLine: index + 1 })
@@ -76,14 +79,23 @@ function sectionHeader(text: string): string {
   return text.slice(1, close > 0 ? close : text.length)
 }
 
-export function parseApacheConfig(text: string): ApacheDirective[] {
+const closerName = (text: string): string => sectionHeader(text).slice(1).trim().toLowerCase()
+
+interface ParsedConfig {
+  directives: ApacheDirective[]
+  balanced: boolean
+}
+
+function parse(text: string): ParsedConfig {
   const root: ApacheDirective = { name: '', args: [], line: 0, lastLine: 0, body: [] }
   const stack = [root]
+  let balanced = true
   for (const at of logicalLines(text)) {
     const trimmed = at.text.trim()
     const parent = stack[stack.length - 1]
     if (trimmed === '' || trimmed.startsWith('#')) continue
     if (trimmed.startsWith('</')) {
+      if (stack.length === 1 || parent.name !== closerName(trimmed)) balanced = false
       if (stack.length > 1) stack.pop()!.lastLine = at.lastLine
     } else if (trimmed.startsWith('<')) {
       const section = directive(sectionHeader(trimmed), at, [])
@@ -91,7 +103,13 @@ export function parseApacheConfig(text: string): ApacheDirective[] {
       stack.push(section)
     } else parent.body!.push(directive(trimmed, at, null))
   }
-  return root.body!
+  return { directives: root.body!, balanced: balanced && stack.length === 1 }
+}
+
+export const parseApacheConfig = (text: string): ApacheDirective[] => parse(text).directives
+
+export function assertBalanced(text: string): void {
+  if (!parse(text).balanced) throw new Error(UNBALANCED_SECTIONS)
 }
 
 export function descendants(directives: ApacheDirective[], name: string): ApacheDirective[] {

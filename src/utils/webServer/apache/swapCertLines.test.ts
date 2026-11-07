@@ -30,7 +30,7 @@ describe('swapApacheCertLines', () => {
     expect(swapped.text.split('\n').slice(0, 9)).toEqual(original.split('\n').slice(0, 9))
   })
 
-  it('keeps tabs, CRLF line ends, SSLEngine and the chain file inside an IfModule wrapper', () => {
+  it('keeps tabs, CRLF line ends and SSLEngine inside an IfModule wrapper', () => {
     const original = [
       '<IfModule mod_ssl.c>',
       '<VirtualHost *:443>',
@@ -40,7 +40,6 @@ describe('swapApacheCertLines', () => {
       '\t\tSSLCertificateFile "/etc/ssl/old shop.pem"',
       '\t</IfModule>',
       '\tSSLCertificateKeyFile /etc/ssl/old.key',
-      '\tSSLCertificateChainFile /etc/ssl/chain.pem',
       '</VirtualHost>',
       '</IfModule>',
       ''
@@ -49,7 +48,7 @@ describe('swapApacheCertLines', () => {
     expect(swapped.text).toBe(original
       .replace('\t\tSSLCertificateFile "/etc/ssl/old shop.pem"', `\t\tSSLCertificateFile ${NEW_CERT}`)
       .replace('\tSSLCertificateKeyFile /etc/ssl/old.key', `\tSSLCertificateKeyFile ${NEW_KEY}`))
-    expect(swapped.text.split('\r\n')).toHaveLength(12)
+    expect(swapped.text.split('\r\n')).toHaveLength(11)
   })
 
   it('replaces a directive split over a continuation line with one line', () => {
@@ -72,9 +71,44 @@ describe('swapApacheCertLines', () => {
       text: '<VirtualHost *:443>\n    SSLCertificateFile /etc/ssl/a.pem\n    SSLCertificateKeyFile /etc/ssl/a.key\n    sslcertificatekeyfile /etc/ssl/b.key\n</VirtualHost>\n',
       line: 1,
       error: /more than one SSLCertificateKeyFile line/
+    },
+    {
+      name: 'the site also names a chain file',
+      text: '<VirtualHost *:443>\n    SSLCertificateFile /etc/ssl/a.pem\n    SSLCertificateKeyFile /etc/ssl/a.key\n    SSLCertificateChainFile /etc/ssl/chain.pem\n</VirtualHost>\n',
+      line: 1,
+      error: /SSLCertificateChainFile/
+    },
+    {
+      name: 'an earlier VirtualHost is never closed',
+      text: '<VirtualHost *:80>\n    ServerName a.example.com\n<VirtualHost *:443>\n    SSLCertificateFile /etc/ssl/a.pem\n    SSLCertificateKeyFile /etc/ssl/a.key\n</VirtualHost>\n',
+      line: 1,
+      error: /do not open and close in order/
+    },
+    {
+      name: 'a closing tag does not match its section',
+      text: '<VirtualHost *:443>\n    <IfModule mod_ssl.c>\n    SSLCertificateFile /etc/ssl/a.pem\n    SSLCertificateKeyFile /etc/ssl/a.key\n</VirtualHost>\n    </IfModule>\n',
+      line: 1,
+      error: /do not open and close in order/
+    },
+    {
+      name: 'the certificate is inside IfDefine',
+      text: '<VirtualHost *:443>\n    <IfDefine TLS>\n        SSLCertificateFile /etc/ssl/a.pem\n    </IfDefine>\n    SSLCertificateKeyFile /etc/ssl/a.key\n</VirtualHost>\n',
+      line: 1,
+      error: /inside a conditional section/
+    },
+    {
+      name: 'the key is inside a negated IfModule',
+      text: '<VirtualHost *:443>\n    SSLCertificateFile /etc/ssl/a.pem\n    <IfModule !mod_headers.c>\n        SSLCertificateKeyFile /etc/ssl/a.key\n    </IfModule>\n</VirtualHost>\n',
+      line: 1,
+      error: /inside a conditional section/
     }
   ])('refuses when $name', ({ text, line, error }) => {
     expect(() => swapApacheCertLines(text, line, NEW_CERT, NEW_KEY)).toThrow(error)
+  })
+
+  it('does not treat a backslash followed by a space as a continuation', () => {
+    const original = '<VirtualHost *:443>\n    # note \\ \n</VirtualHost>\n<VirtualHost *:8443>\n    SSLCertificateFile /etc/ssl/a.pem\n    SSLCertificateKeyFile /etc/ssl/a.key\n</VirtualHost>\n'
+    expect(swapApacheCertLines(original, 4, NEW_CERT, NEW_KEY).text).toContain(`SSLCertificateFile ${NEW_CERT}`)
   })
 
   it.each(['/etc/ssl/a b.pem', '/etc/ssl/a.pem\nSSLEngine off', '"/etc/ssl/a.pem"', '/etc/ssl/$(id).pem'])('refuses the unsafe path %j', (path) => {
