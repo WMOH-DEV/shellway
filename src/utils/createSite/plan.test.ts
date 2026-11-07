@@ -81,7 +81,7 @@ describe('buildPlan on Apache', () => {
   it('Debian: says which template modules are already on', () => {
     const actions = plan(APACHE_DEBIAN, {}, allTools({ apacheModules: ['rewrite', 'setenvif'] }))
     expect(byId(actions, 'modules')).toMatchObject({ summary: 'proxy_fcgi to enable · rewrite, setenvif already on', chip: '1 to enable' })
-    expect(byId(actions, 'modules').script).toBe('set -e\na2enmod proxy_fcgi\na2enconf php8.3-fpm\n')
+    expect(byId(actions, 'modules').script).toBe(enableModulesScript(APACHE_DEBIAN.server, ['proxy_fcgi'], ['php8.3-fpm']))
   })
 
   it('Debian: the site uses a2ensite and the Apache certbot plugin', () => {

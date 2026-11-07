@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { CreatedDnsRecord, CreatedResources, RunRecord } from '@/types/createSite'
 import { removalSteps, type RemovalStep } from './removal'
-import { ROOT_SHELL, removeFolderScript, removeSiteScript } from './siteScripts'
+import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removeSiteScript } from './siteScripts'
 import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, baseInput, type ServerCase } from './testFixtures'
 
 const SHA = createHash('sha256').update('server {}\n').digest('hex')
 const A: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', type: 'A' }
 const CNAME: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', type: 'CNAME' }
-const ORDER: RemovalStep['kind'][] = ['deploy-site', 'certificate', 'dns-record', 'site-file', 'folder']
+const ORDER: RemovalStep['kind'][] = ['deploy-site', 'dns-record', 'site-file', 'certificate', 'folder']
 
 const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
@@ -46,17 +46,33 @@ describe('removalSteps', () => {
   it('removes everything the run created in reverse order', () => {
     expect(removalSteps(record(NGINX, everything(NGINX)), NGINX.driver)).toEqual([
       { kind: 'deploy-site', title: 'Deploy site shop', siteName: 'shop' },
-      { kind: 'certificate', title: 'Certificate shop.example.com', command: 'sudo -n certbot delete --non-interactive --cert-name shop.example.com' },
-      { kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a' },
-      { kind: 'dns-record', title: 'DNS record CNAME www.shop.example.com', zoneId: 'zone-1', recordId: 'rec-www' },
+      { kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com' },
+      { kind: 'dns-record', title: 'DNS record CNAME www.shop.example.com', zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com' },
       {
         kind: 'site-file',
         title: 'nginx site /etc/nginx/sites-available/shop.conf',
+        path: '/etc/nginx/sites-available/shop.conf',
         command: ROOT_SHELL,
         script: removeSiteScript({ driver: NGINX.driver, server: NGINX.server, siteName: 'shop', sha256: SHA })
       },
-      { kind: 'folder', title: 'Folder /var/www/shop', command: ROOT_SHELL, script: removeFolderScript('/var/www/shop') }
+      { kind: 'certificate', title: 'Certificate shop.example.com', command: ROOT_SHELL, script: removeCertificateScript('shop.example.com') },
+      { kind: 'folder', title: 'Folder /var/www/shop', path: '/var/www/shop', command: ROOT_SHELL, script: removeFolderScript('/var/www/shop') }
     ])
+  })
+
+  it('removes the HTTPS site file certbot added on Apache before the site file, and the certificate after both', () => {
+    const httpsSiteFile = { path: '/etc/apache2/sites-available/shop-le-ssl.conf', sha256: SHA }
+    const steps = removalSteps(record(APACHE_DEBIAN, { ...everything(APACHE_DEBIAN), httpsSiteFile }), APACHE_DEBIAN.driver)
+    expect(steps.map((s) => s.title)).toEqual([
+      'Deploy site shop',
+      'DNS record A shop.example.com',
+      'DNS record CNAME www.shop.example.com',
+      'Apache site /etc/apache2/sites-available/shop-le-ssl.conf',
+      'Apache site /etc/apache2/sites-available/shop.conf',
+      'Certificate shop.example.com',
+      'Folder /var/www/shop'
+    ])
+    expect(steps[3]).toMatchObject({ script: removeSiteScript({ driver: APACHE_DEBIAN.driver, server: APACHE_DEBIAN.server, siteName: 'shop-le-ssl', sha256: SHA }) })
   })
 
   it('removes nothing when the run created nothing', () => {
@@ -75,7 +91,7 @@ describe('removalSteps', () => {
 
   it('deletes each DNS record once and skips records without an id', () => {
     const steps = removalSteps(record(NGINX, { dnsRecords: [A, A, { ...CNAME, recordId: '' }] }), NGINX.driver)
-    expect(steps).toEqual([{ kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a' }])
+    expect(steps).toEqual([{ kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com' }])
   })
 
   it.each(SERVER_CASES)('$name: removes the site file it wrote', (c) => {

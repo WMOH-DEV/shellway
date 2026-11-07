@@ -2,7 +2,7 @@ import type { SiteServer } from '@/types/createSite'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../ssl/originCa/scripts'
 import { heredoc } from '../ssl/originCa/heredoc'
 import type { WebServerDriver } from '../webServer/driver'
-import { assertConf, assertFolder, assertModule, assertOwner, assertSha256, assertSiteName } from './validate'
+import { assertConf, assertFolder, assertLineage, assertModule, assertOwner, assertSha256, assertSiteName } from './validate'
 
 export const ROOT_SHELL = 'sudo -n sh -s'
 
@@ -80,22 +80,46 @@ export function createSiteScript({ driver, server, siteName, text }: SiteScriptI
   ].join('\n')
 }
 
+function enabledCheck(server: SiteServer, { file, enabledLink }: SitePaths): string | null {
+  if (enabledLink === null) return null
+  return server.kind === 'nginx' ? `[ "$(readlink ${quote(enabledLink)})" = ${quote(file)} ]` : `[ -L ${quote(enabledLink)} ]`
+}
+
 export function removeSiteScript({ driver, server, siteName, sha256 }: SiteScriptInput & { sha256: string }): string {
   assertDriverMatches({ driver, server })
   const paths = sitePaths(server, siteName)
   const file = quote(paths.file)
+  const enabled = enabledCheck(server, paths)
+  const enable = enableCommand(server, siteName, paths)
   return [
     'set -e',
     `if [ -f ${file} ] && [ "$(sha256sum ${file} | cut -d' ' -f1)" != ${quote(assertSha256(sha256))} ]; then`,
     `  echo ${quote(`${paths.file} changed after Shellway wrote it. It was left in place.`)} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
+    'keep=$(mktemp -d)',
+    'had_file=0',
+    `if [ -f ${file} ]; then cp -p ${file} "$keep/site.conf"; had_file=1; fi`,
+    'was_enabled=0',
+    ...(enabled ? [`if ${enabled}; then was_enabled=1; fi`] : []),
     ...disableLines(server, siteName, paths),
     `rm -f ${file}`,
-    driver.testCommand,
+    `if ! ${driver.testCommand}; then`,
+    `  if [ "$had_file" = 1 ]; then cp -p "$keep/site.conf" ${file}; fi`,
+    ...(enable ? [`  if [ "$was_enabled" = 1 ]; then ${enable}; fi`] : []),
+    '  rm -f "$keep/site.conf"; rmdir "$keep"',
+    `  echo ${quote(`${driver.label} rejected the configuration without this site, so ${paths.file} was put back.`)} >&2`,
+    `  exit ${EXIT_NGINX_TEST}`,
+    'fi',
+    'rm -f "$keep/site.conf"; rmdir "$keep"',
     driver.reloadCommand,
     ''
   ].join('\n')
+}
+
+function notYetEnabled(variable: string, names: string[], enabledPath: (name: string) => string): string[] {
+  if (names.length === 0) return [`${variable}=''`]
+  return [`${variable}=''`, `for n in ${names.join(' ')}; do [ -e "${enabledPath('$n')}" ] || ${variable}="$${variable} $n"; done`]
 }
 
 export function enableModulesScript(server: SiteServer, missing: string[], confs: string[]): string | null {
@@ -104,8 +128,17 @@ export function enableModulesScript(server: SiteServer, missing: string[], confs
   const confNames = confs.map(assertConf)
   return [
     'set -e',
-    ...(modules.length > 0 ? [`a2enmod ${modules.join(' ')}`] : []),
-    ...(confNames.length > 0 ? [`a2enconf ${confNames.join(' ')}`] : []),
+    ...notYetEnabled('new_mods', modules, (name) => `/etc/apache2/mods-enabled/${name}.load`),
+    ...notYetEnabled('new_confs', confNames, (name) => `/etc/apache2/conf-enabled/${name}.conf`),
+    'turn_off_new() {',
+    '  for n in $new_mods; do a2dismod -f "$n" || true; done',
+    '  for n in $new_confs; do a2disconf "$n" || true; done',
+    '}',
+    'if ! { [ -z "$new_mods" ] || a2enmod $new_mods; } || ! { [ -z "$new_confs" ] || a2enconf $new_confs; } || ! apache2ctl configtest; then',
+    '  turn_off_new',
+    "  echo 'Apache could not turn these on or rejected the configuration with them, so the ones just turned on were turned off again.' >&2",
+    `  exit ${EXIT_NGINX_TEST}`,
+    'fi',
     ''
   ].join('\n')
 }
@@ -159,6 +192,37 @@ export function removeFolderScript(folder: string): string {
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `if [ -L ${site} ] && [ "$(readlink ${site})" = ${current} ]; then rm -f ${site}; fi`,
+    ''
+  ].join('\n')
+}
+
+export const WEB_SERVER_CONFIG_DIRS = ['/etc/nginx', '/etc/apache2', '/etc/httpd']
+
+export function removeCertificateScript(lineage: string): string {
+  const name = assertLineage(lineage)
+  const live = quote(`/etc/letsencrypt/live/${name}/`)
+  return [
+    'set -e',
+    `if [ ! -e ${quote(`/etc/letsencrypt/renewal/${name}.conf`)} ] && [ ! -e ${quote(`/etc/letsencrypt/live/${name}`)} ]; then`,
+    `  echo ${quote(`The certificate ${name} is already gone.`)}`,
+    '  exit 0',
+    'fi',
+    `used=$(grep -RlsF ${live} ${WEB_SERVER_CONFIG_DIRS.join(' ')} || true)`,
+    'loaded=""',
+    `if command -v nginx >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -qF ${live}; then loaded="nginx -T"; fi`,
+    'for ctl in apache2ctl apachectl; do',
+    '  command -v "$ctl" >/dev/null 2>&1 || continue',
+    `  for f in $("$ctl" -t -D DUMP_INCLUDES 2>/dev/null | awk 'substr($NF, 1, 1) == "/" {print $NF}'); do`,
+    `    if grep -qsF ${live} "$f"; then loaded="$loaded $f"; fi`,
+    '  done',
+    '  break',
+    'done',
+    'if [ -n "$used$loaded" ]; then',
+    `  echo ${quote(`The certificate ${name} is still used, so it was kept:`)} >&2`,
+    '  echo "$used $loaded" >&2',
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
+    `certbot delete --non-interactive --cert-name ${quote(name)}`,
     ''
   ].join('\n')
 }

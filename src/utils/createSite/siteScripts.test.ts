@@ -10,6 +10,7 @@ import {
   FOLDER_CREATED,
   createSiteScript,
   enableModulesScript,
+  removeCertificateScript,
   folderScript,
   removeFolderScript,
   removeSiteScript,
@@ -202,19 +203,11 @@ describe('createSiteScript', () => {
 })
 
 describe('removeSiteScript', () => {
-  it('nginx: refuses a changed file, then unlinks, removes, tests and reloads', () => {
-    expect(remove(NGINX, sha256(TEXT)).split('\n')).toEqual([
-      'set -e',
-      `if [ -f '/etc/nginx/sites-available/shop.conf' ] && [ "$(sha256sum '/etc/nginx/sites-available/shop.conf' | cut -d' ' -f1)" != '${sha256(TEXT)}' ]; then`,
-      "  echo '/etc/nginx/sites-available/shop.conf changed after Shellway wrote it. It was left in place.' >&2",
-      '  exit 3',
-      'fi',
-      `if [ "$(readlink '/etc/nginx/sites-enabled/shop.conf')" = '/etc/nginx/sites-available/shop.conf' ]; then rm -f '/etc/nginx/sites-enabled/shop.conf'; fi`,
-      "rm -f '/etc/nginx/sites-available/shop.conf'",
-      'site_test',
-      'site_reload',
-      ''
-    ])
+  it('nginx: refuses a changed file, keeps a copy, then unlinks, removes, tests and reloads', () => {
+    const script = remove(NGINX, sha256(TEXT))
+    syntaxOk(script)
+    expect(script).toContain(`!= '${sha256(TEXT)}' ]; then`)
+    expect(script).not.toMatch(/rm -rf/)
   })
 
   it.each(['', 'abc', 'A'.repeat(64), `${'a'.repeat(64)}'; rm -rf /`])('refuses the checksum %j', (sha) => {
@@ -235,6 +228,25 @@ describe('removeSiteScript', () => {
       expect(existsSync(box.file)).toBe(false)
       if (box.link) expect(linkExists(box.link)).toBe(false)
       expect(result.reloads).toBe(1)
+    })
+
+    it('puts the file and its link back when the server rejects the configuration without it', () => {
+      const box = sandbox(c, 1)
+      install(box, TEXT)
+      const result = box.run(remove(c, sha256(TEXT)))
+      expect(result.status).toBe(4)
+      expect(result.stderr).toContain('was put back')
+      expect(readFileSync(box.file, 'utf8')).toBe(TEXT)
+      if (box.link) expect(linkExists(box.link)).toBe(true)
+      expect(result.reloads).toBe(0)
+    })
+
+    it('does not re-enable a site that was not enabled', () => {
+      const box = sandbox(c, 1)
+      writeFileSync(box.file, TEXT)
+      expect(box.run(remove(c, sha256(TEXT))).status).toBe(4)
+      expect(readFileSync(box.file, 'utf8')).toBe(TEXT)
+      if (box.link) expect(linkExists(box.link)).toBe(false)
     })
 
     it('leaves a file that changed since the run wrote it', () => {
@@ -258,15 +270,51 @@ describe('removeSiteScript', () => {
 })
 
 describe('enableModulesScript', () => {
-  it('enables only the given modules and confs on Debian', () => {
-    expect(enableModulesScript(APACHE_DEBIAN.server, ['rewrite', 'proxy_fcgi', 'setenvif'], ['php8.3-fpm'])).toBe(
-      'set -e\na2enmod rewrite proxy_fcgi setenvif\na2enconf php8.3-fpm\n'
-    )
-    expect(enableModulesScript(APACHE_DEBIAN.server, ['proxy_http'], [])).toBe('set -e\na2enmod proxy_http\n')
-  })
+  describe('on Debian', () => {
+    const modulesBox = (configOk: boolean) => {
+      const root = mkdtempSync(join(tmpdir(), 'mods-'))
+      mkdirSync(join(root, 'mods-enabled'))
+      mkdirSync(join(root, 'conf-enabled'))
+      writeFileSync(join(root, 'mods-enabled', 'setenvif.load'), '')
+      const log = join(root, 'log')
+      const fakes = [
+        `a2enmod() { for m in "$@"; do echo "enmod $m" >> ${log}; touch ${root}/mods-enabled/$m.load; done; }`,
+        `a2enconf() { for c in "$@"; do echo "enconf $c" >> ${log}; touch ${root}/conf-enabled/$c.conf; done; }`,
+        `a2dismod() { shift; for m in "$@"; do echo "dismod $m" >> ${log}; done; }`,
+        `a2disconf() { for c in "$@"; do echo "disconf $c" >> ${log}; done; }`,
+        `apache2ctl() { return ${configOk ? 0 : 1}; }`
+      ].join('\n')
+      return (script: string) => {
+        const result = spawnSync('sh', ['-s'], { input: `${fakes}\n${script.replaceAll('/etc/apache2', root)}`, encoding: 'utf8' })
+        return { status: result.status, stderr: result.stderr, log: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] }
+      }
+    }
 
-  it('never disables anything', () => {
-    expect(enableModulesScript(APACHE_DEBIAN.server, ['rewrite'], ['php8.3-fpm'])).not.toMatch(/a2dis/)
+    it('enables only what is not enabled yet', () => {
+      const result = modulesBox(true)(enableModulesScript(APACHE_DEBIAN.server, ['rewrite', 'setenvif'], ['php8.3-fpm'])!)
+      expect(result.status).toBe(0)
+      expect(result.log).toEqual(['enmod rewrite', 'enconf php8.3-fpm'])
+    })
+
+    it('turns off only what it just turned on when the config test fails', () => {
+      const result = modulesBox(false)(enableModulesScript(APACHE_DEBIAN.server, ['rewrite', 'setenvif'], ['php8.3-fpm'])!)
+      expect(result.status).toBe(4)
+      expect(result.stderr).toContain('turned off again')
+      expect(result.log).toEqual(['enmod rewrite', 'enconf php8.3-fpm', 'dismod rewrite', 'disconf php8.3-fpm'])
+    })
+
+    it('turns the new modules off again when a conf cannot be enabled', () => {
+      const run = modulesBox(true)
+      const script = enableModulesScript(APACHE_DEBIAN.server, ['rewrite'], ['php8.3-fpm'])!
+      const result = run(`a2enconf() { return 1; }\n${script}`)
+      expect(result.status).toBe(4)
+      expect(result.log).toEqual(['enmod rewrite', 'dismod rewrite', 'disconf php8.3-fpm'])
+    })
+
+    it('is valid sh with no modules or no confs', () => {
+      syntaxOk(enableModulesScript(APACHE_DEBIAN.server, ['proxy_http'], [])!)
+      syntaxOk(enableModulesScript(APACHE_DEBIAN.server, [], ['php8.3-fpm'])!)
+    })
   })
 
   it('returns nothing for RHEL and nginx', () => {
@@ -379,5 +427,71 @@ describe('removeFolderScript', () => {
     symlinkSync(join(root, 'elsewhere'), folder)
     expect(runAsIs(removeFolderScript(folder)).status).toBe(0)
     expect(readlinkSync(folder)).toBe(join(root, 'elsewhere'))
+  })
+})
+
+describe('removeCertificateScript', () => {
+  const LIVE = '/etc/letsencrypt/live/shop.example.com/fullchain.pem'
+  const box = ({ apacheIncludes = [] as string[], present = true } = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'cert-'))
+    mkdirSync(join(root, 'nginx', 'sites-available'), { recursive: true })
+    mkdirSync(join(root, 'letsencrypt', 'renewal'), { recursive: true })
+    if (present) writeFileSync(join(root, 'letsencrypt', 'renewal', 'shop.example.com.conf'), '')
+    writeFileSync(join(root, 'nginx-T'), '')
+    const log = join(root, 'log')
+    const fakes = [
+      `certbot() { echo "certbot $*" >> ${log}; }`,
+      `nginx() { [ "$1" = -T ] && cat ${root}/nginx-T; }`,
+      `apache2ctl() { echo 'Included configuration files:'; ${apacheIncludes.map((f) => `echo '  (*) ${f}';`).join(' ')} }`
+    ].join('\n')
+    const run = (script: string) => {
+      const result = spawnSync('sh', ['-s'], { input: `${fakes}\n${script.replaceAll('/etc/', `${root}/`)}`, encoding: 'utf8' })
+      return { status: result.status, stdout: result.stdout, stderr: result.stderr, log: existsSync(log) ? readFileSync(log, 'utf8').trim() : '' }
+    }
+    return { root, run, uses: `ssl_certificate ${root}/${LIVE.slice('/etc/'.length)};\n` }
+  }
+
+  it('deletes the certificate when nothing uses it', () => {
+    const { root, run } = box()
+    writeFileSync(join(root, 'nginx', 'sites-available', 'other.conf'), `ssl_certificate ${root}/letsencrypt/live/shop.example.com.bak/fullchain.pem;\n`)
+    const result = run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(0)
+    expect(result.log).toBe('certbot delete --non-interactive --cert-name shop.example.com')
+  })
+
+  it('keeps the certificate and names the file in the web server folders that still uses it', () => {
+    const { root, run, uses } = box()
+    const other = join(root, 'nginx', 'sites-available', 'other.conf')
+    writeFileSync(other, uses)
+    const result = run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(3)
+    expect(result.stderr).toContain(other)
+    expect(result.log).toBe('')
+  })
+
+  it('keeps the certificate when the loaded nginx config uses it from outside /etc/nginx', () => {
+    const { root, run, uses } = box()
+    writeFileSync(join(root, 'nginx-T'), `# configuration file /srv/app/nginx.conf:\n${uses}`)
+    const result = run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(3)
+    expect(result.stderr).toContain('nginx -T')
+    expect(result.log).toBe('')
+  })
+
+  it('keeps the certificate when an Apache include outside its folders uses it', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'outside-'))
+    const file = join(outside, 'site.conf')
+    const { run, uses } = box({ apacheIncludes: [file] })
+    writeFileSync(file, uses)
+    const result = run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(3)
+    expect(result.stderr).toContain(file)
+  })
+
+  it('treats a certificate that is already gone as removed', () => {
+    const result = box({ present: false }).run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('already gone')
+    expect(result.log).toBe('')
   })
 })
