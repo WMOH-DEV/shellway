@@ -192,6 +192,12 @@ describe('runIssue', () => {
     expect(commands).toEqual([])
   })
 
+  it('refuses when only part of the nginx configuration could be read', async () => {
+    const partial = { ...config(), facts: { ...config().facts, nginxParse: 'partial' } } as ServerConfig
+    await expect(issue(() => undefined, partial)).rejects.toThrow('could not read the whole nginx configuration')
+    expect(commands).toEqual([])
+  })
+
   it('quotes a file name that contains a quote', async () => {
     const odd = { ...block, file: "/etc/nginx/conf.d/it's.conf" }
     await issue(() => undefined, config(true, [odd]))

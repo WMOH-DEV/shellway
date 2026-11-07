@@ -1,6 +1,7 @@
 import { posix } from 'path'
 import type { IssueRequest, IssueResult, IssueStage, ServerBlock } from '../../../../src/types/ssl'
 import { issueCommand, issueRequestError, lineageFor, stagingCommand } from '../../../../src/utils/ssl/https/issueCommands'
+import { CHANGE_NEEDS_FULL_READ, isFullyRead } from '../../../../src/utils/ssl/originCa/nginxRead'
 import { renewalHint } from '../../../../src/utils/ssl/renewalHint'
 import { shellEscape } from '../../../utils/shellEscape'
 import type { ExecOptions } from '../../../utils/sshExec'
@@ -24,6 +25,7 @@ export interface IssueHooks {
 
 function blockFor(request: IssueRequest, config: ServerConfig, driver: WebServerDriver): ServerBlock {
   if (!config.facts.sudo.full) throw new Error(NEEDS_SUDO)
+  if (!isFullyRead(config.facts)) throw new Error(CHANGE_NEEDS_FULL_READ)
   const block = config.blocks.find((b) => b.id === request.blockId)
   if (!block) throw new Error(`This site is no longer in the ${driver.label} configuration. Check again.`)
   const allowed = new Set(block.names.map((name) => name.toLowerCase()))
