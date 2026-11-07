@@ -91,6 +91,12 @@ describe('Create site run screen', () => {
     expect(screen.queryByText('output from another run')).not.toBeInTheDocument()
   })
 
+  it('does not call the site live when a step was marked as done by hand', () => {
+    setup(makeRun({ phase: 'done', error: null, current: null, steps: [runStep('folder', 'done', 1, 2), runStep('first-deploy', 'skipped', 3, 4)] }))
+    expect(screen.getByText('shop.example.com is set up. 1 step was marked as done by hand, so check it before relying on the site.')).toBeInTheDocument()
+    expect(screen.queryByText(/is live/)).toBeNull()
+  })
+
   it('follows updates for this run and offers Open site when done', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const { emitUpdate, user } = setup(makeRun({ phase: 'running', error: null }))
