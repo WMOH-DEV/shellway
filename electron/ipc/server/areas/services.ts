@@ -106,8 +106,9 @@ export function createLogStreams(ctx: ServerIpcContext) {
       if (typeof tabId !== 'string' || !tabId) return fail('Invalid tab')
       const exec = typeof connectionId === 'string' ? ctx.execFor(connectionId) : null
       if (!exec) return fail('Not connected')
+      const others = followers.size - (followers.has(tabId) ? 1 : 0)
+      if (others >= MAX_FOLLOWERS) return fail('Too many live logs are open. Stop one first.')
       stopTab(tabId, { reason: 'stopped', message: 'Stopped.' })
-      if (followers.size >= MAX_FOLLOWERS) return fail('Too many live logs are open. Stop one first.')
       return ok({ followId: start(exec, tabId, source) })
     } catch (error) {
       return fail(error)

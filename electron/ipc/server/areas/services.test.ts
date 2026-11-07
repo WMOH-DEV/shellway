@@ -97,6 +97,15 @@ describe('createLogStreams.follow', () => {
     expect(pending[1].stdin.readableEnded).toBe(false)
   })
 
+  it('lets a tab switch its live log when the limit is reached, but refuses a new tab', () => {
+    const { exec } = streamingExec()
+    const { ctx } = context(exec)
+    const streams = createLogStreams(ctx)
+    for (let i = 0; i < 8; i++) expect(streams.follow('c1', `tab-${i}`, NGINX).success).toBe(true)
+    expect(streams.follow('c1', 'tab-0', { kind: 'system', id: 'syslog' }).success).toBe(true)
+    expect(streams.follow('c1', 'tab-new', NGINX).success).toBe(false)
+  })
+
   it('reports a missing log and a dropped connection', async () => {
     const { exec, pending } = streamingExec()
     const { ctx, broadcast } = context(exec)
