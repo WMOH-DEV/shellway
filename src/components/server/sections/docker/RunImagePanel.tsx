@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { Toggle } from '@/components/ui/Toggle'
 import { CodeBox, Label, Notice } from '@/components/server/kit'
 import { envFilePath, RESTART_POLICIES, type RestartPolicy, type RunParams } from '@/utils/server/docker/actions/run'
@@ -163,7 +163,7 @@ export function RunImagePanel({ connectionId, onClose, onRun }: { connectionId: 
           <Input aria-label="Container name" value={form.name} placeholder="acme-api" onChange={(event) => update({ name: event.target.value })} className="font-mono" />
         </Field>
         <Field label="Restart">
-          <Select aria-label="Restart policy" value={form.restart} onChange={(event) => update({ restart: event.target.value as RestartPolicy })} options={RESTART_POLICIES.map((value) => ({ value, label: RESTART_LABELS[value] }))} />
+          <SearchSelect aria-label="Restart policy" value={form.restart} onChange={(restart) => update({ restart: restart as RestartPolicy })} options={RESTART_POLICIES.map((value) => ({ value, label: RESTART_LABELS[value] }))} />
         </Field>
       </div>
       <PortsField rows={form.ports} onChange={(ports) => update({ ports })} />

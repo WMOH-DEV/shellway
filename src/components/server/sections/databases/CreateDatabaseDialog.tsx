@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { CreateDatabaseParams } from '@/utils/server/databases/actions/create'
 import { DIALECT } from '@/utils/server/databases/dialect'
 import { DB_HOST, DB_NAME, DB_USER, MASK } from '@/utils/server/databases/identifiers'
@@ -55,7 +55,7 @@ export function CreateDatabaseDialog({ data, sites, password, onClose, onSubmit 
       <div className="flex flex-col gap-4">
         {readableSites.length > 0 && (
           <Field label="For site" hint="Fills the names and writes the connection into this site's env file.">
-            <Select value={site} onChange={(event) => pickSite(event.target.value)} options={[{ value: '', label: 'No site' }, ...readableSites.map((candidate) => ({ value: candidate.site, label: candidate.site }))]} />
+            <SearchSelect value={site} onChange={pickSite} options={[{ value: '', label: 'No site' }, ...readableSites.map((candidate) => ({ value: candidate.site, label: candidate.site }))]} />
           </Field>
         )}
         <div className="grid grid-cols-2 gap-3">

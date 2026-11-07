@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { ProbeResult } from '@/types/server/core'
 import { groupUfwRules, type UfwAction, type UfwFacts, type UfwPolicy, type UfwRuleGroup } from '@/utils/server/security/ufw'
 import { Chip, Notice, ProbeState, SectionCard, type KitTone } from '../../kit'
@@ -94,7 +94,7 @@ function Header({ ufw, actions, onAdd }: { ufw: UfwFacts | null; actions: Securi
     <div className="flex items-center gap-2">
       <Chip dense dot tone={ufw.active ? 'success' : 'warning'}>{ufw.active ? 'ufw active' : 'ufw off'}</Chip>
       {ufw.root && incoming && POLICIES.some((policy) => policy.value === incoming) && (
-        <Select aria-label="Default policy for incoming traffic" className="h-7 text-xs" options={POLICIES} value={incoming} disabled={!actions.canGuard} onChange={(event) => setPolicy(event.target.value)} />
+        <SearchSelect aria-label="Default policy for incoming traffic" className="h-7 text-xs" options={POLICIES} value={incoming} disabled={!actions.canGuard} onChange={setPolicy} />
       )}
       {ufw.root && <Button size="sm" disabled={!actions.canGuard} onClick={onAdd}>Add rule</Button>}
     </div>

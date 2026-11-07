@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { Toggle } from '@/components/ui/Toggle'
 import { cn } from '@/utils/cn'
 import { workerSaveAction, type WorkerSaveParams } from '@/utils/server/jobs/workerActions'
@@ -84,10 +85,12 @@ export function WorkerDrawer({ draft, users, sites, onSave, onClose }: WorkerDra
       <Segmented ariaLabel="Worker type" options={PRESETS} value={preset} onChange={choosePreset} />
       {sites.length > 0 && (
         <Field label="Site">
-          <select className={FIELD_INPUT} value={sites.some((site) => site.workDir === values.directory) ? values.directory : ''} onChange={(event) => chooseSite(event.target.value)}>
-            <option value="">Choose a site…</option>
-            {sites.map((site) => <option key={site.workDir} value={site.workDir}>{site.name}</option>)}
-          </select>
+          <SearchSelect
+            className={FIELD_INPUT}
+            value={sites.some((site) => site.workDir === values.directory) ? values.directory : ''}
+            onChange={chooseSite}
+            options={[{ value: '', label: 'Choose a site…' }, ...sites.map((site) => ({ value: site.workDir, label: site.name }))]}
+          />
         </Field>
       )}
       <Field label="Name" hint={`Saved as /etc/supervisor/conf.d/shellway-${values.name || '<name>'}.conf`}>
@@ -101,9 +104,7 @@ export function WorkerDrawer({ draft, users, sites, onSave, onClose }: WorkerDra
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Run as">
-          <select className={FIELD_INPUT} value={values.user} onChange={(event) => set('user', event.target.value)}>
-            {users.map((user) => <option key={user} value={user}>{user}</option>)}
-          </select>
+          <SearchSelect className={FIELD_INPUT} value={values.user} onChange={(user) => set('user', user)} options={users.map((user) => ({ value: user, label: user }))} />
         </Field>
         <Field label="Processes">
           <input type="number" min={1} max={32} className={FIELD_INPUT} value={values.numprocs} onChange={(event) => set('numprocs', Number(event.target.value))} />

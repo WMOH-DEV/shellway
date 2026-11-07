@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { extensionView, type ExtensionView } from '@/utils/server/software/phpView'
 import type { PhpSite, PhpVersionFacts } from '@/utils/server/software/types'
 import { SectionCard } from '../../kit'
@@ -44,10 +45,16 @@ function AddExtension({ available, onAdd }: { available: string[]; onAdd(name: s
   if (available.length === 0) return null
   return (
     <div className="flex items-center gap-2">
-      <select value={choice} onChange={(event) => setChoice(event.target.value)} aria-label="Extension to add" className="h-7 rounded-[7px] border border-nd-border bg-nd-bg-sunken px-2 font-mono text-xs text-nd-text-primary">
-        <option value="">Choose…</option>
-        {available.map((name) => <option key={name} value={name}>{name}</option>)}
-      </select>
+      <SearchSelect
+        value={choice}
+        onChange={setChoice}
+        options={available.map((name) => ({ value: name, label: name }))}
+        aria-label="Extension to add"
+        placeholder="Choose an extension"
+        searchPlaceholder="Search extensions"
+        mono
+        className="h-7 w-48 rounded-[7px] border-nd-border px-2 text-xs"
+      />
       <Button size="sm" disabled={!choice} onClick={() => onAdd(choice)}>Add extension</Button>
     </div>
   )

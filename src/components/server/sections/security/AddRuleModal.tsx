@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { validateGuardRequest, type GuardRequest, type UfwRuleInput } from '@/utils/server/security/guard'
 import { FormModal, errorText } from './FormModal'
 
@@ -39,9 +39,9 @@ export function AddRuleModal({ open, onClose, onSubmit }: { open: boolean; onClo
     <FormModal open={open} title="Add firewall rule" submitLabel="Review" error={error} onClose={onClose} onSubmit={submit}>
       <div className="grid grid-cols-2 gap-3">
         <Input label="Port" placeholder="443 or 8000:8100" className="font-mono" value={rule.port} onChange={(event) => set('port', event.target.value)} autoFocus />
-        <Select label="Protocol" options={PROTOCOLS} value={rule.proto} onChange={(event) => set('proto', event.target.value as UfwRuleInput['proto'])} />
+        <SearchSelect label="Protocol" options={PROTOCOLS} value={rule.proto} onChange={(proto) => set('proto', proto as UfwRuleInput['proto'])} />
         <Input label="From" placeholder="any, 203.0.113.10 or 10.0.0.0/8" className="font-mono" value={rule.from} onChange={(event) => set('from', event.target.value)} />
-        <Select label="Action" options={ACTIONS} value={rule.action} onChange={(event) => set('action', event.target.value as UfwRuleInput['action'])} />
+        <SearchSelect label="Action" options={ACTIONS} value={rule.action} onChange={(action) => set('action', action as UfwRuleInput['action'])} />
       </div>
       <Input label="Note (optional)" placeholder="What this port is for" value={rule.comment} onChange={(event) => set('comment', event.target.value)} />
     </FormModal>

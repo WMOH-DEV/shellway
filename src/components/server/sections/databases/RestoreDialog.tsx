@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { formatFileSize } from '@/utils/fileSize'
 import type { RestoreMode } from '@/utils/server/databases/actions/restore'
 import { userDatabases } from '@/utils/server/databases/facts'
@@ -57,7 +57,7 @@ export function RestoreDialog({ data, files, initialFile, onClose, onSubmit }: P
     <Modal open onClose={onClose} title="Restore a backup" maxWidth="max-w-xl">
       <div className="flex flex-col gap-4">
         <Field label="Backup">
-          <Select value={path} onChange={(event) => pickFile(event.target.value)} options={files.map((candidate) => ({ value: candidate.path, label: backupLabel(candidate) }))} />
+          <SearchSelect value={path} onChange={pickFile} options={files.map((candidate) => ({ value: candidate.path, label: backupLabel(candidate) }))} />
         </Field>
         <Segmented<RestoreMode> ariaLabel="Restore into" options={MODES} value={mode} onChange={setMode} />
         {mode === 'new' ? (
@@ -67,7 +67,7 @@ export function RestoreDialog({ data, files, initialFile, onClose, onSubmit }: P
         ) : (
           <>
             <Field label="Database to replace">
-              <Select value={replaced} onChange={(event) => { setReplaced(event.target.value); setTyped('') }} options={existing.map((name) => ({ value: name, label: name }))} />
+              <SearchSelect value={replaced} onChange={(name) => { setReplaced(name); setTyped('') }} options={existing.map((name) => ({ value: name, label: name }))} />
             </Field>
             <Notice tone="warning" title={`Everything in ${replaced || 'this database'} is replaced`}>Shellway saves a backup of its current data first.</Notice>
             <Field label={`Type ${replaced} to confirm`}>

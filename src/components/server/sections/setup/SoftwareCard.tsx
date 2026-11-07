@@ -1,4 +1,4 @@
-import { Select } from '@/components/ui/Select'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { ROWS, type Choice } from '@/utils/server/setup/catalog'
 import type { RowChoice, RowChoices, RowId } from '@/utils/server/setup/types'
 import { cn } from '@/utils/cn'
@@ -14,7 +14,7 @@ interface SoftwareCardProps {
 
 function VersionField({ title, row, choices, onPick }: { title: string; row: RowChoice; choices: Choice[]; onPick(value: string): void }) {
   if (choices.length > 1) {
-    return <Select aria-label={`${title} version`} value={row.value} options={choices} disabled={!row.on} onChange={(event) => onPick(event.target.value)} className="font-mono text-[12.5px]" />
+    return <SearchSelect aria-label={`${title} version`} value={row.value} options={choices} disabled={!row.on} onChange={onPick} className="font-mono text-[12.5px]" />
   }
   return (
     <span className={cn('flex h-8 items-center rounded-md border border-nd-border bg-nd-bg-sunken px-3 font-mono text-[12.5px] text-nd-text-secondary', !row.on && 'opacity-45')}>

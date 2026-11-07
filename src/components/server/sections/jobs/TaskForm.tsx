@@ -1,5 +1,6 @@
 import { forwardRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 import { Toggle } from '@/components/ui/Toggle'
 import { cn } from '@/utils/cn'
 import { describeCron, formatRun, nextRuns, parseCron, presetExpression, presetOf, WEEKDAY_LABELS, type PresetTime, type SchedulePreset } from '@/utils/server/jobs/cron'
@@ -50,19 +51,18 @@ function validationError(params: CronSaveParams): string | null {
   }
 }
 
+const WEEKDAY_OPTIONS = WEEKDAY_LABELS.map((label, index) => ({ value: String(index), label }))
+const MONTH_DAY_OPTIONS = Array.from({ length: 28 }, (_, index) => ({ value: String(index + 1), label: `Day ${index + 1}` }))
+
 function PresetInputs({ preset, time, onChange }: { preset: SchedulePreset; time: PresetTime; onChange(time: PresetTime): void }) {
   if (preset !== 'daily' && preset !== 'weekly' && preset !== 'monthly') return null
   return (
     <div className="flex items-center gap-2">
       {preset === 'weekly' && (
-        <select aria-label="Day of the week" className={cn(FIELD_INPUT, 'w-36')} value={time.weekday} onChange={(event) => onChange({ ...time, weekday: Number(event.target.value) })}>
-          {WEEKDAY_LABELS.map((label, index) => <option key={label} value={index}>{label}</option>)}
-        </select>
+        <SearchSelect aria-label="Day of the week" className={cn(FIELD_INPUT, 'w-36')} value={String(time.weekday)} onChange={(weekday) => onChange({ ...time, weekday: Number(weekday) })} options={WEEKDAY_OPTIONS} />
       )}
       {preset === 'monthly' && (
-        <select aria-label="Day of the month" className={cn(FIELD_INPUT, 'w-24')} value={time.day} onChange={(event) => onChange({ ...time, day: Number(event.target.value) })}>
-          {Array.from({ length: 28 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>Day {day}</option>)}
-        </select>
+        <SearchSelect aria-label="Day of the month" className={cn(FIELD_INPUT, 'w-24')} value={String(time.day)} onChange={(day) => onChange({ ...time, day: Number(day) })} options={MONTH_DAY_OPTIONS} />
       )}
       <span className="text-nd-text-muted">at</span>
       <input aria-label="Time" className={cn(FIELD_INPUT, 'w-[90px] font-mono')} value={time.time} onChange={(event) => onChange({ ...time, time: event.target.value })} />
@@ -119,10 +119,14 @@ export const TaskForm = forwardRef<HTMLInputElement, TaskFormProps>(function Tas
         <input ref={commandRef} className={cn(FIELD_INPUT, 'font-mono text-xs')} value={command} onChange={(event) => setCommand(event.target.value)} placeholder="cd /var/www/app/current && php artisan reports:daily" />
       </Field>
       {sites.length > 0 && (
-        <select aria-label="Use a template" className={cn(FIELD_INPUT, 'text-nd-text-muted')} value="" onChange={(event) => applyScheduler(event.target.value)}>
-          <option value="">Use a template…</option>
-          {sites.map((site) => <option key={site.workDir} value={site.workDir}>Laravel scheduler · {site.name}</option>)}
-        </select>
+        <SearchSelect
+          aria-label="Use a template"
+          className={FIELD_INPUT}
+          value=""
+          placeholder="Use a template…"
+          onChange={applyScheduler}
+          options={sites.map((site) => ({ value: site.workDir, label: `Laravel scheduler · ${site.name}` }))}
+        />
       )}
       <div className="flex flex-col gap-1.5">
         <Field label="When">
@@ -136,9 +140,7 @@ export const TaskForm = forwardRef<HTMLInputElement, TaskFormProps>(function Tas
         </div>
       </div>
       <Field label="Run as">
-        <select className={FIELD_INPUT} value={user} onChange={(event) => setUser(event.target.value)}>
-          {users.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
+        <SearchSelect className={FIELD_INPUT} value={user} onChange={setUser} options={users.map((name) => ({ value: name, label: name }))} />
       </Field>
       <div className="flex flex-col gap-1">
         <Toggle checked={logOutput} onChange={setLogOutput} label="Keep the output in a log" />
