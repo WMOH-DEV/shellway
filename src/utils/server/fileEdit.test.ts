@@ -132,6 +132,27 @@ describe('fileEditScript', () => {
   })
 })
 
+describe('fileEditScript stop handling', () => {
+  const script = (overrides: Partial<FileEditSpec> = {}) => fileEditScript(spec(overrides), backups)
+
+  it('traps termination right after the new file goes live, and stays valid shell', () => {
+    const text = script({ test: 'true', reload: 'true', verify: 'true' })
+    const lines = text.split('\n')
+    const trapAt = lines.findIndex((line) => line.startsWith('trap '))
+    expect(trapAt).toBeGreaterThan(lines.findIndex((line) => line.startsWith('recover() {')))
+    expect(lines[trapAt - 1]).toMatch(/^mv -f "\$tmp" "\$path" \|\|/)
+    expect(lines[trapAt]).toBe(`trap 'recover "Stopped before finishing."' TERM HUP INT`)
+    expect(spawnSync('/bin/sh', ['-n'], { input: text }).status).toBe(0)
+  })
+
+  it('puts the original file back when terminated after the write', () => {
+    const result = run(script({ verify: 'kill -TERM $$' }))
+    expect(result.code).toBe(EXIT_EDIT_RESTORED)
+    expect(readFileSync(file, 'utf8')).toBe('old\n')
+    expect(result.output).toContain('Stopped before finishing. The original file is back in place.')
+  })
+})
+
 describe('fileEditRollback', () => {
   it('restores the backup and reloads', () => {
     expect(edit().code).toBe(0)
