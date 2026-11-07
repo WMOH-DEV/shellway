@@ -24,19 +24,24 @@ section() { printf '${SECTION_MARK} %s\\n' "$1"; }
 can() { if [ -n "$1" ] && sudo -n -l "$1" >/dev/null 2>&1 </dev/null; then echo 1; else echo 0; fi; }
 certbot_path=$(command -v certbot)
 nginx_path=$(command -v nginx)
+apache_path=$(command -v apache2ctl || command -v apachectl)
 section USER; id -un </dev/null
 section ADDRESSES; hostname -I 2>/dev/null </dev/null
 section SSH; echo "server=$(set -- $SSH_CONNECTION; echo "$3")"
 section NGINX_V; nginx -v 2>&1 </dev/null
 section OPENSSL_V; openssl version 2>&1 </dev/null
 section CERTBOT_V; certbot --version 2>&1 </dev/null
-section PATHS; echo "certbot=$certbot_path"; echo "nginx=$nginx_path"
+section PATHS; echo "certbot=$certbot_path"; echo "nginx=$nginx_path"; echo "apache=$apache_path"
 section SUDO
 echo "certbot=$(can "$certbot_path")"
 echo "nginx=$(can "$nginx_path")"
+echo "apache=$(can "$apache_path")"
 if sudo -n true >/dev/null 2>&1 </dev/null; then echo full=1; else echo full=0; fi
 section ACTIVE
-for unit in apache2 httpd caddy; do echo "$unit=$(systemctl is-active $unit 2>/dev/null </dev/null)"; done
+for unit in nginx apache2 httpd caddy; do echo "$unit=$(systemctl is-active $unit 2>/dev/null </dev/null)"; done
+section APACHE_V; if [ -n "$apache_path" ]; then "$apache_path" -v 2>&1 </dev/null; fi
+section APACHE_LAYOUT; if [ -f /etc/apache2/apache2.conf ]; then echo debian; elif [ -f /etc/httpd/conf/httpd.conf ]; then echo rhel; fi
+section LISTEN; { sudo -n ss -ltnp 2>/dev/null || ss -ltnp 2>/dev/null; } </dev/null
 section RENEWAL
 timer=""
 timers=$(systemctl list-timers --all --no-pager 2>/dev/null </dev/null)

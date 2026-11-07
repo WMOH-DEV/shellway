@@ -131,7 +131,7 @@ describe('runPrepare', () => {
 
   it('refuses before touching the server when nginx was not fully read', async () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
-      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
       const { rec, done } = prepare(normal, readyReport({ facts }))
       await expect(done).rejects.toThrow('could not read the whole nginx configuration')
       expect(rec.calls).toEqual([])

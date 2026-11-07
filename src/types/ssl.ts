@@ -48,15 +48,26 @@ export interface RenewalInfo {
 
 export type NginxParse = 'full' | 'partial' | 'unavailable'
 
+export type ApacheLayout = 'debian' | 'rhel'
+
+export interface ApacheFacts {
+  version: string | null
+  layout: ApacheLayout | null
+}
+
+export type ServingWebServer = 'nginx' | 'apache' | 'caddy'
+
 export interface ServerFacts {
   nginx: string | null
+  apache: ApacheFacts | null
+  serving: ServingWebServer | null
   openssl: string | null
   certbot: string | null
   otherWebServer: 'apache' | 'caddy' | null
   nginxParse: NginxParse
   renewal: RenewalInfo
-  sudo: { certbot: boolean; nginx: boolean; full: boolean }
-  paths: { certbot: string | null; nginx: string | null }
+  sudo: { certbot: boolean; nginx: boolean; apache: boolean; full: boolean }
+  paths: { certbot: string | null; nginx: string | null; apache: string | null }
   user: string
   addresses: string[]
 }

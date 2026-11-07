@@ -16,7 +16,7 @@ export function switchReport(overrides: Partial<SslReport> = {}): SslReport {
       makeHost({ name: 'app.example.com', blockId: switchBlock.id }),
       makeHost({ name: 'www.app.example.com', blockId: switchBlock.id })
     ],
-    facts: makeFacts({ sudo: { certbot: true, nginx: true, full: true } }),
+    facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true } }),
     cloudflare: { ...connectedCloudflare, permissions: [{ id: 'origin-ca', state: 'granted', lines: [] }] },
     ...overrides
   })

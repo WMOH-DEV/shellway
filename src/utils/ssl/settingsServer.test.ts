@@ -9,10 +9,12 @@ const facts = (overrides: Partial<ServerFacts> = {}): ServerFacts => ({
   openssl: '3.0.13',
   certbot: '2.11.0',
   otherWebServer: null,
+  apache: null,
+  serving: 'nginx',
   nginxParse: 'full',
   renewal: { mechanism: 'certbot.timer', lastRun: NOW - 7200, lastResult: 'success', output: '' },
-  sudo: { certbot: true, nginx: true, full: true },
-  paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx' },
+  sudo: { certbot: true, nginx: true, apache: false, full: true },
+  paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
   user: 'deploy',
   addresses: ['203.0.113.10'],
   ...overrides
@@ -53,19 +55,19 @@ describe('serverCheckRows', () => {
   })
 
   it('gives the exact sudoers line for a failing sudo row', () => {
-    const f = facts({ sudo: { certbot: false, nginx: true, full: false } })
+    const f = facts({ sudo: { certbot: false, nginx: true, apache: false, full: false } })
     expect(row(f, 'sudo-certbot')).toMatchObject({ tone: 'bad', sudoers: 'deploy ALL=(root) NOPASSWD: /usr/bin/certbot' })
     expect(row(f, 'sudo-nginx').sudoers).toBeNull()
   })
 
   it('gives no sudoers line when the tool path is unknown', () => {
-    const f = facts({ sudo: { certbot: false, nginx: false, full: false }, paths: { certbot: null, nginx: null } })
+    const f = facts({ sudo: { certbot: false, nginx: false, apache: false, full: false }, paths: { certbot: null, nginx: null, apache: null } })
     expect(row(f, 'sudo-nginx')).toMatchObject({ tone: 'muted', sudoers: null })
   })
 
   it('explains what full sudo unlocks in both states', () => {
     expect(row(facts(), 'sudo-full').detail).toContain('Origin CA')
-    expect(row(facts({ sudo: { certbot: true, nginx: true, full: false } }), 'sudo-full')).toMatchObject({ tone: 'warn' })
+    expect(row(facts({ sudo: { certbot: true, nginx: true, apache: false, full: false } }), 'sudo-full')).toMatchObject({ tone: 'warn' })
   })
 })
 

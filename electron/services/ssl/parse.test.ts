@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect } from 'vitest'
 import {
+  webListeners,
   hasConfigFiles,
   parseCertbotCertificates,
   parseCertificate,
@@ -251,6 +252,8 @@ describe('parseFacts', () => {
   it('reads a healthy server with a certbot timer', () => {
     expect(parseFacts(fixture('facts-timer-success.txt'))).toEqual({
       nginx: '1.24.0',
+      apache: null,
+      serving: 'nginx',
       openssl: '3.0.13',
       certbot: '2.9.0',
       otherWebServer: null,
@@ -264,8 +267,8 @@ describe('parseFacts', () => {
           'Nov 02 03:14:07 web1 systemd[1]: certbot.service: Deactivated successfully.'
         ].join('\n')
       },
-      sudo: { certbot: true, nginx: true, full: false },
-      paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx' },
+      sudo: { certbot: true, nginx: true, apache: false, full: false },
+      paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
       user: 'deploy',
       addresses: ['203.0.113.10', '198.51.100.7', '2001:db8::10']
     })
@@ -275,7 +278,8 @@ describe('parseFacts', () => {
     const facts = parseFacts(fixture('facts-timer-failed.txt'))
     expect(facts.renewal).toEqual({ mechanism: 'snap.certbot.renew.timer', lastRun: 1793414515, lastResult: 'failed', output: '' })
     expect(facts.otherWebServer).toBe('apache')
-    expect(facts.sudo).toEqual({ certbot: false, nginx: false, full: false })
+    expect(facts.sudo).toEqual({ certbot: false, nginx: false, apache: false, full: false })
+    expect(facts.serving).toBe('apache')
     expect(facts.openssl).toBe('1.1.1f')
     expect(facts.addresses).toEqual(['198.51.100.7'])
   })
@@ -283,7 +287,30 @@ describe('parseFacts', () => {
   it('reads a bare server with cron renewal and Caddy', () => {
     const facts = parseFacts(fixture('facts-cron-bare.txt'))
     expect(facts.renewal).toEqual({ mechanism: 'cron', lastRun: null, lastResult: 'unknown', output: '' })
-    expect(facts).toMatchObject({ nginx: null, certbot: null, otherWebServer: 'caddy', paths: { certbot: null, nginx: null }, addresses: [] })
+    expect(facts).toMatchObject({ nginx: null, certbot: null, otherWebServer: 'caddy', paths: { certbot: null, nginx: null, apache: null }, addresses: [] })
+  })
+
+  it('trusts the process listening on 80 and 443 over what is installed', () => {
+    const ss = [
+      'State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess',
+      'LISTEN 0      511        0.0.0.0:443       0.0.0.0:*    users:(("apache2",pid=81,fd=4))',
+      'LISTEN 0      511        0.0.0.0:80        0.0.0.0:*    users:(("apache2",pid=81,fd=3))',
+      'LISTEN 0      511      127.0.0.1:8080      0.0.0.0:*    users:(("nginx",pid=90,fd=6))'
+    ].join('\n')
+    const output = `@@SW@@ PATHS\nnginx=/usr/sbin/nginx\napache=/usr/sbin/apache2ctl\n@@SW@@ APACHE_V\nServer version: Apache/2.4.68 (Debian)\n@@SW@@ APACHE_LAYOUT\ndebian\n@@SW@@ LISTEN\n${ss}\n`
+    expect(parseFacts(output)).toMatchObject({ serving: 'apache', apache: { version: '2.4.68', layout: 'debian' }, paths: { apache: '/usr/sbin/apache2ctl' } })
+  })
+
+  it('prefers the server on 443 when two different servers listen on web ports', () => {
+    const ss = 'LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:(("apache2",pid=1,fd=3))\nLISTEN 0 511 [::]:443 [::]:* users:(("nginx",pid=2,fd=4))'
+    expect(webListeners(ss)).toEqual([{ kind: 'apache', port: 80 }, { kind: 'nginx', port: 443 }])
+    expect(parseFacts(`@@SW@@ LISTEN\n${ss}\n`).serving).toBe('nginx')
+  })
+
+  it('falls back to the active unit, then to what is installed', () => {
+    expect(parseFacts('@@SW@@ ACTIVE\nnginx=inactive\nhttpd=active\n').serving).toBe('apache')
+    expect(parseFacts('@@SW@@ PATHS\napache=/usr/sbin/apachectl\n@@SW@@ APACHE_LAYOUT\nrhel\n')).toMatchObject({ serving: 'apache', apache: { version: null, layout: 'rhel' } })
+    expect(parseFacts('').serving).toBeNull()
   })
 
   it('reports no renewal when neither a timer nor cron exists', () => {

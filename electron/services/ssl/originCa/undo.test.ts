@@ -92,7 +92,7 @@ describe('readLeftover', () => {
   it('treats the certbot certificate as shared when nginx was not fully read', async () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
       const report = switchedReport()
-      report.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      report.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
       const leftover = await readLeftover(recorder(lister(BACKUP_PATH)).exec, report, 'app.example.com', NOW)
       expect(leftover?.lineageShared).toBe(true)
     }

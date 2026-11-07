@@ -20,7 +20,7 @@ const block: ServerBlock = {
 }
 
 const config = (full = true, blocks = [block]): ServerConfig => ({
-  facts: { nginxParse: 'full', sudo: { certbot: true, nginx: true, full } } as ServerFacts,
+  facts: { nginxParse: 'full', sudo: { certbot: true, nginx: true, apache: false, full } } as ServerFacts,
   blocks
 })
 

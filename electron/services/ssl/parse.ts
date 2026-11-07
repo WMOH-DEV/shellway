@@ -1,4 +1,4 @@
-import type { CertKind, CertbotLineage, OriginCert, RenewalInfo, RenewalMechanism, ServerBlock, ServerFacts } from '../../../src/types/ssl'
+import type { ApacheFacts, CertKind, CertbotLineage, OriginCert, RenewalInfo, RenewalMechanism, ServerBlock, ServerFacts, ServingWebServer } from '../../../src/types/ssl'
 import { parseKeyValues } from '../deploy/parse'
 
 export const SECTION_MARK = '@@SW@@'
@@ -338,6 +338,45 @@ function otherWebServer(active: Record<string, string>): ServerFacts['otherWebSe
   return active.caddy === 'active' ? 'caddy' : null
 }
 
+const LISTENER_KINDS: Record<string, ServingWebServer> = { nginx: 'nginx', apache2: 'apache', httpd: 'apache', caddy: 'caddy' }
+const WEB_PORT = /:(80|443)$/
+
+export function webListeners(ssOutput: string): { kind: ServingWebServer; port: number }[] {
+  return ssOutput.split('\n').flatMap((line) => {
+    const fields = line.trim().split(/\s+/)
+    const port = fields.find((field) => WEB_PORT.test(field))?.match(WEB_PORT)?.[1]
+    const owner = /users:\(\("([^"]+)"/.exec(line)?.[1]
+    const kind = owner === undefined ? undefined : LISTENER_KINDS[owner]
+    return port && kind && fields[0] === 'LISTEN' ? [{ kind, port: Number(port) }] : []
+  })
+}
+
+function listeningServer(ssOutput: string): ServingWebServer | null {
+  const listeners = webListeners(ssOutput)
+  const kinds = new Set(listeners.map((l) => l.kind))
+  if (kinds.size <= 1) return listeners[0]?.kind ?? null
+  const onTls = new Set(listeners.filter((l) => l.port === 443).map((l) => l.kind))
+  if (onTls.size === 1) return [...onTls][0]
+  return kinds.has('nginx') ? 'nginx' : [...kinds][0]
+}
+
+function activeServer(active: Record<string, string>): ServingWebServer | null {
+  if (active.nginx === 'active') return 'nginx'
+  if (active.apache2 === 'active' || active.httpd === 'active') return 'apache'
+  return active.caddy === 'active' ? 'caddy' : null
+}
+
+function installedServer(paths: Record<string, string>): ServingWebServer | null {
+  if (paths.nginx) return 'nginx'
+  return paths.apache ? 'apache' : null
+}
+
+function apacheFacts(version: string | undefined, layout: string | undefined, path: string | undefined): ApacheFacts | null {
+  if (!path) return null
+  const kind = (layout ?? '').trim()
+  return { version: versionOf(version, /Apache\/([\d.]+)/), layout: kind === 'debian' || kind === 'rhel' ? kind : null }
+}
+
 function addressesOf(hostnameOutput: string, sshServer: string | undefined): string[] {
   return [...new Set([...hostnameOutput.split(/\s+/), sshServer ?? ''].filter(Boolean))]
 }
@@ -346,14 +385,17 @@ export function parseFacts(output: string): ParsedFacts {
   const sections = sectionBodies(output)
   const paths = parseKeyValues(sections.PATHS ?? '')
   const sudo = parseKeyValues(sections.SUDO ?? '')
+  const active = parseKeyValues(sections.ACTIVE ?? '')
   return {
     nginx: versionOf(sections.NGINX_V, /nginx\/([\d.]+)/),
+    apache: apacheFacts(sections.APACHE_V, sections.APACHE_LAYOUT, paths.apache),
+    serving: listeningServer(sections.LISTEN ?? '') ?? activeServer(active) ?? installedServer(paths),
     openssl: versionOf(sections.OPENSSL_V, /^(?:OpenSSL|LibreSSL)\s+([\w.]+)/m),
     certbot: versionOf(sections.CERTBOT_V, /certbot\s+([\d.]+)/),
-    otherWebServer: otherWebServer(parseKeyValues(sections.ACTIVE ?? '')),
+    otherWebServer: otherWebServer(active),
     renewal: parseRenewal(sections.RENEWAL ?? '', sections.JOURNAL ?? ''),
-    sudo: { certbot: sudo.certbot === '1', nginx: sudo.nginx === '1', full: sudo.full === '1' },
-    paths: { certbot: paths.certbot || null, nginx: paths.nginx || null },
+    sudo: { certbot: sudo.certbot === '1', nginx: sudo.nginx === '1', apache: sudo.apache === '1', full: sudo.full === '1' },
+    paths: { certbot: paths.certbot || null, nginx: paths.nginx || null, apache: paths.apache || null },
     user: (sections.USER ?? '').trim(),
     addresses: addressesOf(sections.ADDRESSES ?? '', parseKeyValues(sections.SSH ?? '').server)
   }

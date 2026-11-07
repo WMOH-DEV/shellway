@@ -16,9 +16,9 @@ const cert = (days: number): OriginCert => ({
 
 const scan = (days: number): ServerScan => ({
   facts: {
-    nginx: '1.24.0', openssl: '3.0.13', certbot: '2.11.0', otherWebServer: null, nginxParse: 'full',
+    nginx: '1.24.0', openssl: '3.0.13', certbot: '2.11.0', otherWebServer: null, apache: null, serving: 'nginx', nginxParse: 'full',
     renewal: { mechanism: 'certbot.timer', lastRun: null, lastResult: 'failed', output: '' },
-    sudo: { certbot: true, nginx: true, full: false }, paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx' },
+    sudo: { certbot: true, nginx: true, apache: false, full: false }, paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
     user: 'deploy', addresses: ['203.0.113.10']
   },
   blocks: [{

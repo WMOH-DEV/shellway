@@ -4,7 +4,7 @@ import { connectedCloudflare, edgeOf, makeBlock, makeFacts, makeHost, makeOrigin
 import { switchCheck } from './switchCheck'
 
 const ready = (overrides: Partial<SslReport> = {}): SslReport => makeReport({
-  facts: makeFacts({ sudo: { certbot: true, nginx: true, full: true } }),
+  facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true } }),
   blocks: [makeBlock({ names: ['app.example.com', 'www.example.com'] })],
   hostnames: [makeHost(), makeHost({ name: 'www.example.com' })],
   cloudflare: { ...connectedCloudflare, permissions: [...connectedCloudflare.permissions, { id: 'origin-ca', state: 'granted', lines: [] }] },
@@ -56,7 +56,7 @@ describe('switchCheck', () => {
 
   it('refuses when nginx was not fully read, because the site list may be incomplete', () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
-      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      const facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
       expect(switchCheck(ready({ facts }), 'app.conf:9').blockedReason).toBe('Shellway could not read the whole nginx configuration, so it cannot safely change this site.')
     }
   })

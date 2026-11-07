@@ -26,7 +26,7 @@ const originPermission = { id: 'origin-ca' as const, state: 'granted' as const, 
 
 export function readyReport(overrides: Partial<SslReport> = {}): SslReport {
   return makeReport({
-    facts: makeFacts({ sudo: { certbot: true, nginx: true, full: true } }),
+    facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true } }),
     blocks: [makeBlock({ names: NAMES })],
     hostnames: NAMES.map((name) => makeHost({ name })),
     cloudflare: { ...connectedCloudflare, permissions: [...connectedCloudflare.permissions, originPermission] },

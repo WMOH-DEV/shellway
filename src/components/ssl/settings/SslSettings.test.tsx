@@ -12,10 +12,12 @@ const facts: ServerFacts = {
   openssl: '3.0.13',
   certbot: '2.11.0',
   otherWebServer: null,
+  apache: null,
+  serving: 'nginx',
   nginxParse: 'full',
   renewal: { mechanism: 'certbot.timer', lastRun: NOW - 3600, lastResult: 'failed', output: 'Challenge failed for app.example.com' },
-  sudo: { certbot: false, nginx: true, full: false },
-  paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx' },
+  sudo: { certbot: false, nginx: true, apache: false, full: false },
+  paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
   user: 'deploy',
   addresses: ['203.0.113.10']
 }

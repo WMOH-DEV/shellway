@@ -31,7 +31,7 @@ const responder = (call: Call): Answer | undefined => {
 function build(answer: (call: Call, attempt: number) => Answer | undefined = responder): void {
   rec = recorder(answer)
   createOriginCert = vi.fn(async () => ({ certificate: PEM, notAfter: 2_300_000_000 }))
-  config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, full: true } }), blocks: [] }
+  config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true } }), blocks: [] }
   lineagesOnServer = switchedReport().lineages
   broadcast = vi.fn()
   const store = { cloudflareToken: () => token, setKnownHosts: () => {} } as unknown as SslLocalStore
@@ -191,7 +191,7 @@ describe('SslCoordinator Origin CA switch', () => {
 
   it('refuses to remove a certbot certificate when nginx was not fully read, even if no site is listed', async () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
-      config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, full: true } })
+      config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
       config.blocks = []
       await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
     }
@@ -200,7 +200,7 @@ describe('SslCoordinator Origin CA switch', () => {
 
   it('refuses to undo when nginx was not fully read', async () => {
     const report = switchedReport()
-    report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, full: true } })
+    report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, apache: false, full: true } })
     reportIs(report)
     await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
     expect(rec.calls).toEqual([])
@@ -217,7 +217,7 @@ describe('SslCoordinator Origin CA switch', () => {
   })
 
   it('refuses to remove a certbot certificate without full sudo or with a bad name', async () => {
-    config.facts = makeFacts({ sudo: { certbot: true, nginx: true, full: false } })
+    config.facts = makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: false } })
     await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('full passwordless sudo')
     expect(() => ssl.originRemoveLineage('c1', 'app.example.com; rm -rf /', 'run-1')).toThrow('Invalid certificate name')
     expect(rec.calls).toEqual([])
