@@ -1,4 +1,5 @@
 import type { ProbeDefinition, ServerFacts } from '../../../types/server/core'
+import { decodeServerText } from '../serverText'
 import type { DeploySiteRef, SitesInventory, SiteVhost } from './types'
 
 export const INVENTORY_PROBE = 'sites.inventory'
@@ -25,18 +26,13 @@ for f in ${VHOST_GLOBS.join(' ')}; do
   real="$(readlink -f "$f")"
   [ -r "$real" ] || continue
   [ "$(wc -c < "$real")" -le ${MAX_VHOST_BYTES} ] || continue
-  printf '@@vhost %s\\t%s\\t%s\\n' "$(sha256sum "$real" | cut -d' ' -f1)" "$f" "$real"
-  base64 < "$real" | tr -d '\\n'
-  printf '\\n'
+  b="$(base64 -w0 < "$real")" || continue
+  printf '@@vhost %s\\t%s\\t%s\\n' "$(printf '%s' "$b" | base64 -d | sha256sum | cut -d' ' -f1)" "$f" "$real"
+  printf '%s\\n' "$b"
 done
 `
 
 const SHA256 = /^[0-9a-f]{64}$/
-
-function decodeBase64(text: string): string {
-  const binary = atob(text)
-  return new TextDecoder().decode(Uint8Array.from(binary, (ch) => ch.charCodeAt(0)))
-}
 
 function parseSite(rest: string): DeploySiteRef | null {
   const [name, owner, path] = rest.split('\t')
@@ -63,7 +59,7 @@ export function parseInventory(stdout: string): SitesInventory {
       const header = parseVhostHeader(rest)
       const body = lines[i + 1] ?? ''
       i++
-      if (header && !inventory.vhosts.some((v) => v.path === header.path)) inventory.vhosts.push({ ...header, content: decodeBase64(body) })
+      if (header && !inventory.vhosts.some((v) => v.path === header.path)) inventory.vhosts.push({ ...header, content: decodeServerText(body) })
     }
   }
   return inventory

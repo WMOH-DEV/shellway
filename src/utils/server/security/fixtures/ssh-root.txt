@@ -18,7 +18,6 @@ Include /etc/ssh/sshd_config.d/*.conf
 @@shellway.sha
 3f3a4f0a3c0a1e7d2b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809123
 @@shellway
-PermitRootLogin prohibit-password
-
+UGVybWl0Um9vdExvZ2luIHByb2hpYml0LXBhc3N3b3JkCg==
 @@session
 198.51.100.23 51234 203.0.113.10 22

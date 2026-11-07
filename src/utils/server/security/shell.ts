@@ -1,3 +1,5 @@
+import { decodeServerText } from '../serverText'
+
 export const shq = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`
 
 export const ROOT_PRELUDE = [
@@ -44,14 +46,14 @@ export function sshClientPart(sshConnection: string, field: 0 | 3): string {
 }
 
 export function fileWithSha(name: string, path: string, root: boolean): string {
-  const read = root ? 'asroot cat' : 'cat'
-  const sum = root ? 'asroot sha256sum' : 'sha256sum'
+  const read = root ? 'asroot base64' : 'base64'
   return [
     `echo "@@${name}.sha"`,
-    `if [ -e ${shq(path)} ]; then ${sum} ${shq(path)} 2>/dev/null | cut -d' ' -f1; else echo absent; fi`,
-    `echo "@@${name}"`,
-    `${read} ${shq(path)} 2>/dev/null`,
-    'echo'
+    `if [ ! -e ${shq(path)} ]; then echo absent; elif b=$(${read} -w0 ${shq(path)} 2>/dev/null); then`,
+    `  printf '%s' "$b" | base64 -d | sha256sum | cut -d' ' -f1`,
+    `  echo "@@${name}"`,
+    `  printf '%s\\n' "$b"`,
+    'fi'
   ].join('\n')
 }
 
@@ -65,7 +67,5 @@ export function trackedFile(parts: Map<string, string[]>, name: string): Tracked
   if (!sha) return null
   if (sha === 'absent') return { sha256: null, content: '' }
   if (!/^[0-9a-f]{64}$/.test(sha)) return null
-  const lines = [...(parts.get(name) ?? [])]
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  return { sha256: sha, content: lines.length > 0 ? `${lines.join('\n')}\n` : '' }
+  return { sha256: sha, content: decodeServerText((parts.get(name) ?? []).join('').trim()) }
 }

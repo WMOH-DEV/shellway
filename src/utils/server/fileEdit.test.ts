@@ -36,6 +36,19 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 describe('fileEditScript', () => {
+  it('keeps Windows line endings and a byte-order mark the original file had', () => {
+    const original = '\uFEFFkey=old\r\nother=1\r\n'
+    writeFileSync(file, original)
+    const result = edit({ content: 'key=new\nother=1\nadded=2\n', originalSha256: sha(original) })
+    expect(result.code).toBe(0)
+    expect(readFileSync(file, 'utf8')).toBe('\uFEFFkey=new\r\nother=1\r\nadded=2\r\n')
+  })
+
+  it('leaves Unix line endings alone', () => {
+    expect(edit({ content: 'a\nb\n' }).code).toBe(0)
+    expect(readFileSync(file, 'utf8')).toBe('a\nb\n')
+  })
+
   it('backs up, writes and keeps the original mode', () => {
     const result = edit({ test: 'true', reload: 'true', verify: 'true' })
     expect(result.code).toBe(0)

@@ -1,5 +1,6 @@
 import { newestFirst } from '@/utils/createSite/php'
-import { decodeBase64, keyValues, sectionLines, splitSections, type OutputSection } from './sections'
+import { decodeServerText } from '../serverText'
+import { keyValues, sectionLines, splitSections, type OutputSection } from './sections'
 import type { PhpFacts, PhpIniFile, PhpSite, PhpVersionFacts, ServiceState } from './types'
 
 export const INI_KEYS = [
@@ -23,7 +24,7 @@ export const overridePath = (version: string): string => `/etc/php/${version}/fp
 
 export const poolPath = (version: string): string => `/etc/php/${version}/fpm/pool.d/www.conf`
 
-export const fileDump = (path: string): string => `if [ -f "${path}" ]; then echo "sha=$(sha256sum "${path}" | cut -d' ' -f1)"; echo "b64=$(base64 -w0 "${path}")"; fi`
+export const fileDump = (path: string): string => `if [ -f "${path}" ] && b=$(base64 -w0 "${path}"); then echo "sha=$(printf '%s' "$b" | base64 -d | sha256sum | cut -d' ' -f1)"; echo "b64=$b"; fi`
 
 export const PHP_SCRIPT = `if [ ! -d /etc/php ]; then echo '@@none'; exit 0; fi
 echo '@@cli'
@@ -81,7 +82,7 @@ function parseModules(lines: string[]): string[] {
 
 export function parseFile(lines: string[]): PhpIniFile {
   const values = keyValues(lines)
-  return { sha256: values.sha || null, content: decodeBase64(values.b64 ?? '') }
+  return { sha256: values.sha || null, content: decodeServerText(values.b64 ?? '') }
 }
 
 const POOL_LINE = /^\s*(pm(?:\.[a-z_]+)?)\s*=\s*(\S+)/

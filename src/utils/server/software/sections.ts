@@ -36,10 +36,4 @@ export function upstreamVersion(debianVersion: string): string {
   return (dash > 0 ? withoutEpoch.slice(0, dash) : withoutEpoch).replace(/[+~].*$/, '')
 }
 
-export function decodeBase64(text: string): string {
-  if (!text) return ''
-  const bytes = Uint8Array.from(atob(text), (char) => char.charCodeAt(0))
-  return new TextDecoder().decode(bytes)
-}
-
 export const shellQuote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`

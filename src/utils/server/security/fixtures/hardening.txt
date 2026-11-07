@@ -6,9 +6,7 @@ APT::Periodic::Unattended-Upgrade "1";
 @@autoupgrades.sha
 9b1c8e0f6d7a5b4c3d2e1f00112233445566778899aabbccddeeff0011223344
 @@autoupgrades
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-
+QVBUOjpQZXJpb2RpYzo6VXBkYXRlLVBhY2thZ2UtTGlzdHMgIjEiOwpBUFQ6OlBlcmlvZGljOjpVbmF0dGVuZGVkLVVwZ3JhZGUgIjEiOwo=
 @@reboot
 yes
 @@rebootpkgs
@@ -24,9 +22,7 @@ MemTotal:        8123456 kB
 @@fstab.sha
 1111111111111111111111111111111111111111111111111111111111111111
 @@fstab
-UUID=abcd / ext4 defaults 0 1
-/swapfile none swap sw 0 0
-
+VVVJRD1hYmNkIC8gZXh0NCBkZWZhdWx0cyAwIDEKL3N3YXBmaWxlIG5vbmUgc3dhcCBzdyAwIDAK
 @@time
 Timezone=Etc/UTC
 LocalRTC=no
@@ -38,6 +34,4 @@ web-1
 @@hosts.sha
 2222222222222222222222222222222222222222222222222222222222222222
 @@hosts
-127.0.0.1 localhost
-127.0.1.1 web-1
-
+MTI3LjAuMC4xIGxvY2FsaG9zdAoxMjcuMC4xLjEgd2ViLTEK

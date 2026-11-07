@@ -1,4 +1,5 @@
 import type { ActionStep } from '@/types/server/core'
+import { hasUnreadableText } from './serverText'
 
 export interface FileEditSpec {
   id: string
@@ -91,8 +92,17 @@ function backup(backupRoot: string, spec: FileEditSpec): string[] {
   ]
 }
 
+const KEEP_ORIGINAL_STYLE = [
+  'if [ "$existed" = 1 ]; then',
+  '  first=$(head -n 1 "$path" | od -An -tx1 | tr -d \' \\n\')',
+  '  case "$first" in *0d0a) awk \'{ sub(/\\r*$/, ""); printf "%s\\r\\n", $0 }\' "$tmp" > "$tmp.style" && cat "$tmp.style" > "$tmp" || FAILED ;; esac',
+  '  case "$first" in efbbbf*) { printf \'\\357\\273\\277\'; cat "$tmp"; } > "$tmp.style" && cat "$tmp.style" > "$tmp" || FAILED ;; esac',
+  '  rm -f "$tmp.style"',
+  'fi'
+]
+
 function writeNewContent(spec: FileEditSpec): string[] {
-  const failed = `{ rm -f "$tmp"; ${say(`Could not write ${spec.path}. Nothing was changed.`)}; exit 1; }`
+  const failed = `{ rm -f "$tmp" "$tmp.style"; ${say(`Could not write ${spec.path}. Nothing was changed.`)}; exit 1; }`
   return [
     '[ -d "$dir" ] || (umask 022 && mkdir -p "$dir") || exit 1',
     `tmp=$(mktemp "$dir/.shellway-edit.XXXXXX") || { ${say(`Could not create a temporary file next to ${spec.path}.`)}; exit 1; }`,
@@ -100,6 +110,7 @@ function writeNewContent(spec: FileEditSpec): string[] {
     `base64 -d > "$tmp" <<'${B64_TOKEN}' || ${failed}`,
     wrapped(toBase64(spec.content)),
     B64_TOKEN,
+    ...KEEP_ORIGINAL_STYLE.map((line) => line.replace('FAILED', failed)),
     ...(spec.mode ? [`chmod ${spec.mode} "$tmp" || ${failed}`] : []),
     ...(spec.owner ? [`chown ${spec.owner} "$tmp" || ${failed}`] : []),
     `mv -f "$tmp" "$path" || ${failed}`,
@@ -178,11 +189,9 @@ function display(spec: FileEditSpec): string {
   return [...save, `write ${q(spec.path)}`, spec.test, spec.reload, spec.verify].filter(Boolean).join('\n')
 }
 
-const LOSSY_DECODE = '\uFFFD'
-
 export function fileEditStep(spec: FileEditSpec): ActionStep {
   return {
-    ...(spec.content.includes(LOSSY_DECODE) ? { unreadableFile: spec.path } : {}),
+    ...(hasUnreadableText(spec.content) ? { unreadableFile: spec.path } : {}),
     id: spec.id,
     label: spec.label,
     kind: 'file-edit',

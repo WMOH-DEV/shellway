@@ -1,4 +1,5 @@
 import type { ProbeDefinition } from '@/types/server/core'
+import { decodeServerText } from '../serverText'
 import { SITES_PROBE } from './facts'
 import { hasSection, splitSections, type OutputSection } from './sections'
 import type { SiteEnv, SiteEnvFacts } from './types'
@@ -15,20 +16,13 @@ for c in "$R"/sites/*/site.conf; do
   p=$("$B" env-path "$n" 2>/dev/null) || continue
   echo "@@site $n"
   printf '%s\\n' "$p"
-  if [ -f "$p" ] && [ -r "$p" ] && [ "$(wc -c < "$p")" -le ${MAX_ENV_BYTES} ]; then
+  if [ -f "$p" ] && [ -r "$p" ] && [ "$(wc -c < "$p")" -le ${MAX_ENV_BYTES} ] && b=$(base64 -w0 "$p"); then
     stat -c '%U:%G %a' "$p"
-    sha256sum "$p" | cut -d' ' -f1
-    printf 'b64:'
-    base64 -w0 "$p"
-    echo
+    printf '%s' "$b" | base64 -d | sha256sum | cut -d' ' -f1
+    printf 'b64:%s\\n' "$b"
   fi
 done
 `
-
-function decodeBase64(value: string): string {
-  const binary = atob(value)
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)))
-}
 
 function unquote(value: string): string {
   const trimmed = value.trim()
@@ -45,7 +39,7 @@ function parseSite(section: OutputSection): SiteEnv {
   const [path = '', stat = '', sha256 = '', encoded] = section.lines
   const [owner = '', mode = ''] = stat.split(' ')
   const encodedContent = encoded?.startsWith(ENCODED) ? encoded.slice(ENCODED.length) : null
-  const content = encodedContent === null ? '' : decodeBase64(encodedContent)
+  const content = encodedContent === null ? '' : decodeServerText(encodedContent)
   return {
     site: section.arg,
     path,
