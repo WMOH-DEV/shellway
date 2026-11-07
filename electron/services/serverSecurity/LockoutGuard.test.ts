@@ -40,7 +40,7 @@ function classify(call: FakeCall): Script {
   if (stdin.includes('systemd-run --unit=')) return 'arm'
   if (stdin.includes('SHELLWAY_DISARMED=1')) return 'disarm'
   if (stdin.includes('SHELLWAY_REVERTED=1') && stdin.includes(`sh /var/lib/shellway/revert-${ID}.sh`)) return 'revertNow'
-  if (stdin.startsWith('rm -rf')) return 'cleanup'
+  if (stdin.includes('rm -rf /var/lib/shellway/revert-')) return 'cleanup'
   return 'apply'
 }
 

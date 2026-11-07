@@ -221,6 +221,7 @@ function sshChange(ctx: GuardContext, kind: GuardKind, title: string, summary: s
     'SHELLWAY_EOF',
     `chmod 644 ${SHELLWAY_SSH_DROPIN}.tmp`,
     `mv -f ${SHELLWAY_SSH_DROPIN}.tmp ${SHELLWAY_SSH_DROPIN}`,
+    '[ -d /run/sshd ] || install -d -m 755 /run/sshd',
     '"$SSHD" -t',
     `"$SSHD" -T | grep -Eqx ${shq(expect)} || { echo "sshd did not pick up the new setting. Check that /etc/ssh/sshd_config includes sshd_config.d." >&2; exit 4; }`,
     sshRestartScript(ctx.socketActivated)
@@ -398,7 +399,11 @@ export function revertNowScript(id: string): string {
 
 export function cleanupScript(id: string): string {
   const paths = guardPaths(id)
-  return `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}`
+  return [
+    `systemctl stop ${paths.unit}.timer 2>/dev/null`,
+    `if [ -f ${paths.pid} ]; then kill "$(cat ${paths.pid})" 2>/dev/null; fi`,
+    `rm -rf ${paths.script} ${paths.pid} ${paths.done} ${paths.backup}`
+  ].join('\n')
 }
 
 export const STEP_LABELS: Record<GuardStepId, string> = {
