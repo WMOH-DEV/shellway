@@ -161,6 +161,21 @@ describe('ActionHost result', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('shows what the last step printed after a successful run', async () => {
+    await startRun()
+    await screen.findByRole('list', { name: 'Progress' })
+    emitOutput({ runId: 'run-1', stepId: 'config', chunk: 'nginx: configuration file test is successful\n' })
+    emitRun(makeRun({ status: 'done', finishedAt: 5_000, steps: [runStep('install', 'Install redis-server', 'done'), runStep('config', 'Set maxmemory', 'done')] }))
+    expect(screen.getByRole('region', { name: 'Output: Set maxmemory' })).toHaveTextContent('configuration file test is successful')
+  })
+
+  it('shows no output box after a successful run that printed nothing', async () => {
+    await startRun()
+    await screen.findByRole('list', { name: 'Progress' })
+    emitRun(makeRun({ status: 'done', finishedAt: 5_000, steps: [runStep('install', 'Install redis-server', 'done'), runStep('config', 'Set maxmemory', 'done')] }))
+    expect(screen.queryByRole('region', { name: /^Output:/ })).not.toBeInTheDocument()
+  })
+
   it('shows the failed step, a plain message, its output and rolled-back steps', async () => {
     const { user, server, onFinished } = await startRun()
     await screen.findByRole('list', { name: 'Progress' })

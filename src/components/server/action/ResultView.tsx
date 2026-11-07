@@ -37,6 +37,13 @@ function FailedOutput({ launch }: { launch: FinishedLaunch }) {
   return <StepOutput label={`Output: ${step.label}`} text={stepOutput(step, launch.output)} live={false} />
 }
 
+function LastOutput({ launch }: { launch: FinishedLaunch }) {
+  const step = launch.run.steps.at(-1)
+  const text = step ? stepOutput(step, launch.output).trim() : ''
+  if (!step || !text) return null
+  return <StepOutput label={`Output: ${step.label}`} text={text} live={false} />
+}
+
 export function ResultView({ launch, nowMs, onClose, onReviewAgain }: ResultViewProps) {
   const { run } = launch
   const succeeded = run.status === 'done'
@@ -45,7 +52,7 @@ export function ResultView({ launch, nowMs, onClose, onReviewAgain }: ResultView
       <DrawerBody>
         {succeeded ? <Notice tone="success" title={successSentence(run)} /> : <FailureNotices run={run} />}
         <RunStepList steps={run.steps} nowMs={nowMs} />
-        {!succeeded && <FailedOutput launch={launch} />}
+        {succeeded ? <LastOutput launch={launch} /> : <FailedOutput launch={launch} />}
       </DrawerBody>
       <DrawerFooter>
         <Spacer />
