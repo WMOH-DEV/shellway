@@ -27,7 +27,7 @@ const SSL_SITE = `<IfModule mod_ssl.c>
 </IfModule>
 `
 
-const apacheFacts = makeFacts({ nginx: null, apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', paths: { certbot: null, nginx: null, apache: '/usr/sbin/apache2ctl' }, sudo: { certbot: false, nginx: false, apache: true, full: true } })
+const apacheFacts = makeFacts({ nginx: null, apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', paths: { certbot: null, nginx: null, apache: '/usr/sbin/apache2ctl' }, sudo: { certbot: false, nginx: false, apache: true, full: true, installed: true } })
 
 function blocks(): ServerBlock[] {
   return [

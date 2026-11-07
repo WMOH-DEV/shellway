@@ -52,7 +52,7 @@ const apacheFacts = (overrides: Partial<ServerFacts> = {}) => makeFacts({
   nginx: null,
   apache: { version: '2.4.62', layout: 'debian' },
   serving: 'apache',
-  sudo: { certbot: true, nginx: false, apache: true, full: true },
+  sudo: { certbot: true, nginx: false, apache: true, full: true, installed: true },
   paths: { certbot: '/usr/bin/certbot', nginx: null, apache: '/usr/sbin/apache2ctl' },
   ...overrides
 })
@@ -69,7 +69,7 @@ describe('apacheSites.read', () => {
 
   it('runs -S without sudo and reads files as the user when sudo is not allowed', async () => {
     const { exec, calls } = fakeServer()
-    await apacheSites.read(exec, apacheFacts({ sudo: { certbot: false, nginx: false, apache: false, full: false } }))
+    await apacheSites.read(exec, apacheFacts({ sudo: { certbot: false, nginx: false, apache: false, full: false, installed: true } }))
     expect(calls.map((c) => c.command)).toEqual(["'/usr/sbin/apache2ctl' -S", 'sh -s'])
   })
 

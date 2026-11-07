@@ -50,7 +50,7 @@ export function makeFacts(overrides: Partial<ServerFacts> = {}): ServerFacts {
     serving: 'nginx',
     nginxParse: 'full',
     renewal: { mechanism: 'certbot.timer', lastRun: NOW - 9 * 3600, lastResult: 'success', output: 'Congratulations, all renewals succeeded.' },
-    sudo: { certbot: true, nginx: true, apache: false, full: false },
+    sudo: { certbot: true, nginx: true, apache: false, full: false, installed: true },
     paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
     user: 'deploy',
     addresses: ['203.0.113.10'],

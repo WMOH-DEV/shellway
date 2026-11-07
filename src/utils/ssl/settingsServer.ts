@@ -37,7 +37,7 @@ function webSudoRow(facts: ServerFacts): ServerCheckRow {
   const kind = siteServer(facts) ?? 'nginx'
   const path = facts.paths[kind]
   const tool = path?.split('/').pop() ?? SITE_SERVER_LABELS[kind]
-  return sudoRow(`sudo-${kind}`, `sudo -n ${tool}`, facts.sudo[kind], path, facts.user, tool)
+  return sudoRow(facts, `sudo-${kind}`, `sudo -n ${tool}`, facts.sudo[kind], path, tool)
 }
 
 function opensslRow(facts: ServerFacts): ServerCheckRow {
@@ -63,8 +63,9 @@ function renewalRow({ renewal }: ServerFacts, hasCertbot: boolean, now: number):
   return { ...base, tone: 'warn', detail: `${renewal.mechanism} · last result unknown` }
 }
 
-function sudoRow(id: string, name: string, allowed: boolean, path: string | null, user: string, tool: string): ServerCheckRow {
+function sudoRow({ user, sudo }: ServerFacts, id: string, name: string, allowed: boolean, path: string | null, tool: string): ServerCheckRow {
   if (allowed) return { id, name, tone: 'ok', detail: 'allowed', sudoers: null }
+  if (!sudo.installed) return { id, name, tone: 'muted', detail: 'needs sudo, which is not installed', sudoers: null }
   if (!path) return { id, name, tone: 'muted', detail: `${tool} not found on this server`, sudoers: null }
   return { id, name, tone: 'bad', detail: 'not allowed', sudoers: sudoersLine(user, [path]) }
 }
@@ -72,6 +73,7 @@ function sudoRow(id: string, name: string, allowed: boolean, path: string | null
 function fullSudoRow({ sudo }: ServerFacts): ServerCheckRow {
   const id = 'sudo-full'
   const name = 'Full passwordless sudo'
+  if (!sudo.installed) return { id, name, tone: 'bad', detail: 'sudo is not installed · Shellway runs root commands with sudo -n, so install it (apt-get install sudo, or dnf install sudo)', sudoers: null }
   if (sudo.full) return { id, name, tone: 'ok', detail: 'yes · unlocks switching to Origin CA and installing certbot', sudoers: null }
   return { id, name, tone: 'warn', detail: 'no · needed to switch to Origin CA and to install certbot', sudoers: null }
 }
@@ -82,7 +84,7 @@ export function serverCheckRows(facts: ServerFacts, now: number): ServerCheckRow
     opensslRow(facts),
     certbotRow(facts),
     renewalRow(facts, facts.certbot !== null, now),
-    sudoRow('sudo-certbot', 'sudo -n certbot', facts.sudo.certbot, facts.paths.certbot, facts.user, 'certbot'),
+    sudoRow(facts, 'sudo-certbot', 'sudo -n certbot', facts.sudo.certbot, facts.paths.certbot, 'certbot'),
     webSudoRow(facts),
     fullSudoRow(facts)
   ]

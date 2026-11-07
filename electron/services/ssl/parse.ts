@@ -378,7 +378,7 @@ export function parseFacts(output: string): ParsedFacts {
     certbot: versionOf(sections.CERTBOT_V, /certbot\s+([\d.]+)/),
     otherWebServer: otherWebServer(active),
     renewal: parseRenewal(sections.RENEWAL ?? '', sections.JOURNAL ?? ''),
-    sudo: { certbot: sudo.certbot === '1', nginx: sudo.nginx === '1', apache: sudo.apache === '1', full: sudo.full === '1' },
+    sudo: { certbot: sudo.certbot === '1', nginx: sudo.nginx === '1', apache: sudo.apache === '1', full: sudo.full === '1', installed: sudo.installed !== '0' },
     paths: { certbot: paths.certbot || null, nginx: paths.nginx || null, apache: paths.apache || null },
     user: (sections.USER ?? '').trim(),
     addresses: addressesOf(sections.ADDRESSES ?? '', parseKeyValues(sections.SSH ?? '').server)

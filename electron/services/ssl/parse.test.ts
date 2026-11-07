@@ -267,18 +267,23 @@ describe('parseFacts', () => {
           'Nov 02 03:14:07 web1 systemd[1]: certbot.service: Deactivated successfully.'
         ].join('\n')
       },
-      sudo: { certbot: true, nginx: true, apache: false, full: false },
+      sudo: { certbot: true, nginx: true, apache: false, full: false, installed: true },
       paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
       user: 'deploy',
       addresses: ['203.0.113.10', '198.51.100.7', '2001:db8::10']
     })
   })
 
+  it('reads whether sudo is installed, assuming it is when the probe does not say', () => {
+    expect(parseFacts('@@SW@@ SUDO\ninstalled=0\nfull=0\n').sudo.installed).toBe(false)
+    expect(parseFacts('@@SW@@ SUDO\nfull=1\n').sudo.installed).toBe(true)
+  })
+
   it('reads a failed snap renewal, Apache, and no sudo', () => {
     const facts = parseFacts(fixture('facts-timer-failed.txt'))
     expect(facts.renewal).toEqual({ mechanism: 'snap.certbot.renew.timer', lastRun: 1793414515, lastResult: 'failed', output: '' })
     expect(facts.otherWebServer).toBe('apache')
-    expect(facts.sudo).toEqual({ certbot: false, nginx: false, apache: false, full: false })
+    expect(facts.sudo).toEqual({ certbot: false, nginx: false, apache: false, full: false, installed: true })
     expect(facts.serving).toBe('apache')
     expect(facts.openssl).toBe('1.1.1f')
     expect(facts.addresses).toEqual(['198.51.100.7'])

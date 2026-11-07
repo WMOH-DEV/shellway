@@ -35,6 +35,7 @@ section OPENSSL_V; openssl version 2>&1 </dev/null
 section CERTBOT_V; certbot --version 2>&1 </dev/null
 section PATHS; echo "certbot=$certbot_path"; echo "nginx=$nginx_path"; echo "apache=$apache_path"
 section SUDO
+if command -v sudo >/dev/null 2>&1; then echo installed=1; else echo installed=0; fi
 echo "certbot=$(can "$certbot_path")"
 echo "nginx=$(can "$nginx_path")"
 echo "apache=$(can "$apache_path")"

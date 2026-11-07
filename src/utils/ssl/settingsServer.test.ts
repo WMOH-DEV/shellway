@@ -13,7 +13,7 @@ const facts = (overrides: Partial<ServerFacts> = {}): ServerFacts => ({
   serving: 'nginx',
   nginxParse: 'full',
   renewal: { mechanism: 'certbot.timer', lastRun: NOW - 7200, lastResult: 'success', output: '' },
-  sudo: { certbot: true, nginx: true, apache: false, full: true },
+  sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true },
   paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
   user: 'deploy',
   addresses: ['203.0.113.10'],
@@ -62,19 +62,27 @@ describe('serverCheckRows', () => {
   })
 
   it('gives the exact sudoers line for a failing sudo row', () => {
-    const f = facts({ sudo: { certbot: false, nginx: true, apache: false, full: false } })
+    const f = facts({ sudo: { certbot: false, nginx: true, apache: false, full: false, installed: true } })
     expect(row(f, 'sudo-certbot')).toMatchObject({ tone: 'bad', sudoers: 'deploy ALL=(root) NOPASSWD: /usr/bin/certbot' })
     expect(row(f, 'sudo-nginx').sudoers).toBeNull()
   })
 
   it('gives no sudoers line when the tool path is unknown', () => {
-    const f = facts({ sudo: { certbot: false, nginx: false, apache: false, full: false }, paths: { certbot: null, nginx: null, apache: null } })
+    const f = facts({ sudo: { certbot: false, nginx: false, apache: false, full: false, installed: true }, paths: { certbot: null, nginx: null, apache: null } })
+    expect(row(f, 'sudo-nginx')).toMatchObject({ tone: 'muted', sudoers: null })
+  })
+
+  it('says sudo itself is missing instead of offering sudoers lines', () => {
+    const f = facts({ sudo: { certbot: false, nginx: false, apache: false, full: false, installed: false }, user: 'root' })
+    expect(row(f, 'sudo-full')).toMatchObject({ tone: 'bad', sudoers: null })
+    expect(row(f, 'sudo-full').detail).toContain('sudo is not installed')
+    expect(row(f, 'sudo-certbot')).toMatchObject({ tone: 'muted', detail: 'needs sudo, which is not installed', sudoers: null })
     expect(row(f, 'sudo-nginx')).toMatchObject({ tone: 'muted', sudoers: null })
   })
 
   it('explains what full sudo unlocks in both states', () => {
     expect(row(facts(), 'sudo-full').detail).toContain('Origin CA')
-    expect(row(facts({ sudo: { certbot: true, nginx: true, apache: false, full: false } }), 'sudo-full')).toMatchObject({ tone: 'warn' })
+    expect(row(facts({ sudo: { certbot: true, nginx: true, apache: false, full: false, installed: true } }), 'sudo-full')).toMatchObject({ tone: 'warn' })
   })
 })
 

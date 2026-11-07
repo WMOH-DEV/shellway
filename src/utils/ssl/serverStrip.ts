@@ -35,8 +35,9 @@ function renewalItem(facts: ServerFacts, now: number): StripItem {
 function sudoItem(facts: ServerFacts): StripItem {
   const kind = siteServer(facts) ?? 'nginx'
   const server = SITE_SERVER_LABELS[kind]
-  const { certbot } = facts.sudo
+  const { certbot, installed } = facts.sudo
   const web = facts.sudo[kind]
+  if (!installed) return { key: 'sudo', parts: plain('sudo is not installed'), tone: 'error' }
   if (certbot && web) return { key: 'sudo', parts: plain(`sudo for certbot, ${server}`), tone: 'success' }
   if (certbot) return { key: 'sudo', parts: plain('sudo for certbot only'), tone: 'warning' }
   if (web) return { key: 'sudo', parts: plain(`sudo for ${server} only`), tone: 'warning' }
@@ -52,6 +53,7 @@ function fullSudoItem({ sudo }: ServerFacts): StripItem {
 export function serverStrip(facts: ServerFacts, now: number): StripItem[] {
   const items = [certbotItem(facts)]
   if (facts.certbot) items.push(renewalItem(facts, now))
-  items.push(sudoItem(facts), fullSudoItem(facts))
+  items.push(sudoItem(facts))
+  if (facts.sudo.installed) items.push(fullSudoItem(facts))
   return items
 }

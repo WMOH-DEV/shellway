@@ -31,7 +31,7 @@ const responder = (call: Call): Answer | undefined => {
 function build(answer: (call: Call, attempt: number) => Answer | undefined = responder): void {
   rec = recorder(answer)
   createOriginCert = vi.fn(async () => ({ certificate: PEM, notAfter: 2_300_000_000 }))
-  config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true } }), blocks: [] }
+  config = { facts: makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } }), blocks: [] }
   lineagesOnServer = switchedReport().lineages
   broadcast = vi.fn()
   const store = { cloudflareToken: () => token, setKnownHosts: () => {} } as unknown as SslLocalStore
@@ -172,7 +172,7 @@ describe('SslCoordinator Origin CA switch', () => {
     ].join('\n')
     build((call) => (call.command === `sudo -n cat '${BACKUP_PATH}'` ? { code: 0, stdout: apacheSite } : responder(call)))
     const report = switchedReport()
-    report.facts = makeFacts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', sudo: { certbot: true, nginx: false, apache: true, full: true } })
+    report.facts = makeFacts({ apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', sudo: { certbot: true, nginx: false, apache: true, full: true, installed: true } })
     vi.spyOn(ssl, 'lastReport').mockReturnValue(report)
     expect(await ssl.originLeftover('c1', 'app.example.com')).toMatchObject({ lineage: 'app.example.com', backupPath: BACKUP_PATH, undoable: true })
   })
@@ -211,7 +211,7 @@ describe('SslCoordinator Origin CA switch', () => {
 
   it('refuses to remove a certbot certificate when nginx was not fully read, even if no site is listed', async () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
-      config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
+      config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } })
       config.blocks = []
       await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole web server configuration')
     }
@@ -220,7 +220,7 @@ describe('SslCoordinator Origin CA switch', () => {
 
   it('refuses to undo when nginx was not fully read', async () => {
     const report = switchedReport()
-    report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, apache: false, full: true } })
+    report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } })
     reportIs(report)
     await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole web server configuration')
     expect(rec.calls).toEqual([])
@@ -237,7 +237,7 @@ describe('SslCoordinator Origin CA switch', () => {
   })
 
   it('refuses to remove a certbot certificate without full sudo or with a bad name', async () => {
-    config.facts = makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: false } })
+    config.facts = makeFacts({ sudo: { certbot: true, nginx: true, apache: false, full: false, installed: true } })
     await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('full passwordless sudo')
     expect(() => ssl.originRemoveLineage('c1', 'app.example.com; rm -rf /', 'run-1')).toThrow('Invalid certificate name')
     expect(rec.calls).toEqual([])

@@ -204,7 +204,7 @@ describe('HostnameDetail', () => {
 
   it('starts the Origin CA switch for this hostname when every precondition holds', async () => {
     const { onSwitchOrigin } = renderDetail(api, {
-      facts: makeFacts({ renewal: failedRenewal, sudo: { certbot: true, nginx: true, apache: false, full: true } }),
+      facts: makeFacts({ renewal: failedRenewal, sudo: { certbot: true, nginx: true, apache: false, full: true, installed: true } }),
       cloudflare: { ...connectedCloudflare, permissions: [{ id: 'origin-ca', state: 'granted', lines: [] }] }
     })
     await userEvent.click(screen.getByRole('button', { name: 'Start' }))
@@ -212,7 +212,7 @@ describe('HostnameDetail', () => {
   })
 
   it('explains why actions are missing without sudo or a certbot certificate', () => {
-    renderDetail(api, { facts: makeFacts({ sudo: { certbot: false, nginx: true, apache: false, full: false } }) })
+    renderDetail(api, { facts: makeFacts({ sudo: { certbot: false, nginx: true, apache: false, full: false, installed: true } }) })
     expect(screen.getByText(/Passwordless sudo for certbot is missing/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run test' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Force renew…' })).not.toBeInTheDocument()

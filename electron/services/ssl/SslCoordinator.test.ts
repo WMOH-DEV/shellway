@@ -18,7 +18,7 @@ const scan = (days: number): ServerScan => ({
   facts: {
     nginx: '1.24.0', openssl: '3.0.13', certbot: '2.11.0', otherWebServer: null, apache: null, serving: 'nginx', nginxParse: 'full',
     renewal: { mechanism: 'certbot.timer', lastRun: null, lastResult: 'failed', output: '' },
-    sudo: { certbot: true, nginx: true, apache: false, full: false }, paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
+    sudo: { certbot: true, nginx: true, apache: false, full: false, installed: true }, paths: { certbot: '/usr/bin/certbot', nginx: '/usr/sbin/nginx', apache: null },
     user: 'deploy', addresses: ['203.0.113.10']
   },
   blocks: [{
@@ -194,7 +194,7 @@ describe('SslCoordinator', () => {
       return { stdout: '', stdoutBytes: 0, stderr: '', code: 0 }
     }
     deps.serviceFor = () => ({
-      readConfig: async () => ({ facts: { nginxParse: 'full', sudo: { full: true } }, blocks: [{ id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', names: ['app.example.com'] }] })
+      readConfig: async () => ({ facts: { nginxParse: 'full', sudo: { full: true, installed: true } }, blocks: [{ id: 'app.conf:1', file: '/etc/nginx/sites-enabled/app.conf', names: ['app.example.com'] }] })
     }) as unknown as SslService
 
     expect(ssl.httpsEmail('s1')).toBe('')

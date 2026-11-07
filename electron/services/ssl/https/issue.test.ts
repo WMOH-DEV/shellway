@@ -217,7 +217,7 @@ describe('runIssue on Apache', () => {
   const apacheConfig = (): ServerConfig => ({
     facts: {
       nginx: null, apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', nginxParse: 'full',
-      sudo: { certbot: true, nginx: false, apache: true, full: true }
+      sudo: { certbot: true, nginx: false, apache: true, full: true, installed: true }
     } as ServerFacts,
     blocks: [apacheBlock]
   })

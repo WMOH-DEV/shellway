@@ -107,7 +107,7 @@ describe('SslService.scan with sudo', () => {
     await new SslService(exec).scan()
     const text = calls.map((c) => `${c.command}\n${c.stdin}`).join('\n')
     expect(text.match(/\bsudo\b/g)?.length).toBeGreaterThanOrEqual(4)
-    expect(text).not.toMatch(/\bsudo\b(?! -n )/)
+    expect(text).not.toMatch(/(?<!command -v )\bsudo\b(?! -n )/)
   })
 
   it('never retries: each command runs once', async () => {

@@ -24,8 +24,15 @@ describe('serverStrip', () => {
     expect(textOf(items[0])).toBe('certbot not installed')
   })
 
+  it('says when sudo is not installed', () => {
+    const items = serverStrip(makeFacts({ sudo: { certbot: false, nginx: false, apache: false, full: false, installed: false } }), NOW)
+    expect(textOf(items.find((i) => i.key === 'sudo')!)).toBe('sudo is not installed')
+    expect(items.find((i) => i.key === 'sudo')).toMatchObject({ tone: 'error' })
+    expect(items.find((i) => i.key === 'full-sudo')).toBeUndefined()
+  })
+
   it('warns about partial sudo and a missing timer', () => {
-    const items = serverStrip(makeFacts({ sudo: { certbot: true, nginx: false, apache: false, full: true }, renewal: { mechanism: 'none', lastRun: null, lastResult: 'unknown', output: '' } }), NOW)
+    const items = serverStrip(makeFacts({ sudo: { certbot: true, nginx: false, apache: false, full: true, installed: true }, renewal: { mechanism: 'none', lastRun: null, lastResult: 'unknown', output: '' } }), NOW)
     expect(items.find((i) => i.key === 'sudo')).toMatchObject({ tone: 'warning' })
     expect(items.find((i) => i.key === 'renewal')).toMatchObject({ tone: 'warning' })
     expect(textOf(items.find((i) => i.key === 'full-sudo')!)).toBe('full sudo (Origin CA switch available)')
@@ -79,7 +86,7 @@ describe('actionAvailability', () => {
     expect(actionAvailability(makeHost(), makeFacts({ certbot: null })).reason).toMatch(/not installed/)
     expect(actionAvailability(makeHost({ lineage: null }), makeFacts()).reason).toMatch(/nothing to renew/)
     expect(actionAvailability(makeHost({ lineage: 'a b; rm' }), makeFacts()).reason).toMatch(/characters/)
-    expect(actionAvailability(makeHost(), makeFacts({ sudo: { certbot: false, nginx: true, apache: false, full: false } })).reason).toMatch(/sudo for certbot is missing/)
+    expect(actionAvailability(makeHost(), makeFacts({ sudo: { certbot: false, nginx: true, apache: false, full: false, installed: true } })).reason).toMatch(/sudo for certbot is missing/)
   })
 
   it('makes Test renewal primary only when renewal looks unhealthy', () => {

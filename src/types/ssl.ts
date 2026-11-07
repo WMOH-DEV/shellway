@@ -66,7 +66,7 @@ export interface ServerFacts {
   otherWebServer: 'apache' | 'caddy' | null
   nginxParse: NginxParse
   renewal: RenewalInfo
-  sudo: { certbot: boolean; nginx: boolean; apache: boolean; full: boolean }
+  sudo: { certbot: boolean; nginx: boolean; apache: boolean; full: boolean; installed: boolean }
   paths: { certbot: string | null; nginx: string | null; apache: string | null }
   user: string
   addresses: string[]
