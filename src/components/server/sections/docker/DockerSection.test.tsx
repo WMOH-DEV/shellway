@@ -10,6 +10,7 @@ import type { ServerSectionContext } from '../types'
 import { DockerSection } from './DockerSection'
 
 const launch = vi.fn()
+vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => (params: Record<string, unknown>) => params }))
 vi.mock('@/components/server/action', () => ({ useActionLauncher: () => ({ launch }) }))
 
 const ok = (data: unknown) => ({ status: 'ok' as const, data, at: 0 })

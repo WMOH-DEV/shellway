@@ -17,6 +17,7 @@ import { ImagesTab, NetworksTab, VolumesTab } from './ResourceTabs'
 import { RunImagePanel, type RunRequest } from './RunImagePanel'
 import { StacksTab } from './StacksTab'
 import { useLinkedSites } from './useLinkedSites'
+import { useWithOsFamily } from '../../useWithOsFamily'
 
 const PROBE_IDS = Object.values(DOCKER_PROBE)
 
@@ -90,6 +91,7 @@ function UnavailableState({ state, onInstall, onServices }: { state: DockerState
 export function DockerSection({ ctx }: { ctx: ServerSectionContext }) {
   const { facts, loading, refresh } = useServerFacts(ctx, PROBE_IDS)
   const launcher = useActionLauncher(ctx)
+  const withOsFamily = useWithOsFamily(ctx.sessionId)
   const [tab, setTab] = useState<DockerTab>('stacks')
   const [panel, setPanel] = useState<Panel>(null)
   const [cleanupOpen, setCleanupOpen] = useState(false)
@@ -153,7 +155,7 @@ export function DockerSection({ ctx }: { ctx: ServerSectionContext }) {
                 {tab === 'networks' && <NetworksTab networks={factData<DockerNetwork[]>(facts, DOCKER_PROBE.networks) ?? []} containers={containers?.items ?? []} />}
               </>
             ) : (
-              <UnavailableState state={data} onInstall={() => launcher.launch({ type: 'software.install', params: { component: 'docker' }, onFinished: () => void refresh() })} onServices={() => ctx.navigate({ section: 'services' })} />
+              <UnavailableState state={data} onInstall={() => launcher.launch({ type: 'software.install', params: withOsFamily({ component: 'docker' }), onFinished: () => void refresh() })} onServices={() => ctx.navigate({ section: 'services' })} />
             )}
           </ProbeState>
         </SectionPage>

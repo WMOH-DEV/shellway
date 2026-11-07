@@ -20,6 +20,7 @@ import { openInSqlTab } from './openInSql'
 import { generatePassword } from './password'
 import { RedisPanel } from './RedisPanel'
 import { UsersTable } from './UsersTable'
+import { useWithOsFamily } from '../../useWithOsFamily'
 
 const PROBES = [MYSQL_PROBE, POSTGRES_PROBE, REDIS_PROBE, BACKUPS_PROBE, SITES_PROBE]
 const TABS: EngineTab[] = ['mysql', 'postgresql', 'redis']
@@ -56,6 +57,7 @@ function EngineBody({ data, children }: { data: EngineFacts; children: React.Rea
 export function DatabasesSection({ ctx }: { ctx: ServerSectionContext }) {
   const { facts, loading, refresh } = useServerFacts(ctx, PROBES)
   const launcher = useActionLauncher(ctx)
+  const withOsFamily = useWithOsFamily(ctx.sessionId)
   const [picked, setPicked] = useState<EngineTab | null>(null)
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
@@ -97,7 +99,7 @@ export function DatabasesSection({ ctx }: { ctx: ServerSectionContext }) {
     else if (result.data) toast.success('Backup saved', result.data.savedTo)
   }
 
-  const install = (component: ComponentId) => launcher.launch({ type: 'software.install', params: { component }, onFinished: () => void refresh() })
+  const install = (component: ComponentId) => launcher.launch({ type: 'software.install', params: withOsFamily({ component }), onFinished: () => void refresh() })
 
   const tabs: SegmentOption<EngineTab>[] = TABS.map((value) => ({ value, label: engineTabLabel(value, facts) }))
   const canCreate = data?.status === 'ok'

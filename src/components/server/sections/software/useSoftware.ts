@@ -4,6 +4,7 @@ import { PACKAGES_PROBE, PHP_PROBE, UPDATES_PROBE, USAGE_PROBE, type PackagesFac
 import { useActionLauncher } from '../../action'
 import { useServerFacts } from '../../useServerFacts'
 import type { ServerSectionContext } from '../types'
+import { useWithOsFamily } from '../../useWithOsFamily'
 
 const PROBES = [UPDATES_PROBE, PACKAGES_PROBE, PHP_PROBE, USAGE_PROBE]
 
@@ -21,10 +22,18 @@ export interface SoftwareState {
   run(type: string, params: unknown): void
 }
 
+const INSTALL = 'software.install'
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+
 export function useSoftware(ctx: ServerSectionContext): SoftwareState {
   const { facts, loading, refresh } = useServerFacts(ctx, PROBES)
   const launcher = useActionLauncher(ctx)
-  const run = useCallback((type: string, params: unknown) => launcher.launch({ type, params, onFinished: () => void refresh() }), [launcher, refresh])
+  const withOsFamily = useWithOsFamily(ctx.sessionId)
+  const run = useCallback((type: string, params: unknown) => {
+    const finalParams = type === INSTALL && isRecord(params) ? withOsFamily(params) : params
+    launcher.launch({ type, params: finalParams, onFinished: () => void refresh() })
+  }, [launcher, refresh, withOsFamily])
   return {
     updates: facts[UPDATES_PROBE] as ProbeResult<UpdatesFacts> | undefined,
     packages: facts[PACKAGES_PROBE] as ProbeResult<PackagesFacts> | undefined,

@@ -18,6 +18,7 @@ const facts: ServerFacts = {
   [USAGE_PROBE]: ok(parseUsage(USAGE))
 }
 
+vi.mock('@/components/server/useWithOsFamily', () => ({ useWithOsFamily: () => (params: Record<string, unknown>) => params }))
 vi.mock('../../useServerFacts', () => ({ useServerFacts: () => ({ facts, loading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('../../action', () => ({ useActionLauncher: () => ({ launch }) }))
 
