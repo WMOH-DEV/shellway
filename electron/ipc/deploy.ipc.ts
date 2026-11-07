@@ -5,6 +5,7 @@ import { broadcast } from '../services/WindowManager'
 import { getNotificationService } from '../services/NotificationService'
 import { sshExec } from '../utils/sshExec'
 import { DeployCoordinator } from '../services/deploy/DeployCoordinator'
+import { withServerNotify } from '../services/serverNotify/notifyEvents'
 import { DeployLocalStore } from '../services/deploy/DeployLocalStore'
 import { LocalGit } from '../services/deploy/LocalGit'
 import type { RemoteExec } from '../services/deploy/DeployService'
@@ -84,7 +85,7 @@ export function registerDeployIPC(): void {
     local: localStore,
     git: localGit,
     notify: (title, body) => getNotificationService()?.notifyDeploy({ title, body }),
-    broadcast
+    broadcast: withServerNotify(broadcast)
   })
   coordinator.startWatching()
 
