@@ -10,5 +10,5 @@ const ACTION_FLAGS: Record<CertbotAction, string> = {
 
 export function certbotCommand(lineage: string, action: CertbotAction): string {
   if (!LINEAGE_NAME.test(lineage)) throw new Error('Invalid certificate name')
-  return `sudo -n certbot renew${ACTION_FLAGS[action]} --cert-name ${lineage}`
+  return `sudo -n certbot renew --no-random-sleep-on-renew${ACTION_FLAGS[action]} --cert-name ${lineage}`
 }

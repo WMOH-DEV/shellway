@@ -190,8 +190,8 @@ describe('HostnameDetail', () => {
 
   it('lists the exact commands, with Test renewal as the primary action', () => {
     renderDetail(api)
-    expect(screen.getByText('sudo -n certbot renew --dry-run --cert-name api.example.com')).toBeInTheDocument()
-    expect(screen.getByText('sudo -n certbot renew --cert-name api.example.com')).toBeInTheDocument()
+    expect(screen.getByText('sudo -n certbot renew --no-random-sleep-on-renew --dry-run --cert-name api.example.com')).toBeInTheDocument()
+    expect(screen.getByText('sudo -n certbot renew --no-random-sleep-on-renew --cert-name api.example.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run test' }).className).toContain('bg-nd-accent')
     expect(screen.getByRole('button', { name: 'Renew' }).className).not.toContain('bg-nd-accent')
   })

@@ -183,7 +183,7 @@ describe('SslService.runCertbot', () => {
     const seen: string[] = []
     const result = await new SslService(exec).runCertbot('app.example.com', 'test', (chunk) => seen.push(chunk))
     expect(calls).toHaveLength(1)
-    expect(calls[0].command).toBe('sudo -n certbot renew --dry-run --cert-name app.example.com')
+    expect(calls[0].command).toBe('sudo -n certbot renew --no-random-sleep-on-renew --dry-run --cert-name app.example.com')
     expect(calls[0].options?.timeoutMs).toBe(600_000)
     expect(seen).toEqual(['Processing app.example.com\n', 'Congratulations, all simulated renewals succeeded\n'])
     expect(result).toEqual({ code: 0, output: seen.join('') })
