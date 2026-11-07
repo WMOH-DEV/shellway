@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { app, ipcMain } from 'electron'
 import { join } from 'path'
 import { broadcast } from '../services/WindowManager'
+import { withServerNotify } from '../services/serverNotify/notifyEvents'
 import { sshExec } from '../utils/sshExec'
 import { getSSHService } from './ssh.ipc'
 import type { RemoteExec } from '../services/deploy/DeployService'
@@ -118,7 +119,7 @@ export function notifyServerConnectionClosed(connectionId: string): void {
 
 export function registerServerIPC(): void {
   const userData = app.getPath('userData')
-  const scan = new ScanService({ execFor, broadcast, now: Date.now })
+  const scan = new ScanService({ execFor, broadcast: withServerNotify(broadcast), now: Date.now })
   const activity = new ActivityStore(join(userData, 'server-activity'))
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
   const engine = new ActionEngine({ execFor, scan, store: new RunStore(join(userData, 'server-runs.json')), activity, broadcast, newId: randomUUID, now: Date.now, sleep })
