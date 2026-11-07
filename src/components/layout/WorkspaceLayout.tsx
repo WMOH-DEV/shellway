@@ -243,7 +243,7 @@ export function WorkspaceLayout() {
                 e.stopPropagation()
                 closePane(pane.id)
               }}
-              className="shrink-0 h-full px-2 flex items-center text-nd-text-muted hover:text-nd-danger hover:bg-nd-surface/60 transition-colors"
+              className="shrink-0 h-full px-2 flex items-center text-nd-text-muted hover:text-nd-error hover:bg-nd-surface/60 transition-colors"
             >
               <X size={14} />
             </button>
