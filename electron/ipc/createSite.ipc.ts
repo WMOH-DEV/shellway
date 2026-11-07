@@ -4,6 +4,7 @@ import { getSSHService } from './ssh.ipc'
 import { requireCoordinator as deployCoordinator } from './deploy.ipc'
 import { requireCoordinator as sslCoordinator } from './ssl.ipc'
 import { broadcast } from '../services/WindowManager'
+import { withServerActivity } from './server.ipc'
 import { sshExec } from '../utils/sshExec'
 import type { RemoteExec } from '../services/deploy/DeployService'
 import { CreateSiteService } from '../services/createSite/CreateSiteService'
@@ -84,7 +85,7 @@ export function registerCreateSiteIPC(): void {
     ssl: sslCoordinator(),
     deploy: deployCoordinator(),
     store: new RunStore(),
-    broadcast,
+    broadcast: withServerActivity(broadcast),
     newId: randomUUID,
     now: Date.now
   })

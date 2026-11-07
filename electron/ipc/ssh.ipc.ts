@@ -11,6 +11,7 @@ import { broadcast, windowHolding } from '../services/WindowManager'
 import { notifyDeployConnectionClosed, notifyDeployConnectionReady } from './deploy.ipc'
 import { notifySslConnectionClosed, notifySslConnectionReady } from './ssl.ipc'
 import { forgetCreateSiteSession, rememberCreateSiteSession } from './createSite.ipc'
+import { notifyServerConnectionClosed, notifyServerConnectionReady } from './server.ipc'
 import { sshResource } from '../../src/types/windowResources'
 
 const sshService = new SSHService()
@@ -195,6 +196,7 @@ export function registerSSHIPC(): void {
             notifyDeployConnectionReady(connectionId, savedSessionId, config.host || connectionId)
             notifySslConnectionReady(connectionId, savedSessionId, config.host || connectionId, config.host ?? '')
             rememberCreateSiteSession(connectionId, savedSessionId)
+            notifyServerConnectionReady(connectionId, savedSessionId)
           }
 
           // Notify on unexpected disconnect
@@ -202,6 +204,7 @@ export function registerSSHIPC(): void {
             notifyDeployConnectionClosed(connectionId)
             notifySslConnectionClosed(connectionId)
             forgetCreateSiteSession(connectionId)
+            notifyServerConnectionClosed(connectionId)
             const sessionName = config.host || connectionId
             getNotificationService()?.notifyDisconnect(sessionName)
           }
