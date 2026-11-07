@@ -1,9 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { toast } from '@/components/ui/Toast'
 import { useSessionStore } from '@/stores/sessionStore'
+import type { RunRecord } from '@/types/createSite'
 import type { ConnectionStatus } from '@/types/session'
 import type { DeployOptions, DeployResult, SiteConfig } from '@/types/deploy'
 import type { SiteFilter } from '@/utils/deploy/siteRow'
+import { CreateSiteWizard } from './createSite/CreateSiteWizard'
+import { useUnfinishedRun } from './createSite/useUnfinishedRun'
 import { KeySetup } from './KeySetup'
 import { SiteDetail, type DetailTab } from './SiteDetail'
 import { SetupWizard } from './setup/SetupWizard'
@@ -24,6 +27,7 @@ type Screen =
   | { kind: 'list' }
   | { kind: 'detail'; name: string; tab?: DetailTab }
   | { kind: 'setup' }
+  | { kind: 'create'; run: RunRecord | null }
   | { kind: 'key'; site: SiteConfig }
 
 function useStartingSites(): [ReadonlySet<string>, (name: string, task: () => Promise<void>) => Promise<void>] {
@@ -55,6 +59,7 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
   const rootRef = useRef<HTMLDivElement>(null)
   const visible = useIsVisible(rootRef)
   const away = useAwaySummary(sessionId, sites, visible && connected)
+  const unfinished = useUnfinishedRun(sessionId, connected)
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
   const shipSite = shipping ? sites.find((s) => s.config.name === shipping) : undefined
   const frame = (content: ReactNode) => (
@@ -137,6 +142,23 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
     )
   }
 
+  if (screen.kind === 'create') {
+    const closeCreate = () => {
+      setScreen({ kind: 'list' })
+      void refresh()
+      void unfinished.refresh()
+    }
+    return frame(
+      <CreateSiteWizard
+        connectionId={connectionId}
+        sessionId={sessionId}
+        serverName={session?.name ?? 'this server'}
+        initialRun={screen.run}
+        onClose={closeCreate}
+      />
+    )
+  }
+
   if (screen.kind === 'key') {
     return frame(<KeySetup connectionId={connectionId} site={screen.site} onDone={() => setScreen({ kind: 'detail', name: screen.site.name })} />)
   }
@@ -173,6 +195,11 @@ export function DeployView({ connectionId, sessionId, connectionStatus }: Deploy
       user={session?.username ?? ''}
       starting={starting}
       actions={actions}
+      createSite={{
+        unfinished: unfinished.run,
+        onCreate: () => setScreen({ kind: 'create', run: null }),
+        onOpenRun: (run) => setScreen({ kind: 'create', run })
+      }}
       onAdd={() => setScreen({ kind: 'setup' })}
     />
   )

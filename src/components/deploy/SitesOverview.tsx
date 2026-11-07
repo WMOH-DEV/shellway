@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, type RefObject } from 'react'
-import { AlertTriangle, Clock, Loader2, Plus, RefreshCw, Rocket, Search, X } from 'lucide-react'
+import { AlertTriangle, Clock, Globe, Loader2, Plus, RefreshCw, Rocket, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import type { RunRecord } from '@/types/createSite'
 import { cn } from '@/utils/cn'
 import { formatCombo, matchesKeyCombo } from '@/utils/keybindings'
 import { awayParts, filterCounts, matchesFilter, matchesSearch, type AwayOutcome, type AwaySummary, type SiteFilter } from '@/utils/deploy/siteRow'
 import type { DeploySites } from './useDeploySites'
 import { SiteList } from './SiteList'
 import type { SiteActions } from './SiteRow'
+import { UnfinishedRunNotice } from './createSite/UnfinishedRunNotice'
 
 const SEARCH_COMBO = 'CmdOrCtrl+K'
 
@@ -24,6 +26,12 @@ export interface OverviewFilters {
   setFilter: (filter: SiteFilter) => void
 }
 
+export interface CreateSiteEntry {
+  unfinished: RunRecord | null
+  onCreate: () => void
+  onOpenRun: (run: RunRecord) => void
+}
+
 interface SitesOverviewProps {
   data: DeploySites
   filters: OverviewFilters
@@ -32,6 +40,7 @@ interface SitesOverviewProps {
   user: string
   starting: ReadonlySet<string>
   actions: SiteActions
+  createSite: CreateSiteEntry
   onAdd: () => void
 }
 
@@ -142,7 +151,7 @@ function FilterBar({ value, counts, onChange }: { value: SiteFilter; counts: Rec
   )
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({ onAdd, onCreate }: { onAdd: () => void; onCreate: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
       <Rocket size={28} className="text-nd-text-muted" />
@@ -150,7 +159,10 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <div className="max-w-sm text-xs text-nd-text-muted">
         Add a site to deploy it with one click, or automatically when you push. You write the commands; Shellway remembers them.
       </div>
-      <Button variant="primary" onClick={onAdd}><Plus size={13} /> Add site</Button>
+      <div className="flex items-center gap-2">
+        <Button onClick={onCreate}><Globe size={13} /> Create site</Button>
+        <Button variant="primary" onClick={onAdd}><Plus size={13} /> Add site</Button>
+      </div>
     </div>
   )
 }
@@ -164,9 +176,10 @@ function NoMatches({ onClear }: { onClear: () => void }) {
   )
 }
 
-export function SitesOverview({ data, filters, away, serverName, user, starting, actions, onAdd }: SitesOverviewProps) {
+export function SitesOverview({ data, filters, away, serverName, user, starting, actions, createSite, onAdd }: SitesOverviewProps) {
   const { runner, sites, pcDrift, loading, installing, error, refresh, installRunner } = data
   const { query, filter, setQuery, setFilter } = filters
+  const { unfinished } = createSite
   const searchRef = useRef<HTMLInputElement>(null)
   useSearchShortcut(searchRef)
 
@@ -205,17 +218,19 @@ export function SitesOverview({ data, filters, away, serverName, user, starting,
           <Button onClick={() => void refresh()} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} /> Refresh
           </Button>
+          {runner?.installed && <Button onClick={createSite.onCreate}><Globe size={14} /> Create site</Button>}
           {runner?.installed && <Button variant="primary" onClick={onAdd}><Plus size={14} /> Add site</Button>}
         </header>
 
         {runner && (!runner.installed || outdated) && <RunnerBanner installed={runner.installed} installing={installing} onInstall={() => void installRunner()} />}
         {error && <ErrorBanner message={error} retrying={loading} onRetry={() => void refresh()} />}
+        {unfinished && <UnfinishedRunNotice domain={unfinished.domain} onOpen={() => createSite.onOpenRun(unfinished)} />}
         {away.summary && <AwayBanner summary={away.summary} onReview={() => setFilter('attention')} onDismiss={away.dismiss} />}
 
         {!runner && loading && (
           <div className="flex flex-1 items-center justify-center py-16 text-nd-text-muted"><Loader2 size={20} className="animate-spin" /></div>
         )}
-        {runner?.installed && sites.length === 0 && !loading && !error && <EmptyState onAdd={onAdd} />}
+        {runner?.installed && sites.length === 0 && !loading && !error && <EmptyState onAdd={onAdd} onCreate={createSite.onCreate} />}
         {sites.length > 0 && (
           <>
             <FilterBar value={filter} counts={counts} onChange={setFilter} />
