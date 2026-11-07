@@ -19,9 +19,17 @@ function execFor(connectionId: string): RemoteExec | null {
   return (command, options) => sshExec(conn, command, options)
 }
 
-function sessionOf(connectionId: string): string | null {
-  return getSSHService().get(connectionId)?.sessionId ?? null
+const savedSessions = new Map<string, string>()
+
+export function rememberCreateSiteSession(connectionId: string, savedSessionId: string | undefined): void {
+  if (savedSessionId) savedSessions.set(connectionId, savedSessionId)
 }
+
+export function forgetCreateSiteSession(connectionId: string): void {
+  savedSessions.delete(connectionId)
+}
+
+const sessionOf = (connectionId: string): string | null => savedSessions.get(connectionId) ?? null
 
 function str(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 4096) throw new Error(`Invalid ${label}`)
