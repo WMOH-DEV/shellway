@@ -1,14 +1,7 @@
 import type { CreateSiteInput, ServerTools, SiteServer } from '@/types/createSite'
+import { apacheDriver } from '../webServer/apache'
 import type { WebServerDriver } from '../webServer/driver'
 import { nginxDriver } from '../webServer/nginx'
-
-const fakeApacheDriver = (testCommand: string, service: string): WebServerDriver => ({
-  ...nginxDriver,
-  kind: 'apache' as unknown as WebServerDriver['kind'],
-  label: 'Apache',
-  testCommand,
-  reloadCommand: `systemctl reload ${service}`
-})
 
 export interface ServerCase {
   name: string
@@ -20,12 +13,12 @@ export const NGINX: ServerCase = { name: 'nginx', server: { kind: 'nginx' }, dri
 export const APACHE_DEBIAN: ServerCase = {
   name: 'apache debian',
   server: { kind: 'apache', layout: 'debian' },
-  driver: fakeApacheDriver('apache2ctl configtest', 'apache2')
+  driver: apacheDriver('debian')
 }
 export const APACHE_RHEL: ServerCase = {
   name: 'apache rhel',
   server: { kind: 'apache', layout: 'rhel' },
-  driver: fakeApacheDriver('apachectl configtest', 'httpd')
+  driver: apacheDriver('rhel')
 }
 export const SERVER_CASES: ServerCase[] = [NGINX, APACHE_DEBIAN, APACHE_RHEL]
 

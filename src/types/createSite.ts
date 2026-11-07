@@ -1,8 +1,7 @@
 import type { SourceMode } from './deploy'
+import type { ApacheLayout } from './ssl'
 
 export type TemplateId = 'laravel' | 'node' | 'static' | 'php' | 'compose' | 'blank'
-
-export type ApacheLayout = 'debian' | 'rhel'
 
 export type SiteServer = { kind: 'nginx' } | { kind: 'apache'; layout: ApacheLayout }
 

@@ -16,7 +16,7 @@ export function siteVars(input: CreateSiteInput): SiteVars {
   return {
     siteName: assertSiteName(input.siteName),
     names: siteNames(input),
-    release: `${assertFolder(input.folder)}/current`
+    release: assertFolder(input.folder)
   }
 }
 

@@ -24,7 +24,7 @@ function folderAction({ folder, owner }: CreateSiteInput): PlanAction {
   return action({
     id: 'folder',
     title: 'Folder',
-    summary: `${assertFolder(folder)} with releases/ and shared/, owned by ${assertOwner(owner)}`,
+    summary: `${assertFolder(folder)}-deploy owned by ${assertOwner(owner)}, and ${folder} pointing at its current release`,
     chip: 'new',
     ...asRoot(folderScript(folder, owner))
   })

@@ -14,7 +14,7 @@ describe('nginx templates', () => {
       'server {',
       '    listen 80;',
       '    server_name shop.example.com www.shop.example.com;',
-      '    root /var/www/shop/current/public;',
+      '    root /var/www/shop/public;',
       '    index index.php;',
       '    location / { try_files $uri $uri/ /index.php?$query_string; }',
       '    location ~ \\.php$ { fastcgi_pass unix:/run/php/php8.3-fpm.sock; include snippets/fastcgi-php.conf; }',
@@ -25,9 +25,9 @@ describe('nginx templates', () => {
   })
 
   it.each([
-    ['php', ['root /var/www/shop/current;', 'index index.php index.html;', 'location / { try_files $uri $uri/ =404; }', 'fastcgi_pass unix:/run/php/php8.3-fpm.sock']],
-    ['static', ['root /var/www/shop/current;', 'index index.html;', 'location / { try_files $uri $uri/ =404; }', 'location ~ /\\.(?!well-known) { deny all; }']],
-    ['blank', ['root /var/www/shop/current;', 'index index.html;']],
+    ['php', ['root /var/www/shop;', 'index index.php index.html;', 'location / { try_files $uri $uri/ =404; }', 'fastcgi_pass unix:/run/php/php8.3-fpm.sock']],
+    ['static', ['root /var/www/shop;', 'index index.html;', 'location / { try_files $uri $uri/ =404; }', 'location ~ /\\.(?!well-known) { deny all; }']],
+    ['blank', ['root /var/www/shop;', 'index index.html;']],
     ['node', ['proxy_pass http://127.0.0.1:3000;', 'proxy_set_header Upgrade $http_upgrade;', 'proxy_set_header Connection "upgrade";', 'proxy_set_header Host $host;']],
     ['compose', ['proxy_pass http://127.0.0.1:8080;', 'proxy_http_version 1.1;']]
   ] as Array<[TemplateId, string[]]>)('%s has its key lines', (template, expected) => {
@@ -51,8 +51,8 @@ describe('Apache templates', () => {
       '<VirtualHost *:80>',
       '    ServerName shop.example.com',
       '    ServerAlias www.shop.example.com',
-      '    DocumentRoot /var/www/shop/current/public',
-      '    <Directory /var/www/shop/current/public>',
+      '    DocumentRoot /var/www/shop/public',
+      '    <Directory /var/www/shop/public>',
       '        Options FollowSymLinks',
       '        AllowOverride All',
       '        Require all granted',
@@ -75,9 +75,9 @@ describe('Apache templates', () => {
   })
 
   it.each([
-    ['php', ['DocumentRoot /var/www/shop/current', '<Directory /var/www/shop/current>', 'AllowOverride All', 'SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"']],
-    ['static', ['DocumentRoot /var/www/shop/current', 'Options FollowSymLinks', 'AllowOverride None', 'Require all granted']],
-    ['blank', ['DocumentRoot /var/www/shop/current', 'AllowOverride None']],
+    ['php', ['DocumentRoot /var/www/shop', '<Directory /var/www/shop>', 'AllowOverride All', 'SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"']],
+    ['static', ['DocumentRoot /var/www/shop', 'Options FollowSymLinks', 'AllowOverride None', 'Require all granted']],
+    ['blank', ['DocumentRoot /var/www/shop', 'AllowOverride None']],
     ['node', ['ProxyPreserveHost On', 'ProxyPass /.well-known/acme-challenge/ !', 'ProxyPass / http://127.0.0.1:3000/', 'ProxyPassReverse / http://127.0.0.1:3000/']],
     ['compose', ['ProxyPass / http://127.0.0.1:8080/', 'ProxyPassReverse / http://127.0.0.1:8080/']]
   ] as Array<[TemplateId, string[]]>)('%s has its key lines', (template, expected) => {

@@ -286,21 +286,19 @@ describe('folderScript', () => {
   it('has the exact refuse and create lines', () => {
     expect(folderScript('/var/www/shop', 'deploy').split('\n')).toEqual([
       'set -e',
-      "if [ -e '/var/www/shop' ] && [ ! -d '/var/www/shop' ]; then",
-      "  echo '/var/www/shop exists and is not a folder. Nothing was changed.' >&2",
+      "if [ -e '/var/www/shop' ] || [ -L '/var/www/shop' ]; then",
+      "  echo '/var/www/shop already exists. Nothing was changed.' >&2",
       '  exit 3',
       'fi',
-      "if [ -d '/var/www/shop' ]; then",
-      `  if [ -n "$(ls -A '/var/www/shop')" ]; then`,
-      "    echo '/var/www/shop already has files in it. Nothing was changed.' >&2",
-      '    exit 3',
-      '  fi',
-      'else',
-      "  mkdir -p '/var/www/shop'",
-      `  echo '${FOLDER_CREATED}'`,
+      "if [ -e '/var/www/shop-deploy' ] || [ -L '/var/www/shop-deploy' ]; then",
+      "  echo '/var/www/shop-deploy already exists. Nothing was changed.' >&2",
+      '  exit 3',
       'fi',
-      "mkdir '/var/www/shop/releases' '/var/www/shop/shared'",
-      "chown 'deploy:' '/var/www/shop' '/var/www/shop/releases' '/var/www/shop/shared'",
+      `mkdir -p "$(dirname '/var/www/shop')"`,
+      "mkdir '/var/www/shop-deploy' '/var/www/shop-deploy/releases' '/var/www/shop-deploy/shared'",
+      `echo '${FOLDER_CREATED}'`,
+      "chown -R 'deploy:' '/var/www/shop-deploy'",
+      "ln -s '/var/www/shop-deploy/current' '/var/www/shop'",
       ''
     ])
   })
@@ -312,69 +310,74 @@ describe('folderScript', () => {
     }
   )
 
-  it('creates a missing folder and says so', () => {
+  it('lays out the folder the way the Deploy runner expects', () => {
     const folder = join(root, 'shop')
     const result = runAsIs(folderScript(folder, owner))
     expect(result.status).toBe(0)
     expect(result.stdout.trim()).toBe(FOLDER_CREATED)
-    expect(existsSync(join(folder, 'releases')) && existsSync(join(folder, 'shared'))).toBe(true)
+    expect(readlinkSync(folder)).toBe(`${folder}-deploy/current`)
+    expect(existsSync(`${folder}-deploy/releases`) && existsSync(`${folder}-deploy/shared`)).toBe(true)
   })
 
-  it('fills an existing empty folder without claiming it', () => {
-    const folder = join(root, 'shop')
-    mkdirSync(folder)
-    const result = runAsIs(folderScript(folder, owner))
-    expect(result.status).toBe(0)
-    expect(result.stdout).not.toContain(FOLDER_CREATED)
-    expect(existsSync(join(folder, 'releases'))).toBe(true)
-  })
-
-  it('refuses a folder with files in it and changes nothing', () => {
-    const folder = join(root, 'shop')
-    mkdirSync(folder)
-    writeFileSync(join(folder, 'index.html'), 'hi')
-    const result = runAsIs(folderScript(folder, owner))
+  it.each([
+    ['an empty folder', () => mkdirSync(join(root, 'shop'))],
+    ['a file', () => writeFileSync(join(root, 'shop'), 'hi')],
+    ['a dangling symlink', () => symlinkSync(join(root, 'elsewhere'), join(root, 'shop'))],
+    ['a deploy folder', () => mkdirSync(join(root, 'shop-deploy'))]
+  ])('refuses when the path is already %s and changes nothing', (_name, prepare) => {
+    prepare()
+    const result = runAsIs(folderScript(join(root, 'shop'), owner))
     expect(result.status).toBe(3)
-    expect(existsSync(join(folder, 'releases'))).toBe(false)
-  })
-
-  it('refuses a path that is a file', () => {
-    const folder = join(root, 'shop')
-    writeFileSync(folder, 'hi')
-    expect(runAsIs(folderScript(folder, owner)).status).toBe(3)
+    expect(result.stdout).not.toContain(FOLDER_CREATED)
+    expect(existsSync(join(root, 'shop-deploy/releases'))).toBe(false)
   })
 })
 
 describe('removeFolderScript', () => {
+  const owner = userInfo().username
   const runAsIs = (script: string) => spawnSync('sh', ['-s'], { input: script, encoding: 'utf8' })
-  const make = (...paths: string[]) => paths.forEach((path) => mkdirSync(join(root, path), { recursive: true }))
+  const created = () => {
+    const folder = join(root, 'shop')
+    runAsIs(folderScript(folder, owner))
+    return folder
+  }
 
-  it('only ever uses rmdir', () => {
+  it('never deletes recursively', () => {
     const script = removeFolderScript('/var/www/shop')
-    expect(script).not.toMatch(/rm -|rm '/)
-    expect(script).toContain("for dir in '/var/www/shop/releases' '/var/www/shop/shared'; do")
-    expect(script).toContain("if ! rmdir '/var/www/shop'; then")
+    expect(script).not.toMatch(/rm -r|rm -fr|rm -rf/)
+    expect(script).toContain("if [ -L '/var/www/shop' ] && [ \"$(readlink '/var/www/shop')\" = '/var/www/shop-deploy/current' ]; then rm -f '/var/www/shop'; fi")
     syntaxOk(script)
   })
 
-  it('removes the empty folder the run created', () => {
-    make('shop/releases', 'shop/shared')
-    expect(runAsIs(removeFolderScript(join(root, 'shop'))).status).toBe(0)
-    expect(existsSync(join(root, 'shop'))).toBe(false)
+  it('removes what the run created when nothing was deployed', () => {
+    const folder = created()
+    expect(runAsIs(removeFolderScript(folder)).status).toBe(0)
+    expect(existsSync(`${folder}-deploy`)).toBe(false)
+    expect(() => lstatSync(folder)).toThrow()
   })
 
-  it('keeps everything once a release has files', () => {
-    make('shop/releases/1', 'shop/shared')
-    const result = runAsIs(removeFolderScript(join(root, 'shop')))
+  it('keeps everything once a release was deployed', () => {
+    const folder = created()
+    mkdirSync(`${folder}-deploy/releases/1`)
+    symlinkSync(`${folder}-deploy/releases/1`, `${folder}-deploy/current`)
+    const result = runAsIs(removeFolderScript(folder))
     expect(result.status).toBe(3)
-    expect(existsSync(join(root, 'shop/releases/1'))).toBe(true)
+    expect(existsSync(`${folder}-deploy/releases/1`)).toBe(true)
+    expect(readlinkSync(folder)).toBe(`${folder}-deploy/current`)
   })
 
-  it('keeps the folder when something else was put in it', () => {
-    make('shop/releases', 'shop/shared')
-    writeFileSync(join(root, 'shop/notes.txt'), 'keep')
-    const result = runAsIs(removeFolderScript(join(root, 'shop')))
-    expect(result.status).toBe(3)
-    expect(readFileSync(join(root, 'shop/notes.txt'), 'utf8')).toBe('keep')
+  it('keeps the deploy folder when something else was put in it', () => {
+    const folder = created()
+    writeFileSync(`${folder}-deploy/notes.txt`, 'keep')
+    expect(runAsIs(removeFolderScript(folder)).status).toBe(3)
+    expect(readFileSync(`${folder}-deploy/notes.txt`, 'utf8')).toBe('keep')
+  })
+
+  it('leaves a site path that points somewhere else', () => {
+    const folder = created()
+    rmSync(folder)
+    symlinkSync(join(root, 'elsewhere'), folder)
+    expect(runAsIs(removeFolderScript(folder)).status).toBe(0)
+    expect(readlinkSync(folder)).toBe(join(root, 'elsewhere'))
   })
 })

@@ -112,45 +112,53 @@ export function enableModulesScript(server: SiteServer, missing: string[], confs
 
 export const FOLDER_CREATED = 'shellway: folder created'
 
+export const deployRootOf = (folder: string): string => `${assertFolder(folder)}-deploy`
+
 export function folderScript(folder: string, owner: string): string {
-  const root = quote(assertFolder(folder))
-  const releases = quote(`${folder}/releases`)
-  const shared = quote(`${folder}/shared`)
+  const site = quote(assertFolder(folder))
+  const deployRoot = quote(deployRootOf(folder))
+  const current = quote(`${deployRootOf(folder)}/current`)
+  const user = quote(`${assertOwner(owner)}:`)
   return [
     'set -e',
-    `if [ -e ${root} ] && [ ! -d ${root} ]; then`,
-    `  echo ${quote(`${folder} exists and is not a folder. Nothing was changed.`)} >&2`,
+    `if [ -e ${site} ] || [ -L ${site} ]; then`,
+    `  echo ${quote(`${folder} already exists. Nothing was changed.`)} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
-    `if [ -d ${root} ]; then`,
-    `  if [ -n "$(ls -A ${root})" ]; then`,
-    `    echo ${quote(`${folder} already has files in it. Nothing was changed.`)} >&2`,
-    `    exit ${EXIT_REFUSED}`,
-    '  fi',
-    'else',
-    `  mkdir -p ${root}`,
-    `  echo ${quote(FOLDER_CREATED)}`,
+    `if [ -e ${deployRoot} ] || [ -L ${deployRoot} ]; then`,
+    `  echo ${quote(`${deployRootOf(folder)} already exists. Nothing was changed.`)} >&2`,
+    `  exit ${EXIT_REFUSED}`,
     'fi',
-    `mkdir ${releases} ${shared}`,
-    `chown ${quote(`${assertOwner(owner)}:`)} ${root} ${releases} ${shared}`,
+    `mkdir -p "$(dirname ${site})"`,
+    `mkdir ${deployRoot} ${quote(`${deployRootOf(folder)}/releases`)} ${quote(`${deployRootOf(folder)}/shared`)}`,
+    `echo ${quote(FOLDER_CREATED)}`,
+    `chown -R ${user} ${deployRoot}`,
+    `ln -s ${current} ${site}`,
     ''
   ].join('\n')
 }
 
 export function removeFolderScript(folder: string): string {
-  const root = quote(assertFolder(folder))
+  const site = quote(assertFolder(folder))
+  const deployRoot = quote(deployRootOf(folder))
+  const current = quote(`${deployRootOf(folder)}/current`)
   return [
     'set -e',
-    `for dir in ${quote(`${folder}/releases`)} ${quote(`${folder}/shared`)}; do`,
+    `for dir in ${quote(`${deployRootOf(folder)}/releases`)} ${quote(`${deployRootOf(folder)}/shared`)}; do`,
     '  if [ -d "$dir" ] && ! rmdir "$dir"; then',
-    `    echo "$dir has files in it. ${folder} was left in place." >&2`,
+    `    echo "$dir has files in it. ${deployRootOf(folder)} was left in place." >&2`,
     `    exit ${EXIT_REFUSED}`,
     '  fi',
     'done',
-    `if ! rmdir ${root}; then`,
-    `  echo ${quote(`${folder} has files in it. It was left in place.`)} >&2`,
+    `if [ -L ${current} ] || [ -e ${current} ]; then`,
+    `  echo ${quote(`${deployRootOf(folder)} has a deployed release. It was left in place.`)} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
+    `if [ -d ${deployRoot} ] && ! rmdir ${deployRoot}; then`,
+    `  echo ${quote(`${deployRootOf(folder)} has files in it. It was left in place.`)} >&2`,
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
+    `if [ -L ${site} ] && [ "$(readlink ${site})" = ${current} ]; then rm -f ${site}; fi`,
     ''
   ].join('\n')
 }
