@@ -3,7 +3,7 @@ import { Toggle } from '@/components/ui/Toggle'
 import { isValidEmail } from '@/utils/ssl/https/issueCommands'
 import type { Issue } from './useIssue'
 
-function Option({ checked, label, note, disabled, onChange }: { checked: boolean; label: string; note: string; disabled: boolean; onChange: (checked: boolean) => void }) {
+export function Option({ checked, label, note, disabled, onChange }: { checked: boolean; label: string; note: string; disabled: boolean; onChange: (checked: boolean) => void }) {
   return (
     <div className="flex flex-col gap-0.5">
       <Toggle checked={checked} onChange={onChange} label={label} disabled={disabled} />

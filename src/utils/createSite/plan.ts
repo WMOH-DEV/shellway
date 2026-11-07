@@ -18,12 +18,23 @@ const asRoot = (script: string): Pick<PlanAction, 'commands' | 'script'> => ({ c
 
 const MANUAL_DNS_NOTE = 'No Cloudflare zone for this domain. Create the record at your DNS provider, then press Check again.'
 
+const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
+  folder: 'Folder',
+  modules: 'Apache modules',
+  dns: 'DNS record',
+  https: 'HTTPS',
+  deploys: 'Deploys',
+  'first-deploy': 'First deploy and check'
+}
+
+export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
+
 const MINUTES: Record<PlanActionId, number> = { folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
 
 function folderAction({ folder, owner }: CreateSiteInput): PlanAction {
   return action({
     id: 'folder',
-    title: 'Folder',
+    title: TITLES.folder,
     summary: `${assertFolder(folder)}-deploy owned by ${assertOwner(owner)}, and ${folder} pointing at its current release`,
     chip: 'new',
     ...asRoot(folderScript(folder, owner))
@@ -41,7 +52,7 @@ function modulesActions(input: CreateSiteInput, template: SiteTemplate, tools: S
   if (script === null) {
     return [action({
       id: 'modules',
-      title: 'Apache modules',
+      title: TITLES.modules,
       summary: `needs LoadModule ${missing.map((name) => `${name}_module`).join(', ')}`,
       chip: 'blocked',
       note: 'Shellway does not edit httpd.conf. Add the LoadModule lines by hand, then check again.'
@@ -50,7 +61,7 @@ function modulesActions(input: CreateSiteInput, template: SiteTemplate, tools: S
   const present = template.apacheModules.filter((name) => tools.apacheModules.includes(name))
   return [action({
     id: 'modules',
-    title: 'Apache modules',
+    title: TITLES.modules,
     summary: `${missing.join(', ')} to enable${present.length > 0 ? ` · ${present.join(', ')} already on` : ''}`,
     chip: `${missing.length} to enable`,
     ...asRoot(script),
@@ -76,7 +87,7 @@ function siteAction(input: CreateSiteInput, template: SiteTemplate, driver: WebS
   const config = siteFileText(input)
   return action({
     id: 'site',
-    title: `${driver.label} site`,
+    title: actionTitle('site', driver),
     summary: `${input.siteName}.conf from the ${template.label} template${siteDetail(input, template)}`,
     chip: 'new',
     ...asRoot(createSiteScript({ driver, server: input.server, siteName: input.siteName, text: config })),
@@ -85,7 +96,7 @@ function siteAction(input: CreateSiteInput, template: SiteTemplate, driver: WebS
   })
 }
 
-function dnsRecords(input: CreateSiteInput, serverIp: string, proxied: boolean): DnsRecordPlan[] {
+export function dnsRecords(input: Pick<CreateSiteInput, 'domain' | 'includeWww'>, serverIp: string, proxied: boolean): DnsRecordPlan[] {
   const [domain, www] = siteNames(input)
   const records: DnsRecordPlan[] = [{ type: 'A', name: domain, content: assertIpv4(serverIp), proxied }]
   return www === undefined ? records : [...records, { type: 'CNAME', name: www, content: domain, proxied }]
@@ -117,7 +128,7 @@ function manualDnsAction(input: CreateSiteInput, dns: DnsInput | null): PlanActi
   const summary = records.length === 0
     ? `Point ${siteNames(input).join(' and ')} at this server by hand`
     : `${records.map((record) => recordSummary(record, null)).join(' · ')} · create by hand`
-  return action({ id: 'dns', title: 'DNS record', summary, chip: 'needs you', records, note: MANUAL_DNS_NOTE })
+  return action({ id: 'dns', title: TITLES.dns, summary, chip: 'needs you', records, note: MANUAL_DNS_NOTE })
 }
 
 function dnsAction(input: CreateSiteInput): PlanAction {
@@ -127,7 +138,7 @@ function dnsAction(input: CreateSiteInput): PlanAction {
   const records = dnsRecords(input, dns.serverIp, dns.proxied)
   return action({
     id: 'dns',
-    title: 'DNS record',
+    title: TITLES.dns,
     summary: `${records.map((record) => recordSummary(record, zone)).join(' · ')} · ${proxyLabel(records, dns.proxied)}`,
     chip: 'new',
     records,
@@ -141,7 +152,7 @@ function httpsAction(input: CreateSiteInput, driver: WebServerDriver): PlanActio
   const parts = ["Let's Encrypt via certbot", ...(staging ? ['staging test first'] : []), redirect ? 'HTTP → HTTPS redirect' : 'no HTTP → HTTPS redirect']
   return action({
     id: 'https',
-    title: 'HTTPS',
+    title: TITLES.https,
     summary: parts.join(' · '),
     chip: 'ready',
     commands: [...(staging ? [stagingCommand(request, driver.kind)] : []), issueCommand(request, driver.kind)]
@@ -155,7 +166,7 @@ function deploysAction(input: CreateSiteInput, template: SiteTemplate): PlanActi
   const source = isAuto ? `Auto on server every ${input.pollMinutes} min` : 'From my PC'
   return action({
     id: 'deploys',
-    title: 'Deploys',
+    title: TITLES.deploys,
     summary: `${repoLabel(input.repoUrl)} · ${input.branch} · ${source} · ${preset.label} preset, ${pluralize(commandCount, 'command')}`,
     chip: isAuto ? 'needs you' : 'ready',
     note: isAuto ? 'The server needs a deploy key with read access to the repository.' : ''
@@ -165,7 +176,7 @@ function deploysAction(input: CreateSiteInput, template: SiteTemplate): PlanActi
 function firstDeployAction(input: CreateSiteInput): PlanAction {
   return action({
     id: 'first-deploy',
-    title: 'First deploy and check',
+    title: TITLES['first-deploy'],
     summary: `Deploy ${input.branch}, then https://${assertDomain(input.domain)}${assertHealthPath(input.healthPath)} must return 200`,
     chip: 'ready'
   })
