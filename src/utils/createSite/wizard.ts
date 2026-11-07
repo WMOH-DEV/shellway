@@ -54,6 +54,7 @@ const MAX_POLL_MINUTES = 60
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
   php: 'site',
   composer: 'site',
+  pm2: 'site',
   folder: 'site',
   modules: 'site',
   site: 'site',

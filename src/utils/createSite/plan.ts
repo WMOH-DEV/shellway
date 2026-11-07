@@ -1,10 +1,12 @@
 import type { CreateSiteInput, DnsInput, DnsRecordPlan, PlanAction, PlanActionId, PlanMeta, ServerTools, SiteServer } from '@/types/createSite'
 import type { IssueRequest } from '@/types/ssl'
 import { presetById } from '../deploy/presets'
+import { deploySiteConfig } from './deploySite'
 import { repoLabel } from '../deploy/siteDetail'
 import { issueCommand, stagingCommand } from '../ssl/https/issueCommands'
 import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
+import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
 import { ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, sitePaths } from './siteScripts'
 import { TEMPLATES, siteFileText, usesPhp, type SiteTemplate } from './templates'
@@ -22,6 +24,7 @@ const MANUAL_DNS_NOTE = 'No Cloudflare zone for this domain. Create the record a
 const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
   php: 'PHP',
   composer: 'Composer',
+  pm2: 'pm2',
   folder: 'Folder',
   modules: 'Apache modules',
   dns: 'DNS record',
@@ -32,7 +35,7 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
+const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
@@ -73,6 +76,19 @@ function composerAction(input: CreateSiteInput, template: SiteTemplate, tools: S
     chip: 'installs',
     ...asRoot(installComposerScript(input.phpVersion)),
     note: 'The installer runs only if it matches the checksum published at composer.github.io.'
+  })]
+}
+
+function pm2Action(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
+  if (!template.needs.includes('pm2') || (tools.pm2 && tools.pm2Startup)) return []
+  const service = pm2ServiceName(input.owner)
+  return [action({
+    id: 'pm2',
+    title: TITLES.pm2,
+    summary: tools.pm2 ? `Start ${service} on boot so the app comes back after a restart` : `Install pm2 with npm and start ${service} on boot`,
+    chip: 'installs',
+    ...asRoot(pm2SetupScript(input.owner, !tools.pm2)),
+    note: `pm2 runs the app as ${input.owner}. Each deploy restarts it with npm start on port ${input.appPort}, so package.json needs a start script.`
   })]
 }
 
@@ -206,7 +222,8 @@ function httpsAction(input: CreateSiteInput, driver: WebServerDriver): PlanActio
 
 function deploysAction(input: CreateSiteInput, template: SiteTemplate): PlanAction {
   const preset = presetById(template.preset)
-  const commandCount = preset.buildSteps({ buildScript: false }).length + preset.activateSteps.length
+  const { buildSteps, activateSteps } = deploySiteConfig(input)
+  const commandCount = buildSteps.length + activateSteps.length
   const isAuto = input.sourceMode === 'auto'
   const source = isAuto ? `Auto on server every ${input.pollMinutes} min` : 'From my PC'
   return action({
@@ -232,6 +249,7 @@ export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: We
   return [
     ...phpAction(input, template, tools),
     ...composerAction(input, template, tools),
+    ...pm2Action(input, template, tools),
     folderAction(input),
     ...modulesActions(input, template, tools),
     siteAction(input, template, driver),

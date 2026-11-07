@@ -2,6 +2,7 @@ import type { CreateSiteInput, SiteServer } from '../../types/createSite'
 import type { DeployStep, SiteConfig } from '../../types/deploy'
 import { applyPreset, newSite } from '../deploy/presets'
 import { pinPhpVersion } from './php'
+import { pm2ActivateSteps } from './pm2'
 import { TEMPLATES, usesPhp, type SiteTemplate } from './templates'
 import { assertDomain, assertFolder, assertHealthPath, assertSiteName } from './validate'
 
@@ -35,6 +36,6 @@ export function deploySiteConfig(input: CreateSiteInput): SiteConfig {
     layout: 'releases',
     healthUrl: `https://${assertDomain(input.domain)}${assertHealthPath(input.healthPath)}`,
     buildSteps: preset.buildSteps.map(pin),
-    activateSteps: preset.activateSteps.map(pin)
+    activateSteps: [...preset.activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, input.folder, input.appPort) : [])]
   }
 }

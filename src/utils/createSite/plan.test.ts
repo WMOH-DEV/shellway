@@ -263,3 +263,27 @@ describe('buildPlan PHP and composer steps', () => {
     expect(ids).not.toContain('composer')
   })
 })
+
+describe('buildPlan pm2 step', () => {
+  it('installs pm2 and starts it on boot when it is missing', () => {
+    const pm2 = byId(plan(NGINX, { template: 'node' }, allTools({ pm2: false, pm2Startup: false })), 'pm2')
+    expect(pm2).toMatchObject({ summary: 'Install pm2 with npm and start pm2-deploy on boot', chip: 'installs', commands: [ROOT_SHELL] })
+    expect(pm2.script).toContain('npm install -g pm2')
+    expect(pm2.script).toContain(`pm2 startup systemd -u 'deploy' --hp "$home"`)
+  })
+
+  it('only turns on start at boot when pm2 is there but not set to start', () => {
+    const pm2 = byId(plan(NGINX, { template: 'node' }, allTools({ pm2Startup: false })), 'pm2')
+    expect(pm2.summary).toBe('Start pm2-deploy on boot so the app comes back after a restart')
+    expect(pm2.script).not.toContain('npm install')
+  })
+
+  it('adds nothing when pm2 is installed and starts on boot, or for other templates', () => {
+    expect(plan(NGINX, { template: 'node' }).map((a) => a.id)).not.toContain('pm2')
+    expect(plan(NGINX, {}, allTools({ pm2: false })).map((a) => a.id)).not.toContain('pm2')
+  })
+
+  it('counts the pm2 commands in the Deploys summary', () => {
+    expect(byId(plan(NGINX, { template: 'node' }), 'deploys').summary).toContain('Node.js preset, 3 commands')
+  })
+})

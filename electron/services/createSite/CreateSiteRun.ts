@@ -90,6 +90,7 @@ export class CreateSiteRun {
     switch (action.id) {
       case 'php': return this.install(action, `Installing PHP ${this.input.phpVersion} failed.`)
       case 'composer': return this.install(action, 'Installing composer failed.')
+      case 'pm2': return this.install(action, 'Setting up pm2 failed.')
       case 'folder': return this.createFolder(action)
       case 'modules': return this.enableModules(action)
       case 'site': return this.createSite(action)

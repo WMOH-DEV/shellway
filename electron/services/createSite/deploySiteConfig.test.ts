@@ -36,6 +36,14 @@ describe('deploySiteConfig', () => {
     expect(commands).toEqual(['docker compose -p shop pull', 'docker compose -p shop up -d --build'])
   })
 
+  it('starts or restarts a Node.js app with pm2 from the site path after it goes live', () => {
+    const config = deploySiteConfig(baseInput({ template: 'node', appPort: 3100 }))
+    expect(config.activateSteps.map((step) => step.command)).toEqual([
+      "if pm2 describe 'shop' >/dev/null 2>&1; then PORT=3100 pm2 restart 'shop' --update-env; else PORT=3100 pm2 start npm --name 'shop' --cwd '/var/www/shop' -- start; fi",
+      'pm2 save'
+    ])
+  })
+
   it('rejects a health path or folder the validators refuse', () => {
     expect(() => deploySiteConfig(baseInput({ healthPath: 'health' }))).toThrow()
     expect(() => deploySiteConfig(baseInput({ folder: '/' }))).toThrow()

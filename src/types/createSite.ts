@@ -16,6 +16,7 @@ export interface ServerTools {
   composer: boolean
   node: string | null
   pm2: boolean
+  pm2Startup: boolean
   docker: boolean
   apacheModules: string[]
   freeDiskBytes: number
@@ -53,7 +54,7 @@ export interface CreateSiteInput {
   healthPath: string
 }
 
-export type PlanActionId = 'php' | 'composer' | 'folder' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
+export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 

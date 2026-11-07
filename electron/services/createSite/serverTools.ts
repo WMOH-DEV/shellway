@@ -29,6 +29,7 @@ fi
 echo "composer=$(has composer)"
 echo "node=$(node --version 2>/dev/null)"
 echo "pm2=$(has pm2)"
+if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled "pm2-$(id -un)" >/dev/null 2>&1; then echo pm2_startup=1; else echo pm2_startup=0; fi
 echo "docker=$(has docker)"
 dir=/var/www; [ -d "$dir" ] || dir=/
 echo "disk=$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')"
@@ -55,6 +56,7 @@ export function parseTools(text: string, apacheModules: string[]): ServerTools {
     composer: field(text, 'composer') === '1',
     node,
     pm2: field(text, 'pm2') === '1',
+    pm2Startup: field(text, 'pm2_startup') === '1',
     docker: field(text, 'docker') === '1',
     apacheModules,
     freeDiskBytes: Number.isFinite(diskKb) ? diskKb * 1024 : 0

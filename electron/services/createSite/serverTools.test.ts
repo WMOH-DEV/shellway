@@ -5,7 +5,11 @@ import { TOOLS_SCRIPT, parseTools } from './serverTools'
 describe('parseTools', () => {
   it('reads versions, yes/no tools and free disk', () => {
     const text = 'php=8.3\ncomposer=1\nnode=v20.11.1\npm2=0\ndocker=1\ndisk=1048576\n'
-    expect(parseTools(text, ['rewrite'])).toEqual({ php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] } }, composer: true, node: '20', pm2: false, docker: true, apacheModules: ['rewrite'], freeDiskBytes: 1073741824 })
+    expect(parseTools(text, ['rewrite'])).toEqual({ php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] } }, composer: true, node: '20', pm2: false, pm2Startup: false, docker: true, apacheModules: ['rewrite'], freeDiskBytes: 1073741824 })
+  })
+
+  it('reads whether pm2 starts on boot', () => {
+    expect(parseTools('pm2=1\npm2_startup=1\n', []).pm2Startup).toBe(true)
   })
 
   it('treats missing or odd values as not installed', () => {
@@ -32,6 +36,6 @@ describe('TOOLS_SCRIPT', () => {
   it('is valid sh that prints every field', () => {
     const ran = spawnSync('sh', ['-s'], { input: TOOLS_SCRIPT, encoding: 'utf8' })
     expect(ran.status).toBe(0)
-    for (const name of ['php', 'composer', 'node', 'pm2', 'docker', 'disk']) expect(ran.stdout).toMatch(new RegExp(`^${name}=`, 'm'))
+    for (const name of ['php', 'composer', 'node', 'pm2', 'pm2_startup', 'docker', 'disk']) expect(ran.stdout).toMatch(new RegExp(`^${name}=`, 'm'))
   })
 })

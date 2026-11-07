@@ -47,6 +47,7 @@ export const allTools = (overrides: Partial<ServerTools> = {}): ServerTools => (
   composer: true,
   node: '20',
   pm2: true,
+  pm2Startup: true,
   docker: true,
   apacheModules: ['rewrite', 'proxy_fcgi', 'setenvif', 'proxy', 'proxy_http', 'headers', 'ssl'],
   freeDiskBytes: 40e9,
