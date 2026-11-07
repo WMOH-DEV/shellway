@@ -128,9 +128,8 @@ describe('ServerNotifier', () => {
   })
 
   it('keeps the hostname from an earlier scan when a later scan has no identity', () => {
-    const send = vi.fn(async () => undefined)
-    const notifier = new ServerNotifier({ settings: () => ({ kind: 'ntfy', url: 'https://ntfy.example.com/t', events: ['reboot-required'] }), send, onError: vi.fn() })
-    notifier.observe('server:facts', ['c1', { [IDENTITY_PROBE]: { status: 'ok', at: 1, data: { hostname: 'web-1' } } }])
+    const { notifier, send } = setup(ALL)
+    notifier.observe('server:facts', ['c1', { [IDENTITY_PROBE]: identity('web-1') }])
     notifier.observe('server:facts', ['c1', { [REBOOT_PROBE]: reboot(true) }])
     expect(send.mock.calls[0][2]).toBe('Shellway: web-1 needs a reboot to finish installing updates.')
   })
