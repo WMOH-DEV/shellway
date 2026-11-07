@@ -62,7 +62,7 @@ describe('ServerView', () => {
   })
 
   it('shows one badge per section with the count of its attention items', () => {
-    const attention = [item({ area: 'sites', level: 'warning' }), item({ area: 'sites', level: 'error' }), item({ area: 'overview' })]
+    const attention = [item({ id: 'a', area: 'sites', level: 'warning' }), item({ id: 'b', area: 'sites', level: 'error' }), item({ id: 'c', area: 'overview' })]
     render(<ServerView tab={tab} active attention={attention} />)
     expect(screen.getByRole('button', { name: /Sites/ })).toHaveTextContent('2')
     expect(screen.getByRole('button', { name: /Sites/ }).querySelector('.text-nd-error-fg')).not.toBeNull()

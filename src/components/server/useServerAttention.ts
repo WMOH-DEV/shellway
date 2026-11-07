@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AttentionItem, AttentionLevel, ServerFacts, ServerSection } from '@/types/server/core'
+import type { AttentionItem, ServerFacts, ServerSection } from '@/types/server/core'
 import { AREAS } from '@/utils/server/areas'
+import { rankAttention } from '@/utils/server/overview/attention'
 import { useSslCritical } from '@/hooks/useSslCritical'
 import { serverApi } from './serverApi'
 
-export const SSL_CRITICAL_ID = 'sites.https.critical'
+export { rankAttention, worstLevel } from '@/utils/server/overview/attention'
 
-const LEVEL_ORDER: readonly AttentionLevel[] = ['error', 'warning', 'info']
+export const SSL_CRITICAL_ID = 'sites.https.critical'
 
 const SSL_CRITICAL_ITEM: AttentionItem = {
   id: SSL_CRITICAL_ID,
@@ -33,14 +34,6 @@ export function mergeSitesAttention(items: readonly AttentionItem[], sitesItems:
   const base = sitesCoverCertificates ? items.filter((item) => item.id !== SSL_CRITICAL_ID) : items
   const seen = new Set(base.map((item) => item.id))
   return rankAttention([...base, ...sitesItems.filter((item) => !seen.has(item.id))])
-}
-
-export function rankAttention(items: readonly AttentionItem[]): AttentionItem[] {
-  return [...items].sort((a, b) => b.rank - a.rank)
-}
-
-export function worstLevel(items: readonly AttentionItem[]): AttentionLevel | null {
-  return LEVEL_ORDER.find((level) => items.some((item) => item.level === level)) ?? null
 }
 
 export function countsByArea(items: readonly AttentionItem[]): Partial<Record<ServerSection, number>> {

@@ -5,7 +5,7 @@ const LEVEL_ORDER: Record<AttentionLevel, number> = { error: 0, warning: 1, info
 const compare = (a: AttentionItem, b: AttentionItem): number =>
   b.rank - a.rank || LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.title.localeCompare(b.title)
 
-export function rankAttention(items: AttentionItem[]): AttentionItem[] {
+export function rankAttention(items: readonly AttentionItem[]): AttentionItem[] {
   const unique = new Map(items.map((item) => [item.id, item]))
   return [...unique.values()].sort(compare)
 }
