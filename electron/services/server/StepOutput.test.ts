@@ -34,6 +34,27 @@ describe('StepOutput', () => {
     expect(output.state).toEqual({ backup: '/var/backups/x', created: '1' })
   })
 
+  it('hides SHELLWAY_STATE lines from the output, even when split across chunks', () => {
+    const { output, chunks } = collect([])
+    output.push('nginx: test is successful\nSHELLWAY_STA')
+    output.push('TE backup=/var/backups/x\r\nreloaded\nSHELLWAY_STATE created=1')
+    output.flush()
+    expect(output.text).toBe('nginx: test is successful\nreloaded\n')
+    expect(chunks.join('')).toBe(output.text)
+    expect(output.state).toEqual({ backup: '/var/backups/x', created: '1' })
+  })
+
+  it('shows partial lines right away unless they could be a state line', () => {
+    const { output, chunks } = collect([])
+    output.push('progress 10%')
+    expect(chunks).toEqual(['progress 10%'])
+    output.push(' SHELLWAY_STATE x=1\nSHELL')
+    expect(chunks.join('')).toBe('progress 10% SHELLWAY_STATE x=1\n')
+    output.push('S is fine\n')
+    output.flush()
+    expect(output.text).toBe('progress 10% SHELLWAY_STATE x=1\nSHELLS is fine\n')
+  })
+
   it('keeps only the last 64 KB', () => {
     const { output } = collect([])
     output.push('a'.repeat(MAX_STEP_OUTPUT))
