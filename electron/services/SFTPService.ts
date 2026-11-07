@@ -35,6 +35,8 @@ class ThrottleTransform extends Transform {
   }
 }
 
+const MIN_WRITE_BYTES_PER_SECOND = 64 * 1024
+
 export interface FileEntry {
   name: string
   path: string
@@ -460,8 +462,8 @@ export class SFTPService extends EventEmitter {
     // Use low-level open → write → close to avoid both:
     // 1. createWriteStream — broken on Node ≥ 22 (finish event never fires)
     // 2. sftp.writeFile wrapper — hangs on some servers/configurations
-    // Direct protocol calls with a 30s timeout guarantee we never hang forever.
-    const TIMEOUT_MS = 30_000
+    // Direct protocol calls with a size-based timeout guarantee we never hang forever.
+    const TIMEOUT_MS = 30_000 + Math.ceil(buf.length / MIN_WRITE_BYTES_PER_SECOND) * 1000
 
     return new Promise<void>((resolve, reject) => {
       let settled = false
