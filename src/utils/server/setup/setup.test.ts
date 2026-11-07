@@ -214,6 +214,15 @@ describe('buildSetupPlan', () => {
     expect(swapSizeGb(32 * 1024 ** 3)).toBe(4)
   })
 
+  it('removes a half-made swap file when swapon fails and adds fstab only after swapon', () => {
+    const script = step(buildSetupPlan(paramsFor('static'), factsFor(NOBLE)), 'security.swap').script
+    expect(script).toContain("trap 'swapon --show=NAME --noheadings | grep -qx /swapfile || rm -f /swapfile' EXIT")
+    expect(script.indexOf('trap')).toBeGreaterThan(script.indexOf('already exists'))
+    expect(script.indexOf('trap')).toBeLessThan(script.indexOf('fallocate'))
+    expect(script.indexOf('/etc/fstab')).toBeGreaterThan(script.indexOf('swapon /swapfile'))
+    expect(() => execFileSync('dash', ['-n'], { input: script })).not.toThrow()
+  })
+
   it('warns that Docker ports skip ufw', () => {
     expect(buildSetupPlan(paramsFor('docker'), factsFor(NOBLE)).warnings.join(' ')).toMatch(/127\.0\.0\.1/)
   })
@@ -227,7 +236,7 @@ describe('buildSetupPlan', () => {
 
   it('installs MariaDB on Debian when MySQL is chosen', () => {
     const plan = buildSetupPlan(paramsFor('laravel', BOOKWORM), factsFor(BOOKWORM))
-    expect(step(plan, 'databases.mysql-install').script).toContain('install mariadb-server')
+    expect(step(plan, 'databases.mysql-install').script).toContain('install --no-remove mariadb-server')
     expect(step(plan, 'languages.php-install').script).toContain('php8.2-fpm')
   })
 })

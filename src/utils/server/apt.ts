@@ -11,9 +11,11 @@ export const APT_ENV = 'export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEN
 
 export const APT_GET = 'apt-get -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -y'
 
+export const APT_INSTALL = `${APT_GET} install --no-remove`
+
 export function aptInstallScript(packages: string[], { update = true }: { update?: boolean } = {}): string {
   const names = packages.map(assertPackageName).map(quote).join(' ')
-  return ['set -e', APT_ENV, ...(update ? [`${APT_GET} update`] : []), `${APT_GET} install ${names}`, ''].join('\n')
+  return ['set -e', APT_ENV, ...(update ? [`${APT_GET} update`] : []), `${APT_INSTALL} ${names}`, ''].join('\n')
 }
 
 export function aptRemoveScript(packages: string[]): string {

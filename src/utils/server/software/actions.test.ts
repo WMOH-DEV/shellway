@@ -75,13 +75,25 @@ describe('software.restart-services', () => {
 })
 
 describe('software.install', () => {
-  it('shows the install recipe reason while it is unsupported', () => {
+  it('builds an install plan for a supported system', () => {
     const result = plan('software.install', { component: 'apache' })
-    expect(result.blocked?.kind).toBe('unsupported')
+    expect(result.blocked).toBeNull()
   })
 
   it('blocks a PHP version that is already installed', () => {
     expect(plan('software.install', { component: 'php', version: '8.3' }).blocked?.message).toContain('already installed')
+  })
+
+  it('blocks MariaDB while MySQL is installed', () => {
+    const result = plan('software.install', { component: 'mariadb' })
+    expect(result.blocked?.kind).toBe('precondition')
+    expect(result.blocked?.message).toContain('MySQL is already installed')
+  })
+
+  it('blocks MySQL while MariaDB is installed', () => {
+    const packages = parsePackages(PACKAGES_UBUNTU.replace(/^mysql-server/gm, 'mariadb-server'))
+    const result = plan('software.install', { component: 'mysql' }, { ...FACTS, [PACKAGES_PROBE]: ok(packages) })
+    expect(result.blocked?.message).toContain('MariaDB is already installed')
   })
 
   it('requires a PHP version', () => {
@@ -127,7 +139,7 @@ describe('software.remove', () => {
 describe('software.apt-install', () => {
   it('installs one package and shows the command', () => {
     const result = plan('software.apt-install', { package: 'htop' })
-    expect(result.steps[0].display).toContain("install 'htop'")
+    expect(result.steps[0].display).toContain("install --no-remove 'htop'")
   })
 })
 

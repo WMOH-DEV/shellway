@@ -1,5 +1,5 @@
 import type { ActionStep } from '@/types/server/core'
-import { APT_ENV, APT_GET, assertPackageName } from '../apt'
+import { APT_ENV, APT_GET, APT_INSTALL, assertPackageName } from '../apt'
 import type { InstallRecipe } from './types'
 
 export interface StepTiming {
@@ -29,7 +29,7 @@ export function rootStep(id: string, label: string, lines: string[], timing: Ste
 
 export const aptUpdate = (): string[] => [APT_ENV, `${APT_GET} update`]
 
-export const aptInstall = (packages: string[]): string[] => [...aptUpdate(), `${APT_GET} install ${packages.map(assertPackageName).join(' ')}`]
+export const aptInstall = (packages: string[]): string[] => [...aptUpdate(), `${APT_INSTALL} ${packages.map(assertPackageName).join(' ')}`]
 
 export const withSystemd = (command: string): string => `if [ -d /run/systemd/system ]; then ${command}; fi`
 

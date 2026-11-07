@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import type { OsInfo } from '@/types/server/identity'
+import { NODE_DEFAULT } from './releases'
 import { installRecipe, installSupport, type ComponentId, type InstallRecipe, type InstallRequest } from '.'
 
 const os = (family: OsInfo['family'], versionId: string, codename: string, prettyName: string): OsInfo => ({ family, id: family, versionId, codename, prettyName })
@@ -56,8 +57,8 @@ describe('installRecipe', () => {
     const [step] = steps({ component: 'nginx' }, NOBLE)
     expect(step).toMatchObject({ id: 'nginx-install', detached: true, timeoutSeconds: 900 })
     expect(step.script).toContain('export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1')
-    expect(step.script).toContain('apt-get -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -y install nginx')
-    expect(step.display).toContain('install nginx')
+    expect(step.script).toContain('apt-get -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -y install --no-remove nginx')
+    expect(step.display).toContain('install --no-remove nginx')
     expect(step.script).toContain('systemctl enable --now nginx')
   })
 
@@ -80,7 +81,7 @@ describe('installRecipe', () => {
 describe('apache', () => {
   it('enables the modules sites need and tests the config', () => {
     const script = scriptOf({ component: 'apache' }, BOOKWORM)
-    expect(script).toContain('install apache2')
+    expect(script).toContain('install --no-remove apache2')
     expect(script).toContain('a2enmod rewrite headers ssl proxy proxy_http proxy_fcgi setenvif')
     expect(script).toContain('apache2ctl configtest')
   })
@@ -90,16 +91,16 @@ describe('php', () => {
   it('uses the distro PHP without any extra source when the version ships with the release', () => {
     const list = steps({ component: 'php', version: '8.3' }, NOBLE)
     expect(list.map((step) => step.id)).toEqual(['php-install'])
-    expect(list[0].script).toContain('install php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath php8.3-intl php8.3-mysql php8.3-pgsql php8.3-sqlite3')
+    expect(list[0].script).toContain('install --no-remove php8.3-fpm php8.3-cli php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath php8.3-intl php8.3-mysql php8.3-pgsql php8.3-sqlite3')
     expect(list[0].script).toContain('systemctl enable --now php8.3-fpm')
   })
 
   it('adds ppa:ondrej/php on Ubuntu for a version the release does not ship', () => {
     const [repo, install] = steps({ component: 'php', version: '8.4' }, NOBLE)
     expect(repo.id).toBe('php-repo')
-    expect(repo.script).toContain('install software-properties-common')
+    expect(repo.script).toContain('install --no-remove software-properties-common')
     expect(repo.script).toContain('add-apt-repository -y ppa:ondrej/php')
-    expect(install.script).toContain('install php8.4-fpm')
+    expect(install.script).toContain('install --no-remove php8.4-fpm')
   })
 
   it('always adds the PPA on Ubuntu 22.04 since its own PHP 8.1 is not offered', () => {
@@ -152,27 +153,27 @@ describe('composer', () => {
 describe('databases', () => {
   it('installs mysql-server on Ubuntu', () => {
     const [step] = steps({ component: 'mysql' }, NOBLE)
-    expect(step.script).toContain('install mysql-server')
+    expect(step.script).toContain('install --no-remove mysql-server')
     expect(step.label).toBe('Install MySQL')
   })
 
   it('installs MariaDB with a note on Debian when MySQL is asked for', () => {
     const [step] = steps({ component: 'mysql' }, BOOKWORM)
-    expect(step.script).toContain('install mariadb-server')
+    expect(step.script).toContain('install --no-remove mariadb-server')
     expect(step.label).toMatch(/MariaDB.*Debian has no MySQL package/)
   })
 
   it('installs the distro PostgreSQL by default', () => {
     const list = steps({ component: 'postgresql' }, NOBLE)
     expect(list.map((step) => step.id)).toEqual(['postgresql-install'])
-    expect(list[0].script).toMatch(/install postgresql\n/)
+    expect(list[0].script).toMatch(/install --no-remove postgresql\n/)
   })
 
   it('adds PGDG with the postgresql-common script for another major', () => {
     const [repo, install] = steps({ component: 'postgresql', version: '17' }, NOBLE)
-    expect(repo.script).toContain('install postgresql-common')
+    expect(repo.script).toContain('install --no-remove postgresql-common')
     expect(repo.script).toContain('/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y')
-    expect(install.script).toContain('install postgresql-17')
+    expect(install.script).toContain('install --no-remove postgresql-17')
     expect(installRecipe({ component: 'postgresql', version: '17' }, BOOKWORM)).toMatchObject({ source: 'https://www.postgresql.org/download/linux/debian/' })
   })
 
@@ -181,20 +182,37 @@ describe('databases', () => {
   })
 
   it('installs redis-server', () => {
-    expect(scriptOf({ component: 'redis' }, TRIXIE)).toContain('install redis-server')
+    expect(scriptOf({ component: 'redis' }, TRIXIE)).toContain('install --no-remove redis-server')
   })
 })
 
 describe('node', () => {
-  it('downloads the NodeSource setup script to a temp file, runs it and installs nodejs', () => {
+  it('adds the NodeSource repo with a dearmored key and a pin, then installs nodejs', () => {
     const [step] = steps({ component: 'node', version: '24' }, NOBLE)
-    expect(step.display).toContain('curl -fsSL https://deb.nodesource.com/setup_24.x -o "$setup_script"')
-    expect(step.script).toContain('bash "$setup_script"')
-    expect(step.script).toMatch(/install nodejs\n/)
+    expect(step.script).toContain('curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg')
+    expect(step.script).toContain([
+      'cat > /etc/apt/sources.list.d/nodesource.sources <<EOF',
+      'Types: deb',
+      'URIs: https://deb.nodesource.com/node_24.x',
+      'Suites: nodistro',
+      'Components: main',
+      'Signed-By: /usr/share/keyrings/nodesource.gpg',
+      'EOF'
+    ].join('\n'))
+    expect(step.script).toContain(['Package: nodejs', 'Pin: origin deb.nodesource.com', 'Pin-Priority: 600'].join('\n'))
+    expect(step.script).toContain('rm -f /etc/apt/sources.list.d/nodesource.list')
+    expect(step.script).toContain('install --no-remove ca-certificates curl gnupg')
+    expect(step.script).toMatch(/install --no-remove nodejs\n/)
   })
 
-  it('uses setup_lts.x without a version', () => {
-    expect(scriptOf({ component: 'node' }, NOBLE)).toContain('https://deb.nodesource.com/setup_lts.x')
+  it('never pipes a downloaded script into a shell', () => {
+    const script = scriptOf({ component: 'node', version: '24' }, NOBLE)
+    expect(script).not.toMatch(/\|\s*(ba|da)?sh\b/)
+    expect(script).not.toContain('setup_')
+  })
+
+  it('installs the default major when no version is given', () => {
+    expect(scriptOf({ component: 'node' }, NOBLE)).toContain(`URIs: https://deb.nodesource.com/node_${NODE_DEFAULT}.x`)
   })
 
   it('refuses to install over nvm', () => {
@@ -219,20 +237,31 @@ describe('tools', () => {
     const script = scriptOf({ component: 'certbot', extras: ['nginx'] }, BOOKWORM)
     expect(script).toContain('snap install --classic certbot')
     expect(script).toContain('ln -sf /snap/bin/certbot /usr/local/bin/certbot')
-    expect(script).toContain('install certbot python3-certbot-nginx')
-    expect(scriptOf({ component: 'certbot', extras: ['apache'] }, NOBLE)).toContain('install certbot python3-certbot-apache')
+    expect(script).toContain('install --no-remove certbot python3-certbot-nginx')
+    expect(scriptOf({ component: 'certbot', extras: ['apache'] }, NOBLE)).toContain('install --no-remove certbot python3-certbot-apache')
     expect(installRecipe({ component: 'certbot', extras: ['caddy'] }, NOBLE).supported).toBe(false)
   })
 
   it('installs supervisor, ufw and unattended-upgrades from the distro', () => {
-    expect(scriptOf({ component: 'supervisor' }, NOBLE)).toContain('install supervisor')
-    expect(scriptOf({ component: 'ufw' }, NOBLE)).toContain('install ufw')
-    expect(scriptOf({ component: 'unattended-upgrades' }, BOOKWORM)).toContain('install unattended-upgrades')
+    expect(scriptOf({ component: 'supervisor' }, NOBLE)).toContain('install --no-remove supervisor')
+    expect(scriptOf({ component: 'ufw' }, NOBLE)).toContain('install --no-remove ufw')
+    expect(scriptOf({ component: 'unattended-upgrades' }, BOOKWORM)).toContain('install --no-remove unattended-upgrades')
   })
 
   it('adds python3-systemd for fail2ban on Debian only', () => {
-    expect(scriptOf({ component: 'fail2ban' }, BOOKWORM)).toContain('install fail2ban python3-systemd')
-    expect(scriptOf({ component: 'fail2ban' }, NOBLE)).toMatch(/install fail2ban\n/)
+    expect(scriptOf({ component: 'fail2ban' }, BOOKWORM)).toContain('install --no-remove fail2ban python3-systemd')
+    expect(scriptOf({ component: 'fail2ban' }, NOBLE)).toMatch(/install --no-remove fail2ban\n/)
+  })
+})
+
+describe('apt install safety', () => {
+  it.each(SUPPORTED)('never lets an apt install remove packages on $prettyName', (target) => {
+    for (const component of ALL) {
+      const recipe = installRecipe({ component, version: component === 'composer' ? '8.3' : undefined }, target)
+      if (!recipe.supported) continue
+      const lines = recipe.steps.flatMap((step) => step.script.split('\n')).filter((line) => /\binstall\b/.test(line) && line.includes('apt-get'))
+      for (const line of lines) expect(line, `${component}: ${line}`).toContain('install --no-remove')
+    }
   })
 })
 
@@ -240,6 +269,8 @@ describe('docker', () => {
   it('follows the official Ubuntu repo setup', () => {
     const [repo, install] = steps({ component: 'docker' }, NOBLE)
     expect(repo.script).toContain('remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc 2>/dev/null | cut -f1)')
+    expect(repo.script.indexOf('rm -f /etc/apt/sources.list.d/docker.list')).toBeGreaterThan(-1)
+    expect(repo.script.indexOf('rm -f /etc/apt/sources.list.d/docker.list')).toBeLessThan(repo.script.indexOf('cat > /etc/apt/sources.list.d/docker.sources'))
     expect(repo.script).toContain('curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc')
     expect(repo.script).toContain([
       'cat > /etc/apt/sources.list.d/docker.sources <<EOF',
@@ -251,7 +282,7 @@ describe('docker', () => {
       'Signed-By: /etc/apt/keyrings/docker.asc',
       'EOF'
     ].join('\n'))
-    expect(install.script).toContain('install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin')
+    expect(install.script).toContain('install --no-remove docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin')
   })
 
   it('uses the Debian repo and conflict list on Debian', () => {
