@@ -16,15 +16,46 @@ export function commandRows(request: IssueRequest, driver: WebServerDriver): Com
   return [...staging, { command: issueCommand(request, driver.kind), why: `Issues the certificate and updates ${driver.label}`, tag: 'issue' }]
 }
 
-export function nginxChangeLines(request: IssueRequest): string[] {
+export interface CertbotChanges {
+  file: string
+  newFile: boolean
+  lines: string[]
+  redirectNote: string
+}
+
+function nginxChanges(request: IssueRequest, siteFile: string): CertbotChanges {
   const base = `/etc/letsencrypt/live/${lineageFor(request)}`
-  return [
-    'listen 443 ssl;',
-    `ssl_certificate ${base}/fullchain.pem;`,
-    `ssl_certificate_key ${base}/privkey.pem;`,
-    'include /etc/letsencrypt/options-ssl-nginx.conf;',
-    'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;'
-  ]
+  return {
+    file: siteFile,
+    newFile: false,
+    lines: [
+      'listen 443 ssl;',
+      `ssl_certificate ${base}/fullchain.pem;`,
+      `ssl_certificate_key ${base}/privkey.pem;`,
+      'include /etc/letsencrypt/options-ssl-nginx.conf;',
+      'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;'
+    ],
+    redirectNote: 'Plus a small server block that redirects port 80 to HTTPS.'
+  }
+}
+
+function apacheChanges(request: IssueRequest, siteFile: string): CertbotChanges {
+  const base = `/etc/letsencrypt/live/${lineageFor(request)}`
+  return {
+    file: siteFile.replace(/(\.conf)?$/, '-le-ssl.conf'),
+    newFile: true,
+    lines: [
+      '<VirtualHost *:443>',
+      `SSLCertificateFile ${base}/fullchain.pem`,
+      `SSLCertificateKeyFile ${base}/privkey.pem`,
+      'Include /etc/letsencrypt/options-ssl-apache.conf'
+    ],
+    redirectNote: `Plus a rewrite rule in ${siteFile} that redirects port 80 to HTTPS.`
+  }
+}
+
+export function certbotChanges(request: IssueRequest, siteFile: string, driver: WebServerDriver): CertbotChanges {
+  return driver.kind === 'apache' ? apacheChanges(request, siteFile) : nginxChanges(request, siteFile)
 }
 
 export const isMissingServerCertificate = (host: HostnameStatus): boolean => host.origin?.kind === 'none' || host.verdict === 'not-encrypted'
@@ -46,12 +77,15 @@ export function weakSslHosts(hostnames: HostnameStatus[], names: string[]): Weak
 
 export const weakZones = (hosts: WeakSslHost[]): string[] => [...new Set(hosts.flatMap(({ zone }) => (zone ? [zone] : [])))]
 
-const STAGE_TITLES: Record<IssueStage, string> = {
-  backup: 'Backing up the nginx file failed',
-  staging: 'The staging test failed',
-  issue: 'Requesting the certificate failed',
-  'nginx-test': 'nginx rejected the changed file',
-  restore: 'Restoring the nginx file failed'
+function stageTitle(stage: IssueStage, server: string): string {
+  const titles: Record<IssueStage, string> = {
+    backup: `Backing up the ${server} file failed`,
+    staging: 'The staging test failed',
+    issue: 'Requesting the certificate failed',
+    'nginx-test': `${server} rejected the changed configuration`,
+    restore: `Restoring the ${server} file failed`
+  }
+  return titles[stage]
 }
 
 const FILE_UNCHANGED: ReadonlySet<IssueStage> = new Set(['backup', 'staging'])
@@ -62,15 +96,15 @@ export interface IssueFailureView {
   hint: string | null
 }
 
-function fileNote(result: IssueResult, stage: IssueStage): string {
-  if (result.restored) return `The nginx file was restored from its backup${result.backupPath ? ` (${result.backupPath})` : ''}.`
-  if (FILE_UNCHANGED.has(stage)) return 'The nginx file was not changed.'
-  return `The nginx file was not restored automatically.${result.backupPath ? ` Your backup is at ${result.backupPath}.` : ''}`
+function fileNote(result: IssueResult, stage: IssueStage, server: string): string {
+  if (result.restored) return `The ${server} file was restored from its backup${result.backupPath ? ` (${result.backupPath})` : ''}.`
+  if (FILE_UNCHANGED.has(stage)) return `The ${server} file was not changed.`
+  return `The ${server} file was not restored automatically.${result.backupPath ? ` Your backup is at ${result.backupPath}.` : ''}`
 }
 
-export function issueFailureView(result: IssueResult): IssueFailureView {
+export function issueFailureView(result: IssueResult, server: string): IssueFailureView {
   const stage = result.failedStage ?? 'issue'
-  const notes = [fileNote(result, stage)]
+  const notes = [fileNote(result, stage, server)]
   if (stage === 'staging') notes.push('The real certificate was not requested, so no Let\'s Encrypt limit was used.')
-  return { title: STAGE_TITLES[stage], notes, hint: result.hint }
+  return { title: stageTitle(stage, server), notes, hint: result.hint }
 }

@@ -24,6 +24,7 @@ export interface Issue {
   result: IssueResult | null
   error: string | null
   submit: () => Promise<void>
+  driver: WebServerDriver
 }
 
 interface IssueTarget {
@@ -72,5 +73,5 @@ export function useIssue({ connectionId, sessionId, blockId, names, driver, onIs
     if (outcome.data?.ok) onIssued({ names, lineage: outcome.data.lineage ?? lineageFor(request) })
   }
 
-  return { email, setEmail, redirect, setRedirect, staging, setStaging, request, rows, run, result, error, submit }
+  return { email, setEmail, redirect, setRedirect, staging, setStaging, request, rows, run, result, error, submit, driver }
 }

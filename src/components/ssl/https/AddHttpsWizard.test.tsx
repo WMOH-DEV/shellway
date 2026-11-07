@@ -123,7 +123,7 @@ describe('Add HTTPS step 1', () => {
     expect(screen.getAllByRole('button', { name: /example-app|blog\.example\.com|Other hostname/ }).map((r) => r.textContent)).toEqual([
       'example-appDeploy site/var/www/app · app.conf',
       'blog.example.comnginxblog.conf · no certificate',
-      'Other hostname…Must match an nginx server block'
+      'Other hostname…Must match a site in the nginx configuration'
     ])
   })
 
@@ -311,8 +311,8 @@ describe('Add HTTPS step 3', () => {
     const commands = screen.getByRole('region', { name: 'Commands' })
     expect(within(commands).getByText(/^sudo -n certbot certonly --nginx --dry-run .* -d app\.example\.com -d www\.app\.example\.com$/)).toBeInTheDocument()
     expect(within(commands).getByText(/^sudo -n certbot --nginx .* --redirect$/)).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'nginx changes' })).toHaveTextContent('listen 443 ssl;')
-    expect(screen.getByRole('region', { name: 'nginx changes' })).toHaveTextContent('/etc/ssl/shellway/backups/')
+    expect(screen.getByRole('region', { name: 'certbot changes' })).toHaveTextContent('listen 443 ssl;')
+    expect(screen.getByRole('region', { name: 'certbot changes' })).toHaveTextContent('/etc/ssl/shellway/backups/')
   })
 
   it('leaves the staging command out when staging is off and drops the redirect flag when redirect is off', async () => {

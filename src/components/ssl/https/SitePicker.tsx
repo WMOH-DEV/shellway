@@ -4,9 +4,9 @@ import { Input } from '@/components/ui/Input'
 import { CardLabel } from '../Card'
 import { OTHER_SITE, type SiteSelection } from './useSiteSelection'
 
-const KIND_CHIP = {
-  deploy: { label: 'Deploy site', style: 'bg-nd-accent/12 text-nd-accent-hover' },
-  nginx: { label: 'nginx', style: 'bg-nd-surface-raised text-nd-text-muted' }
+const KIND_STYLE = {
+  deploy: 'bg-nd-accent/12 text-nd-accent-hover',
+  nginx: 'bg-nd-surface-raised text-nd-text-muted'
 } as const
 
 function Radio({ on }: { on: boolean }) {
@@ -34,18 +34,18 @@ function OptionButton({ on, onClick, children }: { on: boolean; onClick: () => v
   )
 }
 
-export function SitePicker({ site }: { site: SiteSelection }) {
+export function SitePicker({ site, serverLabel }: { site: SiteSelection; serverLabel: string }) {
   return (
     <section aria-label="Site" className="flex flex-col gap-2">
       <CardLabel>Site</CardLabel>
       <div role="group" aria-label="Choose a site" className="grid grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))] gap-2">
         {site.options.map((option) => {
-          const chip = KIND_CHIP[option.kind]
+          const chipLabel = option.kind === 'deploy' ? 'Deploy site' : serverLabel
           return (
             <OptionButton key={option.id} on={site.choice === option.id} onClick={() => site.choose(option.id)}>
               <span className="flex items-center gap-2">
                 <span className="truncate text-[13px] font-semibold text-nd-text-primary">{option.title}</span>
-                <span className={cn('rounded px-1.5 py-px text-[11px] font-medium', chip.style)}>{chip.label}</span>
+                <span className={cn('rounded px-1.5 py-px text-[11px] font-medium', KIND_STYLE[option.kind])}>{chipLabel}</span>
               </span>
               <span className="truncate font-mono text-xs text-nd-text-muted">{option.detail}</span>
             </OptionButton>
@@ -53,7 +53,7 @@ export function SitePicker({ site }: { site: SiteSelection }) {
         })}
         <OptionButton on={site.choice === OTHER_SITE} onClick={() => site.choose(OTHER_SITE)}>
           <span className="text-[13px] font-semibold text-nd-text-primary">Other hostname…</span>
-          <span className="text-xs text-nd-text-muted">Must match an nginx server block</span>
+          <span className="text-xs text-nd-text-muted">Must match a site in the {serverLabel} configuration</span>
         </OptionButton>
       </div>
       {site.choice === OTHER_SITE && (

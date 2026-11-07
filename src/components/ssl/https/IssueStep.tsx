@@ -1,11 +1,10 @@
-import { fileName } from '@/utils/ssl/addHttps/siteOptions'
 import { weakSslHosts } from '@/utils/ssl/addHttps/issueView'
 import type { SslReport } from '@/types/ssl'
 import { CloudflareNote } from './CloudflareNote'
 import { CommandsCard } from './CommandsCard'
 import { IssueOptions } from './IssueOptions'
 import { IssueResultPanel } from './IssueResultPanel'
-import { NginxChangesCard } from './NginxChangesCard'
+import { CertbotChangesCard } from './CertbotChangesCard'
 import { StepHeading } from './StepHeading'
 import type { AddHttpsFlow } from './useAddHttpsFlow'
 
@@ -23,7 +22,7 @@ export function IssueStep({ flow, report }: { flow: AddHttpsFlow; report: SslRep
       <IssueOptions issue={issue} />
       <CommandsCard rows={issue.rows} />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-4">
-        {site.block && <NginxChangesCard fileName={fileName(site.block.file)} request={issue.request} />}
+        {site.block && <CertbotChangesCard siteFile={site.block.file} request={issue.request} driver={issue.driver} />}
         {weak.length > 0 && <CloudflareNote hosts={weak} />}
       </div>
       <IssueResultPanel issue={issue} command={lastCommand} />

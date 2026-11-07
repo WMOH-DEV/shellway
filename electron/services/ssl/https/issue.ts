@@ -15,6 +15,7 @@ const BACKUP_DIR = '/etc/ssl/shellway/backups'
 const CERTBOT_TIMEOUT_MS = 10 * 60_000
 const SHORT_TIMEOUT_MS = 30_000
 const REMOTE_LIMIT_S = CERTBOT_TIMEOUT_MS / 1000 - 30
+const CERTBOT_SITE_FILE = '-le-ssl.conf'
 const NEEDS_SUDO = 'Issuing a certificate needs passwordless sudo. Run these commands yourself, then Check again.'
 
 export interface IssueHooks {
@@ -37,6 +38,7 @@ function blockFor(request: IssueRequest, config: ServerConfig, driver: WebServer
 class IssueRun {
   private readonly log: OutputLog
   private backupPath: string | null = null
+  private siteFilesBefore: Set<string> = new Set()
 
   constructor(
     private readonly exec: RemoteExec,
@@ -49,6 +51,10 @@ class IssueRun {
   }
 
   async execute(): Promise<IssueResult> {
+    const before = await this.certbotSiteFiles()
+    if (before === null) return this.failure('backup', false)
+    this.refuseExistingHttpsFile(before)
+    this.siteFilesBefore = new Set(before)
     if (!(await this.backup())) return this.failure('backup', false)
     if (this.request.staging) {
       if (!(await this.runCertbot(stagingCommand(this.request, this.driver.kind)))) return this.failUnlessUnchanged('staging')
@@ -68,7 +74,7 @@ class IssueRun {
   }
 
   private async failUnlessUnchanged(stage: IssueStage): Promise<IssueResult> {
-    if (await this.matchesBackup()) return this.failure(stage, false)
+    if ((await this.matchesBackup()) && (await this.newSiteFiles())?.length === 0) return this.failure(stage, false)
     const restored = await this.restore()
     return this.failure(restored ? stage : 'restore', restored)
   }
@@ -104,8 +110,43 @@ class IssueRun {
     return saved
   }
 
+  private async certbotSiteFiles(): Promise<string[] | null> {
+    const dirs = this.driver.certbotSiteDirs
+    if (dirs.length === 0) return []
+    const command = `sudo -n find ${dirs.map(shellEscape).join(' ')} -maxdepth 1 -name ${shellEscape(`*${CERTBOT_SITE_FILE}`)} -print`
+    this.log.write(`$ ${command}\n`)
+    try {
+      const listed = await this.exec(command, { timeoutMs: SHORT_TIMEOUT_MS })
+      if (listed.code !== 0) return null
+      const inDirs = (line: string) => dirs.some((dir) => line.startsWith(`${dir}/`))
+      return listed.stdout.split('\n').filter((line) => line.endsWith(CERTBOT_SITE_FILE) && inDirs(line))
+    } catch (err) {
+      this.log.write(`${(err as Error).message}\n`)
+      return null
+    }
+  }
+
+  private refuseExistingHttpsFile(existing: string[]): void {
+    const expected = posix.basename(this.block.file).replace(/(\.conf)?$/, CERTBOT_SITE_FILE)
+    const found = existing.find((file) => posix.basename(file) === expected)
+    if (found) throw new Error(`${found} already exists, so this site already has an HTTPS file from certbot. Shellway will not let certbot change it. Check that file, or remove it, then Check again.`)
+  }
+
+  private async newSiteFiles(): Promise<string[] | null> {
+    const now = await this.certbotSiteFiles()
+    return now === null ? null : now.filter((file) => !this.siteFilesBefore.has(file))
+  }
+
+  private async removeNewSiteFiles(): Promise<boolean> {
+    const added = await this.newSiteFiles()
+    if (added === null) return false
+    if (added.length === 0) return true
+    return this.run(`sudo -n rm -f -- ${added.map(shellEscape).join(' ')}`, SHORT_TIMEOUT_MS)
+  }
+
   private async restore(): Promise<boolean> {
     if (this.backupPath === null) return false
+    if (!(await this.removeNewSiteFiles())) return false
     if (!(await this.run(`sudo -n cp -p ${shellEscape(this.backupPath)} ${shellEscape(this.block.file)}`, SHORT_TIMEOUT_MS))) return false
     if (!(await this.run(this.sudo(this.driver.testCommand), SHORT_TIMEOUT_MS))) return false
     return this.run(this.sudo(this.driver.reloadCommand), SHORT_TIMEOUT_MS)
@@ -122,7 +163,7 @@ class IssueRun {
 
   private failure(failedStage: IssueStage, restored: boolean): IssueResult {
     const output = this.log.text()
-    return { ok: false, failedStage, restored, backupPath: this.backupPath, lineage: null, output, hint: renewalHint(output, { action: 'issue', webServer: 'nginx' }) }
+    return { ok: false, failedStage, restored, backupPath: this.backupPath, lineage: null, output, hint: renewalHint(output, { action: 'issue', webServer: this.driver.kind }) }
   }
 }
 

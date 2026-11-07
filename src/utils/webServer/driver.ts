@@ -16,6 +16,7 @@ export interface WebServerDriver {
   readonly label: string
   readonly testCommand: string
   readonly reloadCommand: string
+  readonly certbotSiteDirs: readonly string[]
   swapCertLines(fileText: string, blockLine: number, certPath: string, keyPath: string): CertSwap
   siteIdentity(fileText: string, blockLine: number): SiteIdentity
 }

@@ -193,7 +193,7 @@ describe('SslCoordinator Origin CA switch', () => {
     for (const nginxParse of ['partial', 'unavailable'] as const) {
       config.facts = makeFacts({ nginxParse, sudo: { certbot: true, nginx: true, apache: false, full: true } })
       config.blocks = []
-      await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
+      await expect(ssl.originRemoveLineage('c1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole web server configuration')
     }
     expect(rec.calls).toEqual([])
   })
@@ -202,7 +202,7 @@ describe('SslCoordinator Origin CA switch', () => {
     const report = switchedReport()
     report.facts = makeFacts({ nginxParse: 'partial', sudo: { certbot: true, nginx: true, apache: false, full: true } })
     reportIs(report)
-    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole nginx configuration')
+    await expect(ssl.originUndo('c1', 's1', 'app.example.com', 'run-1')).rejects.toThrow('could not read the whole web server configuration')
     expect(rec.calls).toEqual([])
   })
 

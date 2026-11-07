@@ -6,6 +6,7 @@ export const nginxDriver: WebServerDriver = {
   label: 'nginx',
   testCommand: 'nginx -t',
   reloadCommand: 'nginx -s reload',
+  certbotSiteDirs: [],
   swapCertLines,
   siteIdentity: blockIdentity
 }

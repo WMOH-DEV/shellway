@@ -12,7 +12,7 @@ export function SiteStep({ flow, report }: { flow: AddHttpsFlow; report: SslRepo
   return (
     <div className="flex flex-col gap-[18px]">
       <StepHeading title="Site and certificate" subtitle="Pick the site, check its names are ready, choose who issues the certificate." />
-      <SitePicker site={site} />
+      <SitePicker site={site} serverLabel={flow.issue.driver.label} />
       {site.block && <NamesCard site={site} fileName={fileName(site.block.file)} />}
       <IssuerCards
         certbotMissing={prepare.facts !== null && !prepare.ready}

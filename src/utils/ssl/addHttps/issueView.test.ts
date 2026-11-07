@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { IssueRequest } from '../../../types/ssl'
 import { edgeOf, makeHost, makeOrigin } from '../testReport'
-import { commandRows, isMissingServerCertificate, issueFailureView, nginxChangeLines, weakSslHosts, weakZones } from './issueView'
+import { certbotChanges, commandRows, isMissingServerCertificate, issueFailureView, weakSslHosts, weakZones } from './issueView'
 import { issueFailure } from './testFixtures'
 import { nginxDriver } from '../../webServer/nginx'
+import { apacheDriver } from '../../webServer/apache'
 
 const request: IssueRequest = { blockId: 'app.conf:1', names: ['app.example.com', 'www.app.example.com'], email: 'admin@example.com', redirect: true, staging: true }
 
@@ -25,15 +26,24 @@ describe('commandRows', () => {
   })
 })
 
-describe('nginxChangeLines', () => {
-  it('names the certificate files under the first name', () => {
-    expect(nginxChangeLines(request)).toEqual([
+describe('certbotChanges', () => {
+  it('names the certificate files under the first name in the nginx file', () => {
+    const changes = certbotChanges(request, '/etc/nginx/sites-enabled/app.conf', nginxDriver)
+    expect(changes).toMatchObject({ file: '/etc/nginx/sites-enabled/app.conf', newFile: false })
+    expect(changes.lines).toEqual([
       'listen 443 ssl;',
       'ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem;',
       'ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;',
       'include /etc/letsencrypt/options-ssl-nginx.conf;',
       'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;'
     ])
+  })
+
+  it('shows the new -le-ssl.conf virtual host certbot writes for Apache', () => {
+    const changes = certbotChanges(request, '/etc/apache2/sites-enabled/app.conf', apacheDriver('debian'))
+    expect(changes).toMatchObject({ file: '/etc/apache2/sites-enabled/app-le-ssl.conf', newFile: true })
+    expect(changes.lines).toContain('Include /etc/letsencrypt/options-ssl-apache.conf')
+    expect(changes.redirectNote).toContain('/etc/apache2/sites-enabled/app.conf')
   })
 })
 
@@ -71,20 +81,26 @@ describe('weakZones', () => {
 })
 
 describe('issueFailureView', () => {
+  it('names Apache in the failure title and notes', () => {
+    const view = issueFailureView(issueFailure({ failedStage: 'nginx-test', restored: true }), 'Apache')
+    expect(view.title).toBe('Apache rejected the changed configuration')
+    expect(view.notes[0]).toMatch(/^The Apache file was restored/)
+  })
+
   it('says the real request was not sent when staging failed', () => {
-    const view = issueFailureView(issueFailure({ failedStage: 'staging', hint: 'Port 80 is blocked' }))
+    const view = issueFailureView(issueFailure({ failedStage: 'staging', hint: 'Port 80 is blocked' }), 'nginx')
     expect(view.title).toBe('The staging test failed')
     expect(view.notes).toEqual(['The nginx file was not changed.', "The real certificate was not requested, so no Let's Encrypt limit was used."])
     expect(view.hint).toBe('Port 80 is blocked')
   })
 
   it('says the file was restored when nginx rejected the change', () => {
-    const view = issueFailureView(issueFailure({ failedStage: 'nginx-test', restored: true }))
+    const view = issueFailureView(issueFailure({ failedStage: 'nginx-test', restored: true }), 'nginx')
     expect(view.notes).toEqual(['The nginx file was restored from its backup (/etc/ssl/shellway/backups/app.conf.1800000000).'])
   })
 
   it('points to the backup when the restore did not happen', () => {
-    const view = issueFailureView(issueFailure({ failedStage: 'restore', restored: false }))
+    const view = issueFailureView(issueFailure({ failedStage: 'restore', restored: false }), 'nginx')
     expect(view.notes[0]).toBe('The nginx file was not restored automatically. Your backup is at /etc/ssl/shellway/backups/app.conf.1800000000.')
   })
 })

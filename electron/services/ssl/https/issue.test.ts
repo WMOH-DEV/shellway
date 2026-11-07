@@ -24,7 +24,7 @@ const config = (full = true, blocks = [block]): ServerConfig => ({
   blocks
 })
 
-type Responder = (command: string, attempt: number) => { code: number; output?: string } | Error | undefined
+type Responder = (command: string, attempt: number) => { code: number; output?: string; stdout?: string } | Error | undefined
 
 let commands: string[]
 let stdins: Record<string, unknown>
@@ -41,7 +41,7 @@ function fakeExec(responder: Responder): RemoteExec {
     const answer = responder(command, attempt) ?? { code: 0 }
     if (answer instanceof Error) throw answer
     if (answer.output) options?.onOutput?.(answer.output)
-    return { stdout: '', stdoutBytes: 0, stderr: '', code: answer.code }
+    return { stdout: answer.stdout ?? '', stdoutBytes: 0, stderr: '', code: answer.code }
   }
 }
 
@@ -194,7 +194,7 @@ describe('runIssue', () => {
 
   it('refuses when only part of the nginx configuration could be read', async () => {
     const partial = { ...config(), facts: { ...config().facts, nginxParse: 'partial' } } as ServerConfig
-    await expect(issue(() => undefined, partial)).rejects.toThrow('could not read the whole nginx configuration')
+    await expect(issue(() => undefined, partial)).rejects.toThrow('could not read the whole web server configuration')
     expect(commands).toEqual([])
   })
 
@@ -202,5 +202,93 @@ describe('runIssue', () => {
     const odd = { ...block, file: "/etc/nginx/conf.d/it's.conf" }
     await issue(() => undefined, config(true, [odd]))
     expect(stdins['sudo -n sh -s']).toContain(`cp -p '/etc/nginx/conf.d/it'\\''s.conf' '/etc/ssl/shellway/backups/it'\\''s.conf.1800000000'`)
+  })
+})
+
+describe('runIssue on Apache', () => {
+  const SITE = '/etc/apache2/sites-enabled/app.conf'
+  const APACHE_BACKUP = '/etc/ssl/shellway/backups/app.conf.1800000000'
+  const LIST = "sudo -n find '/etc/apache2/sites-available' '/etc/apache2/sites-enabled' -maxdepth 1 -name '*-le-ssl.conf' -print"
+  const NEW_FILES = ['/etc/apache2/sites-available/app-le-ssl.conf', '/etc/apache2/sites-enabled/app-le-ssl.conf']
+  const OLD_FILE = '/etc/apache2/sites-available/old-le-ssl.conf'
+  const apacheBlock: ServerBlock = { ...block, id: `${SITE}:1`, file: SITE }
+  const apacheRequest: IssueRequest = { ...request, blockId: apacheBlock.id, staging: false }
+  const APACHE_ISSUE = limited(issueCommand(apacheRequest, 'apache'))
+  const apacheConfig = (): ServerConfig => ({
+    facts: {
+      nginx: null, apache: { version: '2.4.62', layout: 'debian' }, serving: 'apache', nginxParse: 'full',
+      sudo: { certbot: true, nginx: false, apache: true, full: true }
+    } as ServerFacts,
+    blocks: [apacheBlock]
+  })
+  const listing = (afterIssue: boolean) => ({ code: 0, stdout: [OLD_FILE, ...(afterIssue ? NEW_FILES : [])].join('\n') })
+  const apacheIssue = (failing: (command: string, attempt: number) => { code: number } | undefined) =>
+    runIssue(fakeExec((command, attempt) => {
+      if (command === LIST) return listing(commands.includes(APACHE_ISSUE))
+      return failing(command, attempt)
+    }), async () => apacheConfig(), apacheRequest, hooks)
+
+  it('issues with the apache plugin and checks Apache with its own test', async () => {
+    const result = await apacheIssue(() => undefined)
+    expect(commands).toEqual([LIST, 'sudo -n sh -s', APACHE_ISSUE, 'sudo -n apache2ctl configtest'])
+    expect(APACHE_ISSUE).toContain('certbot --apache')
+    expect(result).toMatchObject({ ok: true, backupPath: APACHE_BACKUP })
+  })
+
+  it('removes only the site files certbot added before putting the backup back', async () => {
+    const result = await apacheIssue((command, attempt) => (command === 'sudo -n apache2ctl configtest' && attempt === 1 ? { code: 1 } : undefined))
+    expect(commands.slice(3)).toEqual([
+      'sudo -n apache2ctl configtest', LIST,
+      `sudo -n rm -f -- '${NEW_FILES[0]}' '${NEW_FILES[1]}'`,
+      `sudo -n cp -p '${APACHE_BACKUP}' '${SITE}'`, 'sudo -n apache2ctl configtest', 'sudo -n systemctl reload apache2'
+    ])
+    expect(commands.join('\n')).not.toContain(OLD_FILE)
+    expect(result).toMatchObject({ ok: false, failedStage: 'nginx-test', restored: true })
+  })
+
+  it('cleans up a new site file even when the main site file was not touched', async () => {
+    const result = await apacheIssue((command) => (command === APACHE_ISSUE ? { code: 1 } : undefined))
+    expect(commands).toContain(`sudo -n rm -f -- '${NEW_FILES[0]}' '${NEW_FILES[1]}'`)
+    expect(result).toMatchObject({ ok: false, failedStage: 'issue', restored: true })
+  })
+
+  it('leaves everything alone when certbot failed without adding a file', async () => {
+    const result = await runIssue(fakeExec((command) => {
+      if (command === LIST) return listing(false)
+      return command === APACHE_ISSUE ? { code: 1 } : undefined
+    }), async () => apacheConfig(), apacheRequest, hooks)
+    expect(commands.some((command) => command.includes('rm -f'))).toBe(false)
+    expect(result).toMatchObject({ ok: false, failedStage: 'issue', restored: false })
+  })
+
+  it('stops before certbot when the existing HTTPS files cannot be listed', async () => {
+    const result = await runIssue(fakeExec((command) => (command === LIST ? { code: 1 } : undefined)), async () => apacheConfig(), apacheRequest, hooks)
+    expect(commands).toEqual([LIST])
+    expect(result).toMatchObject({ ok: false, failedStage: 'backup', restored: false })
+  })
+
+  it('does not delete anything and reports no restore when the second listing fails', async () => {
+    const result = await runIssue(fakeExec((command, attempt) => {
+      if (command === LIST) return attempt === 1 ? listing(false) : { code: 1 }
+      return command === 'sudo -n apache2ctl configtest' && attempt === 1 ? { code: 1 } : undefined
+    }), async () => apacheConfig(), apacheRequest, hooks)
+    expect(commands.some((command) => command.includes('rm -f'))).toBe(false)
+    expect(result).toMatchObject({ ok: false, failedStage: 'restore', restored: false })
+  })
+
+  it('ignores listed paths outside the folders certbot writes to', async () => {
+    const result = await runIssue(fakeExec((command, attempt) => {
+      if (command === LIST) return attempt === 1 ? listing(false) : { code: 0, stdout: `${OLD_FILE}\nrelative-le-ssl.conf\n/tmp/x-le-ssl.conf` }
+      return command === 'sudo -n apache2ctl configtest' && attempt === 1 ? { code: 1 } : undefined
+    }), async () => apacheConfig(), apacheRequest, hooks)
+    expect(commands.some((command) => command.includes('rm -f'))).toBe(false)
+    expect(result.restored).toBe(true)
+  })
+
+  it('refuses a site that already has its certbot HTTPS file, before changing anything', async () => {
+    const existing = { code: 0, stdout: '/etc/apache2/sites-available/app-le-ssl.conf' }
+    await expect(runIssue(fakeExec((command) => (command === LIST ? existing : undefined)), async () => apacheConfig(), apacheRequest, hooks))
+      .rejects.toThrow('app-le-ssl.conf already exists')
+    expect(commands).toEqual([LIST])
   })
 })
