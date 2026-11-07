@@ -1,3 +1,4 @@
+import type { ServerNotifications } from './server/notifications'
 import { DEFAULT_KEYBINDINGS } from './keybindings'
 import type { FilterMatch } from './sql'
 
@@ -63,6 +64,9 @@ export interface AppSettings {
 
   sqlDefaultFilterMatch: FilterMatch
 
+  classicServerTabs: boolean
+  serverNotifications: ServerNotifications
+
   // Connection
   connectionKeepAliveInterval: number  // seconds
   connectionTimeout: number            // seconds
@@ -127,6 +131,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+
+  classicServerTabs: false,
+  serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

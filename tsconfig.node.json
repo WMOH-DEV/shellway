@@ -37,6 +37,7 @@
     "src/utils/ssl/https/**/*.ts",
     "src/utils/ssl/originCa/**/*.ts",
     "src/utils/webServer/**/*.ts",
+    "src/utils/server/**/*.ts",
     "src/utils/ssl/testReport.ts",
     "package.json"
   ]

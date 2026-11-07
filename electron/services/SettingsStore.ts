@@ -1,3 +1,4 @@
+import type { ServerNotifications } from '../../src/types/server/notifications'
 import Store from 'electron-store'
 import { DEFAULT_KEYBINDINGS } from '../../src/types/keybindings'
 
@@ -39,6 +40,9 @@ export interface AppSettings {
 
   // SQL
   sqlDefaultFilterMatch: 'all' | 'any'
+
+  classicServerTabs: boolean
+  serverNotifications: ServerNotifications
 
   // Connection
   connectionKeepAliveInterval: number
@@ -105,6 +109,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+
+  classicServerTabs: false,
+  serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },
 
   connectionKeepAliveInterval: 30,
   connectionTimeout: 15,

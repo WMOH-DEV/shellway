@@ -55,6 +55,7 @@ import { registerServiceManagerIPC } from "./ipc/servicemanager.ipc";
 import { registerDeployIPC } from "./ipc/deploy.ipc";
 import { registerSslIPC } from "./ipc/ssl.ipc";
 import { registerCreateSiteIPC } from "./ipc/createSite.ipc";
+import { registerServerIPC } from "./ipc/server.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
 import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
@@ -424,6 +425,7 @@ app.whenReady().then(() => {
   registerDeployIPC();
   registerSslIPC();
   registerCreateSiteIPC();
+  registerServerIPC();
   registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)

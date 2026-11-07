@@ -3,6 +3,7 @@ import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
 import type { CreateSiteContext, CreateSiteInput, CreateSiteOutput, NameCheck, ResumeMode, RunRecord } from "../src/types/createSite";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
+import { serverApi } from "./preload/server";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
@@ -1258,6 +1259,8 @@ const api = {
     zoneSetMode: (zone: string, mode: SslMode, confirmedUnknown: string[]) =>
       ipcRenderer.invoke("ssl:zone-set-mode", zone, mode, confirmedUnknown) as Promise<SslResult<ZoneModeResult>>,
   },
+
+  server: serverApi,
 
   // ── Host Key Management ──
   hostkey: {
