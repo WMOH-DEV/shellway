@@ -605,7 +605,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   &copy; {new Date().getFullYear()} Wael Mohamed Essaid. All rights reserved.
                 </p>
                 <p className="text-2xs text-nd-text-muted mt-1">
-                  Licensed under MIT License
+                  Licensed under the Apache License 2.0
                 </p>
               </div>
             </div>
