@@ -2,6 +2,7 @@ import { AlertTriangle, Check, Copy, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { SiteConfig } from '@/types/deploy'
 import { readyItems, type ReadyItem } from '@/utils/deploy/readyCheck'
+import { webServerItems } from '@/utils/deploy/webServerCheck'
 import { copyText } from './copyText'
 import type { ServerCheckState } from './useServerCheck'
 
@@ -31,7 +32,7 @@ function CheckRow({ item }: { item: ReadyItem }) {
 }
 
 export function ServerCheck({ site, check }: { site: SiteConfig; check: ServerCheckState }) {
-  const { report, error, run } = check
+  const { report, webServer, error, run } = check
   if (error) {
     return (
       <div className="flex items-center gap-3 p-4 text-xs text-nd-error-fg">
@@ -41,6 +42,7 @@ export function ServerCheck({ site, check }: { site: SiteConfig; check: ServerCh
     )
   }
   if (!report) return <div className="p-4 text-xs text-nd-text-muted">Checking the server…</div>
+  const webItems = webServer ? webServerItems(site.path, site.layout, webServer) : []
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -51,6 +53,14 @@ export function ServerCheck({ site, check }: { site: SiteConfig; check: ServerCh
       <ul className="flex flex-col gap-2">
         {readyItems({ site, report, access: null, publicKey: '' }).map((item) => <CheckRow key={item.id} item={item} />)}
       </ul>
+      {webItems.length > 0 && (
+        <>
+          <span className="pt-1 text-2xs font-semibold uppercase tracking-wide text-nd-text-muted">Web server</span>
+          <ul className="flex flex-col gap-2">
+            {webItems.map((item) => <CheckRow key={item.id} item={item} />)}
+          </ul>
+        </>
+      )}
     </div>
   )
 }

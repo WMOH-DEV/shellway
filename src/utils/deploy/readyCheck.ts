@@ -4,7 +4,7 @@ import { sudoersLine } from './sudoers'
 
 export type ReadyStatus = 'pass' | 'fail' | 'checking'
 export type ReadyAction = 'copy' | 'add-to-github' | 'test-access' | 'add-by-hand'
-export type ReadyItemId = 'tools' | 'key' | 'folder' | 'sudo'
+export type ReadyItemId = 'tools' | 'key' | 'folder' | 'sudo' | 'web-site' | 'web-symlinks' | 'web-rewrite'
 
 export type KeyAccess = { state: 'idle' | 'checking' } | { state: 'ok'; head: string } | { state: 'failed'; message: string }
 

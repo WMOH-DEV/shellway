@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
+import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
 
@@ -1149,6 +1150,8 @@ const api = {
       ipcRenderer.invoke("deploy:log", connectionId, name, id, offset) as Promise<DeployResult<{ text: string; offset: number }>>,
     doctor: (connectionId: string, name: string) =>
       ipcRenderer.invoke("deploy:doctor", connectionId, name) as Promise<DeployResult<DoctorReport>>,
+    webServerCheck: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:web-check", connectionId, name) as Promise<DeployResult<WebServerCheck>>,
     keygen: (connectionId: string, name: string) =>
       ipcRenderer.invoke("deploy:keygen", connectionId, name) as Promise<DeployResult<string>>,
     checkRemote: (connectionId: string, name: string) =>

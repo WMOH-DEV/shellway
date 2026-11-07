@@ -30,6 +30,7 @@ function setup(overrides: Record<string, unknown> = {}) {
   const save = vi.fn().mockResolvedValue({ success: true })
   mockNovadeck({
     'deploy.doctor': vi.fn().mockResolvedValue({ success: true, data: doctor }),
+    'deploy.webServerCheck': vi.fn().mockResolvedValue({ success: true, data: null }),
     'deploy.save': save,
     ...overrides
   })
@@ -207,7 +208,7 @@ describe('PipelineEditor', () => {
   })
 
   it('hides the switch-back toggle for in-place sites', () => {
-    mockNovadeck({ 'deploy.doctor': vi.fn().mockResolvedValue({ success: true, data: doctor }) })
+    mockNovadeck({ 'deploy.doctor': vi.fn().mockResolvedValue({ success: true, data: doctor }), 'deploy.webServerCheck': vi.fn().mockResolvedValue({ success: true, data: null }) })
     const inplace = makeSummary({ config: { ...summary.config, layout: 'inplace' } })
     render(<PipelineEditor connectionId="conn-1" summary={inplace} onSaved={vi.fn()} onOpenServerCheck={vi.fn()} />)
     expect(screen.queryByText('Switch back on failure')).not.toBeInTheDocument()

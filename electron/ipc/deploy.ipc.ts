@@ -9,6 +9,7 @@ import { DeployLocalStore } from '../services/deploy/DeployLocalStore'
 import { LocalGit } from '../services/deploy/LocalGit'
 import type { RemoteExec } from '../services/deploy/DeployService'
 import { registerDeployKey } from '../services/deploy/githubDeployKey'
+import { readWebServerCheck } from '../services/deploy/webServerCheck'
 import { parseGitHubRepo } from '../../src/utils/deploy/githubRepo'
 import type { DeployOptions, DeployResult, SiteConfig } from '../../src/types/deploy'
 
@@ -53,6 +54,14 @@ function requireCoordinator(): DeployCoordinator {
   return coordinator
 }
 
+async function webServerCheck(connectionId: string, name: string) {
+  const exec = execFor(connectionId)
+  if (!exec) throw new Error('Not connected')
+  const site = (await requireCoordinator().service(connectionId).listSites()).find((s) => s.config.name === name)
+  if (!site) throw new Error(`Unknown site ${name}`)
+  return readWebServerCheck(exec, site.config.path)
+}
+
 async function registerKey(connectionId: string, name: string, token: string | null, remember: boolean): Promise<{ alreadyAdded: boolean }> {
   const service = requireCoordinator().service(connectionId)
   const site = (await service.listSites()).find((s) => s.config.name === name)
@@ -95,6 +104,7 @@ export function registerDeployIPC(): void {
   handle('deploy:apply', (c, name) => requireCoordinator().apply(str(c, 'connection'), str(name, 'site')))
   handle('deploy:log', (c, name, id, offset) => service(c).readLog(str(name, 'site'), str(id, 'deploy'), typeof offset === 'number' ? offset : 0))
   handle('deploy:doctor', (c, name) => service(c).doctor(str(name, 'site')))
+  handle('deploy:web-check', (c, name) => webServerCheck(str(c, 'connection'), str(name, 'site')))
   handle('deploy:keygen', (c, name) => service(c).keygen(str(name, 'site')))
   handle('deploy:check-remote', (c, name) => service(c).checkRemote(str(name, 'site')))
   handle('deploy:env-read', (c, name) => service(c).readEnv(str(name, 'site')))
