@@ -19,6 +19,8 @@ async function switchDatabase(tabId: string, sessionId: string, database: string
   return true
 }
 
+const OTHER_ENGINE = 'The SQL tab is connected to a different kind of database.'
+
 function sqlType(engine: DbEngine): 'mysql' | 'postgres' {
   return engine === 'mysql' ? 'mysql' : 'postgres'
 }
@@ -38,7 +40,7 @@ function toastPickManually(database: string, hint?: string): void {
 
 async function applyPendingDatabase(tabId: string, pending: PendingDatabase): Promise<void> {
   const sessionId = sameEngineSessionId(useSQLStore.getState().connections[tabId], pending.engine)
-  if (!sessionId) return toastPickManually(pending.database, 'Connect to the database server there first.')
+  if (!sessionId) return toastPickManually(pending.database, OTHER_ENGINE)
   if (pending.engine !== 'mysql') return toastPickManually(pending.database)
   if (await switchDatabase(tabId, sessionId, pending.database)) return
   toast.error(`Could not open ${pending.database}`, 'Pick it in the SQL tab.')
@@ -61,7 +63,7 @@ export async function openInSqlTab(tabId: string, engine: DbEngine, database: st
   const sessionId = sameEngineSessionId(connection, sqlType(engine))
   if (sessionId && engine === 'mysql' && (await switchDatabase(tabId, sessionId, database))) return
   if (sessionId) return toastPickManually(database)
-  if (connection?.connectionStatus === 'connected') return toastPickManually(database, 'Connect to the database server there first.')
+  if (connection?.connectionStatus === 'connected') return toastPickManually(database, OTHER_ENGINE)
   useSQLStore.getState().setPendingDatabase(tabId, { engine: sqlType(engine), database })
   toast.info(`Connect to the database server, then Shellway opens ${database}.`)
 }

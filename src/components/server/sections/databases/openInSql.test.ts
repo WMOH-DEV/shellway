@@ -51,7 +51,7 @@ describe('openInSqlTab', () => {
     await openInSqlTab(TAB, 'mysql', 'shop_prod')
 
     expect(useSQLStore.getState().pendingDatabases[TAB]).toBeUndefined()
-    expect(toastMock.info).toHaveBeenCalledWith('Pick shop_prod in the SQL tab', 'Connect to the database server there first.')
+    expect(toastMock.info).toHaveBeenCalledWith('Pick shop_prod in the SQL tab', 'The SQL tab is connected to a different kind of database.')
   })
 })
 
