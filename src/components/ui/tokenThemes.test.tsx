@@ -13,7 +13,12 @@ const TOKENS: Record<string, string> = {
   'text-muted': '139 149 167',
   'text-faint': '79 90 109',
   accent: '79 140 255',
-  warning: '242 176 74'
+  warning: '242 176 74',
+  'text-dim': '124 134 153',
+  'error-fg': '255 128 128',
+  'warning-fg': '245 189 98',
+  'success-fg': '79 219 155',
+  'info-fg': '143 182 255'
 }
 
 describe('buildTokenThemes', () => {
@@ -32,6 +37,11 @@ describe('buildTokenThemes', () => {
     const { base, rules } = buildTokenThemes(true).monaco
     expect(base).toBe('vs')
     expect(rules).toEqual([])
+  })
+
+  it('colors the log viewer from the status tokens', () => {
+    const log = buildTokenThemes(false).log
+    expect([log.background, log.foreground, log.brightRed, log.yellow, log.brightBlack]).toEqual(['#090c11', '#e6eaf2', '#ff8080', '#f5bd62', '#7c8699'])
   })
 
   it('follows a token change on the next build', () => {

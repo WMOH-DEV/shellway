@@ -39,7 +39,7 @@ import {
   Type,
   DatabaseZap,
 } from "lucide-react";
-import { useGridTheme } from "@/components/ui/tokenThemes";
+import { useTokenThemes } from "@/components/ui/tokenThemes";
 import type {
   DatabaseType,
   QueryResult,
@@ -513,7 +513,7 @@ export const DataGrid = React.memo(
       oldValue: unknown;
       editable: boolean;
     } | null>(null);
-    const gridTheme = useGridTheme();
+    const gridTheme = useTokenThemes().grid;
 
     // ── Column width persistence ref ──
     // Holds the current column widths for this table. Read by columnDefs useMemo so that

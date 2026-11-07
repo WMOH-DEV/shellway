@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { themeQuartz } from 'ag-grid-community'
 import type * as MonacoEditor from 'monaco-editor'
+import type { ITheme } from '@xterm/xterm'
 import { useUIStore } from '@/stores/uiStore'
 
 type Rgb = [number, number, number]
@@ -38,9 +39,14 @@ function readPalette() {
     borderHover: token('border-hover'),
     text: token('text-primary'),
     muted: token('text-muted'),
+    dim: token('text-dim'),
     faint: token('text-faint'),
     accent: token('accent'),
-    warning: token('warning')
+    warning: token('warning'),
+    errorFg: token('error-fg'),
+    warningFg: token('warning-fg'),
+    successFg: token('success-fg'),
+    infoFg: token('info-fg')
   }
 }
 
@@ -124,14 +130,36 @@ function gridTheme(p: Palette) {
   })
 }
 
-export function buildTokenThemes(isLight: boolean) {
-  const palette = readPalette()
-  return { monaco: monacoTheme(palette, isLight), grid: gridTheme(palette) }
+function logTheme(p: Palette): ITheme {
+  return {
+    background: hex(p.sunken),
+    foreground: hex(p.text),
+    cursor: hex(p.accent),
+    cursorAccent: hex(p.sunken),
+    selectionBackground: hex(p.accent, '40'),
+    black: hex(p.sunken),
+    brightBlack: hex(p.dim),
+    red: hex(p.errorFg),
+    brightRed: hex(p.errorFg),
+    green: hex(p.successFg),
+    brightGreen: hex(p.successFg),
+    yellow: hex(p.warningFg),
+    brightYellow: hex(p.warningFg),
+    blue: hex(p.infoFg),
+    brightBlue: hex(p.infoFg),
+    white: hex(p.text),
+    brightWhite: '#ffffff'
+  }
 }
 
-export function useGridTheme() {
+export function buildTokenThemes(isLight: boolean) {
+  const palette = readPalette()
+  return { monaco: monacoTheme(palette, isLight), grid: gridTheme(palette), log: logTheme(palette) }
+}
+
+export function useTokenThemes() {
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
-  return useMemo(() => buildTokenThemes(resolvedTheme === 'light').grid, [resolvedTheme])
+  return useMemo(() => buildTokenThemes(resolvedTheme === 'light'), [resolvedTheme])
 }
 
 const isLightNow = (): boolean => document.documentElement.classList.contains('light')

@@ -12,13 +12,8 @@ import {
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/components/ui/Toast'
-import { TERMINAL_THEMES } from '@/data/terminalThemes'
+import { useTokenThemes } from '@/components/ui/tokenThemes'
 import type { ServiceLogEntry } from '@/types/serviceManager'
-
-function readSunkenBackground(): string {
-  const channels = getComputedStyle(document.documentElement).getPropertyValue('--nd-bg-sunken').trim().split(/\s+/)
-  return `rgb(${channels.join(', ')})`
-}
 
 interface ServiceLogViewerProps {
   connectionId: string
@@ -92,6 +87,7 @@ export function ServiceLogViewer({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const prevLogsRef = useRef<ServiceLogEntry[]>([])
   const followRef = useRef(follow)
+  const { log: logTheme } = useTokenThemes()
 
   // Keep ref in sync
   useEffect(() => { followRef.current = follow }, [follow])
@@ -99,8 +95,6 @@ export function ServiceLogViewer({
   // ── Initialize xterm.js ──
   useEffect(() => {
     if (!containerRef.current) return
-
-    const theme = TERMINAL_THEMES['default']
 
     const terminal = new Terminal({
       fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
@@ -113,10 +107,7 @@ export function ServiceLogViewer({
       disableStdin: true,          // read-only log viewer
       convertEol: true,
       allowProposedApi: true,
-      theme: {
-        ...theme,
-        background: readSunkenBackground(),
-      },
+      theme: logTheme,
     })
 
     const fitAddon = new FitAddon()
@@ -191,6 +182,10 @@ export function ServiceLogViewer({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = logTheme
+  }, [logTheme])
 
   // ── Write logs to terminal when they change ──
   useEffect(() => {
