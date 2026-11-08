@@ -7,6 +7,7 @@ import type { AttentionItem } from '@/types/server/core'
 import type { ConnectionTab } from '@/types/session'
 import type { SectionModule, ServerSectionContext } from './sections/types'
 import { ServerView } from './ServerView'
+import { isSidebarCollapsed, useServerSidebarStore } from './shell/sidebarStore'
 
 const mounts = vi.hoisted(() => ({ sites: 0, overview: 0 }))
 
@@ -43,6 +44,7 @@ beforeEach(() => {
   mounts.sites = 0
   mounts.overview = 0
   useServerNavStore.setState({ routes: {} })
+  useServerSidebarStore.setState({ choice: null })
   mockNovadeck({
     'server.scan': vi.fn(async () => ({ success: true, data: {} })),
     'ssl.lastReport': vi.fn(async () => ({ success: true, data: null })),
@@ -59,6 +61,25 @@ describe('ServerView', () => {
     expect(nav).toHaveTextContent('Server settings')
     expect(nav).not.toHaveTextContent('Set up this server')
     expect(screen.getByText('overview page')).toBeInTheDocument()
+  })
+
+  it('collapses the sidebar to icons and back, and remembers the choice', () => {
+    render(<ServerView tab={tab} active attention={[item({ area: 'overview', level: 'warning' })]} />)
+    const nav = screen.getByRole('navigation', { name: 'Server sections' })
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(nav).not.toHaveTextContent('Overview')
+    expect(screen.getByRole('button', { name: 'Overview' })).toBeInTheDocument()
+    expect(useServerSidebarStore.getState().choice).toBe('collapsed')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
+    expect(nav).toHaveTextContent('Overview')
+    expect(useServerSidebarStore.getState().choice).toBe('expanded')
+  })
+
+  it('follows the window width until the user picks, then keeps the pick', () => {
+    expect(isSidebarCollapsed(null, true)).toBe(true)
+    expect(isSidebarCollapsed(null, false)).toBe(false)
+    expect(isSidebarCollapsed('expanded', true)).toBe(false)
+    expect(isSidebarCollapsed('collapsed', false)).toBe(true)
   })
 
   it('shows one badge per section with the count of its attention items', () => {

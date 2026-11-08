@@ -11,6 +11,7 @@ import { mergeSitesAttention } from './useServerAttention'
 import { sectionById } from './sections/registry'
 import type { ServerSectionContext } from './sections/types'
 import { ServerSubNav } from './shell/ServerSubNav'
+import { isSidebarCollapsed, useServerSidebarStore } from './shell/sidebarStore'
 import { useIsNarrow } from './shell/useIsNarrow'
 
 const COLLAPSE_BELOW = 1100
@@ -36,7 +37,9 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
   const route = useServerRoute(tab.id)
   const navigateTo = useServerNavStore((state) => state.navigate)
   const rootRef = useRef<HTMLDivElement>(null)
-  const collapsed = useIsNarrow(rootRef, COLLAPSE_BELOW)
+  const narrow = useIsNarrow(rootRef, COLLAPSE_BELOW)
+  const { choice, setChoice } = useServerSidebarStore()
+  const collapsed = isSidebarCollapsed(choice, narrow)
   const sitesRoute = useLastSitesRoute(route)
   const sitesItems = useSitesAttention({ connectionId: tab.id, sessionId: tab.sessionId, connectionStatus: active ? tab.status : 'disconnected' })
   const items = useMemo(() => mergeSitesAttention(attention, sitesItems), [attention, sitesItems])
@@ -73,6 +76,7 @@ export function ServerView({ tab, active, attention }: ServerViewProps) {
         attention={items}
         collapsed={collapsed}
         onSelect={selectSection}
+        onToggleCollapsed={() => setChoice(collapsed ? 'expanded' : 'collapsed')}
       />
       <div className="relative min-w-0 flex-1 overflow-hidden">
         {sitesCtx && (
