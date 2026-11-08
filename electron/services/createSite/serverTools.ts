@@ -38,6 +38,8 @@ if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled "pm2-$(id -un)" 
 echo "docker=$(has docker)"
 if [ -x /usr/sbin/mysqld ] || [ -x /usr/sbin/mariadbd ] || command -v mysqld >/dev/null 2>&1 || command -v mariadbd >/dev/null 2>&1; then echo db_mysql=1; else echo db_mysql=0; fi
 if command -v pg_lsclusters >/dev/null 2>&1 || command -v postgres >/dev/null 2>&1 || ls /usr/lib/postgresql/*/bin/postgres >/dev/null 2>&1; then echo db_postgresql=1; else echo db_postgresql=0; fi
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then echo systemd=1; else echo systemd=0; fi
+if [ -d /etc/cron.d ] && { [ -x /usr/sbin/cron ] || [ -x /usr/sbin/crond ]; }; then echo cron=1; else echo cron=0; fi
 dir=/var/www; [ -d "$dir" ] || dir=/
 echo "disk=$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')"
 `
@@ -74,6 +76,8 @@ export function parseTools(text: string, apacheModules: string[]): ServerTools {
     pm2Startup: field(text, 'pm2_startup') === '1',
     docker: field(text, 'docker') === '1',
     databases: { mysql: field(text, 'db_mysql') === '1', postgresql: field(text, 'db_postgresql') === '1' },
+    systemd: field(text, 'systemd') === '1',
+    cron: field(text, 'cron') === '1',
     apacheModules,
     freeDiskBytes: Number.isFinite(diskKb) ? diskKb * 1024 : 0
   }

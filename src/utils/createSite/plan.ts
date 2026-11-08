@@ -8,6 +8,7 @@ import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
 import { createDatabaseScript, databaseLabel } from './database'
 import { envPathOf, managedEnv, maskedEnvLines } from './env'
+import { createJobsScript, cronText, jobFiles, unitText } from './laravelJobs'
 import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPool'
 import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
@@ -36,12 +37,13 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
   https: 'HTTPS',
   deploys: 'Deploys',
   env: 'Environment file',
-  'first-deploy': 'First deploy and check'
+  'first-deploy': 'First deploy and check',
+  jobs: 'Scheduler and queue'
 }
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3 }
+const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3, jobs: 0.25 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
@@ -286,6 +288,43 @@ function firstDeployAction(input: CreateSiteInput): PlanAction {
   })
 }
 
+function missingJobTools(input: CreateSiteInput, tools: ServerTools): string[] {
+  return [...(input.jobs.scheduler && !tools.cron ? ['cron'] : []), ...(input.jobs.queueWorker && !tools.systemd ? ['systemd'] : [])]
+}
+
+function jobsSummary({ jobs, siteName }: CreateSiteInput): string {
+  const { cronFile, unitFile } = jobFiles(siteName, jobs)
+  return [...(cronFile ? ['schedule:run every minute'] : []), ...(unitFile ? ['queue:work kept running by systemd'] : [])].join(' · ')
+}
+
+const restartsQueue = ({ activateSteps }: CreateSiteInput): boolean => activateSteps.some(({ command }) => command.includes('queue:restart'))
+
+function jobsNote(input: CreateSiteInput, hasWorker: boolean): string {
+  const base = `Runs as ${input.owner} in ${input.folder}, so it always uses the current release.`
+  if (!hasWorker) return base
+  return restartsQueue(input)
+    ? `${base} Each deploy runs queue:restart, and systemd starts the worker again on the new code.`
+    : `${base} Your deploy commands do not run queue:restart, so the worker keeps the old code until it restarts.`
+}
+
+function jobsActions(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
+  if (template.id !== 'laravel' || (!input.jobs.scheduler && !input.jobs.queueWorker)) return []
+  const missing = missingJobTools(input, tools)
+  if (missing.length > 0) {
+    return [action({ id: 'jobs', title: TITLES.jobs, summary: `needs ${missing.join(' and ')}`, chip: 'blocked', note: `This server has no ${missing.join(' or ')}. Turn the option off in the commands step.` })]
+  }
+  const { cronFile, unitFile } = jobFiles(input.siteName, input.jobs)
+  return [action({
+    id: 'jobs',
+    title: TITLES.jobs,
+    summary: jobsSummary(input),
+    chip: 'new',
+    ...asRoot(createJobsScript(input, input.jobs)),
+    config: [...(cronFile ? [`# ${cronFile}`, cronText(input)] : []), ...(unitFile ? [`# ${unitFile}`, unitText(input)] : [])].join('\n'),
+    note: jobsNote(input, unitFile !== null)
+  })]
+}
+
 export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: WebServerDriver): PlanAction[] {
   const template = TEMPLATES[input.template]
   return [
@@ -301,7 +340,8 @@ export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: We
     httpsAction(input, driver),
     deploysAction(input, template),
     ...envActions(input),
-    firstDeployAction(input)
+    firstDeployAction(input),
+    ...jobsActions(input, template, tools)
   ]
 }
 

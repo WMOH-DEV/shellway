@@ -1,10 +1,11 @@
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, CreateSiteSecrets, DnsInput, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
+import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, CreateSiteSecrets, DnsInput, LaravelJobs, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
 import type { DeployStep, SourceMode } from '@/types/deploy'
 import { newSite, siteNameFromPath } from '../deploy/presets'
 import { defaultCommands, type DeployCommands } from './deploySite'
 import { generatePassword } from '../server/databases/password'
 import { databaseChoices, defaultDatabase, siteDatabase, type DatabaseChoice } from './database'
 import { generateAppKey, writesEnv } from './env'
+import { ALL_JOBS, NO_JOBS, availableJobs } from './laravelJobs'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
@@ -49,6 +50,7 @@ export interface CreateSiteDraft {
   envText: string
   dbPassword: string
   appKey: string
+  jobs: LaravelJobs
 }
 
 export interface NameCheckState {
@@ -75,7 +77,8 @@ const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
   https: 'domain',
   deploys: 'commands',
   env: 'commands',
-  'first-deploy': 'commands'
+  'first-deploy': 'commands',
+  jobs: 'commands'
 }
 
 export const hasServer = (context: CreateSiteContext): context is ServerContext => context.server !== null
@@ -115,7 +118,8 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     database: defaultDatabase(template, tools),
     envText: '',
     dbPassword: generatePassword(),
-    appKey: generateAppKey()
+    appKey: generateAppKey(),
+    jobs: availableJobs(tools, ALL_JOBS)
   }
 }
 
@@ -210,6 +214,7 @@ export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: Cl
   return {
     ...site,
     database,
+    jobs: draft.template === 'laravel' ? availableJobs(context.tools, draft.jobs) : NO_JOBS,
     env: writesEnv({ ...draft, database }, envText),
     owner: context.owner,
     server: context.server,

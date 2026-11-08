@@ -2,6 +2,7 @@ import Store from 'electron-store'
 import type { CreateSiteSecrets, RunRecord } from '../../../src/types/createSite'
 import { decrypt, encrypt, generateMasterKey } from '../../utils/encryption'
 import { defaultCommands } from '../../../src/utils/createSite/deploySite'
+import { NO_JOBS } from '../../../src/utils/createSite/laravelJobs'
 import { NOTHING_CREATED } from './CreateSiteRun'
 
 const KEEP_FINISHED_RUNS = 50
@@ -14,7 +15,7 @@ interface Schema {
 }
 
 function withDefaults(run: RunRecord): RunRecord {
-  const input = { ...run.input, database: run.input.database ?? null, env: run.input.env ?? false, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
+  const input = { ...run.input, database: run.input.database ?? null, env: run.input.env ?? false, jobs: run.input.jobs ?? NO_JOBS, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
   return { ...run, input, created: { ...NOTHING_CREATED, ...run.created } }
 }
 

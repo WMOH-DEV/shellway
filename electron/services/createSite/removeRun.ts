@@ -9,6 +9,7 @@ const REMOVE_TIMEOUT_MS = 120_000
 function withoutResource(created: CreatedResources, step: RemovalStep): CreatedResources {
   switch (step.kind) {
     case 'deploy-site': return { ...created, deploySite: null }
+    case 'jobs': return { ...created, jobs: null }
     case 'certificate': return { ...created, certificate: null }
     case 'dns-record': return { ...created, dnsRecords: created.dnsRecords.filter((record) => record.recordId !== step.recordId) }
     case 'folder': return { ...created, folder: null }
@@ -44,6 +45,7 @@ class RemoveRun {
     switch (step.kind) {
       case 'deploy-site': return this.removeDeploySite(step.siteName)
       case 'dns-record': return this.removeDnsRecord(step.zoneId, step.recordId, step.name)
+      case 'jobs':
       case 'certificate':
       case 'site-file':
       case 'php-pool':

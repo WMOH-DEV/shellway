@@ -129,6 +129,32 @@ describe('Create site, database and environment', () => {
   })
 })
 
+describe('Create site, Laravel scheduler and queue', () => {
+  it('lets the user turn off the queue worker', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    await user.click(continueButton())
+    expect(await screen.findByRole('switch', { name: /schedule:run every minute/ })).toBeChecked()
+    await user.click(screen.getByRole('switch', { name: /queue worker/ }))
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input] = api['createSite.start'].mock.calls[0]
+    expect(input.jobs).toEqual({ scheduler: true, queueWorker: false })
+  })
+
+  it('says why the worker is off on a server without systemd', async () => {
+    const { user } = setup({ 'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext({ tools: allTools({ systemd: false }) }) }) })
+    await walkToStack(user)
+    await user.click(continueButton())
+    const worker = await screen.findByRole('switch', { name: /queue worker/ })
+    expect(worker).toBeDisabled()
+    expect(worker).not.toBeChecked()
+    expect(screen.getByText(/does not run systemd/)).toBeInTheDocument()
+  })
+})
+
 describe('Create site, from domain to start', () => {
   it('walks every step and starts the run with the input the plan was built from', async () => {
     const { user, api } = setup()
@@ -143,7 +169,7 @@ describe('Create site, from domain to start', () => {
 
     const plan = screen.getByRole('list', { name: 'Plan' })
     expect(within(plan).getAllByRole('region').map((card) => card.getAttribute('aria-label'))).toEqual(
-      ['Folder', 'PHP pool', 'nginx site', 'Database', 'DNS record', 'HTTPS', 'Deploys', 'Environment file', 'First deploy and check']
+      ['Folder', 'PHP pool', 'nginx site', 'Database', 'DNS record', 'HTTPS', 'Deploys', 'Environment file', 'First deploy and check', 'Scheduler and queue']
     )
     expect(screen.getByText(/needs full sudo · available/)).toBeInTheDocument()
 
@@ -161,6 +187,7 @@ describe('Create site, from domain to start', () => {
     })
     expect(input.activateSteps[0].command).toBe('php8.3 artisan migrate --force')
     expect(input.database).toEqual({ engine: 'mysql', name: 'shop', user: 'shop' })
+    expect(input.jobs).toEqual({ scheduler: true, queueWorker: true })
     const secrets = api['createSite.start'].mock.calls[0][3]
     expect(secrets.dbPassword).toMatch(/^[A-Za-z0-9]{24}$/)
     expect(secrets.appKey).toMatch(/^base64:[A-Za-z0-9+/]{43}=$/)

@@ -9,6 +9,7 @@ import { siteNames } from '../../../src/utils/createSite/templates/shared'
 import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
 import { createDatabaseScript } from '../../../src/utils/createSite/database'
 import { envFileText, envPathOf } from '../../../src/utils/createSite/env'
+import { jobFiles } from '../../../src/utils/createSite/laravelJobs'
 import { redact, usableSecrets } from '../server/StepOutput'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../../../src/utils/ssl/originCa/scripts'
 import type { WebServerDriver } from '../../../src/utils/webServer/driver'
@@ -28,7 +29,7 @@ export const dnsComment = (runId: string): string => `${DNS_COMMENT} ${runId}`
 
 const sha256Of = (text: string): string => createHash('sha256').update(text.endsWith('\n') ? text : `${text}\n`).digest('hex')
 
-export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 export function newRunRecord(id: string, sessionId: string, input: CreateSiteInput, plan: PlanAction[], now: number): RunRecord {
   const steps: RunStep[] = plan.map((action) => ({ id: action.id, status: 'pending', startedAt: null, finishedAt: null }))
@@ -110,6 +111,7 @@ export class CreateSiteRun {
       case 'https': return this.addHttps()
       case 'deploys': return this.addDeploySite()
       case 'first-deploy': return this.firstDeploy()
+      case 'jobs': return this.createJobs(action)
     }
   }
 
@@ -174,6 +176,14 @@ export class CreateSiteRun {
     const path = envPathOf(this.input.folder)
     this.created({ envFile: { path, sha256: sha256Of(content) } })
     await this.ports.deploy.writeEnv(assertSiteName(this.input.siteName), content)
+  }
+
+  private async createJobs(action: PlanAction): Promise<void> {
+    const recordedBefore = this.record.created.jobs !== null
+    if (!recordedBefore) this.created({ jobs: jobFiles(this.input.siteName, this.input.jobs) })
+    const result = await this.root(action)
+    if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ jobs: null })
+    this.mustSucceed(result, 'Setting up the scheduler and queue worker failed.')
   }
 
   private async checkManualDns(): Promise<void> {

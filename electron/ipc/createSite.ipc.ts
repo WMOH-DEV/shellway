@@ -49,7 +49,13 @@ function createSiteInput(value: unknown): CreateSiteInput {
   const https = input.https as Record<string, unknown>
   if (typeof https.email !== 'string' || typeof https.redirect !== 'boolean' || typeof https.staging !== 'boolean') throw new Error('Invalid HTTPS settings')
   if (input.dns !== null) dnsSettings(input.dns)
+  laravelJobs(input.jobs)
   return input as unknown as CreateSiteInput
+}
+
+function laravelJobs(value: unknown): void {
+  const jobs = value as Record<string, unknown> | null
+  if (typeof jobs !== 'object' || jobs === null || typeof jobs.scheduler !== 'boolean' || typeof jobs.queueWorker !== 'boolean') throw new Error('Invalid scheduler settings')
 }
 
 function dnsSettings(value: unknown): void {

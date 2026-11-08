@@ -58,6 +58,7 @@ export function baseInput(overrides: Partial<CreateSiteInput> = {}): CreateSiteI
     dns: { zoneId: 'zone-1', zoneName: 'example.com', serverIp: '203.0.113.10', proxied: true },
     https: { email: 'admin@example.com', redirect: true, staging: true },
     healthPath: '/',
+    jobs: { scheduler: false, queueWorker: false },
     ...overrides
   }
   const usesDatabase = input.template === 'laravel' || input.template === 'php'
@@ -74,6 +75,8 @@ export const allTools = (overrides: Partial<ServerTools> = {}): ServerTools => (
   pm2Startup: true,
   docker: true,
   databases: { mysql: true, postgresql: false },
+  systemd: true,
+  cron: true,
   apacheModules: ['rewrite', 'proxy_fcgi', 'setenvif', 'proxy', 'proxy_http', 'headers', 'ssl'],
   freeDiskBytes: 40e9,
   ...overrides

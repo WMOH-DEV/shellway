@@ -35,6 +35,7 @@ function answer(command: string, stdin: string) {
   if (stdin.includes('/etc/letsencrypt/renewal/')) return ok(certificateOnServer ? 'shellway: certificate exists\n' : '')
   if (stdin.includes('sha256sum')) return stdin.includes('-le-ssl') && !httpsDone ? ok('shellway: not there\n') : ok(`${httpsDone ? SHA_AFTER_HTTPS : SHA}  file\n`)
   if (stdin.includes(FOLDER_CREATED)) return failAt === 'folder' ? failed('/var/www/shop already exists. Nothing was changed.') : ok(`${FOLDER_CREATED}\n`)
+  if (stdin.includes('/etc/cron.d/')) return failAt === 'jobs' ? failed('/etc/cron.d/shellway-shop already exists. Nothing was changed.') : ok()
   if (stdin.includes('CREATE DATABASE')) return failAt === 'database' ? failed('A database or user named shop already exists. Nothing was changed.') : ok()
   if (stdin.includes('pool.d')) return failAt === 'pool' ? failed('PHP-FPM rejected the new pool. It was removed.') : ok()
   if (stdin.includes('a2enmod')) return failAt === 'modules' ? failed('ERROR: Module x does not exist!') : ok()
@@ -118,6 +119,7 @@ describe('CreateSiteRun', () => {
       phpPool: { path: '/etc/php/8.3/fpm/pool.d/shop.conf', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
       database: { engine: 'mysql', name: 'shop', user: 'shop' },
       envFile: { path: '/var/www/shop-deploy/shared/.env', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      jobs: null,
       modulesEnabled: [],
       dnsRecords: [
         { zoneId: 'zone-1', recordId: 'rec-1', name: 'shop.example.com', type: 'A' },
@@ -308,6 +310,21 @@ describe('CreateSiteRun', () => {
     if (at < order.indexOf('first-deploy')) expect(ports.deploy.deployAndWait).not.toHaveBeenCalled()
   })
 
+  it('sets up the Laravel scheduler and queue worker last and records both files', async () => {
+    const record = await startRun(NGINX, { jobs: { scheduler: true, queueWorker: true } }).run('start')
+    expect(record.phase).toBe('done')
+    expect(record.steps.at(-1)).toMatchObject({ id: 'jobs', status: 'done' })
+    expect(record.created.jobs).toEqual({ cronFile: '/etc/cron.d/shellway-shop', unitFile: '/etc/systemd/system/shellway-shop-queue.service' })
+    expect(calls.at(-1)?.stdin).toContain("systemctl enable --now 'shellway-shop-queue.service'")
+  })
+
+  it('forgets the job files when the server already had other ones', async () => {
+    failAt = 'jobs'
+    const record = await startRun(NGINX, { jobs: { scheduler: true, queueWorker: false } }).run('start')
+    expect(record.phase).toBe('failed')
+    expect(record.created.jobs).toBeNull()
+  })
+
   it('keeps the folder in the record when its script failed after creating it', async () => {
     const run = startRun(NGINX)
     ports.exec = vi.fn(async () => ({ code: 1, stdout: `${FOLDER_CREATED}\n`, stderr: 'chown: invalid user', stdoutBytes: 0 }))
@@ -415,6 +432,16 @@ describe('removeCreated', () => {
     expect(calls[5].stdin).toContain('DROP DATABASE IF EXISTS `shop`;')
     expect(record.created).toMatchObject({ database: null, envFile: null })
     expect(calls[0].stdin).toContain("a2dissite 'shop-le-ssl'")
+  })
+
+  it('stops the queue worker and removes the cron file first', async () => {
+    const created = await startRun(NGINX, { jobs: { scheduler: true, queueWorker: true } }).run('start')
+    calls = []
+    const record = await removeCreated(created, ports, NGINX.driver)
+    expect(record.phase).toBe('removed')
+    expect(record.created.jobs).toBeNull()
+    expect(calls[0].stdin).toContain("systemctl disable --now 'shellway-shop-queue.service'")
+    expect(calls[0].stdin).toContain("rm -f '/etc/cron.d/shellway-shop'")
   })
 
   it('stops at the first removal that fails, keeps the rest in the record, and picks up from there next time', async () => {

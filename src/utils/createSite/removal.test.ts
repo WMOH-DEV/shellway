@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { CreatedDnsRecord, CreatedResources, RunRecord } from '@/types/createSite'
+import { jobFiles, removeJobsScript } from './laravelJobs'
 import { removalSteps, type RemovalStep } from './removal'
 import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removeSiteScript } from './siteScripts'
 import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, baseInput, type ServerCase } from './testFixtures'
@@ -10,7 +11,7 @@ const A: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.e
 const CNAME: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', type: 'CNAME' }
 const ORDER: RemovalStep['kind'][] = ['deploy-site', 'dns-record', 'site-file', 'certificate', 'folder']
 
-const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 const siteFileFor = ({ server }: ServerCase): CreatedResources['siteFile'] => {
   if (server.kind === 'nginx') return { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA }
@@ -73,6 +74,19 @@ describe('removalSteps', () => {
       'Folder /var/www/shop'
     ])
     expect(steps[3]).toMatchObject({ script: removeSiteScript({ driver: APACHE_DEBIAN.driver, server: APACHE_DEBIAN.server, siteName: 'shop-le-ssl', sha256: SHA }) })
+  })
+
+  it('stops the scheduler and queue worker right after the deploy site, from the paths it would create', () => {
+    const jobs = { cronFile: '/etc/cron.d/shellway-shop', unitFile: '/etc/passwd' }
+    const steps = removalSteps(record(NGINX, { deploySite: 'shop', jobs }), NGINX.driver)
+    expect(steps.map((step) => step.kind)).toEqual(['deploy-site', 'jobs'])
+    expect(steps[1]).toEqual({
+      kind: 'jobs',
+      title: 'Scheduler and queue worker /etc/cron.d/shellway-shop, /etc/systemd/system/shellway-shop-queue.service',
+      command: ROOT_SHELL,
+      script: removeJobsScript('shop', jobFiles('shop', { scheduler: true, queueWorker: true }))
+    })
+    expect(steps[1]).not.toHaveProperty('script', expect.stringContaining('/etc/passwd'))
   })
 
   it('removes nothing when the run created nothing', () => {

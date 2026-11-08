@@ -306,3 +306,32 @@ describe('buildPlan pm2 step', () => {
     expect(byId(plan(NGINX, { template: 'node' }), 'deploys').summary).toContain('Node.js preset, 3 commands')
   })
 })
+
+describe('buildPlan scheduler and queue step', () => {
+  const ALL = { scheduler: true, queueWorker: true }
+
+  it('comes last for Laravel and shows both files', () => {
+    const actions = plan(NGINX, { jobs: ALL })
+    const jobs = byId(actions, 'jobs')
+    expect(actions.at(-1)?.id).toBe('jobs')
+    expect(jobs).toMatchObject({ title: 'Scheduler and queue', summary: 'schedule:run every minute · queue:work kept running by systemd', chip: 'new', commands: [ROOT_SHELL] })
+    expect(jobs.config).toContain('# /etc/cron.d/shellway-shop')
+    expect(jobs.config).toContain('# /etc/systemd/system/shellway-shop-queue.service')
+    expect(jobs.note).toContain('Each deploy runs queue:restart')
+  })
+
+  it('warns when the deploy commands no longer restart the worker', () => {
+    const input = baseInput({ jobs: ALL })
+    const activateSteps = input.activateSteps.filter(({ command }) => !command.includes('queue:restart'))
+    expect(byId(plan(NGINX, { jobs: ALL, activateSteps }), 'jobs').note).toContain('do not run queue:restart')
+  })
+
+  it('is blocked when the server lacks what an option needs', () => {
+    expect(byId(plan(NGINX, { jobs: ALL }, allTools({ systemd: false })), 'jobs')).toMatchObject({ summary: 'needs systemd', chip: 'blocked', script: null })
+  })
+
+  it('is left out when nothing is on, and for other stacks', () => {
+    expect(plan(NGINX).map((a) => a.id)).not.toContain('jobs')
+    expect(plan(NGINX, { template: 'php', jobs: ALL }).map((a) => a.id)).not.toContain('jobs')
+  })
+})

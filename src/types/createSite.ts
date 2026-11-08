@@ -26,6 +26,11 @@ export interface CreateSiteSecrets {
   envText: string
 }
 
+export interface LaravelJobs {
+  scheduler: boolean
+  queueWorker: boolean
+}
+
 export interface DatabaseServers {
   mysql: boolean
   postgresql: boolean
@@ -39,6 +44,8 @@ export interface ServerTools {
   pm2Startup: boolean
   docker: boolean
   databases: DatabaseServers
+  systemd: boolean
+  cron: boolean
   apacheModules: string[]
   freeDiskBytes: number
 }
@@ -74,12 +81,13 @@ export interface CreateSiteInput {
   activateSteps: DeployStep[]
   database: SiteDatabase | null
   env: boolean
+  jobs: LaravelJobs
   dns: DnsInput | null
   https: HttpsInput
   healthPath: string
 }
 
-export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy'
+export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy' | 'jobs'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 
@@ -129,6 +137,7 @@ export interface CreatedResources {
   phpPool: { path: string; sha256: string } | null
   database: SiteDatabase | null
   envFile: { path: string; sha256: string } | null
+  jobs: { cronFile: string | null; unitFile: string | null } | null
   modulesEnabled: string[]
   dnsRecords: CreatedDnsRecord[]
   httpsSiteFile: { path: string; sha256: string } | null

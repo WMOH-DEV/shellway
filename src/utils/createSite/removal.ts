@@ -1,12 +1,14 @@
 import type { CreatedDnsRecord, CreatedResources, RunRecord, SiteServer } from '@/types/createSite'
 import type { WebServerDriver } from '../webServer/driver'
 import { databaseLabel, removeDatabaseScript } from './database'
+import { jobFiles, removeJobsScript } from './laravelJobs'
 import { removePoolScript } from './phpPool'
 import { ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removeSiteScript, sitePaths } from './siteScripts'
 import { assertLineage } from './validate'
 
 export type RemovalStep =
   | { kind: 'deploy-site'; title: string; siteName: string }
+  | { kind: 'jobs'; title: string; command: string; script: string }
   | { kind: 'certificate'; title: string; command: string; script: string }
   | { kind: 'dns-record'; title: string; zoneId: string; recordId: string; name: string }
   | { kind: 'site-file'; title: string; path: string; command: string; script: string }
@@ -17,6 +19,14 @@ export type RemovalStep =
 
 function deploySiteSteps({ deploySite }: CreatedResources): RemovalStep[] {
   return deploySite === null ? [] : [{ kind: 'deploy-site', title: `Deploy site ${deploySite}`, siteName: deploySite }]
+}
+
+function jobsSteps({ jobs }: CreatedResources, input: RunRecord['input']): RemovalStep[] {
+  if (jobs === null) return []
+  const files = jobFiles(input.siteName, { scheduler: jobs.cronFile !== null, queueWorker: jobs.unitFile !== null })
+  const names = [files.cronFile, files.unitFile].filter((path): path is string => path !== null)
+  if (names.length === 0) return []
+  return [{ kind: 'jobs', title: `Scheduler and queue worker ${names.join(', ')}`, command: ROOT_SHELL, script: removeJobsScript(input.siteName, files) }]
 }
 
 function certificateSteps({ certificate }: CreatedResources): RemovalStep[] {
@@ -76,6 +86,7 @@ export function removalSteps(record: RunRecord, driver: WebServerDriver): Remova
   const { created, server } = record
   return [
     ...deploySiteSteps(created),
+    ...jobsSteps(created, record.input),
     ...dnsSteps(created),
     ...siteFileStep(created.httpsSiteFile, server, driver),
     ...siteFileStep(created.siteFile, server, driver),

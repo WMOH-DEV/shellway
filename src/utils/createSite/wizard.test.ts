@@ -45,6 +45,10 @@ const draft = (overrides: Partial<CreateSiteDraft> = {}): CreateSiteDraft => ({
 const checked = (result: Partial<NameCheck> = {}, domain = 'shop.example.com'): NameCheckState => ({ domain, result: { ...FREE, ...result }, error: null })
 
 describe('newDraft', () => {
+  it('turns on only the Laravel jobs the server can run', () => {
+    expect(newDraft(allTools({ cron: false })).jobs).toEqual({ scheduler: false, queueWorker: true })
+  })
+
   it('starts on the first template the server can run, with its PHP version', () => {
     expect(newDraft(allTools()).template).toBe('laravel')
     expect(newDraft(allTools()).phpVersion).toBe('8.3')
@@ -123,7 +127,12 @@ describe('dnsInput', () => {
 
 describe('toInput', () => {
   it('builds the same input the plan tests use', () => {
-    expect(toInput(draft({ pollMinutes: 2 }), context(), ZONE)).toEqual(baseInput())
+    expect(toInput(draft({ pollMinutes: 2 }), context(), ZONE)).toEqual(baseInput({ jobs: { scheduler: true, queueWorker: true } }))
+  })
+
+  it('keeps the scheduler and queue worker only for Laravel on a server that can run them', () => {
+    expect(toInput(draft({ template: 'php' }), context(), ZONE).jobs).toEqual({ scheduler: false, queueWorker: false })
+    expect(toInput(draft(), context({ tools: allTools({ systemd: false }) }), ZONE).jobs).toEqual({ scheduler: true, queueWorker: false })
   })
 
   it('uses the commands the user edited, without blank ones', () => {

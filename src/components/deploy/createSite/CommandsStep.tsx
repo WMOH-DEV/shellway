@@ -8,6 +8,7 @@ import { commandsOf } from '@/utils/createSite/wizard'
 import { StepsEditor } from '../StepsEditor'
 import { ACTIVATE_HINT, BUILD_HINT, Section } from '../setup/SiteSections'
 import { DatabaseSection, EnvironmentSection } from './EnvironmentSections'
+import { JobsSection } from './JobsSection'
 import type { CreateSiteDraftModel } from './useCreateSiteDraft'
 
 interface CommandsStepProps {
@@ -39,6 +40,7 @@ export function CommandsStep({ model, connectionId, server, tools }: CommandsSte
           </div>
         )}
       </Section>
+      <JobsSection model={model} tools={tools} />
       <DatabaseSection model={model} tools={tools} />
       <EnvironmentSection model={model} />
     </div>

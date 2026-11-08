@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, ChevronDown, ChevronRight, Cloud, Code, Cpu, Database, FileKey, Folder, LayoutGrid, Lock, Package, Play, RefreshCw, Server, type LucideIcon } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, Clock, Cloud, Code, Cpu, Database, FileKey, Folder, LayoutGrid, Lock, Package, Play, RefreshCw, Server, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { PlanAction, PlanActionId, PlanChip } from '@/types/createSite'
 import { cn } from '@/utils/cn'
@@ -24,7 +24,8 @@ const ICONS: Record<PlanActionId, LucideIcon> = {
   https: Lock,
   deploys: Play,
   env: FileKey,
-  'first-deploy': Activity
+  'first-deploy': Activity,
+  jobs: Clock
 }
 
 function chipTone(chip: PlanChip): string {

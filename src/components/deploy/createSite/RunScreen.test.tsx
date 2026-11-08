@@ -55,6 +55,7 @@ describe('Create site run screen', () => {
         phpPool: null,
         database: null,
         envFile: null,
+        jobs: null,
         modulesEnabled: [],
         dnsRecords: [{ zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', type: 'A' }],
         httpsSiteFile: null,
