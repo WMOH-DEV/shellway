@@ -10,6 +10,7 @@ export interface PoolLayout {
   socket: string
   test: string
   pidFile: string
+  service: string
   webUser: string
 }
 
@@ -22,7 +23,7 @@ const isRhel = (server: SiteServer): boolean => server.kind === 'apache' && serv
 export function poolLayout({ server, phpVersion, siteName }: PoolFacts): PoolLayout {
   const site = assertSiteName(siteName)
   if (isRhel(server)) {
-    return { file: `/etc/php-fpm.d/${site}.conf`, socket: `/run/php-fpm/${site}.sock`, test: 'php-fpm -t', pidFile: '/run/php-fpm/php-fpm.pid', webUser: 'apache' }
+    return { file: `/etc/php-fpm.d/${site}.conf`, socket: `/run/php-fpm/${site}.sock`, test: 'php-fpm -t', pidFile: '/run/php-fpm/php-fpm.pid', service: 'php-fpm', webUser: 'apache' }
   }
   const version = assertPhpVersion(phpVersion)
   return {
@@ -30,6 +31,7 @@ export function poolLayout({ server, phpVersion, siteName }: PoolFacts): PoolLay
     socket: `/run/php/php${version}-fpm-${site}.sock`,
     test: `php-fpm${version} -t`,
     pidFile: `/run/php/php${version}-fpm.pid`,
+    service: `php${version}-fpm`,
     webUser: 'www-data'
   }
 }
@@ -57,7 +59,8 @@ export function poolText(facts: PoolFacts & Pick<CreateSiteInput, 'owner'>): str
   ].join('\n')
 }
 
-const reloadLine = ({ pidFile }: PoolLayout): string => `{ [ -f ${quote(pidFile)} ] && kill -USR2 "$(cat ${quote(pidFile)})"; }`
+const reloadLine = ({ pidFile, service }: PoolLayout): string =>
+  `{ if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ${quote(service)}; then systemctl reload ${quote(service)}; else [ -f ${quote(pidFile)} ] && kill -USR2 "$(cat ${quote(pidFile)})"; fi; }`
 
 export function createPoolScript(facts: PoolFacts & Pick<CreateSiteInput, 'owner'>): string {
   const layout = poolLayout(facts)
