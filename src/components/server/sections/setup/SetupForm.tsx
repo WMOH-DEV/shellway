@@ -60,7 +60,7 @@ export function SetupForm({ ctx, release, inventory, onFinished, lastRun }: Setu
 
   return (
     <>
-      {lastRun && <RunResult run={lastRun} deployUser={params.security.deployUser ? effectiveDeployUser(params.deployUser) : null} />}
+      {lastRun && <RunResult run={lastRun} deployUser={params.security.deployUser ? effectiveDeployUser(params.deployUser) : null} keyLogin={keyLogin} connectionId={ctx.connectionId} sessionId={ctx.sessionId} />}
       <ProfilePicker value={profile} onChange={pickProfile} />
       <div className="flex flex-wrap items-start gap-5">
         <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-3.5">
