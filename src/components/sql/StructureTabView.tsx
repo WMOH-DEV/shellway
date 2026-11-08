@@ -576,8 +576,8 @@ function NullableToggle({
       className={cn(
         'px-2 py-0.5 rounded-full text-2xs font-semibold border transition-all',
         value
-          ? 'bg-nd-warning/15 text-nd-warning border-nd-warning/30 hover:bg-nd-warning/25'
-          : 'bg-nd-success/15 text-nd-success border-nd-success/30 hover:bg-nd-success/25',
+          ? 'bg-nd-warning/15 text-nd-warning-fg border-nd-warning/30 hover:bg-nd-warning/25'
+          : 'bg-nd-success/15 text-nd-success-fg border-nd-success/30 hover:bg-nd-success/25',
         disabled && 'opacity-50 cursor-not-allowed'
       )}
       onClick={() => !disabled && onChange(!value)}
@@ -605,7 +605,7 @@ function PKToggle({
       className={cn(
         'w-5 h-5 rounded flex items-center justify-center transition-all',
         value
-          ? 'bg-nd-info/20 text-nd-info border border-nd-info/40'
+          ? 'bg-nd-info/20 text-nd-info-fg border border-nd-info/40'
           : 'bg-nd-surface text-nd-text-muted border border-nd-border hover:border-nd-info/40',
         disabled && 'opacity-50 cursor-not-allowed'
       )}
@@ -677,7 +677,7 @@ function DDLPreviewModal({
       closeOnEscape={!executing}
     >
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-xs text-nd-warning">
+        <div className="flex items-center gap-2 text-xs text-nd-warning-fg">
           <AlertTriangle size={14} />
           <span>
             Review the SQL below carefully. These changes will be applied to
@@ -880,7 +880,7 @@ const ColumnRow = memo(function ColumnRow({
         ) : (
           <Tooltip content="Delete column">
             <button
-              className="p-1 rounded hover:bg-nd-error/10 text-nd-text-muted hover:text-nd-error transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1 rounded hover:bg-nd-error/10 text-nd-text-muted hover:text-nd-error-fg transition-colors opacity-0 group-hover:opacity-100"
               onClick={() => onDelete(col._uid)}
             >
               <Trash2 size={13} />
@@ -1260,7 +1260,7 @@ export const StructureTabView = memo(function StructureTabView({
         {/* Change indicator */}
         {hasChanges && (
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="flex items-center gap-1 text-nd-warning">
+            <span className="flex items-center gap-1 text-nd-warning-fg">
               <Pencil size={11} />
               {changeCount} change{changeCount !== 1 ? 's' : ''}
             </span>
@@ -1320,7 +1320,7 @@ export const StructureTabView = memo(function StructureTabView({
 
       {/* ── Messages ── */}
       {error && (
-        <div className="px-3 py-2 text-xs text-nd-error bg-nd-error/10 border-b border-nd-error/20 flex items-center gap-2">
+        <div className="px-3 py-2 text-xs text-nd-error-fg bg-nd-error/10 border-b border-nd-error/20 flex items-center gap-2">
           <AlertTriangle size={13} />
           {error}
           <button
@@ -1332,7 +1332,7 @@ export const StructureTabView = memo(function StructureTabView({
         </div>
       )}
       {successMsg && (
-        <div className="px-3 py-2 text-xs text-nd-success bg-nd-success/10 border-b border-nd-success/20 flex items-center gap-2">
+        <div className="px-3 py-2 text-xs text-nd-success-fg bg-nd-success/10 border-b border-nd-success/20 flex items-center gap-2">
           <Check size={13} />
           {successMsg}
         </div>
@@ -1557,7 +1557,7 @@ export const StructureTabView = memo(function StructureTabView({
                   className={cn(
                     'flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors',
                     item.danger
-                      ? 'text-nd-error hover:bg-nd-error/10'
+                      ? 'text-nd-error-fg hover:bg-nd-error/10'
                       : 'text-nd-text-primary hover:bg-nd-surface-hover',
                     item.disabled && 'opacity-40 cursor-not-allowed'
                   )}

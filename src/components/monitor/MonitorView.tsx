@@ -6,15 +6,17 @@ import {
   Copy, Check, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { temperatureLevel } from '@/utils/usageLevel'
 import { toast } from '@/components/ui/Toast'
 import { useMonitorStore } from '@/stores/monitorStore'
 import type { MonitorSnapshot, MonitorStatus } from '@/types/monitor'
 import type { ConnectionStatus } from '@/types/session'
+import { CHART_SWATCH, SERIES, chartColor } from './chartPalette'
 import {
   MetricCard, Gauge, ProgressBar, Sparkline, AreaChart, MirroredChart,
-  CoreGrid, StatItem,
+  CoreGrid, StatItem, SeriesSwatch,
   formatBytes, formatBytesPerSec, formatUptime, formatPercent,
-  getPercentColor, getPercentBg, getPercentBgAlpha, getStatusColor, getStatusDot
+  getPercentColor, getPercentBg, getPercentBgAlpha, getStatusColor, getStatusDot, LEVEL_TEXT
 } from './MonitorCharts'
 
 interface MonitorViewProps {
@@ -200,8 +202,8 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center space-y-3 max-w-md">
-          <Shield size={40} className="mx-auto text-red-400 opacity-60" />
-          <p className="text-sm text-red-400">{errorMsg}</p>
+          <Shield size={40} className="mx-auto text-nd-error opacity-60" />
+          <p className="text-sm text-nd-error-fg">{errorMsg}</p>
           <p className="text-xs text-nd-text-muted">The server may not support monitoring (e.g., non-Linux, containerized with limited /proc)</p>
         </div>
       </div>
@@ -220,7 +222,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
         {/* ── Header: System Overview ── */}
         <div className={cn(
           'rounded-lg border overflow-hidden',
-          isStale ? 'border-amber-500/40 bg-amber-500/5' : 'border-nd-border/60 bg-nd-bg-secondary/50'
+          isStale ? 'border-nd-warning/30 bg-nd-warning/[0.07]' : 'border-nd-border/60 bg-nd-bg-secondary/50'
         )}>
           <div className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
@@ -229,9 +231,9 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-bold text-nd-text-primary truncate">{snapshot.hostname}</h2>
                   <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-                    isStale ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'
+                    isStale ? 'bg-nd-warning/12 text-nd-warning-fg' : 'bg-nd-success/12 text-nd-success-fg'
                   )}>
-                    <span className={cn('w-1.5 h-1.5 rounded-full', isStale ? 'bg-amber-400' : 'bg-emerald-400')} />
+                    <span className={cn('w-1.5 h-1.5 rounded-full', isStale ? 'bg-nd-warning' : 'bg-nd-success')} />
                     {isStale ? 'Stale' : 'Live'}
                   </span>
                 </div>
@@ -296,20 +298,20 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                 height={90}
                 maxY={100}
                 data={[
-                  { values: chartData.cpuUser, color: 'rgb(96, 165, 250)', label: 'User' },
-                  { values: chartData.cpuSystem, color: 'rgb(251, 146, 60)', label: 'System' },
-                  { values: chartData.cpuIowait, color: 'rgb(248, 113, 113)', label: 'IO Wait' }
+                  { values: chartData.cpuUser, color: chartColor(SERIES.cpuUser), label: 'User' },
+                  { values: chartData.cpuSystem, color: chartColor(SERIES.cpuSystem), label: 'System' },
+                  { values: chartData.cpuIowait, color: chartColor(SERIES.cpuIowait), label: 'IO Wait' }
                 ]}
               />
 
               {/* CPU breakdown stats */}
               <div className="grid grid-cols-6 gap-2">
-                <StatItem label="User" value={formatPercent(snapshot.cpuBreakdown.user)} valueClass="text-blue-400" />
-                <StatItem label="System" value={formatPercent(snapshot.cpuBreakdown.system)} valueClass="text-orange-400" />
-                <StatItem label="IO Wait" value={formatPercent(snapshot.cpuBreakdown.iowait)} valueClass="text-red-400" />
-                <StatItem label="Steal" value={formatPercent(snapshot.cpuBreakdown.steal)} valueClass="text-purple-400" />
-                <StatItem label="Nice" value={formatPercent(snapshot.cpuBreakdown.nice)} valueClass="text-cyan-400" />
-                <StatItem label="IRQ" value={formatPercent(snapshot.cpuBreakdown.irq)} valueClass="text-yellow-400" />
+                <StatItem label="User" value={formatPercent(snapshot.cpuBreakdown.user)} hue={SERIES.cpuUser} />
+                <StatItem label="System" value={formatPercent(snapshot.cpuBreakdown.system)} hue={SERIES.cpuSystem} />
+                <StatItem label="IO Wait" value={formatPercent(snapshot.cpuBreakdown.iowait)} hue={SERIES.cpuIowait} />
+                <StatItem label="Steal" value={formatPercent(snapshot.cpuBreakdown.steal)} hue={SERIES.cpuSteal} />
+                <StatItem label="Nice" value={formatPercent(snapshot.cpuBreakdown.nice)} hue={SERIES.cpuNice} />
+                <StatItem label="IRQ" value={formatPercent(snapshot.cpuBreakdown.irq)} hue={SERIES.cpuIrq} />
               </div>
 
               {/* Load Average */}
@@ -321,8 +323,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                       <span className="text-[10px] text-nd-text-muted">{period}:</span>
                       <span className={cn(
                         'text-xs font-mono font-bold tabular-nums',
-                        snapshot.load[i] > snapshot.cpuCount ? 'text-red-400' :
-                        snapshot.load[i] > snapshot.cpuCount * 0.7 ? 'text-amber-400' : 'text-emerald-400'
+                        getPercentColor(snapshot.load[i] / snapshot.cpuCount * 100)
                       )}>
                         {snapshot.load[i].toFixed(2)}
                       </span>
@@ -392,15 +393,15 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                 <AreaChart
                   height={50}
                   maxY={100}
-                  data={[{ values: chartData.memHistory, color: 'rgb(168, 85, 247)', label: 'Memory' }]}
+                  data={[{ values: chartData.memHistory, color: chartColor(SERIES.memory), label: 'Memory' }]}
                 />
               </div>
 
               <div className="grid grid-cols-4 gap-2">
                 <StatItem label="Total" value={formatBytes(snapshot.memTotalBytes)} />
-                <StatItem label="Available" value={formatBytes(snapshot.memAvailableBytes)} valueClass="text-emerald-400" />
-                <StatItem label="Cached" value={formatBytes(snapshot.memCachedBytes)} valueClass="text-blue-400" />
-                <StatItem label="Buffers" value={formatBytes(snapshot.memBuffersBytes)} valueClass="text-cyan-400" />
+                <StatItem label="Available" value={formatBytes(snapshot.memAvailableBytes)} hue={SERIES.memAvailable} />
+                <StatItem label="Cached" value={formatBytes(snapshot.memCachedBytes)} hue={SERIES.memCached} />
+                <StatItem label="Buffers" value={formatBytes(snapshot.memBuffersBytes)} hue={SERIES.memBuffers} />
               </div>
             </div>
           </SectionWrapper>
@@ -414,10 +415,12 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
             onToggle={toggleSection}
             headerRight={
               <div className="flex items-center gap-3 text-xs tabular-nums">
-                <span className="text-emerald-400">
+                <span className="flex items-center gap-1 text-nd-text-primary">
+                  <SeriesSwatch hue={SERIES.inbound} />
                   ↓ {formatBytesPerSec(snapshot.netInterfaces.reduce((s, n) => s + n.rxBytesPerSec, 0))}
                 </span>
-                <span className="text-orange-400">
+                <span className="flex items-center gap-1 text-nd-text-primary">
+                  <SeriesSwatch hue={SERIES.outbound} />
                   ↑ {formatBytesPerSec(snapshot.netInterfaces.reduce((s, n) => s + n.txBytesPerSec, 0))}
                 </span>
                 <CopyButton
@@ -443,8 +446,8 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
 
               {/* Labels */}
               <div className="flex justify-center gap-4 text-[10px]">
-                <span className="flex items-center gap-1"><span className="w-2 h-0.5 rounded bg-emerald-400" /> RX (Download)</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-0.5 rounded bg-orange-400" /> TX (Upload)</span>
+                <span className="flex items-center gap-1"><span className={cn('w-2 h-0.5 rounded', CHART_SWATCH[SERIES.inbound])} /> RX (Download)</span>
+                <span className="flex items-center gap-1"><span className={cn('w-2 h-0.5 rounded', CHART_SWATCH[SERIES.outbound])} /> TX (Upload)</span>
               </div>
 
               {/* Per-interface details */}
@@ -453,8 +456,8 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                   <div key={iface.name} className="flex items-center justify-between py-1 px-2 rounded bg-nd-bg-primary/50 text-xs">
                     <span className="font-mono text-nd-text-secondary">{iface.name}</span>
                     <div className="flex items-center gap-4 tabular-nums">
-                      <span className="text-emerald-400">↓ {formatBytesPerSec(iface.rxBytesPerSec)}</span>
-                      <span className="text-orange-400">↑ {formatBytesPerSec(iface.txBytesPerSec)}</span>
+                      <span className="flex items-center gap-1 text-nd-text-primary"><SeriesSwatch hue={SERIES.inbound} />↓ {formatBytesPerSec(iface.rxBytesPerSec)}</span>
+                      <span className="flex items-center gap-1 text-nd-text-primary"><SeriesSwatch hue={SERIES.outbound} />↑ {formatBytesPerSec(iface.txBytesPerSec)}</span>
                       <span className="text-nd-text-muted text-[10px]">
                         Total: {formatBytes(iface.rxTotalBytes)} / {formatBytes(iface.txTotalBytes)}
                       </span>
@@ -524,8 +527,8 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                     height={50}
                   />
                   <div className="flex justify-center gap-4 text-[10px] mt-1">
-                    <span className="flex items-center gap-1"><span className="w-2 h-0.5 rounded bg-emerald-400" /> Read</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-0.5 rounded bg-orange-400" /> Write</span>
+                    <span className="flex items-center gap-1"><span className={cn('w-2 h-0.5 rounded', CHART_SWATCH[SERIES.inbound])} /> Read</span>
+                    <span className="flex items-center gap-1"><span className={cn('w-2 h-0.5 rounded', CHART_SWATCH[SERIES.outbound])} /> Write</span>
                   </div>
                   {snapshot.diskIO && snapshot.diskIO.length > 0 && (
                     <div className="mt-2 space-y-0.5">
@@ -533,8 +536,8 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                         <div key={d.device} className="flex items-center justify-between text-[11px] px-2 py-0.5">
                           <span className="font-mono text-nd-text-muted">{d.device}</span>
                           <div className="flex gap-3 tabular-nums">
-                            <span className="text-emerald-400">R: {formatBytesPerSec(d.readBytesPerSec)}</span>
-                            <span className="text-orange-400">W: {formatBytesPerSec(d.writeBytesPerSec)}</span>
+                            <span className="flex items-center gap-1 text-nd-text-primary"><SeriesSwatch hue={SERIES.inbound} />R: {formatBytesPerSec(d.readBytesPerSec)}</span>
+                            <span className="flex items-center gap-1 text-nd-text-primary"><SeriesSwatch hue={SERIES.outbound} />W: {formatBytesPerSec(d.writeBytesPerSec)}</span>
                           </div>
                         </div>
                       ))}
@@ -626,14 +629,14 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                         <button
                           onClick={() => handleKillProcess(proc.pid, proc.name)}
                           title={`Send SIGTERM to ${proc.name} (PID ${proc.pid})`}
-                          className="p-0.5 rounded text-nd-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                          className="p-0.5 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
                         >
                           <X size={11} />
                         </button>
                         <button
                           onClick={() => handleKillProcess(proc.pid, proc.name, 9)}
                           title={`Force kill (SIGKILL) ${proc.name} (PID ${proc.pid})`}
-                          className="p-0.5 rounded text-nd-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                          className="p-0.5 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
                         >
                           <Skull size={11} />
                         </button>
@@ -656,11 +659,11 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
             onToggle={toggleSection}
             headerRight={
               <div className="flex items-center gap-2 text-[10px]">
-                <span className="text-emerald-400">
+                <span className="text-nd-success-fg">
                   {snapshot.services.filter(s => s.active === 'active').length} active
                 </span>
                 {snapshot.services.some(s => s.active === 'failed') && (
-                  <span className="text-red-400">
+                  <span className="text-nd-error-fg">
                     {snapshot.services.filter(s => s.active === 'failed').length} failed
                   </span>
                 )}
@@ -689,7 +692,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                 .map(svc => (
                   <div key={svc.name} className={cn(
                     'flex items-center justify-between py-1 px-2 rounded text-xs',
-                    svc.active === 'failed' ? 'bg-red-500/8' : 'hover:bg-nd-surface/50'
+                    svc.active === 'failed' ? 'bg-nd-error/[0.07]' : 'hover:bg-nd-surface/50'
                   )}>
                     <div className="flex items-center gap-2 min-w-0">
                       <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', getStatusDot(svc.active))} />
@@ -737,7 +740,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                 <div key={container.id} className="flex items-center gap-3 py-2 px-3 rounded-md bg-nd-bg-primary/50 border border-nd-border/30">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={cn('w-1.5 h-1.5 rounded-full', container.status === 'running' ? 'bg-emerald-400' : 'bg-nd-text-muted')} />
+                      <span className={cn('w-1.5 h-1.5 rounded-full', container.status === 'running' ? 'bg-nd-success' : 'bg-nd-text-muted')} />
                       <span className="text-xs font-semibold text-nd-text-secondary truncate">{container.name}</span>
                     </div>
                     <p className="text-[10px] text-nd-text-muted truncate mt-0.5">{container.image}</p>
@@ -775,7 +778,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
                     <span className="text-nd-text-muted">{t.label}</span>
                     <span className={cn(
                       'font-mono font-bold tabular-nums',
-                      t.celsius < 60 ? 'text-emerald-400' : t.celsius < 80 ? 'text-amber-400' : 'text-red-400'
+                      LEVEL_TEXT[temperatureLevel(t.celsius)]
                     )}>
                       {t.celsius.toFixed(0)}°C
                     </span>
@@ -797,7 +800,7 @@ export function MonitorView({ connectionId, connectionStatus }: MonitorViewProps
               headerRight={
                 <div className="flex items-center gap-2">
                   {snapshot.failedSSHLogins && snapshot.failedSSHLogins > 0 ? (
-                    <span className="text-[10px] text-red-400 font-medium">
+                    <span className="text-[10px] text-nd-error-fg font-medium">
                       {snapshot.failedSSHLogins} failed logins (24h)
                     </span>
                   ) : null}
@@ -923,7 +926,7 @@ function CopyButton({ data, label }: { data: unknown; label?: string }) {
       title={`Copy ${label || 'data'} as JSON`}
       className="p-1 rounded text-nd-text-muted hover:text-nd-accent hover:bg-nd-accent/10 transition-colors"
     >
-      {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+      {copied ? <Check size={12} className="text-nd-success" /> : <Copy size={12} />}
     </button>
   )
 }
@@ -991,7 +994,7 @@ function QuickStat({ label, value, max, isLoad }: { label: string; value: number
         <span className="text-[10px] text-nd-text-muted uppercase tracking-wider">{label}</span>
         <span className={cn('text-[11px] font-bold tabular-nums', getPercentColor(pct))}>{displayValue}</span>
       </div>
-      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <div className="h-1.5 rounded-full overflow-hidden bg-nd-surface-raised">
         <div
           className={cn('h-full rounded-full transition-all duration-500 ease-out', getPercentBg(pct))}
           style={{ width: `${pct}%` }}

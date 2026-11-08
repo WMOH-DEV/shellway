@@ -150,7 +150,7 @@ export function PermissionsDialog({ open, onClose, entry, connectionId, onDone }
                       onClick={() => toggleBit(bitKey)}
                       className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${
                         isSet
-                          ? 'bg-nd-accent border-nd-accent text-white'
+                          ? 'bg-nd-accent-solid border-nd-accent-solid text-white'
                           : 'bg-nd-surface border-nd-border text-transparent hover:border-nd-accent/50'
                       }`}
                     >

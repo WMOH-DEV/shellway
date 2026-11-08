@@ -20,6 +20,7 @@ import { FileBrowser } from './FileBrowser'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { Spinner } from '@/components/ui/Spinner'
+import { STAR } from '@/components/ui/decorativeColors'
 import { toast } from '@/components/ui/Toast'
 import { useSFTPPathStore } from '@/stores/sftpPathStore'
 import { useBookmarkStore } from '@/stores/bookmarkStore'
@@ -605,7 +606,7 @@ export function FilePanel({
     <div
       className={cn(
         'flex flex-col h-full bg-nd-bg-primary relative',
-        isDragOver && 'ring-2 ring-inset ring-blue-500 ring-dashed',
+        isDragOver && 'ring-2 ring-inset ring-nd-accent ring-dashed',
         className
       )}
       onDragOver={handleDragOver}
@@ -683,7 +684,7 @@ export function FilePanel({
           >
             <Star
               size={12}
-              className={isCurrentPathBookmarked ? 'fill-yellow-400 text-yellow-400' : ''}
+              className={isCurrentPathBookmarked ? cn(STAR.fill, STAR.text) : ''}
             />
           </Button>
         </Tooltip>
@@ -715,7 +716,7 @@ export function FilePanel({
                     'hover:bg-nd-surface text-nd-text-primary transition-colors'
                   )}
                 >
-                  <Star size={10} className="shrink-0 fill-yellow-400 text-yellow-400" />
+                  <Star size={10} className={cn('shrink-0', STAR.fill, STAR.text)} />
                   <span className="truncate flex-1">{bm.name}</span>
                   <span className="text-2xs text-nd-text-muted uppercase">{bm.panelType}</span>
                 </button>
@@ -750,7 +751,7 @@ export function FilePanel({
                     useSFTPPathStore.getState().clearPanelHistory(sessionId, type)
                     setShowRecent(false)
                   }}
-                  className="text-2xs text-nd-text-muted hover:text-nd-error transition-colors"
+                  className="text-2xs text-nd-text-muted hover:text-nd-error-fg transition-colors"
                 >
                   Clear
                 </button>

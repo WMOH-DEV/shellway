@@ -469,7 +469,7 @@ export const PaginationBar = React.memo(function PaginationBar({
         <div ref={pickerRef} className="relative flex items-center gap-1 shrink-0">
           {hiddenColumns.length > 0 && (
             <>
-              <span className="text-2xs text-nd-warning">{hiddenColumns.length} hidden</span>
+              <span className="text-2xs text-nd-warning-fg">{hiddenColumns.length} hidden</span>
               <button
                 onClick={onShowAllColumns}
                 className="text-2xs text-nd-accent hover:text-nd-accent/80 transition-colors"

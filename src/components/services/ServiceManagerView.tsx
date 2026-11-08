@@ -555,9 +555,9 @@ export function ServiceManagerView({ connectionId, connectionStatus }: ServiceMa
       <div className="shrink-0 px-3 py-1 bg-nd-bg-secondary border-t border-nd-border flex items-center gap-2">
         <div className={cn(
           'w-1.5 h-1.5 rounded-full',
-          managerStatus === 'active' ? 'bg-emerald-400' :
-          managerStatus === 'error' ? 'bg-red-400' :
-          managerStatus === 'loading' ? 'bg-amber-400 animate-pulse' :
+          managerStatus === 'active' ? 'bg-nd-success' :
+          managerStatus === 'error' ? 'bg-nd-error' :
+          managerStatus === 'loading' ? 'bg-nd-warning animate-pulse' :
           'bg-nd-text-muted'
         )} />
         <span className="text-2xs text-nd-text-muted">
@@ -601,7 +601,7 @@ function FilterPill({ label, count, active, onClick, color }: FilterPillProps) {
       {color && (
         <span className={cn(
           'w-1.5 h-1.5 rounded-full',
-          color === 'emerald' ? 'bg-emerald-400' : 'bg-red-400'
+          color === 'emerald' ? 'bg-nd-success' : 'bg-nd-error'
         )} />
       )}
       {label}

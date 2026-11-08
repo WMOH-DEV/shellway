@@ -35,6 +35,8 @@ class ThrottleTransform extends Transform {
   }
 }
 
+const MIN_WRITE_BYTES_PER_SECOND = 64 * 1024
+
 export interface FileEntry {
   name: string
   path: string
@@ -175,6 +177,19 @@ export class SFTPService extends EventEmitter {
         if (err) reject(err)
         else resolve()
       })
+    })
+  }
+
+  pathExists(remotePath: string): Promise<boolean> {
+    return new Promise((resolve) => this.sftp.lstat(remotePath, (err) => resolve(!err)))
+  }
+
+  async copyFile(sourcePath: string, destPath: string): Promise<void> {
+    const bytes = await this.readBytes(sourcePath)
+    const existed = await this.pathExists(destPath)
+    await this.writeBytes(destPath, bytes).catch(async (err: unknown) => {
+      if (!existed) await this.unlink(destPath).catch(() => undefined)
+      throw err
     })
   }
 
@@ -425,12 +440,7 @@ export class SFTPService extends EventEmitter {
     })
   }
 
-  /**
-   * Read a text file with progress reporting.
-   * Emits 'readProgress' events: (readId, transferred, total)
-   * Default max 50 MB for in-app editing.
-   */
-  async readFile(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<string> {
+  async readBytes(remotePath: string, maxSize: number = 50 * 1024 * 1024, readId?: string): Promise<Buffer> {
     const stats = await this.stat(remotePath)
     if (stats.size > maxSize) {
       throw new Error(`File too large: ${stats.size} bytes (max: ${maxSize})`)
@@ -451,18 +461,15 @@ export class SFTPService extends EventEmitter {
         }
       })
       stream.on('error', reject)
-      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+      stream.on('end', () => resolve(Buffer.concat(chunks)))
     })
   }
 
-  /** Write content to a file */
-  async writeFile(remotePath: string, content: string): Promise<void> {
+  async writeBytes(remotePath: string, buf: Buffer): Promise<void> {
     // Use low-level open → write → close to avoid both:
     // 1. createWriteStream — broken on Node ≥ 22 (finish event never fires)
     // 2. sftp.writeFile wrapper — hangs on some servers/configurations
-    // Direct protocol calls with a 30s timeout guarantee we never hang forever.
-    const TIMEOUT_MS = 30_000
-    const buf = Buffer.from(content, 'utf8')
+    const TIMEOUT_MS = 30_000 + Math.ceil(buf.length / MIN_WRITE_BYTES_PER_SECOND) * 1000
 
     return new Promise<void>((resolve, reject) => {
       let settled = false

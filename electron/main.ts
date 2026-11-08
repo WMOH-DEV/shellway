@@ -11,8 +11,8 @@ import {
   powerMonitor,
 } from "electron";
 import { join, basename, extname } from "path";
-import { readFile, writeFile, stat } from "fs/promises";
-import { watch, type FSWatcher } from "fs";
+import { readFile, writeFile } from "fs/promises";
+import { unwatchFile, watchFile, type Stats } from "fs";
 import { spawn, execFileSync } from "child_process";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { autoUpdater } from "electron-updater";
@@ -52,6 +52,10 @@ import { registerSQLIPC } from "./ipc/sql.ipc";
 import { registerExportIPC } from "./ipc/export.ipc";
 import { registerMonitorIPC, getMonitorService } from "./ipc/monitor.ipc";
 import { registerServiceManagerIPC } from "./ipc/servicemanager.ipc";
+import { registerDeployIPC } from "./ipc/deploy.ipc";
+import { registerSslIPC } from "./ipc/ssl.ipc";
+import { registerCreateSiteIPC } from "./ipc/createSite.ipc";
+import { registerServerIPC } from "./ipc/server.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
 import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
@@ -291,62 +295,36 @@ ipcMain.handle("fs:getTempDir", () => {
 });
 
 // ──── File watcher for auto-upload on save ────
-const activeWatchers = new Map<string, FSWatcher>();
+const activeWatchers = new Map<string, () => void>();
+const SAVE_SETTLE_MS = 500;
 
 ipcMain.handle("fs:watchFile", (event, watchId: string, filePath: string) => {
-  // Clean up any existing watcher for this ID
-  const existing = activeWatchers.get(watchId);
-  if (existing) {
-    existing.close();
+  activeWatchers.get(watchId)?.();
+  let settle: ReturnType<typeof setTimeout> | null = null;
+
+  const onChange = (current: Stats, previous: Stats) => {
+    if (current.mtimeMs === 0 || current.mtimeMs === previous.mtimeMs) return;
+    if (settle) clearTimeout(settle);
+    settle = setTimeout(() => {
+      if (event.sender.isDestroyed()) return stop();
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && !win.isDestroyed()) win.webContents.send("fs:file-changed", watchId, filePath);
+    }, SAVE_SETTLE_MS);
+  };
+
+  const stop = () => {
+    if (settle) clearTimeout(settle);
+    unwatchFile(filePath, onChange);
     activeWatchers.delete(watchId);
-  }
+  };
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastSize = -1;
-
-  const watcher = watch(filePath, { persistent: false }, async (eventType) => {
-    if (eventType !== "change") return;
-
-    // Debounce: editors may trigger multiple change events for a single save
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      try {
-        // Check if the renderer is still alive
-        if (event.sender.isDestroyed()) {
-          // Clean up — the tab/window was closed
-          watcher.close();
-          activeWatchers.delete(watchId);
-          return;
-        }
-
-        // Verify the file actually changed by checking size/mtime
-        const s = await stat(filePath);
-        if (s.size === lastSize) return; // Likely a duplicate event
-        lastSize = s.size;
-
-        // Notify renderer that the file was modified
-        const win = BrowserWindow.fromWebContents(event.sender);
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("fs:file-changed", watchId, filePath);
-        }
-      } catch {
-        // File may have been deleted or renderer destroyed — stop watching
-        watcher.close();
-        activeWatchers.delete(watchId);
-      }
-    }, 500);
-  });
-
-  activeWatchers.set(watchId, watcher);
+  watchFile(filePath, { interval: 1000, persistent: false }, onChange);
+  activeWatchers.set(watchId, stop);
   return { success: true };
 });
 
 ipcMain.handle("fs:unwatchFile", (_event, watchId: string) => {
-  const watcher = activeWatchers.get(watchId);
-  if (watcher) {
-    watcher.close();
-    activeWatchers.delete(watchId);
-  }
+  activeWatchers.get(watchId)?.();
   return { success: true };
 });
 
@@ -418,6 +396,10 @@ app.whenReady().then(() => {
   registerExportIPC();
   registerMonitorIPC();
   registerServiceManagerIPC();
+  registerDeployIPC();
+  registerSslIPC();
+  registerCreateSiteIPC();
+  registerServerIPC();
   registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)
@@ -593,10 +575,7 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   // Clean up all file watchers
-  for (const [, watcher] of activeWatchers) {
-    watcher.close();
-  }
-  activeWatchers.clear();
+  for (const stop of [...activeWatchers.values()]) stop();
 
   // Stop all monitor polling
   getMonitorService().stopAll();

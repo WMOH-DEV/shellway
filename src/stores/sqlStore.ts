@@ -75,8 +75,18 @@ export interface SQLConnectionSlice {
 
 // ── Store shape ──
 
+export interface PendingDatabase {
+  engine: 'mysql' | 'postgres'
+  database: string
+  staleSessionId: string | null
+  expiresAt: number
+  claimed?: boolean
+}
+
 interface SQLStoreState {
   connections: Record<string, SQLConnectionSlice>
+  pendingDatabases: Record<string, PendingDatabase>
+  setPendingDatabase: (connectionId: string, value: PendingDatabase | null) => void
 
   // ── Connection actions ──
   setConnectionStatus: (connectionId: string, status: SQLConnectionStatus) => void
@@ -215,8 +225,21 @@ function updateConn(
 
 // ── Store ──
 
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record
+  const { [key]: _removed, ...rest } = record
+  return rest
+}
+
 export const useSQLStore = create<SQLStoreState>((set) => ({
   connections: {},
+  pendingDatabases: {},
+
+  setPendingDatabase: (connectionId, value) =>
+    set((s) => {
+      const rest = withoutKey(s.pendingDatabases, connectionId)
+      return { pendingDatabases: value ? { ...rest, [connectionId]: value } : rest }
+    }),
 
   // ── Connection actions ──
 
@@ -438,7 +461,8 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       connections: {
         ...s.connections,
         [connectionId]: { ...INITIAL_CONNECTION_STATE, pagination: { ...DEFAULT_PAGINATION } }
-      }
+      },
+      pendingDatabases: withoutKey(s.pendingDatabases, connectionId)
     })),
 
   // ── Remove a connection entirely ──
@@ -446,11 +470,16 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
   removeConnection: (connectionId) =>
     set((s) => {
       const { [connectionId]: _, ...rest } = s.connections
-      return { connections: rest }
+      return { connections: rest, pendingDatabases: withoutKey(s.pendingDatabases, connectionId) }
     })
 }))
 
 // ── Imperative access helper (for use in callbacks, effects, non-React code) ──
+
+export function isOpeningDatabase(connectionId: string): boolean {
+  const { pendingDatabases, connections } = useSQLStore.getState()
+  return pendingDatabases[connectionId]?.engine === 'mysql' && connections[connectionId]?.connectionConfig?.type === 'mysql'
+}
 
 export function getSQLConnectionState(connectionId: string): SQLConnectionSlice {
   return getConn(useSQLStore.getState().connections, connectionId)

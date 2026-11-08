@@ -49,7 +49,7 @@ export function SafeModeMenu({ mode, onChange }: SafeModeMenuProps) {
           'flex items-center justify-center h-6 w-7 rounded transition-colors',
           open && 'bg-nd-surface',
           guarded
-            ? 'text-amber-400 hover:text-amber-300'
+            ? 'text-nd-warning-fg hover:text-nd-warning-fg'
             : 'text-nd-text-muted hover:text-nd-text-primary'
         )}
       >

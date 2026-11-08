@@ -32,6 +32,7 @@ import { cn } from "@/utils/cn";
 import { Button } from "@/components/ui/Button";
 import { Splitter } from "@/components/ui/Splitter";
 import { DataGrid } from "@/components/sql/DataGrid";
+import { MONACO_THEME, syncMonacoTheme } from "@/components/ui/tokenThemes";
 import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete";
 import { useSQLConnection } from "@/stores/sqlStore";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
@@ -54,40 +55,12 @@ interface QueryEditorProps {
   scopeId: string;
 }
 
-// ── Shellway dark theme definition ──
-
-function defineShellwayTheme(monaco: typeof MonacoEditor) {
-  monaco.editor.defineTheme("shellway-dark", {
-    base: "vs-dark",
-    inherit: true,
-    rules: [
-      { token: "keyword", foreground: "38bdf8", fontStyle: "bold" },
-      { token: "string", foreground: "86efac" },
-      { token: "number", foreground: "fbbf24" },
-      { token: "comment", foreground: "64748b", fontStyle: "italic" },
-      { token: "operator", foreground: "e2e8f0" },
-      { token: "predefined", foreground: "c084fc" },
-    ],
-    colors: {
-      "editor.background": "#0f1117",
-      "editor.foreground": "#e2e8f0",
-      "editor.lineHighlightBackground": "#1e293b40",
-      "editor.selectionBackground": "#38bdf830",
-      "editorCursor.foreground": "#38bdf8",
-      "editorGutter.background": "#0f1117",
-      "editorLineNumber.foreground": "#475569",
-      "editorLineNumber.activeForeground": "#94a3b8",
-      "editor.inactiveSelectionBackground": "#38bdf815",
-    },
-  });
-}
-
 // ── Monaco editor options ──
 
 const EDITOR_OPTIONS: MonacoEditor.editor.IStandaloneEditorConstructionOptions =
   {
     language: "sql",
-    theme: "shellway-dark",
+    theme: MONACO_THEME,
     minimap: { enabled: false },
     fontSize: 13,
     lineNumbers: "on",
@@ -159,7 +132,7 @@ const ResultsHeader = React.memo(function ResultsHeader({
         )}
         {!isLoading && result && !error && (
           <>
-            <span className="text-nd-success font-medium">
+            <span className="text-nd-success-fg font-medium">
               {result.rowCount.toLocaleString()}{" "}
               {result.rowCount === 1 ? "row" : "rows"}
             </span>
@@ -219,12 +192,12 @@ const ErrorBanner = React.memo(function ErrorBanner({
   }, [error]);
 
   return (
-    <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border-b border-red-500/30 text-xs text-red-400 font-mono">
+    <div className="flex items-start gap-2 px-3 py-2 border border-nd-error/30 bg-nd-error/[0.07] text-xs text-nd-error-fg font-mono">
       <div className="flex-1 min-w-0 whitespace-pre-wrap break-words select-text cursor-text">
         {error.code && <span className="font-semibold">[{error.code}] </span>}
         {error.message}
         {error.line && (
-          <span className="ml-2 text-red-500/60">
+          <span className="ml-2 text-nd-error/60">
             (line {error.line}
             {error.position ? `, col ${error.position}` : ""})
           </span>
@@ -233,7 +206,7 @@ const ErrorBanner = React.memo(function ErrorBanner({
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 p-0.5 rounded text-red-400/70 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+        className="shrink-0 p-0.5 rounded text-nd-error-fg/70 hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
         title="Copy error"
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -689,8 +662,7 @@ export const QueryEditor = React.memo(function QueryEditor({
       editorRef.current = editor;
       monacoRef.current = monaco;
 
-      defineShellwayTheme(monaco);
-      monaco.editor.setTheme("shellway-dark");
+      syncMonacoTheme(monaco);
 
       // Register autocomplete — pass a stable wrapper so the provider always
       // calls the latest getSchema even after tables/columns/databases load
@@ -862,7 +834,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         ) : (
           <>
             <span
-              className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md border border-amber-400/40 bg-amber-500/10 text-amber-300 font-medium"
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md border border-nd-warning/30 bg-nd-warning/12 text-nd-warning-fg font-medium"
               title="An uncommitted transaction is open on this connection"
             >
               <GitBranch size={11} />
@@ -921,7 +893,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         <Editor
           defaultLanguage="sql"
           defaultValue={initialQuery}
-          theme="shellway-dark"
+          theme={MONACO_THEME}
           options={EDITOR_OPTIONS}
           onMount={handleEditorMount}
           onChange={handleEditorChange}

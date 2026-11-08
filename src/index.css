@@ -73,22 +73,42 @@
      Values are space-separated RGB channels for Tailwind opacity modifier support.
      Usage in Tailwind: rgb(var(--nd-accent) / <alpha-value>) → enables bg-nd-accent/50 etc. ── */
 :root {
-  --nd-bg-primary: 15 17 23;
-  --nd-bg-secondary: 22 25 34;
-  --nd-bg-tertiary: 30 33 48;
-  --nd-surface: 37 40 54;
-  --nd-surface-hover: 45 48 68;
-  --nd-border: 46 51 72;
-  --nd-border-hover: 61 67 99;
-  --nd-text-primary: 228 228 231;
-  --nd-text-secondary: 161 161 170;
-  --nd-text-muted: 113 113 122;
-  --nd-accent: 59 130 246;
-  --nd-accent-hover: 37 99 235;
-  --nd-success: 34 197 94;
-  --nd-warning: 245 158 11;
-  --nd-error: 239 68 68;
-  --nd-info: 6 182 212;
+  --nd-bg-primary: 11 14 20;
+  --nd-bg-secondary: 14 18 25;
+  --nd-bg-tertiary: 21 26 36;
+  --nd-bg-sunken: 9 12 17;
+  --nd-surface: 16 20 28;
+  --nd-surface-hover: 21 27 39;
+  --nd-surface-raised: 26 32 43;
+  --nd-border: 31 37 50;
+  --nd-border-hover: 44 53 70;
+  --nd-text-primary: 230 234 242;
+  --nd-text-secondary: 195 202 214;
+  --nd-text-muted: 139 149 167;
+  --nd-text-dim: 124 134 153;
+  --nd-text-faint: 79 90 109;
+  --nd-accent: 79 140 255;
+  --nd-accent-hover: 122 167 255;
+  --nd-accent-solid: 43 103 232;
+  --nd-accent-solid-hover: 53 115 240;
+  --nd-success: 62 207 142;
+  --nd-success-fg: 79 219 155;
+  --nd-warning: 242 176 74;
+  --nd-warning-fg: 245 189 98;
+  --nd-error: 255 107 107;
+  --nd-error-fg: 255 128 128;
+  --nd-info: 79 140 255;
+  --nd-info-fg: 143 182 255;
+  --nd-cloudflare: 243 128 32;
+  --nd-new: 196 181 253;
+  --nd-chart-blue: 96 165 250;
+  --nd-chart-orange: 251 146 60;
+  --nd-chart-red: 248 113 113;
+  --nd-chart-purple: 192 132 252;
+  --nd-chart-cyan: 34 211 238;
+  --nd-chart-yellow: 250 204 21;
+  --nd-chart-emerald: 52 211 153;
+  --nd-chart-memory: 168 85 247;
 }
 
 /* ── Density variables ── */
@@ -200,20 +220,40 @@
 
 /* ── Light theme overrides ── */
 .light {
-  --nd-bg-primary: 248 250 252;
-  --nd-bg-secondary: 241 245 249;
-  --nd-bg-tertiary: 226 232 240;
+  --nd-bg-primary: 248 249 251;
+  --nd-bg-secondary: 243 245 248;
+  --nd-bg-tertiary: 236 239 244;
+  --nd-bg-sunken: 238 241 246;
   --nd-surface: 255 255 255;
-  --nd-surface-hover: 248 250 252;
-  --nd-border: 226 232 240;
-  --nd-border-hover: 203 213 225;
-  --nd-text-primary: 15 23 42;
-  --nd-text-secondary: 71 85 105;
-  --nd-text-muted: 148 163 184;
-  --nd-accent: 59 130 246;
-  --nd-accent-hover: 37 99 235;
-  --nd-success: 34 197 94;
-  --nd-warning: 245 158 11;
-  --nd-error: 239 68 68;
-  --nd-info: 6 182 212;
+  --nd-surface-hover: 245 247 250;
+  --nd-surface-raised: 236 239 244;
+  --nd-border: 225 229 236;
+  --nd-border-hover: 203 210 222;
+  --nd-text-primary: 17 22 32;
+  --nd-text-secondary: 55 65 81;
+  --nd-text-muted: 95 106 126;
+  --nd-text-dim: 92 104 124;
+  --nd-text-faint: 165 174 190;
+  --nd-accent: 37 99 235;
+  --nd-accent-hover: 29 78 216;
+  --nd-accent-solid: 43 103 232;
+  --nd-accent-solid-hover: 37 92 214;
+  --nd-success: 22 163 98;
+  --nd-success-fg: 14 122 72;
+  --nd-warning: 217 140 20;
+  --nd-warning-fg: 150 90 0;
+  --nd-error: 220 60 60;
+  --nd-error-fg: 185 35 35;
+  --nd-info: 37 99 235;
+  --nd-info-fg: 30 80 200;
+  --nd-cloudflare: 194 87 12;
+  --nd-new: 110 80 210;
+  --nd-chart-blue: 37 99 235;
+  --nd-chart-orange: 234 88 12;
+  --nd-chart-red: 220 38 38;
+  --nd-chart-purple: 147 51 234;
+  --nd-chart-cyan: 8 145 178;
+  --nd-chart-yellow: 161 98 7;
+  --nd-chart-emerald: 5 150 105;
+  --nd-chart-memory: 124 58 237;
 }

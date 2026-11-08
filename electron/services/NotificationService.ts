@@ -38,6 +38,19 @@ export class NotificationService {
     this.show({ title, body })
   }
 
+  /** Show a deploy outcome notification. */
+  notifyDeploy({ title, body }: { title: string; body: string }): void {
+    if (!this.settingsStore.getAll().notificationsEnabled) return
+    if (this.isWindowFocused()) return
+
+    this.show({ title, body })
+  }
+
+  notifySsl({ title, body }: { title: string; body: string }): void {
+    if (!this.settingsStore.getAll().notificationsEnabled) return
+    this.show({ title, body })
+  }
+
   private isWindowFocused(): boolean {
     const windows = BrowserWindow.getAllWindows()
     return windows.some((w) => w.isFocused())

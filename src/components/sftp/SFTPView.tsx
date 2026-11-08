@@ -121,9 +121,8 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
 
       try {
         toast.info('Auto-uploading...', `Saving changes to ${wf.remotePath.split('/').pop()}`)
-        const content = await window.novadeck.fs.readFile(tempPath)
-        const result = await window.novadeck.sftp.writeFile(connectionId, wf.remotePath, content)
-        if (result?.success !== false) {
+        const result = await window.novadeck.sftp.uploadFromLocal(connectionId, tempPath, wf.remotePath)
+        if (result.success) {
           toast.success('Uploaded', `${wf.remotePath.split('/').pop()} synced to server`)
           // Refresh the remote panel to show updated file size
           // Small delay to ensure the write has fully flushed on the remote
@@ -131,7 +130,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
             remotePanelRef.current?.refresh()
           }, 300)
         } else {
-          toast.error('Upload failed', (result as any)?.error || 'Unknown error')
+          toast.error('Upload failed', result.error || 'Unknown error')
         }
       } catch (err) {
         toast.error('Auto-upload error', String(err))
@@ -370,7 +369,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
               </button>
               <button
                 onClick={handleSetDefaultApp}
-                className="px-3 py-1.5 text-sm rounded bg-nd-accent hover:bg-nd-accent-hover text-white transition-colors"
+                className="px-3 py-1.5 text-sm rounded bg-nd-accent-solid hover:bg-nd-accent-solid-hover text-white transition-colors"
               >
                 Always
               </button>

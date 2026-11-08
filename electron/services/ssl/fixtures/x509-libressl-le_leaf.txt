@@ -1,0 +1,4 @@
+subject= /CN=app.example.com
+issuer= /C=US/O=Let's Encrypt/CN=R11
+notBefore=Nov  6 19:08:20 2026 GMT
+notAfter=Feb  4 19:08:20 2027 GMT

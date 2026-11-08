@@ -453,14 +453,14 @@ export function ClientKeyManager({ open, onClose }: ClientKeyManagerProps) {
       >
         <div className="flex flex-col gap-3">
           {/* Mode toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-1 p-[3px] rounded-md bg-nd-bg-sunken">
             <button
               onClick={() => setImportMode('file')}
               className={cn(
                 'flex-1 py-1.5 rounded text-xs font-medium transition-colors',
                 importMode === 'file'
-                  ? 'bg-nd-accent text-white'
-                  : 'bg-nd-surface text-nd-text-muted hover:text-nd-text-primary'
+                  ? 'bg-nd-surface-raised text-nd-text-primary'
+                  : 'text-nd-text-muted hover:text-nd-text-primary'
               )}
             >
               From File
@@ -470,8 +470,8 @@ export function ClientKeyManager({ open, onClose }: ClientKeyManagerProps) {
               className={cn(
                 'flex-1 py-1.5 rounded text-xs font-medium transition-colors',
                 importMode === 'paste'
-                  ? 'bg-nd-accent text-white'
-                  : 'bg-nd-surface text-nd-text-muted hover:text-nd-text-primary'
+                  ? 'bg-nd-surface-raised text-nd-text-primary'
+                  : 'text-nd-text-muted hover:text-nd-text-primary'
               )}
             >
               Paste Key Data

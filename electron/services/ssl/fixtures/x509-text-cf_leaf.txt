@@ -1,0 +1,39 @@
+subject=OU=CloudFlare Origin Certificate, CN=CloudFlare Origin Certificate
+issuer=C=US, O=CloudFlare, Inc., OU=CloudFlare Origin SSL Certificate Authority, L=San Francisco, ST=California
+notBefore=Nov  6 19:08:20 2026 GMT
+notAfter=Nov  2 19:08:20 2041 GMT
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            5b:a8:34:41:7a:3b:84:16:8e:4b:23:d5:93:f5:50:94:6c:48:07:e6
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C=US, O=CloudFlare, Inc., OU=CloudFlare Origin SSL Certificate Authority, L=San Francisco, ST=California
+        Validity
+            Not Before: Nov  6 19:08:20 2026 GMT
+            Not After : Nov  2 19:08:20 2041 GMT
+        Subject: OU=CloudFlare Origin Certificate, CN=CloudFlare Origin Certificate
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:22:20:ee:a4:f7:ea:e6:20:34:ce:9c:9d:71:77:
+                    9c:0e:ce:f2:0e:80:b3:58:7d:fa:96:7c:d1:ca:41:
+                    b0:a9:22:f4:93:02:5b:29:ff:db:a9:a9:c6:d2:e6:
+                    1c:0b:38:26:1d:f4:dd:37:f9:bd:ee:60:e2:9a:f1:
+                    36:88:74:65:9f
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Subject Alternative Name: 
+                DNS:example.net, DNS:*.example.net
+            X509v3 Subject Key Identifier: 
+                2F:05:A5:68:5B:57:93:C3:F4:D9:4C:56:FE:96:EB:CC:16:5F:1D:A8
+            X509v3 Authority Key Identifier: 
+                76:FB:21:07:60:22:B8:CF:B9:B5:E2:F5:46:04:DF:83:BD:EC:56:0E
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:44:02:20:26:d6:47:2c:20:96:4a:96:43:26:0a:ed:b6:84:
+        1f:4f:39:2f:41:88:27:15:a7:0e:dc:f7:9f:12:79:c8:23:13:
+        02:20:37:45:de:d1:90:ea:59:39:ef:c6:da:20:88:e4:be:a0:
+        cf:cc:8b:93:9b:6e:25:76:61:20:54:ad:f4:2a:68:03

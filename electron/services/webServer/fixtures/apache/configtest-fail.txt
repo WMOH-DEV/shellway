@@ -1,0 +1,5 @@
+apache2: Syntax error on line 225 of /etc/apache2/apache2.conf: Syntax error on line 9 of /etc/apache2/sites-enabled/blog.example.org.conf: /etc/apache2/sites-enabled/blog.example.org.conf:9: <Directory> was not closed.
+Action 'configtest' failed.
+The Apache error log may have more information.
+exit=1
+restored-ok

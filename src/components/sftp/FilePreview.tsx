@@ -16,104 +16,12 @@ import {
   Save,
   Pencil,
 } from 'lucide-react'
-import Editor, { loader, type OnMount } from '@monaco-editor/react'
-import * as monaco from 'monaco-editor'
+import Editor, { type OnMount } from '@monaco-editor/react'
 import type * as MonacoEditor from 'monaco-editor'
+import './monacoViewer'
+import { MONACO_THEME, syncMonacoTheme } from '@/components/ui/tokenThemes'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/utils/cn'
-
-// ---------------------------------------------------------------------------
-// Monaco setup — local bundling for Electron (no CDN)
-// ---------------------------------------------------------------------------
-
-loader.config({ monaco })
-
-if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
-  self.MonacoEnvironment = {
-    getWorker(_: unknown, _label: string) {
-      return new Worker(
-        new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
-        { type: 'module' }
-      )
-    },
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Shellway dark theme for Monaco
-// ---------------------------------------------------------------------------
-
-let themeRegistered = false
-
-function ensureViewerTheme(monacoInstance: typeof MonacoEditor) {
-  if (themeRegistered) return
-  monacoInstance.editor.defineTheme('shellway-viewer', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword', foreground: '38bdf8', fontStyle: 'bold' },
-      { token: 'string', foreground: '86efac' },
-      { token: 'string.key.json', foreground: '7dd3fc' },
-      { token: 'string.value.json', foreground: '86efac' },
-      { token: 'number', foreground: 'fbbf24' },
-      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
-      { token: 'operator', foreground: 'e2e8f0' },
-      { token: 'predefined', foreground: 'c084fc' },
-      { token: 'type', foreground: '22d3ee' },
-      { token: 'variable', foreground: 'e2e8f0' },
-      { token: 'tag', foreground: 'f472b6' },
-      { token: 'attribute.name', foreground: 'fbbf24' },
-      { token: 'attribute.value', foreground: '86efac' },
-      { token: 'delimiter', foreground: '94a3b8' },
-      { token: 'constant', foreground: 'c084fc' },
-    ],
-    colors: {
-      'editor.background': '#0c0e14',
-      'editor.foreground': '#e2e8f0',
-      'editor.lineHighlightBackground': '#1e293b30',
-      // Selection (double-click / drag): opaque violet — unmistakable
-      'editor.selectionBackground': '#6d28d970',
-      'editor.inactiveSelectionBackground': '#6d28d940',
-      // Other occurrences of selected text: very faint violet, no fill confusion
-      'editor.selectionHighlightBackground': '#6d28d918',
-      'editor.selectionHighlightBorder': '#a78bfa50',
-      // Word highlight (single click): NO fill — border only, clearly different from selection
-      'editor.wordHighlightBackground': '#00000000',
-      'editor.wordHighlightBorder': '#64748b80',
-      'editor.wordHighlightStrongBackground': '#00000000',
-      'editor.wordHighlightStrongBorder': '#94a3b8a0',
-      // Find match highlighting: amber/gold
-      'editor.findMatchBackground': '#fbbf2440',
-      'editor.findMatchBorder': '#fbbf24',
-      'editor.findMatchHighlightBackground': '#fbbf2420',
-      'editor.findMatchHighlightBorder': '#fbbf2460',
-      'editorCursor.foreground': '#38bdf8',
-      'editorGutter.background': '#0c0e14',
-      'editorLineNumber.foreground': '#334155',
-      'editorLineNumber.activeForeground': '#64748b',
-      'editorWidget.background': '#0f1117',
-      'editorWidget.border': '#1e293b',
-      'editorWidget.foreground': '#e2e8f0',
-      'editorWidget.resizeBorder': '#38bdf8',
-      'input.background': '#1e293b',
-      'input.foreground': '#e2e8f0',
-      'input.border': '#334155',
-      'inputOption.activeBorder': '#38bdf8',
-      'inputOption.activeBackground': '#38bdf830',
-      'inputOption.activeForeground': '#e2e8f0',
-      'focusBorder': '#38bdf8',
-      'list.activeSelectionBackground': '#38bdf830',
-      'list.hoverBackground': '#1e293b60',
-      'scrollbarSlider.background': '#334155',
-      'scrollbarSlider.hoverBackground': '#475569',
-      'scrollbarSlider.activeBackground': '#64748b',
-      'minimap.background': '#0c0e14',
-      'minimap.selectionHighlight': '#6d28d960',
-      'minimap.findMatchHighlight': '#fbbf2480',
-    },
-  })
-  themeRegistered = true
-}
 
 // ---------------------------------------------------------------------------
 // File extension → Monaco language mapping
@@ -401,7 +309,7 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
         ref={containerRef}
         className={cn(
           'flex-1 min-h-0 overflow-hidden flex items-center justify-center',
-          'bg-[#0a0c10]',
+          'bg-nd-bg-sunken',
           scale > 1 ? 'cursor-grab' : 'cursor-default',
           isDragging && 'cursor-grabbing'
         )}
@@ -450,6 +358,7 @@ export function FilePreview({
   // Track whether partial content is showing (full file still loading in background)
   const [isPartial, setIsPartial] = useState(false)
   const [fullLoadError, setFullLoadError] = useState<string | null>(null)
+  const [notUtf8, setNotUtf8] = useState(false)
 
   // ── Editable mode state ──
   const [saving, setSaving] = useState(false)
@@ -488,7 +397,7 @@ export function FilePreview({
   // ── Save handler (editable mode) ──
   const handleSave = useCallback(async () => {
     // editorContentRef.current can be "" (empty file) — only skip if null (not loaded yet)
-    if (!editable || isPartial || editorContentRef.current === null || saving || savingRef.current) return
+    if (!editable || isPartial || notUtf8 || editorContentRef.current === null || saving || savingRef.current) return
     savingRef.current = true
     setSaving(true)
     setSaveError(null)
@@ -509,7 +418,7 @@ export function FilePreview({
       setSaving(false)
       savingRef.current = false
     }
-  }, [editable, isPartial, connectionId, filePath, saving])
+  }, [editable, isPartial, notUtf8, connectionId, filePath, saving])
 
   // Keep the ref in sync so Monaco's addCommand always calls the latest version
   useEffect(() => {
@@ -557,6 +466,7 @@ export function FilePreview({
     setLoading(true)
     setLoadProgress(0)
     setIsPartial(false)
+    setNotUtf8(false)
     setFullLoadError(null)
     setError(null)
     setContent(null)
@@ -609,6 +519,7 @@ export function FilePreview({
           if (result.success && result.data !== undefined) {
             hasFull = true
             setContent(result.data)
+            setNotUtf8(!!result.notUtf8)
             setIsPartial(false)
             // In editable mode, sync editorContentRef so save has full content.
             // The editor was read-only during partial loading, so no user edits to lose.
@@ -629,13 +540,16 @@ export function FilePreview({
       })
     } else {
       // ── Small file or image: load everything at once ──
-      window.novadeck.sftp
-        .readFile(connectionId, filePath, undefined, readId)
+      const read = isImage
+        ? window.novadeck.sftp.readFileBase64(connectionId, filePath)
+        : window.novadeck.sftp.readFile(connectionId, filePath, undefined, readId)
+      read
         .then((result) => {
           if (cancelled) return
           setLoadProgress(100)
           if (result.success && result.data !== undefined) {
             setContent(result.data)
+            setNotUtf8('notUtf8' in result && !!result.notUtf8)
           } else {
             setError(result.error ?? 'Failed to read file')
           }
@@ -699,8 +613,7 @@ export function FilePreview({
   // Monaco editor mount
   const handleEditorMount: OnMount = useCallback(
     (editor, monacoInstance) => {
-      ensureViewerTheme(monacoInstance)
-      monacoInstance.editor.setTheme('shellway-viewer')
+      syncMonacoTheme(monacoInstance)
 
       // Store editor ref for save operations
       monacoEditorRef.current = editor
@@ -775,8 +688,8 @@ export function FilePreview({
   // Monaco editor options
   const editorOptions = useMemo(
     (): MonacoEditor.editor.IStandaloneEditorConstructionOptions => ({
-      readOnly: !editable || isPartial,
-      domReadOnly: !editable || isPartial,
+      readOnly: !editable || isPartial || notUtf8,
+      domReadOnly: !editable || isPartial || notUtf8,
       fontSize: 13,
       // Include system Arabic/RTL-capable fonts in fallback chain for proper BiDi rendering.
       // macOS: 'Geeza Pro' (Arabic), 'SF Mono'; Windows: 'Cascadia Code' has decent Unicode coverage.
@@ -833,7 +746,7 @@ export function FilePreview({
       links: true,
       colorDecorators: true,
     }),
-    [wordWrap, showMinimap, editable, isPartial]
+    [wordWrap, showMinimap, editable, isPartial, notUtf8]
   )
 
   // Determine what to display in the language badge
@@ -893,7 +806,7 @@ export function FilePreview({
     // Error
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-error">
+        <div className="flex flex-col items-center justify-center gap-3 h-full text-nd-error-fg">
           <AlertTriangle size={32} />
           <p className="text-sm font-medium">Failed to load file</p>
           <p className="text-xs text-nd-text-muted max-w-md text-center">{error}</p>
@@ -927,7 +840,7 @@ export function FilePreview({
     return (
       <Editor
         language={language}
-        theme="shellway-viewer"
+        theme={MONACO_THEME}
         value={content}
         options={editorOptions}
         onMount={handleEditorMount}
@@ -970,16 +883,16 @@ export function FilePreview({
             {name}
           </span>
           {editable && dirty && (
-            <span className="text-xs text-nd-warning shrink-0">● Modified</span>
+            <span className="text-xs text-nd-warning-fg shrink-0">● Modified</span>
           )}
           {editable && saving && (
             <span className="text-xs text-nd-text-muted shrink-0">Saving...</span>
           )}
           {editable && saveSuccess && !saving && (
-            <span className="text-xs text-nd-success shrink-0">Saved</span>
+            <span className="text-xs text-nd-success-fg shrink-0">Saved</span>
           )}
           {saveError && (
-            <span className="text-xs text-nd-error shrink-0 truncate max-w-[200px]" title={saveError}>
+            <span className="text-xs text-nd-error-fg shrink-0 truncate max-w-[200px]" title={saveError}>
               {saveError}
             </span>
           )}
@@ -1015,7 +928,7 @@ export function FilePreview({
 
           {/* Partial loading indicator — shown while full content streams in background */}
           {isPartial && fullLoadError && (
-            <span className="flex items-center gap-1.5 text-2xs text-nd-error mr-auto truncate" title={fullLoadError}>
+            <span className="flex items-center gap-1.5 text-2xs text-nd-error-fg mr-auto truncate" title={fullLoadError}>
               <AlertTriangle size={12} className="shrink-0" />
               Showing only the first {formatFileSize(PARTIAL_THRESHOLD)} (read-only) — full load failed: {fullLoadError}
             </span>
@@ -1026,7 +939,13 @@ export function FilePreview({
               Loading full file... {loadProgress > 0 ? `${loadProgress}%` : ''}
             </span>
           )}
-          {!isPartial && <span className="mr-auto" />}
+          {!isPartial && notUtf8 && (
+            <span className="flex items-center gap-1.5 text-2xs text-nd-warning-fg mr-auto truncate">
+              <AlertTriangle size={12} className="shrink-0" />
+              Not UTF-8 text, so it opens read-only to keep the file intact
+            </span>
+          )}
+          {!isPartial && !notUtf8 && <span className="mr-auto" />}
 
           {/* Word wrap toggle */}
           <button
@@ -1068,7 +987,7 @@ export function FilePreview({
           {editable && (
             <button
               onClick={handleSave}
-              disabled={saving || !dirty || isPartial}
+              disabled={saving || !dirty || isPartial || notUtf8}
               className={cn(
                 'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
                 saving
@@ -1090,7 +1009,7 @@ export function FilePreview({
             className={cn(
               'flex items-center gap-1.5 px-2 py-1 rounded text-2xs transition-colors',
               copied
-                ? 'bg-nd-success/15 text-nd-success'
+                ? 'bg-nd-success/15 text-nd-success-fg'
                 : 'text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
             )}
             title="Copy file content"
@@ -1102,7 +1021,7 @@ export function FilePreview({
       )}
 
       {/* ─── Main content area ─── */}
-      <div className="flex-1 min-h-0 rounded-md border border-nd-border overflow-hidden bg-[#0c0e14]">
+      <div className="flex-1 min-h-0 rounded-md border border-nd-border overflow-hidden bg-nd-bg-sunken">
         {renderContent()}
       </div>
     </div>

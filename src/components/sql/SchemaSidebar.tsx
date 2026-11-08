@@ -814,7 +814,7 @@ export function SchemaSidebar({
         {fetchError && tables.length === 0 ? (
           <div className="px-3 py-6 text-center space-y-2">
             <AlertCircle size={20} className="mx-auto text-nd-error" />
-            <p className="text-xs text-nd-error">{fetchError}</p>
+            <p className="text-xs text-nd-error-fg">{fetchError}</p>
             <Button
               variant="ghost"
               size="sm"

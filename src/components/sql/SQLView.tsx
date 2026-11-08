@@ -18,7 +18,7 @@ import {
   HardDrive,
 } from 'lucide-react'
 import { SQLQueryLog } from './SQLQueryLog'
-import { useSQLConnection, getSQLConnectionState } from '@/stores/sqlStore'
+import { useSQLConnection, getSQLConnectionState, isOpeningDatabase } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { SQLSidebar } from './SQLSidebar'
 import type { TableContextAction, DatabaseContextAction } from './SchemaSidebar'
@@ -66,10 +66,10 @@ function EmptyPanel() {
 
 // ── Tag color mapping ──
 const TAG_COLORS: Record<string, string> = {
-  development: 'bg-blue-500',
-  staging: 'bg-yellow-500',
-  production: 'bg-red-500',
-  testing: 'bg-green-500',
+  development: 'bg-nd-info',
+  staging: 'bg-nd-warning',
+  production: 'bg-nd-error',
+  testing: 'bg-nd-success',
 }
 
 // ── Saved config display for disconnected state ──
@@ -759,7 +759,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         }
 
         // If no database was specified, show picker
-        if (!c.database?.trim()) {
+        if (!c.database?.trim() && !isOpeningDatabase(connectionId)) {
           setDbPickerSessionId(sqlSessId)
           setShowDatabasePicker(true)
         }
@@ -882,9 +882,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
 
   // ── Handle onNeedDatabasePick from connect dialog ──
   const handleNeedDatabasePick = useCallback((sid: string) => {
+    if (isOpeningDatabase(connectionId)) return
     setDbPickerSessionId(sid)
     setShowDatabasePicker(true)
-  }, [])
+  }, [connectionId])
 
   // ── Tab actions ──
   const handleTabSelect = useCallback(
@@ -1580,7 +1581,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         />
         <ToolbarSep />
         <div className="flex items-center gap-1.5 px-1.5">
-          <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-nd-success shrink-0" />
           <span className="text-xs text-nd-text-secondary">
             {connectionConfig?.type?.toUpperCase()}
           </span>
@@ -1649,7 +1650,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           icon={<Unplug size={13} />}
           title="Disconnect"
           onClick={handleDisconnect}
-          className="hover:!text-nd-error"
+          className="hover:!text-nd-error-fg"
         />
       </div>
 

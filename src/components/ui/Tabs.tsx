@@ -8,6 +8,8 @@ export interface TabItem {
   disabled?: boolean
   /** Visual dimming without disabling click — used for shut-down sub-tabs */
   dimmed?: boolean
+  alert?: boolean
+  alertTone?: 'error' | 'warning'
 }
 
 interface TabsProps {
@@ -42,7 +44,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
               'border-b-2 -mb-px',
               size === 'sm' ? 'py-1.5 text-xs' : 'py-2 text-sm',
               isActive
-                ? 'border-nd-accent text-nd-accent'
+                ? 'border-nd-accent text-nd-text-primary'
                 : 'border-transparent text-nd-text-muted hover:text-nd-text-secondary',
               tab.disabled && 'opacity-40 cursor-not-allowed',
               isDimmed && 'opacity-30'
@@ -50,6 +52,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
           >
             {tab.icon}
             {tab.label}
+            {tab.alert && <span role="img" aria-label="needs attention" className={cn('h-1.5 w-1.5 shrink-0 rounded-full', tab.alertTone === 'warning' ? 'bg-nd-warning' : 'bg-nd-error')} />}
             {onTabClose && !tab.disabled && !isDimmed && (
               <span
                 role="button"
@@ -59,7 +62,7 @@ export function Tabs({ tabs, activeTab, onTabChange, onTabClose, className, size
                 }}
                 className={cn(
                   'ml-0.5 p-0.5 rounded transition-all shrink-0',
-                  'hover:bg-nd-surface hover:text-red-400',
+                  'hover:bg-nd-surface hover:text-nd-error-fg',
                   isActive
                     ? 'text-nd-text-muted/60'
                     : 'text-nd-text-muted/40 opacity-0 group-hover:opacity-100'

@@ -132,7 +132,7 @@ export function DatabasePickerDialog({
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-12 gap-2">
-              <p className="text-xs text-nd-error">{error}</p>
+              <p className="text-xs text-nd-error-fg">{error}</p>
             </div>
           ) : filteredDatabases.length === 0 ? (
             <div className="flex items-center justify-center py-12">

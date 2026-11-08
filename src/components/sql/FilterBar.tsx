@@ -295,7 +295,7 @@ const FilterRow = React.memo(function FilterRow({
       {/* Add another filter — duplicates this row's column + operator with empty value */}
       <button
         onClick={() => onAdd(filter)}
-        className="shrink-0 flex items-center justify-center h-5 w-5 rounded text-nd-text-muted hover:text-nd-success hover:bg-nd-surface transition-colors"
+        className="shrink-0 flex items-center justify-center h-5 w-5 rounded text-nd-text-muted hover:text-nd-success-fg hover:bg-nd-surface transition-colors"
         title="Add filter"
       >
         <Plus size={12} />
@@ -304,7 +304,7 @@ const FilterRow = React.memo(function FilterRow({
       {/* Remove this filter */}
       <button
         onClick={() => onRemove(filter.id)}
-        className="shrink-0 flex items-center justify-center h-5 w-5 rounded text-nd-text-muted hover:text-nd-error hover:bg-nd-surface transition-colors"
+        className="shrink-0 flex items-center justify-center h-5 w-5 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-surface transition-colors"
         title="Remove filter"
       >
         <Minus size={12} />

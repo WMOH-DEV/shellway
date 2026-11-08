@@ -15,12 +15,20 @@ export function Spinner({ size = 'md', className }: SpinnerProps) {
   return (
     <div
       className={cn(
-        'animate-spin rounded-full border-nd-accent border-t-transparent',
+        'shrink-0 animate-spin rounded-full border-nd-accent border-t-transparent',
         sizeStyles[size],
         className
       )}
       role="status"
       aria-label="Loading"
     />
+  )
+}
+
+export function PageSpinner() {
+  return (
+    <div className="flex min-h-40 flex-1 items-center justify-center self-stretch">
+      <Spinner size="md" />
+    </div>
   )
 }

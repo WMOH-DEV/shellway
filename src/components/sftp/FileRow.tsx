@@ -73,7 +73,7 @@ export function FileRow({
   onContextMenu
 }: FileRowProps) {
   const Icon = getFileIcon(entry)
-  const iconColor = entry.isDirectory ? '#3b82f6' : getFileColor(entry.name)
+  const iconColor = entry.isDirectory ? 'rgb(var(--nd-accent))' : getFileColor(entry.name)
   const modDate = new Date(entry.modifiedAt)
   const dateStr = entry.modifiedAt > 0
     ? modDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })

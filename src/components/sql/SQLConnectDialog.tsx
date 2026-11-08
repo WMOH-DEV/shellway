@@ -49,10 +49,10 @@ const TAG_OPTIONS = [
 
 const TAG_COLORS: Record<string, string> = {
   none: '',
-  development: 'bg-blue-500',
-  staging: 'bg-yellow-500',
-  production: 'bg-red-500',
-  testing: 'bg-green-500',
+  development: 'bg-nd-info',
+  staging: 'bg-nd-warning',
+  production: 'bg-nd-error',
+  testing: 'bg-nd-success',
 }
 
 const DEFAULT_PORTS: Record<DatabaseType, string> = {
@@ -554,15 +554,15 @@ export function SQLConnectDialog({
             disabled={testStatus === 'testing' || isConnecting}
           >
             {testStatus === 'testing' && <Loader2 size={14} className="animate-spin" />}
-            {testStatus === 'success' && <CheckCircle2 size={14} className="text-green-500" />}
+            {testStatus === 'success' && <CheckCircle2 size={14} className="text-nd-success" />}
             {testStatus === 'error' && <XCircle size={14} className="text-nd-error" />}
             Test Connection
           </Button>
           {testStatus === 'success' && (
-            <span className="text-xs text-green-500">Connected successfully</span>
+            <span className="text-xs text-nd-success-fg">Connected successfully</span>
           )}
           {testStatus === 'error' && testError && (
-            <span className="text-xs text-nd-error truncate max-w-[200px]" title={testError}>
+            <span className="text-xs text-nd-error-fg truncate max-w-[200px]" title={testError}>
               {testError}
             </span>
           )}
@@ -571,7 +571,7 @@ export function SQLConnectDialog({
         {/* Error */}
         {error && (
           <div className="rounded-md bg-nd-error/10 border border-nd-error/20 px-3 py-2">
-            <p className="text-xs text-nd-error">{error}</p>
+            <p className="text-xs text-nd-error-fg">{error}</p>
           </div>
         )}
 

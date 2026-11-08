@@ -126,7 +126,7 @@ const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }
     <div
       className={cn(
         'group flex items-start gap-2.5 px-2.5 py-1.5 text-2xs font-mono border-b border-nd-border/30 hover:bg-nd-surface/40 transition-colors',
-        entry.error && 'bg-red-500/5'
+        entry.error && 'bg-nd-error/5'
       )}
     >
       {/* Timestamp */}
@@ -138,16 +138,16 @@ const LogEntry = React.memo(function LogEntry({ entry, syntaxHighlight, beauty }
       <pre className={cn(
         'flex-1 break-words leading-relaxed min-w-0 text-[11px] select-text cursor-text',
         beauty ? 'whitespace-pre-wrap' : 'whitespace-normal',
-        entry.error ? 'text-red-400' : !syntaxHighlight ? 'text-nd-text-primary' : ''
+        entry.error ? 'text-nd-error-fg' : !syntaxHighlight ? 'text-nd-text-primary' : ''
       )}>
         {syntaxHighlight && !entry.error ? highlighted : displayQuery}
-        {entry.error && <span className="block mt-0.5 text-red-300/80">{entry.error}</span>}
+        {entry.error && <span className="block mt-0.5 text-nd-error-fg/80">{entry.error}</span>}
       </pre>
 
       {/* Meta */}
       <div className="shrink-0 flex items-center gap-1.5 pt-0.5">
         {entry.error ? (
-          <span className="flex items-center gap-0.5 text-red-400 text-[10px]" title={entry.error}>
+          <span className="flex items-center gap-0.5 text-nd-error-fg text-[10px]" title={entry.error}>
             <AlertCircle size={9} />
             ERR
           </span>
@@ -211,7 +211,7 @@ function QueryLogToolbar({ entryCount, syntaxHighlight, beauty, onToggleHighligh
         </button>
         <button
           onClick={onClear}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-nd-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
           title="Clear query log"
         >
           <Trash2 size={10} />

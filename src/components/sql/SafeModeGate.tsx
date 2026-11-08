@@ -31,26 +31,26 @@ export const SAFE_MODE_OPTIONS: SafeModeOption[] = [
     value: 'warn-all',
     label: 'Alert Mode 1',
     description: 'Warn before sending any query to the server',
-    dotClass: 'bg-amber-400'
+    dotClass: 'bg-nd-warning'
   },
   {
     value: 'warn-writes',
     label: 'Alert Mode 2',
     description: 'Warn before sending queries, except SELECT / EXPLAIN / SHOW',
-    dotClass: 'bg-amber-400'
+    dotClass: 'bg-nd-warning'
   },
   {
     value: 'password-all',
     label: 'Safe Mode 1',
     description: 'Ask for confirmation credentials before sending any query',
-    dotClass: 'bg-red-500'
+    dotClass: 'bg-nd-error'
   },
   {
     value: 'password-writes',
     label: 'Safe Mode 2',
     description:
       'Ask for confirmation credentials, except SELECT / EXPLAIN / SHOW',
-    dotClass: 'bg-red-500'
+    dotClass: 'bg-nd-error'
   }
 ]
 
@@ -165,13 +165,13 @@ export function useSafeModeGate({
             <div
               className={
                 danger
-                  ? 'p-2 rounded-full bg-nd-error/10'
-                  : 'p-2 rounded-full bg-amber-500/10'
+                  ? 'p-2 rounded-full bg-nd-error/12'
+                  : 'p-2 rounded-full bg-nd-warning/12'
               }
             >
               <ShieldAlert
                 size={20}
-                className={danger ? 'text-nd-error' : 'text-amber-400'}
+                className={danger ? 'text-nd-error' : 'text-nd-warning'}
               />
             </div>
             <div className="space-y-1">
@@ -188,9 +188,9 @@ export function useSafeModeGate({
           </div>
 
           {risk.unboundedCount > 0 && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-nd-error/10 border border-nd-error/30">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-nd-error/[0.07] border border-nd-error/30">
               <TriangleAlert size={14} className="text-nd-error mt-0.5 shrink-0" />
-              <p className="text-xs text-nd-error">
+              <p className="text-xs text-nd-error-fg">
                 {risk.unboundedCount === 1
                   ? '1 statement has no WHERE clause and will affect every row in the table.'
                   : `${risk.unboundedCount} statements have no WHERE clause and will affect every row in their tables.`}

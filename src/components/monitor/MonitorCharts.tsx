@@ -1,5 +1,7 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { cn } from '@/utils/cn'
+import { usageLevel, type UsageLevel } from '@/utils/usageLevel'
+import { CHART_SWATCH, SERIES, chartColor, type ChartHue } from './chartPalette'
 
 // ── Shared formatting utilities ──
 
@@ -34,42 +36,52 @@ export function formatPercent(val: number): string {
 
 // ── Color utilities ──
 
-/** Get color for a percentage value (green → yellow → red) */
-export function getPercentColor(pct: number): string {
-  if (pct < 50) return 'text-emerald-400'
-  if (pct < 75) return 'text-amber-400'
-  if (pct < 90) return 'text-orange-400'
-  return 'text-red-400'
+export const LEVEL_TEXT: Record<UsageLevel, string> = {
+  success: 'text-nd-success-fg',
+  warning: 'text-nd-warning-fg',
+  error: 'text-nd-error-fg'
 }
 
-export function getPercentBg(pct: number): string {
-  if (pct < 50) return 'bg-emerald-400'
-  if (pct < 75) return 'bg-amber-400'
-  if (pct < 90) return 'bg-orange-400'
-  return 'bg-red-400'
+const LEVEL_BG: Record<UsageLevel, string> = {
+  success: 'bg-nd-success',
+  warning: 'bg-nd-warning',
+  error: 'bg-nd-error'
 }
 
-export function getPercentBgAlpha(pct: number): string {
-  if (pct < 50) return 'bg-emerald-400/15'
-  if (pct < 75) return 'bg-amber-400/15'
-  if (pct < 90) return 'bg-orange-400/15'
-  return 'bg-red-400/15'
+const LEVEL_TINT: Record<UsageLevel, string> = {
+  success: 'bg-nd-success/15',
+  warning: 'bg-nd-warning/15',
+  error: 'bg-nd-error/15'
 }
+
+const LEVEL_STROKE: Record<UsageLevel, string> = {
+  success: 'stroke-nd-success',
+  warning: 'stroke-nd-warning',
+  error: 'stroke-nd-error'
+}
+
+export const getPercentColor = (pct: number): string => LEVEL_TEXT[usageLevel(pct)]
+
+export const getPercentBg = (pct: number): string => LEVEL_BG[usageLevel(pct)]
+
+export const getPercentBgAlpha = (pct: number): string => LEVEL_TINT[usageLevel(pct)]
+
+const getPercentStroke = (pct: number): string => LEVEL_STROKE[usageLevel(pct)]
 
 export function getStatusColor(status: string): string {
   switch (status) {
-    case 'active': case 'running': return 'text-emerald-400'
+    case 'active': case 'running': return 'text-nd-success-fg'
     case 'inactive': case 'dead': case 'exited': return 'text-nd-text-muted'
-    case 'failed': return 'text-red-400'
+    case 'failed': return 'text-nd-error-fg'
     default: return 'text-nd-text-secondary'
   }
 }
 
 export function getStatusDot(status: string): string {
   switch (status) {
-    case 'active': case 'running': return 'bg-emerald-400'
+    case 'active': case 'running': return 'bg-nd-success'
     case 'inactive': case 'dead': case 'exited': return 'bg-nd-text-muted'
-    case 'failed': return 'bg-red-400'
+    case 'failed': return 'bg-nd-error'
     default: return 'bg-nd-text-secondary'
   }
 }
@@ -252,7 +264,7 @@ export function Gauge({ value, size = 80, strokeWidth = 6, label, sublabel, clas
   const pct = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
   const offset = circumference * (1 - pct / 100)
 
-  const colorClass = pct < 50 ? 'stroke-emerald-400' : pct < 75 ? 'stroke-amber-400' : pct < 90 ? 'stroke-orange-400' : 'stroke-red-400'
+  const colorClass = getPercentStroke(pct)
 
   return (
     <div className={cn('flex flex-col items-center gap-1', className)}>
@@ -304,7 +316,7 @@ export function ProgressBar({ value, height = 6, className, showLabel = false, l
   return (
     <div className={cn('flex items-center gap-2', className)}>
       {label && <span className="text-xs text-nd-text-muted shrink-0 w-8">{label}</span>}
-      <div className="flex-1 rounded-full overflow-hidden" style={{ height, background: 'rgba(255,255,255,0.04)' }}>
+      <div className="flex-1 rounded-full overflow-hidden bg-nd-surface-raised" style={{ height }}>
         <div
           className={cn('h-full rounded-full transition-all duration-500 ease-out', getPercentBg(pct))}
           style={{ width: `${pct}%` }}
@@ -332,7 +344,7 @@ export function CoreGrid({ cores, className }: CoreGridProps) {
       {cores.map((pct, i) => (
         <div key={i} className="flex items-center gap-1">
           <span className="text-[9px] text-nd-text-muted font-mono w-3 shrink-0">{i}</span>
-          <div className="flex-1 h-2.5 rounded-sm overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+          <div className="flex-1 h-2.5 rounded-sm overflow-hidden bg-nd-surface-raised">
             <div
               className={cn('h-full rounded-sm transition-all duration-300', getPercentBg(pct))}
               style={{ width: `${Math.max(1, pct)}%` }}
@@ -403,13 +415,13 @@ export function MirroredChart({ rxData, txData, height = 80, className }: Mirror
         {/* RX (download — above center) */}
         <polygon
           points={`${rxPoints.join(' ')} ${width},${half} 0,${half}`}
-          fill="rgb(52, 211, 153)"
+          fill={chartColor(SERIES.inbound)}
           fillOpacity={0.1}
         />
         <polyline
           points={rxPoints.join(' ')}
           fill="none"
-          stroke="rgb(52, 211, 153)"
+          stroke={chartColor(SERIES.inbound)}
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -418,13 +430,13 @@ export function MirroredChart({ rxData, txData, height = 80, className }: Mirror
         {/* TX (upload — below center) */}
         <polygon
           points={`${txPoints.join(' ')} ${width},${half} 0,${half}`}
-          fill="rgb(251, 146, 60)"
+          fill={chartColor(SERIES.outbound)}
           fillOpacity={0.1}
         />
         <polyline
           points={txPoints.join(' ')}
           fill="none"
-          stroke="rgb(251, 146, 60)"
+          stroke={chartColor(SERIES.outbound)}
           strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -471,14 +483,20 @@ interface StatItemProps {
   value: string | number
   subvalue?: string
   valueClass?: string
+  hue?: ChartHue
   className?: string
 }
 
-export function StatItem({ label, value, subvalue, valueClass, className }: StatItemProps) {
+export function SeriesSwatch({ hue }: { hue: ChartHue }) {
+  return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-sm', CHART_SWATCH[hue])} />
+}
+
+export function StatItem({ label, value, subvalue, valueClass, hue, className }: StatItemProps) {
   return (
     <div className={cn('flex flex-col', className)}>
       <span className="text-[10px] text-nd-text-muted uppercase tracking-wider">{label}</span>
-      <span className={cn('text-sm font-semibold tabular-nums', valueClass || 'text-nd-text-primary')}>
+      <span className={cn('flex items-center gap-1.5 text-sm font-semibold tabular-nums', valueClass || 'text-nd-text-primary')}>
+        {hue && <SeriesSwatch hue={hue} />}
         {value}
       </span>
       {subvalue && <span className="text-[10px] text-nd-text-muted tabular-nums">{subvalue}</span>}

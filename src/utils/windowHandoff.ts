@@ -1,8 +1,12 @@
 import { useConnectionStore } from '@/stores/connectionStore'
+import { serverRouteOf, useServerNavStore } from '@/stores/serverNavStore'
+import { loadClassicTabs } from '@/components/server/shell/classicTabsStore'
+import type { ServerRoute } from '@/types/server/core'
 import { getSQLConnectionState, useSQLStore, type SQLConnectionSlice } from '@/stores/sqlStore'
 import type { ConnectionTab } from '@/types/session'
 import { sqlResource, sshResource, type FeatureWindowRef } from '@/types/windowResources'
 import { adoptShells, liveShellsFor, type TerminalShell } from '@/utils/terminalShells'
+import { isClassicSubTab, normalizeSubTab, normalizeTab } from '@/utils/server/legacyTabs'
 
 type SubTab = ConnectionTab['activeSubTab']
 
@@ -10,6 +14,7 @@ interface TabHandoff {
   tab: ConnectionTab
   sql?: SQLConnectionSlice
   shells?: TerminalShell[]
+  serverRoute?: ServerRoute
 }
 
 interface WindowHandoff {
@@ -62,7 +67,7 @@ export async function moveTabToNewWindow(tabId: string): Promise<void> {
 
   const sql = portableSQLState(tabId)
   const shells = liveShellsFor(tabId)
-  const handoff: WindowHandoff = { tabs: [{ tab, sql, shells }] }
+  const handoff: WindowHandoff = { tabs: [{ tab, sql, shells, serverRoute: serverRouteOf(tabId) }] }
   await window.novadeck.window.open(handoff, tabResources(tab, sql), undefined, shellIdsOf(shells))
   removeTabFromThisWindow(tabId)
 }
@@ -88,7 +93,7 @@ export async function openFeatureWindow(tabId: string, subTab: SubTab): Promise<
   const sql = subTab === 'sql' ? portableSQLState(tabId) : undefined
   const shells = subTab === 'terminal' ? liveShellsFor(tabId) : []
   const handoff: WindowHandoff = {
-    tabs: [{ tab: featureTab(tab, subTab), sql, shells }],
+    tabs: [{ tab: featureTab(tab, subTab), sql, shells, serverRoute: subTab === 'server' ? serverRouteOf(tabId) : undefined }],
     feature: subTab
   }
   await window.novadeck.window.open(handoff, tabResources(tab, sql), ref, shellIdsOf(shells))
@@ -106,6 +111,12 @@ export function focusFeatureWindow(tabId: string, subTab: SubTab): Promise<boole
 
 export function closeFeatureWindow(tabId: string, subTab: SubTab): Promise<void> {
   return window.novadeck.window.closeFeature({ tabId, subTab })
+}
+
+export async function closeClassicFeatureWindows(): Promise<void> {
+  const closing = useConnectionStore.getState().tabs.flatMap((tab) =>
+    (tab.detachedSubTabs ?? []).filter(isClassicSubTab).map((subTab) => closeFeatureWindow(tab.id, subTab)))
+  await Promise.all(closing)
 }
 
 export function reattachFeature({ tabId, subTab }: FeatureWindowRef): void {
@@ -145,8 +156,13 @@ export async function adoptWindowHandoff(): Promise<void> {
   if (!isWindowHandoff(handoff)) return
 
   const isReload = isReloadOfAdoptedWindow()
-  windowFeature = handoff.feature ?? null
-  for (const { tab, sql, shells } of handoff.tabs) {
+  const classicEnabled = await loadClassicTabs()
+  windowFeature = handoff.feature ? normalizeSubTab(handoff.feature, classicEnabled).subTab : null
+  for (const handed of handoff.tabs) {
+    const { tab, route } = normalizeTab(handed.tab, classicEnabled)
+    const { sql, shells } = handed
+    const serverRoute = route ?? handed.serverRoute
+    if (serverRoute) useServerNavStore.getState().navigate(tab.id, serverRoute)
     if (sql && !isReload) {
       useSQLStore.setState((state) => ({ connections: { ...state.connections, [tab.id]: sql } }))
     }

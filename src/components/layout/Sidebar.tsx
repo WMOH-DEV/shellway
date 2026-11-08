@@ -26,6 +26,7 @@ import { ImportDialog } from "@/components/sessions/ImportDialog";
 import { useSession } from "@/hooks/useSession";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { toast } from "@/components/ui/Toast";
+import { SQL_SESSION_TILE } from "@/components/ui/decorativeColors";
 import type { Session } from "@/types/session";
 
 /** Minimal shape for a saved standalone DB config — used only for collapsed-view avatars */
@@ -454,7 +455,7 @@ export function Sidebar({
                             : "hover:bg-nd-surface opacity-60 hover:opacity-100",
                         )}
                       >
-                        <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600">
+                        <div className={cn("w-6 h-6 rounded flex items-center justify-center", SQL_SESSION_TILE.active)}>
                           <Database size={12} className="text-white/90" />
                         </div>
                         {isDbConnected && (
@@ -480,7 +481,7 @@ export function Sidebar({
                       onClick={() => onOpenSavedDatabase(db.sessionId, label)}
                       className="relative flex items-center justify-center w-9 h-8 rounded-md transition-colors shrink-0 opacity-50 hover:opacity-100 hover:bg-nd-surface"
                     >
-                      <div className="w-6 h-6 rounded flex items-center justify-center bg-indigo-600/50">
+                      <div className={cn("w-6 h-6 rounded flex items-center justify-center", SQL_SESSION_TILE.idle)}>
                         <Database size={12} className="text-white/70" />
                       </div>
                     </button>

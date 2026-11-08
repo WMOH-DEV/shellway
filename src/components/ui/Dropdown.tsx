@@ -87,7 +87,7 @@ export function Dropdown({
                     'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors',
                     'hover:bg-nd-surface disabled:opacity-40 disabled:cursor-not-allowed',
                     item.danger
-                      ? 'text-nd-error hover:text-nd-error'
+                      ? 'text-nd-error-fg hover:text-nd-error-fg'
                       : 'text-nd-text-primary'
                   )}
                 >

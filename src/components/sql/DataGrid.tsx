@@ -17,7 +17,6 @@ import type {
 import {
   AllCommunityModule,
   ModuleRegistry,
-  themeQuartz,
 } from "ag-grid-community";
 import { cn } from "@/utils/cn";
 import {
@@ -40,7 +39,7 @@ import {
   Type,
   DatabaseZap,
 } from "lucide-react";
-import { useUIStore } from "@/stores/uiStore";
+import { useTokenThemes } from "@/components/ui/tokenThemes";
 import type {
   DatabaseType,
   QueryResult,
@@ -57,58 +56,6 @@ import {
 import { JsonCellModal } from "@/components/sql/JsonCellModal";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-
-// ── Shared theme params (non-color) ──
-const sharedThemeParams = {
-  headerFontWeight: 600,
-  cellEditingBorder: {
-    color: "rgb(59, 130, 246)",
-    style: "solid" as const,
-    width: 1,
-  },
-  borderRadius: 0,
-  wrapperBorderRadius: 0,
-  fontFamily: "inherit",
-  fontSize: 13,
-  headerFontSize: 12,
-  iconSize: 12,
-  cellHorizontalPadding: 10,
-  spacing: 4,
-  columnBorder: true,
-};
-
-// ── Dark theme matching Shellway's dark design tokens ──
-const shellwayDarkTheme = themeQuartz.withParams({
-  ...sharedThemeParams,
-  backgroundColor: "rgb(15, 17, 23)",
-  foregroundColor: "rgb(228, 228, 231)",
-  headerBackgroundColor: "rgb(22, 25, 34)",
-  headerTextColor: "rgb(161, 161, 170)",
-  borderColor: "rgb(46, 51, 72)",
-  rowBorder: "rgb(46, 51, 72)",
-  rowHoverColor: "rgb(37, 40, 54)",
-  selectedRowBackgroundColor: "rgba(59, 130, 246, 0.15)",
-  headerColumnResizeHandleColor: "rgb(61, 67, 99)",
-  chromeBackgroundColor: "rgb(22, 25, 34)",
-  oddRowBackgroundColor: "rgb(18, 20, 28)",
-});
-
-// ── Light theme matching Shellway's light design tokens ──
-const shellwayLightTheme = themeQuartz.withParams({
-  ...sharedThemeParams,
-  backgroundColor: "rgb(255, 255, 255)",
-  foregroundColor: "rgb(15, 23, 42)",
-  headerBackgroundColor: "rgb(248, 250, 252)",
-  headerTextColor: "rgb(71, 85, 105)",
-  borderColor: "rgb(226, 232, 240)",
-  rowBorder: "rgb(226, 232, 240)",
-  rowHoverColor: "rgb(248, 250, 252)",
-  selectedRowBackgroundColor: "rgba(59, 130, 246, 0.1)",
-  headerColumnResizeHandleColor: "rgb(203, 213, 225)",
-  chromeBackgroundColor: "rgb(248, 250, 252)",
-  oddRowBackgroundColor: "rgb(248, 250, 252)",
-});
-
 
 // ── Auto-width constants ──
 // Maximum width (in px) that auto-sizing can assign to a column.
@@ -469,7 +416,7 @@ function CtxMenuItem({
           className={cn(
             "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
             danger
-              ? "text-nd-error hover:bg-nd-error/10"
+              ? "text-nd-error-fg hover:bg-nd-error/10"
               : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
           )}
         >
@@ -508,7 +455,7 @@ function CtxMenuItem({
       className={cn(
         "flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors",
         danger
-          ? "text-nd-error hover:bg-nd-error/10"
+          ? "text-nd-error-fg hover:bg-nd-error/10"
           : "text-nd-text-secondary hover:bg-nd-surface-hover hover:text-nd-text-primary",
       )}
       onClick={onClick}
@@ -566,9 +513,7 @@ export const DataGrid = React.memo(
       oldValue: unknown;
       editable: boolean;
     } | null>(null);
-    const resolvedTheme = useUIStore((s) => s.resolvedTheme);
-    const gridTheme =
-      resolvedTheme === "light" ? shellwayLightTheme : shellwayDarkTheme;
+    const gridTheme = useTokenThemes().grid;
 
     // ── Column width persistence ref ──
     // Holds the current column widths for this table. Read by columnDefs useMemo so that

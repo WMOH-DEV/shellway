@@ -1,0 +1,25 @@
+@@SW@@ SUDO
+full=1
+@@SW@@ OS
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION_CODENAME=bookworm
+ID=debian
+@@SW@@ ARCH
+aarch64
+@@SW@@ WEB
+nginx=/usr/sbin/nginx
+apache=
+caddy=
+@@SW@@ CERTBOT
+path=
+@@SW@@ METHOD
+dpkg=
+@@SW@@ PLUGINS
+@@SW@@ SNAPD
+@@SW@@ PM
+apt=/usr/bin/apt-get
+dnf=
+yum=
+@@SW@@ TIMER

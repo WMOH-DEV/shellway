@@ -357,9 +357,9 @@ export function BackupRestoreDialog({
       <div className="flex flex-col gap-4">
         {/* Production warning */}
         {isProduction && (
-          <div className="flex items-start gap-2.5 rounded-md bg-red-500/10 border border-red-500/30 px-3 py-2.5">
-            <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
-            <p className="text-xs font-medium text-red-400">
+          <div className="flex items-start gap-2.5 rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2.5">
+            <AlertTriangle size={16} className="text-nd-error mt-0.5 shrink-0" />
+            <p className="text-xs font-medium text-nd-error-fg">
               You are working with a PRODUCTION database. Proceed with extreme caution.
             </p>
           </div>
@@ -463,9 +463,9 @@ export function BackupRestoreDialog({
 
             {/* Credentials note */}
             {!dbUser && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
-                <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-400">
+              <div className="flex items-start gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2">
+                <AlertTriangle size={13} className="text-nd-warning mt-0.5 shrink-0" />
+                <p className="text-xs text-nd-warning-fg">
                   Database credentials are required for backup. They should be passed from the connection config.
                 </p>
               </div>
@@ -533,9 +533,9 @@ export function BackupRestoreDialog({
 
             {/* Restore warning */}
             {restoreFilePath && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
-                <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-400">
+              <div className="flex items-start gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2">
+                <AlertTriangle size={13} className="text-nd-warning mt-0.5 shrink-0" />
+                <p className="text-xs text-nd-warning-fg">
                   Restoring will execute SQL statements against <span className="font-mono font-medium">{currentDatabase}</span>.
                   Existing data may be modified or deleted.
                 </p>
@@ -547,9 +547,9 @@ export function BackupRestoreDialog({
 
             {/* Credentials note */}
             {!dbUser && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
-                <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-400">
+              <div className="flex items-start gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2">
+                <AlertTriangle size={13} className="text-nd-warning mt-0.5 shrink-0" />
+                <p className="text-xs text-nd-warning-fg">
                   Database credentials are required for restore.
                 </p>
               </div>
@@ -630,24 +630,24 @@ export function BackupRestoreDialog({
             <div className="flex items-center gap-2">
               {isCompleted && operationErrors.length === 0 && (
                 <>
-                  <CheckCircle size={16} className="text-green-400" />
-                  <span className="text-sm font-medium text-green-400">
+                  <CheckCircle size={16} className="text-nd-success" />
+                  <span className="text-sm font-medium text-nd-success-fg">
                     {activeTab === 'backup' ? 'Backup' : 'Restore'} completed
                   </span>
                 </>
               )}
               {isCompleted && operationErrors.length > 0 && (
                 <>
-                  <AlertTriangle size={16} className="text-amber-400" />
-                  <span className="text-sm font-medium text-amber-400">
+                  <AlertTriangle size={16} className="text-nd-warning" />
+                  <span className="text-sm font-medium text-nd-warning-fg">
                     Completed with warnings
                   </span>
                 </>
               )}
               {isFailed && (
                 <>
-                  <XCircle size={16} className="text-red-400" />
-                  <span className="text-sm font-medium text-red-400">
+                  <XCircle size={16} className="text-nd-error" />
+                  <span className="text-sm font-medium text-nd-error-fg">
                     {activeTab === 'backup' ? 'Backup' : 'Restore'} failed
                   </span>
                 </>
@@ -690,7 +690,7 @@ export function BackupRestoreDialog({
                   </p>
                   <p>
                     Healed:{' '}
-                    <span className="text-emerald-400 font-medium">
+                    <span className="text-nd-success-fg font-medium">
                       {progress.stats.healed.toLocaleString()}
                     </span>
                   </p>
@@ -699,7 +699,7 @@ export function BackupRestoreDialog({
                     <span
                       className={cn(
                         'font-medium',
-                        progress.stats.skipped > 0 ? 'text-amber-400' : 'text-nd-text-primary',
+                        progress.stats.skipped > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary',
                       )}
                     >
                       {progress.stats.skipped.toLocaleString()}
@@ -710,7 +710,7 @@ export function BackupRestoreDialog({
                     <span
                       className={cn(
                         'font-medium',
-                        progress.stats.quarantined > 0 ? 'text-amber-400' : 'text-nd-text-primary',
+                        progress.stats.quarantined > 0 ? 'text-nd-warning-fg' : 'text-nd-text-primary',
                       )}
                     >
                       {progress.stats.quarantined.toLocaleString()}
@@ -732,9 +732,9 @@ export function BackupRestoreDialog({
 
             {/* Errors */}
             {operationErrors.length > 0 && (
-              <div className="max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1">
+              <div className="max-h-32 overflow-y-auto rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2 space-y-1">
                 {operationErrors.map((err, i) => (
-                  <p key={i} className="text-[11px] font-mono text-red-400 break-all">
+                  <p key={i} className="text-[11px] font-mono text-nd-error-fg break-all">
                     {err}
                   </p>
                 ))}

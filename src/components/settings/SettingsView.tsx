@@ -22,6 +22,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
+import { setClassicTabs } from '@/components/server/shell/classicTabsStore'
+import { closeClassicFeatureWindows } from '@/utils/windowHandoff'
 import { Button } from '@/components/ui/Button'
 import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
@@ -36,7 +38,7 @@ import { DEFAULT_SETTINGS } from '@/types/settings'
 import { THEME_NAMES, TERMINAL_THEMES } from '@/data/terminalThemes'
 
 const ACCENT_PRESETS = [
-  '#3b82f6', // Blue (default)
+  '#4f8cff',
   '#8b5cf6', // Violet
   '#ec4899', // Pink
   '#f43f5e', // Rose
@@ -92,7 +94,7 @@ function CheckForUpdatesButton() {
         <span className="text-xs text-nd-text-muted">You're up to date</span>
       )}
       {status === 'ready' && (
-        <span className="text-xs text-nd-success">Update ready — restart to apply</span>
+        <span className="text-xs text-nd-success-fg">Update ready — restart to apply</span>
       )}
     </div>
   )
@@ -141,12 +143,20 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
     [settings, setTheme]
   )
 
+  const changeClassicServerTabs = useCallback((enabled: boolean) => {
+    void update('classicServerTabs', enabled)
+    setClassicTabs(enabled)
+    if (!enabled) void closeClassicFeatureWindows()
+  }, [update])
+
   const handleReset = useCallback(async () => {
     await window.novadeck.settings.reset()
     setSettings(DEFAULT_SETTINGS)
     setTheme(DEFAULT_SETTINGS.theme)
     applyAccentColor(DEFAULT_SETTINGS.accentColor)
     applyDensity(DEFAULT_SETTINGS.density)
+    setClassicTabs(DEFAULT_SETTINGS.classicServerTabs)
+    if (!DEFAULT_SETTINGS.classicServerTabs) void closeClassicFeatureWindows()
     // Sync keybinding store with reset settings
     useKeybindingStore.getState().resetAll()
     toast.info('Settings reset to defaults')
@@ -196,6 +206,16 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                 />
                 <CheckForUpdatesButton />
               </SettingsSection>
+
+              <div className="mt-6">
+                <SettingsSection title="Server tab">
+                  <Toggle
+                    checked={settings.classicServerTabs}
+                    onChange={changeClassicServerTabs}
+                    label="Show classic Monitor, Services, Deploy, SSL and Info tabs"
+                  />
+                </SettingsSection>
+              </div>
 
               <div className="mt-6">
                 <SettingsSection title="Notifications">
@@ -532,7 +552,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
             <div>
               <div className="flex flex-col items-center text-center mb-6">
                 {/* Logo */}
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
+                <div className="w-16 h-16 rounded-2xl bg-nd-accent-solid flex items-center justify-center mb-4">
                   <Wifi size={28} className="text-white" />
                 </div>
                 <h3 className="text-lg font-bold text-nd-text-primary">Shellway</h3>
@@ -585,7 +605,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
                   &copy; {new Date().getFullYear()} Wael Mohamed Essaid. All rights reserved.
                 </p>
                 <p className="text-2xs text-nd-text-muted mt-1">
-                  Licensed under MIT License
+                  Licensed under the Apache License 2.0
                 </p>
               </div>
             </div>

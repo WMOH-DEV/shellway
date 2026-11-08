@@ -1,0 +1,43 @@
+Unable to find image 'rockylinux:9' locally
+9: Pulling from library/rockylinux
+4c81ef64b3e1: Pulling fs layer
+a1d243602232: Download complete
+af9c3c7809c6: Download complete
+4c81ef64b3e1: Download complete
+4c81ef64b3e1: Pull complete
+Digest: sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+Status: Downloaded newer image for rockylinux:9
+AH00112: Warning: DocumentRoot [/var/www/shop] does not exist
+AH00558: httpd: Could not reliably determine the server's fully qualified domain name, using 192.0.2.10. Set the 'ServerName' directive globally to suppress this message
+VirtualHost configuration:
+*:80                   shop.example.com (/etc/httpd/conf.d/shop.example.com.conf:1)
+*:443                  192.0.2.10 (/etc/httpd/conf.d/ssl.conf:40)
+ServerRoot: "/etc/httpd"
+Main DocumentRoot: "/var/www/html"
+Main ErrorLog: "/etc/httpd/logs/error_log"
+Mutex watchdog-callback: using_defaults
+Mutex proxy-balancer-shm: using_defaults
+Mutex rewrite-map: using_defaults
+Mutex ssl-stapling-refresh: using_defaults
+Mutex authdigest-client: using_defaults
+Mutex dav_fs-lockdb: using_defaults
+Mutex lua-ivm-shm: using_defaults
+Mutex ssl-stapling: using_defaults
+Mutex proxy: using_defaults
+Mutex authn-socache: using_defaults
+Mutex ssl-cache: using_defaults
+Mutex default: dir="/etc/httpd/run/" mechanism=default 
+Mutex cache-socache: using_defaults
+PidFile: "/etc/httpd/run/httpd.pid"
+Define: DUMP_VHOSTS
+Define: DUMP_RUN_CFG
+User: name="apache" id=48
+Group: name="apache" id=48
+AH00112: Warning: DocumentRoot [/var/www/shop] does not exist
+AH00558: httpd: Could not reliably determine the server's fully qualified domain name, using 192.0.2.10. Set the 'ServerName' directive globally to suppress this message
+Loaded Modules:
+ core_module (static)
+NAME="Rocky Linux"
+VERSION="9.3 (Blue Onyx)"
+ID="rocky"
+ID_LIKE="rhel centos fedora"

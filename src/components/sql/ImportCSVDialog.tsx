@@ -469,9 +469,9 @@ export function ImportCSVDialog({
       <div className="flex flex-col gap-4">
         {/* Production warning */}
         {isProduction && (
-          <div className="flex items-start gap-2.5 rounded-md bg-red-500/10 border border-red-500/30 px-3 py-2.5">
-            <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
-            <p className="text-xs font-medium text-red-400">
+          <div className="flex items-start gap-2.5 rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2.5">
+            <AlertTriangle size={16} className="text-nd-error mt-0.5 shrink-0" />
+            <p className="text-xs font-medium text-nd-error-fg">
               You are importing into a PRODUCTION database. Proceed with extreme caution.
             </p>
           </div>
@@ -494,7 +494,7 @@ export function ImportCSVDialog({
             </div>
 
             {previewError && (
-              <p className="text-xs text-red-400 bg-red-500/10 rounded-md px-3 py-2">
+              <p className="text-xs text-nd-error-fg border border-nd-error/30 bg-nd-error/[0.07] rounded-md px-3 py-2">
                 {previewError}
               </p>
             )}
@@ -799,14 +799,14 @@ export function ImportCSVDialog({
 
                 {/* Unmapped column warning */}
                 {!createTable && mappedCount < totalCsvColumns && mappedCount > 0 && (
-                  <p className="text-[11px] text-amber-400 mt-1.5 flex items-center gap-1">
+                  <p className="text-[11px] text-nd-warning-fg mt-1.5 flex items-center gap-1">
                     <AlertTriangle size={11} />
                     {totalCsvColumns - mappedCount} column{totalCsvColumns - mappedCount !== 1 ? 's' : ''} will be skipped
                   </p>
                 )}
 
                 {!createTable && mappedCount === 0 && dbColumns.length > 0 && (
-                  <p className="text-[11px] text-red-400 mt-1.5 flex items-center gap-1">
+                  <p className="text-[11px] text-nd-error-fg mt-1.5 flex items-center gap-1">
                     <XCircle size={11} />
                     No columns mapped. Map at least one column to import.
                   </p>
@@ -861,9 +861,9 @@ export function ImportCSVDialog({
 
             {/* Truncate warning */}
             {truncateBefore && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
-                <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-amber-400">
+              <div className="flex items-start gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2">
+                <AlertTriangle size={13} className="text-nd-warning mt-0.5 shrink-0" />
+                <p className="text-xs text-nd-warning-fg">
                   All existing data in <span className="font-mono font-medium">{effectiveTable}</span> will be deleted before import.
                 </p>
               </div>
@@ -932,7 +932,7 @@ export function ImportCSVDialog({
                 {formatElapsed(elapsed)}
               </span>
               {importErrors.length > 0 && (
-                <span className="text-red-400">
+                <span className="text-nd-error-fg">
                   {importErrors.length} error{importErrors.length !== 1 ? 's' : ''}
                 </span>
               )}
@@ -954,22 +954,22 @@ export function ImportCSVDialog({
             <div className="flex items-center gap-2">
               {isCompleted && importErrors.length === 0 && (
                 <>
-                  <CheckCircle size={16} className="text-green-400" />
-                  <span className="text-sm font-medium text-green-400">Import completed</span>
+                  <CheckCircle size={16} className="text-nd-success" />
+                  <span className="text-sm font-medium text-nd-success-fg">Import completed</span>
                 </>
               )}
               {isCompleted && importErrors.length > 0 && (
                 <>
-                  <AlertTriangle size={16} className="text-amber-400" />
-                  <span className="text-sm font-medium text-amber-400">
+                  <AlertTriangle size={16} className="text-nd-warning" />
+                  <span className="text-sm font-medium text-nd-warning-fg">
                     Import completed with errors
                   </span>
                 </>
               )}
               {isFailed && (
                 <>
-                  <XCircle size={16} className="text-red-400" />
-                  <span className="text-sm font-medium text-red-400">Import failed</span>
+                  <XCircle size={16} className="text-nd-error" />
+                  <span className="text-sm font-medium text-nd-error-fg">Import failed</span>
                 </>
               )}
               {isCancelled && (
@@ -997,7 +997,7 @@ export function ImportCSVDialog({
                 <span
                   className={cn(
                     'font-medium',
-                    importErrors.length > 0 ? 'text-red-400' : 'text-nd-text-primary'
+                    importErrors.length > 0 ? 'text-nd-error-fg' : 'text-nd-text-primary'
                   )}
                 >
                   {importErrors.length}
@@ -1019,9 +1019,9 @@ export function ImportCSVDialog({
                   {errorsExpanded ? 'Hide' : 'Show'} errors ({importErrors.length})
                 </button>
                 {errorsExpanded && (
-                  <div className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 space-y-1">
+                  <div className="mt-1.5 max-h-32 overflow-y-auto rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2 space-y-1">
                     {importErrors.map((err, i) => (
-                      <p key={i} className="text-[11px] font-mono text-red-400 break-all">
+                      <p key={i} className="text-[11px] font-mono text-nd-error-fg break-all">
                         {err}
                       </p>
                     ))}

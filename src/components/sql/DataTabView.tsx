@@ -2029,7 +2029,7 @@ export const DataTabView = React.memo(function DataTabView({
 
       {/* Error banner — only show data errors in data mode */}
       {isDataMode && error && (
-        <div className="shrink-0 border-b border-nd-error/30 bg-nd-error/10 px-3 py-1.5 text-xs text-nd-error">
+        <div className="shrink-0 border-b border-nd-error/30 bg-nd-error/10 px-3 py-1.5 text-xs text-nd-error-fg">
           {error}
         </div>
       )}

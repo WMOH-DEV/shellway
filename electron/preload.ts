@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
+import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
+import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, Leftover, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
+import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
+import { serverApi } from "./preload/server";
+import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
 export interface LocalFsResult {
@@ -43,8 +48,13 @@ const api = {
     },
     open: (handoff?: unknown, resources?: string[], feature?: FeatureWindowRef, shellIds?: string[]) =>
       ipcRenderer.invoke("window:open", handoff, resources, feature, shellIds) as Promise<void>,
-    focusFeature: (ref: FeatureWindowRef) =>
-      ipcRenderer.invoke("window:focusFeature", ref) as Promise<boolean>,
+    focusFeature: (ref: FeatureWindowRef, route?: object) =>
+      ipcRenderer.invoke("window:focusFeature", ref, route) as Promise<boolean>,
+    onFeatureRoute: (callback: (ref: FeatureWindowRef, route: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ref: FeatureWindowRef, route: unknown) => callback(ref, route);
+      ipcRenderer.on("window:featureRoute", handler);
+      return () => ipcRenderer.removeListener("window:featureRoute", handler);
+    },
     closeFeature: (ref: FeatureWindowRef) =>
       ipcRenderer.invoke("window:closeFeature", ref) as Promise<void>,
     onFeatureClosed: (callback: (ref: FeatureWindowRef) => void) => {
@@ -149,6 +159,11 @@ const api = {
     update: (updates: unknown) =>
       ipcRenderer.invoke("settings:update", updates),
     reset: () => ipcRenderer.invoke("settings:reset"),
+    onChanged: (callback: (settings: { classicServerTabs?: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, settings: { classicServerTabs?: boolean }) => callback(settings);
+      ipcRenderer.on("settings:changed", handler);
+      return () => ipcRenderer.removeListener("settings:changed", handler);
+    },
   },
 
   // ── Dialogs ──
@@ -445,8 +460,17 @@ const api = {
       ipcRenderer.invoke("sftp:readFile", connectionId, path, maxSize, readId) as Promise<{
         success: boolean;
         data?: string;
+        notUtf8?: boolean;
         error?: string;
       }>,
+    readFileBase64: (connectionId: string, path: string, maxSize?: number) =>
+      ipcRenderer.invoke("sftp:readFileBase64", connectionId, path, maxSize) as Promise<{ success: boolean; data?: string; error?: string }>,
+    copyFile: (connectionId: string, sourcePath: string, destPath: string) =>
+      ipcRenderer.invoke("sftp:copyFile", connectionId, sourcePath, destPath) as Promise<{ success: boolean; error?: string }>,
+    downloadToLocal: (connectionId: string, remotePath: string, localPath: string) =>
+      ipcRenderer.invoke("sftp:downloadToLocal", connectionId, remotePath, localPath) as Promise<{ success: boolean; error?: string }>,
+    uploadFromLocal: (connectionId: string, localPath: string, remotePath: string) =>
+      ipcRenderer.invoke("sftp:uploadFromLocal", connectionId, localPath, remotePath) as Promise<{ success: boolean; error?: string }>,
     onReadFileProgress: (
       callback: (connectionId: string, readId: string, transferred: number, total: number) => void,
     ) => {
@@ -1116,6 +1140,157 @@ const api = {
       since?: string,
     ) => ipcRenderer.invoke("services:logs", connectionId, unit, lines, since),
   },
+
+  // ── Deployments ──
+  deploy: {
+    runnerInfo: (connectionId: string) =>
+      ipcRenderer.invoke("deploy:runner-info", connectionId) as Promise<DeployResult<RunnerInfo>>,
+    installRunner: (connectionId: string) =>
+      ipcRenderer.invoke("deploy:install-runner", connectionId) as Promise<DeployResult>,
+    list: (connectionId: string, sessionId: string) =>
+      ipcRenderer.invoke("deploy:list", connectionId, sessionId) as Promise<DeployResult<SiteSummary[]>>,
+    save: (connectionId: string, config: SiteConfig) =>
+      ipcRenderer.invoke("deploy:save", connectionId, config) as Promise<DeployResult>,
+    remove: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:remove", connectionId, name) as Promise<DeployResult>,
+    deploy: (connectionId: string, name: string, options?: DeployOptions) =>
+      ipcRenderer.invoke("deploy:deploy", connectionId, name, options) as Promise<DeployResult<string>>,
+    preview: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:preview", connectionId, name) as Promise<DeployResult<ShipPreview>>,
+    rollback: (connectionId: string, name: string, targetId: string) =>
+      ipcRenderer.invoke("deploy:rollback", connectionId, name, targetId) as Promise<DeployResult<string>>,
+    approve: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:approve", connectionId, name) as Promise<DeployResult<string>>,
+    apply: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:apply", connectionId, name) as Promise<DeployResult<string>>,
+    cancel: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:cancel", connectionId, name) as Promise<DeployResult>,
+    resume: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:resume", connectionId, name) as Promise<DeployResult>,
+    log: (connectionId: string, name: string, id: string, offset: number) =>
+      ipcRenderer.invoke("deploy:log", connectionId, name, id, offset) as Promise<DeployResult<{ text: string; offset: number }>>,
+    doctor: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:doctor", connectionId, name) as Promise<DeployResult<DoctorReport>>,
+    webServerCheck: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:web-check", connectionId, name) as Promise<DeployResult<WebServerCheck>>,
+    keygen: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:keygen", connectionId, name) as Promise<DeployResult<string>>,
+    checkRemote: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:check-remote", connectionId, name) as Promise<DeployResult<string>>,
+    readEnv: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("deploy:env-read", connectionId, name) as Promise<DeployResult<{ exists: boolean; content: string; path: string }>>,
+    writeEnv: (connectionId: string, name: string, content: string) =>
+      ipcRenderer.invoke("deploy:env-write", connectionId, name, content) as Promise<DeployResult>,
+    detect: (connectionId: string, path: string) =>
+      ipcRenderer.invoke("deploy:detect", connectionId, path) as Promise<DeployResult<DetectResult>>,
+    registerKey: (connectionId: string, name: string, token: string | null, remember: boolean) =>
+      ipcRenderer.invoke("deploy:register-key", connectionId, name, token, remember) as Promise<DeployResult<{ alreadyAdded: boolean }>>,
+    githubTokenSaved: () =>
+      ipcRenderer.invoke("deploy:github-token-saved") as Promise<DeployResult<boolean>>,
+    saveGithubToken: (token: string) =>
+      ipcRenderer.invoke("deploy:github-token-save", token) as Promise<DeployResult>,
+    clearGithubToken: () =>
+      ipcRenderer.invoke("deploy:github-token-clear") as Promise<DeployResult>,
+    localGitAvailable: () =>
+      ipcRenderer.invoke("deploy:local-git") as Promise<DeployResult<boolean>>,
+    drift: (repoUrl: string, branch: string, live: string) =>
+      ipcRenderer.invoke("deploy:drift", repoUrl, branch, live) as Promise<DeployResult<RemoteDrift>>,
+    onChanged: (callback: (connectionId: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string) => callback(connectionId);
+      ipcRenderer.on("deploy:changed", handler);
+      return () => ipcRenderer.removeListener("deploy:changed", handler);
+    },
+    onFinished: (callback: (connectionId: string, site: string, record: DeployRecord) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string, site: string, record: DeployRecord) =>
+        callback(connectionId, site, record);
+      ipcRenderer.on("deploy:finished", handler);
+      return () => ipcRenderer.removeListener("deploy:finished", handler);
+    },
+  },
+
+  createSite: {
+    context: (connectionId: string, sessionId: string) =>
+      ipcRenderer.invoke("create-site:context", connectionId, sessionId) as Promise<DeployResult<CreateSiteContext>>,
+    checkName: (connectionId: string, domain: string) =>
+      ipcRenderer.invoke("create-site:check-name", connectionId, domain) as Promise<DeployResult<NameCheck>>,
+    githubAccount: () => ipcRenderer.invoke("create-site:github-account") as Promise<DeployResult<string | null>>,
+    checkProject: (request: ProjectCheckRequest) =>
+      ipcRenderer.invoke("create-site:check-project", request) as Promise<DeployResult<string | null>>,
+    inspectRepo: (repoUrl: string, branch: string) =>
+      ipcRenderer.invoke("create-site:inspect-repo", repoUrl, branch) as Promise<DeployResult<RepoFiles>>,
+    start: (connectionId: string, sessionId: string, input: CreateSiteInput, secrets: CreateSiteSecrets) =>
+      ipcRenderer.invoke("create-site:start", connectionId, sessionId, input, secrets) as Promise<DeployResult<RunRecord>>,
+    resume: (connectionId: string, runId: string, mode: ResumeMode) =>
+      ipcRenderer.invoke("create-site:resume", connectionId, runId, mode) as Promise<DeployResult<RunRecord>>,
+    stop: (runId: string) => ipcRenderer.invoke("create-site:stop", runId) as Promise<DeployResult>,
+    remove: (connectionId: string, runId: string) =>
+      ipcRenderer.invoke("create-site:remove", connectionId, runId) as Promise<DeployResult<RunRecord>>,
+    deleteSite: (connectionId: string, runId: string, typedName: string) =>
+      ipcRenderer.invoke("create-site:delete", connectionId, runId, typedName) as Promise<DeployResult<RunRecord>>,
+    leftovers: (connectionId: string, runId: string) =>
+      ipcRenderer.invoke("create-site:leftovers", connectionId, runId) as Promise<DeployResult<Leftover[]>>,
+    runs: (sessionId: string) => ipcRenderer.invoke("create-site:runs", sessionId) as Promise<DeployResult<RunRecord[]>>,
+    onUpdate: (callback: (record: RunRecord) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, record: RunRecord) => callback(record);
+      ipcRenderer.on("create-site:update", handler);
+      return () => ipcRenderer.removeListener("create-site:update", handler);
+    },
+    onOutput: (callback: (output: CreateSiteOutput) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, output: CreateSiteOutput) => callback(output);
+      ipcRenderer.on("create-site:output", handler);
+      return () => ipcRenderer.removeListener("create-site:output", handler);
+    },
+  },
+  ssl: {
+    check: (connectionId: string, sessionId: string) =>
+      ipcRenderer.invoke("ssl:check", connectionId, sessionId) as Promise<SslResult<SslReport>>,
+    runCertbot: (connectionId: string, lineage: string, action: CertbotAction, runId: string) =>
+      ipcRenderer.invoke("ssl:certbot", connectionId, lineage, action, runId) as Promise<SslResult<ActionResult>>,
+    cloudflareStatus: () => ipcRenderer.invoke("ssl:cf-status") as Promise<SslResult<CloudflareStatus>>,
+    saveCloudflareToken: (token: string) => ipcRenderer.invoke("ssl:cf-save", token) as Promise<SslResult<CloudflareStatus>>,
+    removeCloudflareToken: () => ipcRenderer.invoke("ssl:cf-remove") as Promise<SslResult>,
+    alerts: () => ipcRenderer.invoke("ssl:alerts") as Promise<SslResult<AlertSettings>>,
+    setAlertsEnabled: (enabled: boolean) => ipcRenderer.invoke("ssl:alerts-enable", enabled) as Promise<SslResult<AlertSettings>>,
+    criticalCount: (connectionId: string) => ipcRenderer.invoke("ssl:critical-count", connectionId) as Promise<SslResult<number>>,
+    onCritical: (callback: (connectionId: string, count: number) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string, count: number) => callback(connectionId, count);
+      ipcRenderer.on("ssl:critical", handler);
+      return () => ipcRenderer.removeListener("ssl:critical", handler);
+    },
+    onOutput: (callback: (runId: string, chunk: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, runId: string, chunk: string) => callback(runId, chunk);
+      ipcRenderer.on("ssl:output", handler);
+      return () => ipcRenderer.removeListener("ssl:output", handler);
+    },
+    httpsReadiness: (connectionId: string, sessionId: string, names: string[]) =>
+      ipcRenderer.invoke("ssl:https-readiness", connectionId, sessionId, names) as Promise<SslResult<NameReadiness[]>>,
+    httpsPrep: (connectionId: string) => ipcRenderer.invoke("ssl:https-prep", connectionId) as Promise<SslResult<PrepFacts>>,
+    httpsInstall: (connectionId: string, route: InstallRoute, runId: string) =>
+      ipcRenderer.invoke("ssl:https-install", connectionId, route, runId) as Promise<SslResult<ActionResult>>,
+    httpsIssue: (connectionId: string, sessionId: string, request: IssueRequest, runId: string) =>
+      ipcRenderer.invoke("ssl:https-issue", connectionId, sessionId, request, runId) as Promise<SslResult<IssueResult>>,
+    httpsVerify: (connectionId: string, names: string[], lineage: string) =>
+      ipcRenderer.invoke("ssl:https-verify", connectionId, names, lineage) as Promise<SslResult<VerifyResult>>,
+    httpsEmail: (sessionId: string) => ipcRenderer.invoke("ssl:https-email", sessionId) as Promise<SslResult<string>>,
+    lastReport: (connectionId: string) => ipcRenderer.invoke("ssl:last-report", connectionId) as Promise<SslResult<SslReport | null>>,
+    originPrepare: (connectionId: string, sessionId: string, request: SwitchRequest, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-prepare", connectionId, sessionId, request, runId) as Promise<SslResult<SwitchPrepared>>,
+    originApply: (connectionId: string, sessionId: string, switchId: string, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-apply", connectionId, sessionId, switchId, runId) as Promise<SslResult<SwitchResult>>,
+    originCancel: (connectionId: string, switchId: string) =>
+      ipcRenderer.invoke("ssl:origin-cancel", connectionId, switchId) as Promise<SslResult>,
+    originLeftover: (connectionId: string, name: string) =>
+      ipcRenderer.invoke("ssl:origin-leftover", connectionId, name) as Promise<SslResult<SwitchLeftover | null>>,
+    originUndo: (connectionId: string, sessionId: string, name: string, revoke: boolean, runId: string) =>
+      ipcRenderer.invoke("ssl:origin-undo", connectionId, sessionId, name, revoke, runId) as Promise<SslResult<SwitchResult>>,
+    removeLineage: (connectionId: string, lineage: string, runId: string) =>
+      ipcRenderer.invoke("ssl:remove-lineage", connectionId, lineage, runId) as Promise<SslResult<ActionResult>>,
+    zonePreflight: (zone: string) => ipcRenderer.invoke("ssl:zone-preflight", zone) as Promise<SslResult<ZonePreflight>>,
+    zoneSetMode: (zone: string, mode: SslMode, confirmedUnknown: string[]) =>
+      ipcRenderer.invoke("ssl:zone-set-mode", zone, mode, confirmedUnknown) as Promise<SslResult<ZoneModeResult>>,
+  },
+
+  server: serverApi,
 
   // ── Host Key Management ──
   hostkey: {

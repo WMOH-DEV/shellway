@@ -1,0 +1,31 @@
+@@SW@@ SUDO
+full=1
+@@SW@@ OS
+NAME="Rocky Linux"
+VERSION="9.4 (Blue Onyx)"
+ID="rocky"
+ID_LIKE="rhel centos fedora"
+VERSION_ID="9.4"
+PRETTY_NAME="Rocky Linux 9.4 (Blue Onyx)"
+@@SW@@ ARCH
+x86_64
+@@SW@@ WEB
+nginx=
+apache=/usr/sbin/httpd
+caddy=
+@@SW@@ CERTBOT
+path=/usr/bin/certbot
+certbot 2.6.0
+@@SW@@ METHOD
+dpkg=
+rpm=1
+@@SW@@ PLUGINS
+* standalone
+Description: Spin up a temporary webserver
+Interfaces: Authenticator, Plugin
+@@SW@@ SNAPD
+@@SW@@ PM
+apt=
+dnf=/usr/bin/dnf
+yum=/usr/bin/yum
+@@SW@@ TIMER

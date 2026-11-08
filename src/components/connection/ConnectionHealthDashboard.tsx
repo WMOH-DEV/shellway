@@ -70,12 +70,12 @@ function LatencySparkline({ readings }: { readings: number[] }) {
 
 function StatusBadge({ status }: { status: string }) {
   const colorMap: Record<string, string> = {
-    connected: 'bg-nd-success/20 text-nd-success',
-    connecting: 'bg-yellow-500/20 text-yellow-400',
-    authenticating: 'bg-yellow-500/20 text-yellow-400',
-    reconnecting: 'bg-orange-500/20 text-orange-400',
+    connected: 'bg-nd-success/20 text-nd-success-fg',
+    connecting: 'bg-nd-info/12 text-nd-info-fg',
+    authenticating: 'bg-nd-info/12 text-nd-info-fg',
+    reconnecting: 'bg-nd-warning/12 text-nd-warning-fg',
     paused: 'bg-nd-text-muted/20 text-nd-text-muted',
-    error: 'bg-nd-error/20 text-nd-error',
+    error: 'bg-nd-error/20 text-nd-error-fg',
     disconnected: 'bg-nd-text-muted/20 text-nd-text-muted'
   }
 

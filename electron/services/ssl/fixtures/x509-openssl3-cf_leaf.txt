@@ -1,0 +1,6 @@
+subject=OU=CloudFlare Origin Certificate, CN=CloudFlare Origin Certificate
+issuer=C=US, O=CloudFlare, Inc., OU=CloudFlare Origin SSL Certificate Authority, L=San Francisco, ST=California
+notBefore=Nov  6 19:08:20 2026 GMT
+notAfter=Nov  2 19:08:20 2041 GMT
+X509v3 Subject Alternative Name: 
+    DNS:example.net, DNS:*.example.net

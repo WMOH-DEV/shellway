@@ -255,7 +255,7 @@ export function CreateDatabaseDialog({
         {/* Error */}
         {error && (
           <div className="rounded-md bg-nd-error/10 border border-nd-error/20 px-3 py-2">
-            <p className="text-xs text-nd-error">{error}</p>
+            <p className="text-xs text-nd-error-fg">{error}</p>
           </div>
         )}
 

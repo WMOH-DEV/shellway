@@ -20,20 +20,20 @@ type SortKey = 'name' | 'active' | 'sub' | 'description'
 
 /** Get dot color based on active+sub state */
 function getServiceDotColor(active: string, sub: string): string {
-  if (active === 'failed' || sub === 'failed') return 'bg-red-400'
-  if (active === 'activating' || active === 'deactivating') return 'bg-amber-400'
-  if (active === 'active' && sub === 'running') return 'bg-emerald-400'
-  if (active === 'active') return 'bg-emerald-400/70'
+  if (active === 'failed' || sub === 'failed') return 'bg-nd-error'
+  if (active === 'activating' || active === 'deactivating') return 'bg-nd-warning'
+  if (active === 'active' && sub === 'running') return 'bg-nd-success'
+  if (active === 'active') return 'bg-nd-success/70'
   return 'bg-nd-text-muted'
 }
 
 /** Get text color for sub-state */
 function getSubStateColor(sub: string): string {
   switch (sub) {
-    case 'running': return 'text-emerald-400'
-    case 'failed': return 'text-red-400'
+    case 'running': return 'text-nd-success-fg'
+    case 'failed': return 'text-nd-error-fg'
     case 'dead': case 'inactive': return 'text-nd-text-muted'
-    case 'waiting': case 'listening': return 'text-blue-400'
+    case 'waiting': case 'listening': return 'text-nd-info-fg'
     case 'exited': return 'text-nd-text-muted'
     default: return 'text-nd-text-secondary'
   }
@@ -188,7 +188,7 @@ export function ServiceList({
                         <Tooltip content="Restart" side="top">
                           <button
                             onClick={() => onAction(svc.unit, 'restart')}
-                            className="p-1 rounded text-nd-text-muted hover:text-orange-400 hover:bg-orange-400/10 transition-colors"
+                            className="p-1 rounded text-nd-text-muted hover:text-nd-warning-fg hover:bg-nd-warning/12 transition-colors"
                           >
                             <RotateCw size={12} />
                           </button>
@@ -196,7 +196,7 @@ export function ServiceList({
                         <Tooltip content="Stop" side="top">
                           <button
                             onClick={() => onAction(svc.unit, 'stop')}
-                            className="p-1 rounded text-nd-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                            className="p-1 rounded text-nd-text-muted hover:text-nd-error-fg hover:bg-nd-error/12 transition-colors"
                           >
                             <Square size={12} />
                           </button>
@@ -207,7 +207,7 @@ export function ServiceList({
                       <Tooltip content="Start" side="top">
                         <button
                           onClick={() => onAction(svc.unit, 'start')}
-                          className="p-1 rounded text-nd-text-muted hover:text-emerald-400 hover:bg-emerald-400/10 transition-colors"
+                          className="p-1 rounded text-nd-text-muted hover:text-nd-success-fg hover:bg-nd-success/12 transition-colors"
                         >
                           <Play size={12} />
                         </button>

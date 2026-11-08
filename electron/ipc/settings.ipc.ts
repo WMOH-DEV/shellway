@@ -1,6 +1,7 @@
 import { ipcMain, app } from 'electron'
 import { SettingsStore, type AppSettings } from '../services/SettingsStore'
 import { getLogService } from '../services/LogService'
+import { broadcast } from '../services/WindowManager'
 
 const settingsStore = new SettingsStore()
 
@@ -49,10 +50,13 @@ export function registerSettingsIPC(): void {
     // Runtime toggling doesn't retroactively start/stop the check cycle, but the next
     // app launch will respect the persisted value.
 
+    broadcast('settings:changed', result)
     return result
   })
 
   ipcMain.handle('settings:reset', () => {
-    return settingsStore.reset()
+    const result = settingsStore.reset()
+    broadcast('settings:changed', result)
+    return result
   })
 }

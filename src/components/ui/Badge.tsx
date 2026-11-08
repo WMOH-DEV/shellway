@@ -10,19 +10,19 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-nd-surface text-nd-text-secondary border-nd-border',
-  success: 'bg-nd-success/15 text-nd-success border-nd-success/30',
-  warning: 'bg-nd-warning/15 text-nd-warning border-nd-warning/30',
-  error: 'bg-nd-error/15 text-nd-error border-nd-error/30',
-  info: 'bg-nd-info/15 text-nd-info border-nd-info/30',
-  accent: 'bg-nd-accent/15 text-nd-accent border-nd-accent/30'
+  default: 'bg-nd-surface-raised text-nd-text-muted',
+  success: 'bg-nd-success/12 text-nd-success-fg',
+  warning: 'bg-nd-warning/12 text-nd-warning-fg',
+  error: 'bg-nd-error/12 text-nd-error-fg',
+  info: 'bg-nd-info/12 text-nd-info-fg',
+  accent: 'bg-nd-accent/12 text-nd-accent-hover'
 }
 
 export function Badge({ children, variant = 'default', className }: BadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium',
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium',
         variantStyles[variant],
         className
       )}

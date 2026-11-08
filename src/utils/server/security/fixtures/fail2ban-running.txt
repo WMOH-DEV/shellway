@@ -1,0 +1,43 @@
+@@root
+yes
+@@installed
+yes
+@@running
+active
+@@os
+debian
+12
+@@session
+198.51.100.23 51234 203.0.113.10 22
+@@status
+Status
+|- Number of jail:	1
+`- Jail list:	sshd
+@@sshd
+Status for the jail: sshd
+|- Filter
+|  |- Currently failed:	2
+|  |- Total failed:	15
+|  `- Journal matches:	_SYSTEMD_UNIT=sshd.service + _COMM=sshd
+`- Actions
+   |- Currently banned:	2
+   |- Total banned:	10
+   `- Banned IP list:	192.0.2.44 192.0.2.198
+@@ignoreip
+These IP addresses/networks are ignored:
+|- 127.0.0.0/8
+|- ::1
+`- 198.51.100.0/24
+@@times
+bantime=3600
+findtime=600
+maxretry=5
+@@now
+2026-11-07 10:00:00
+@@bantimes
+192.0.2.44 	2026-11-07 09:19:00 + 3600 = 2026-11-07 10:19:00
+192.0.2.198 	2026-11-07 09:38:00 + 3600 = 2026-11-07 10:38:00
+@@jail.sha
+absent
+@@jail
+

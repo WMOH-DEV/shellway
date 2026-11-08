@@ -14,17 +14,17 @@ export interface ToastData {
 }
 
 const icons: Record<ToastType, ReactNode> = {
-  success: <CheckCircle size={16} className="text-nd-success" />,
-  error: <AlertCircle size={16} className="text-nd-error" />,
-  warning: <AlertTriangle size={16} className="text-nd-warning" />,
-  info: <Info size={16} className="text-nd-info" />
+  success: <CheckCircle size={16} className="text-nd-success-fg" />,
+  error: <AlertCircle size={16} className="text-nd-error-fg" />,
+  warning: <AlertTriangle size={16} className="text-nd-warning-fg" />,
+  info: <Info size={16} className="text-nd-info-fg" />
 }
 
 const borderColors: Record<ToastType, string> = {
-  success: 'border-l-nd-success',
-  error: 'border-l-nd-error',
-  warning: 'border-l-nd-warning',
-  info: 'border-l-nd-info'
+  success: 'border-nd-success/30',
+  error: 'border-nd-error/30',
+  warning: 'border-nd-warning/30',
+  info: 'border-nd-info/30'
 }
 
 // ── Toast manager (singleton) ──
@@ -101,7 +101,7 @@ function ToastItem({ data, onDismiss }: { data: ToastData; onDismiss: () => void
       exit={{ opacity: 0, x: 40 }}
       transition={{ duration: 0.2 }}
       className={cn(
-        'flex items-start gap-2.5 rounded-lg border border-nd-border bg-nd-bg-secondary p-3 shadow-lg border-l-[3px]',
+        'flex items-start gap-2.5 rounded-lg border bg-nd-surface p-3 shadow-lg',
         borderColors[data.type]
       )}
     >

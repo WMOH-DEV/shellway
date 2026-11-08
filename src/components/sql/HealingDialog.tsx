@@ -156,19 +156,19 @@ export function HealingDialog({ request, onResolve, onDismiss }: HealingDialogPr
     >
       <div className="flex flex-col gap-4">
         {/* Error summary */}
-        <div className="flex items-start gap-2.5 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 select-text">
-          <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2.5 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2.5 select-text">
+          <AlertTriangle size={16} className="text-nd-warning mt-0.5 shrink-0" />
           <div className="min-w-0 space-y-1 select-text">
-            <p className="text-xs font-medium text-amber-400 select-text">
+            <p className="text-xs font-medium text-nd-warning-fg select-text">
               Statement #{request.statementIndex.toLocaleString()} failed
               {request.errorCode !== undefined && (
-                <span className="text-amber-300/80 font-mono ml-1.5">
+                <span className="text-nd-warning-fg/80 font-mono ml-1.5">
                   ({String(request.errorCode)})
                 </span>
               )}
             </p>
             <p
-              className="text-[11px] text-amber-300/90 break-words font-mono select-text cursor-text"
+              className="text-[11px] text-nd-warning-fg/90 break-words font-mono select-text cursor-text"
               style={{ userSelect: "text", WebkitUserSelect: "text" }}
             >
               {request.errorMessage}
@@ -311,12 +311,12 @@ export function HealingDialog({ request, onResolve, onDismiss }: HealingDialogPr
                         </span>
                       )}
                       {opt.schemaMutation && (
-                        <span className="text-[10px] uppercase tracking-wider text-amber-400 font-semibold">
+                        <span className="text-[10px] uppercase tracking-wider text-nd-warning-fg font-semibold">
                           Schema change
                         </span>
                       )}
                       {opt.dataMutation && (
-                        <span className="text-[10px] uppercase tracking-wider text-amber-300/80 font-semibold">
+                        <span className="text-[10px] uppercase tracking-wider text-nd-warning/80 font-semibold">
                           Data change
                         </span>
                       )}
@@ -343,7 +343,7 @@ export function HealingDialog({ request, onResolve, onDismiss }: HealingDialogPr
         </label>
 
         {healOptions.length === 0 && (
-          <div className="flex items-start gap-2 rounded-md bg-red-500/5 border border-red-500/20 px-3 py-2 text-[11px] text-red-300/90">
+          <div className="flex items-start gap-2 rounded-md border border-nd-error/30 bg-nd-error/[0.07] px-3 py-2 text-[11px] text-nd-error-fg/90">
             <AlertCircle size={12} className="mt-0.5 shrink-0" />
             <span>
               No automatic heals exist for this error class. Use Edit &amp; retry to fix the

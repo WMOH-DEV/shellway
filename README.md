@@ -1,609 +1,278 @@
-# Shellway
+<p align="center">
+  <img src="resources/icon.png" alt="Shellway" width="96" height="96">
+</p>
 
-**Premium cross-platform SSH & SFTP desktop client built with Electron, React, and TypeScript.**
+<h1 align="center">Shellway</h1>
 
-Shellway is a modern, feature-rich SSH/SFTP client inspired by industry leaders like Bitvise SSH Client, offering a polished dark-themed UI, encrypted credential storage, multi-session management, and powerful terminal + file transfer capabilities — all in a single native desktop application for Windows, macOS, and Linux.
+<p align="center">
+  <b>Your terminal, your files, your databases and your whole server. One desktop app.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/WMOH-DEV/shellway/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/WMOH-DEV/shellway?style=flat-square&color=3b82f6"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-22c55e?style=flat-square"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-64748b?style=flat-square">
+  <img alt="Built with Electron, React and TypeScript" src="https://img.shields.io/badge/built%20with-Electron%20%C2%B7%20React%20%C2%B7%20TypeScript-0f172a?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#download">Download</a> ·
+  <a href="#what-you-can-do">Features</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#build-from-source">Build</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/overview.png" alt="Shellway Server overview: health, what needs attention, installed software and server info" width="900">
+</p>
 
 ---
 
-## Table of Contents
+## What is Shellway?
 
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [Development](#development)
-- [Building Installers](#building-installers)
-  - [Windows](#windows-installer)
-  - [macOS](#macos-installer)
-  - [Linux](#linux-installer)
-  - [All Platforms](#all-platforms-at-once)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Security](#security)
-- [License](#license)
+Shellway is a free desktop app for people who run their own Linux servers. It starts where a normal SSH client stops.
+
+You get a fast terminal, a two-pane file manager and a real SQL client, all over your existing SSH connection. Then there is the **Server tab**. Connect to a plain Ubuntu or Debian box and Shellway shows you what is running, what needs attention and what you can fix with one click: sites, deploys, HTTPS certificates, PHP, nginx, databases, backups, cron jobs, workers, the firewall and SSH security.
+
+Think of the convenience of a hosted control panel, minus the agent on your server, the monthly bill and the lock-in. Shellway only talks SSH. Close the app and your server is exactly as you left it.
+
+### Who it is for
+
+- **Developers who deploy their own apps.** Laravel, PHP, Node.js, static sites or Docker Compose on a VPS you control.
+- **Freelancers and small teams** looking after a handful of client servers without paying per server.
+- **Anyone who lives in SSH** and is tired of juggling a terminal, an SFTP client, a database GUI and a browser tab of notes.
+
+### Why people pick it
+
+- **See before you run.** Every change on the server opens a review panel with the exact commands and a diff of every file. Nothing runs until you press Run.
+- **Hard to break things.** Config edits are backed up, tested and reloaded. If the test fails, the old file comes back on its own. Firewall and SSH changes run under a 60 second undo timer, so a bad rule cannot lock you out.
+- **No agent, no account.** Nothing is installed on your server except a small deploy script, and only if you use deploys. Your passwords and keys stay encrypted on your computer.
+- **One window for the whole job.** Open a terminal next to the site you are fixing, pop any tool out into its own window, and query the database without another app.
 
 ---
 
-## Features
+## What you can do
 
-### Session Management
+### Manage the server
 
-- **Session Profiles** — Save, organize, and group SSH sessions with names, colors, icons, and notes
-- **Session Groups** — Organize sessions into logical groups for quick filtering
-- **Quick Launch Buttons** — One-click buttons on session cards to open Terminal, SFTP, or both simultaneously
-- **Per-Session Setting Overrides** — Override global terminal, SFTP, SSH, and proxy settings on a per-session basis
-- **Structured Startup Commands** — Define ordered post-connect commands with delays and enable/disable toggles
-- **Import / Export** — Share session profiles (secrets are stripped on export)
+| Section | What it gives you |
+| --- | --- |
+| **Overview** | Live CPU, memory, disk and network. One ranked list of what needs you: security updates, a stopped service, a firewall that is off, databases with no backup. Each item has a button that fixes it. |
+| **Sites** | Create a site in one flow: folder, nginx or Apache, PHP version, database, DNS on Cloudflare, an HTTPS certificate and deploys from Git. Each site gets deploys with history, an environment editor, workers, logs and domain management. |
+| **Software** | System updates with a security-only option. Install and remove nginx, Apache, PHP, Composer, Node.js, pm2, MySQL, MariaDB, PostgreSQL, Redis, Docker, certbot, Supervisor, ufw and fail2ban. Manage PHP versions, extensions and php.ini. Tune nginx (upload size, keepalive, gzip, hide the version). Search and install any apt package. |
+| **Services** | Every systemd service, Supervisor program, pm2 app and container in one list, with CPU, memory, start on boot, restart and logs. A failed service shows its last log lines and, when the cause is known, a one-click fix. |
+| **Docker** | Containers, images and Compose stacks. Run an image and put it on a domain with HTTPS in the same step. |
+| **Databases** | Create databases and users for MySQL, MariaDB and PostgreSQL. Nightly backups with retention, restore, and one click to open a database in the SQL client. |
+| **Cron & workers** | Scheduled tasks with a readable schedule builder and logs. Long-running workers kept alive by Supervisor or pm2. |
+| **Security** | Firewall rules (ufw), fail2ban bans and your own never-ban list, SSH keys per user, password and root login, the SSH port, automatic security updates and swap. |
+| **Activity** | A history of every change made from Shellway, with the commands and their output. Export it any time. |
+| **Notifications** | Get a Slack, Discord or webhook message when a deploy fails, a certificate is at risk, a service stops or the server needs a reboot. |
 
-### Authentication
+Server management works on Ubuntu and Debian today.
 
-- **Password** — Standard password authentication (encrypted at rest)
-- **Public Key** — RSA, Ed25519, ECDSA key files with optional passphrase
-- **Public Key + Password** — Combined two-factor authentication
-- **Keyboard-Interactive (KBDI)** — Full support for server challenge prompts with auto-respond from saved responses
-- **GSSAPI / Kerberos** — Enterprise SSO with optional credential delegation
-- **SSH Agent Forwarding** — Forward local SSH agent to the remote host
-- **None** — For servers that allow passwordless connections
+### Work on the server
 
-### Terminal
+- **Terminal.** Fast xterm.js terminal with tabs, search, split view and saved command snippets with abbreviations and a quick palette.
+- **SFTP file manager.** Two panes, drag and drop, a transfer queue with pause and resume, conflict handling, bandwidth limits and a built-in editor for remote files.
+- **Port forwarding.** Local, remote and dynamic (SOCKS) tunnels that can start on connect.
+- **System monitor.** Per-core CPU, memory, network, disk I/O and a sortable process list.
 
-- **xterm.js-based Terminal** — Full-featured terminal emulator with 256-color support
-- **Multiple Terminal Tabs** — Open multiple shells per connection
-- **Customizable Appearance** — Font family, font size, line height, cursor style, color scheme
-- **Scrollback Buffer** — Configurable scrollback lines (default 5,000)
-- **Copy on Select** — Optional automatic clipboard copy
-- **Right-Click Paste** — Optional paste on right-click
-- **Bell Behavior** — Sound, visual flash, or none
-- **Search** — Search within terminal output (xterm addon-search)
-- **Web Links** — Clickable URLs in terminal output
+### Query your databases
 
-### SFTP File Manager
+- MySQL, MariaDB and PostgreSQL over an SSH tunnel, or connect directly.
+- A fast data grid with inline editing, change review and all-or-nothing saves.
+- Filters (match all or any), multi-column sort, JSON cell viewer, table structure editing with a DDL preview.
+- A query editor with autocomplete, formatting, EXPLAIN, per-query timeouts and explicit transactions.
+- **Safe mode** for production connections: risky statements ask before they run.
+- Query history and a saved query library per connection.
+- Import, export, backup and restore, with an import that detects and helps fix common errors in a dump.
 
-- **Dual-Pane File Browser** — Local and remote file panels side by side
-- **Drag & Drop Transfers** — Drag files between panels to upload/download
-- **Transfer Queue** — Queued, pausable, and cancellable file transfers with progress tracking
-- **Concurrent Transfers** — Configurable parallel transfer slots (1-10)
-- **Conflict Resolution** — Ask, overwrite, overwrite if newer, skip, or rename
-- **Bandwidth Limiting** — Per-session upload/download speed caps (KB/s)
-- **Hidden Files Toggle** — Show/hide dotfiles
-- **View Modes** — List or grid view
-- **Timestamp Preservation** — Optionally preserve file timestamps on transfer
-- **Symlink Following** — Configurable symlink behavior
+### Everything around it
 
-### Combined Split View
-
-- **Terminal + SFTP Split Layout** — Resizable horizontal or vertical split view showing terminal and SFTP simultaneously
-- **Adjustable Split Ratio** — Drag the divider to resize panels
-- **Per-Session Layout Memory** — Each session remembers its preferred split layout and ratio
-
-### Connection Activity Log
-
-- **Real-Time Log Panel** — Scrolling log of SSH events, SFTP operations, terminal actions, and errors per connection
-- **Log Levels** — Debug, Info, Warning, Error filtering
-- **Source Filtering** — Filter by SSH, SFTP, Terminal, or System events
-- **Search** — Full-text search within log entries
-- **Auto-Scroll** — Lock/unlock auto-scroll to bottom
-- **Export** — Export session logs to file
-- **FIFO Buffer** — Keeps the last 5,000 entries per session to limit memory usage
-
-### Reconnection Manager
-
-- **Automatic Reconnection** — Exponential backoff retry on unexpected disconnects
-- **Configurable Strategy** — Initial delay, max delay, backoff multiplier, jitter, max attempts
-- **UI Overlay** — Real-time overlay showing retry countdown, attempt count, and controls
-- **Manual Controls** — Retry Now, Pause, Resume, and Cancel buttons during reconnection
-- **Reset on Success** — Optionally reset backoff counters after a successful reconnect
-
-### Host Key Management
-
-- **Host Key Verification Flow** — Interactive dialog when connecting to new/changed hosts showing fingerprint details
-- **Trust Actions** — Trust once, trust and save permanently, accept new key, or disconnect
-- **Host Key Manager Panel** — View, search, and delete all trusted host keys
-- **Known Hosts Export/Import** — Export trusted keys in OpenSSH `known_hosts` format
-
-### SSH Protocol Options
-
-- **Algorithm Preferences** — Configure preferred ciphers, key exchange, HMAC, and host key algorithms
-- **Compression** — Enable/disable zlib compression per session
-- **Keep-Alive** — Configurable keep-alive interval and max missed count
-- **Connection Timeout** — Adjustable connection timeout per session
-- **Environment Variables** — Set environment variables on the remote host
-- **Custom Shell** — Override default shell command
-- **Terminal Type** — Configurable terminal type string (default: `xterm-256color`)
-- **Encoding** — Character encoding selection (default: UTF-8)
-
-### Proxy Support
-
-- **SOCKS4** — Route connections through a SOCKS4 proxy
-- **SOCKS5** — Route connections through a SOCKS5 proxy with optional authentication and remote DNS
-- **HTTP CONNECT** — Route connections through an HTTP CONNECT proxy with optional authentication
-
-### Port Forwarding
-
-- **Local Forwarding** — Forward local ports to remote destinations
-- **Remote Forwarding** — Forward remote ports to local destinations
-- **Dynamic Forwarding** — SOCKS proxy via SSH tunnel
-- **Auto-Start** — Automatically start port forwards on connection
-- **Enable/Disable** — Toggle individual rules on and off
-
-### SQL Client
-
-- **MySQL & PostgreSQL Support** — Connect to databases through SSH tunnels with full query capabilities
-- **Saved Connection Configs** — Database credentials persist per SSH session for one-click reconnect
-- **Enhanced Connection Form** — Connection name, tag/environment labels (Development/Staging/Production/Testing), SSL mode selection, optional database name
-- **Database Picker** — Connect without specifying a database, then choose from a searchable list
-- **Schema Sidebar** — Browse databases, tables, and views in a collapsible tree
-- **Data Grid (ag-grid)** — High-performance data browsing with sortable columns, pagination, and inline cell editing
-- **Inline Editing with Change Tracking** — Edit cells directly; changes are tracked against original values with smart revert detection
-- **Visual Edit Feedback** — Edited rows get an amber highlight, edited cells get a left accent border; highlights clear on save/discard/revert
-- **Transactional Saves** — All pending changes are saved atomically via BEGIN/COMMIT with ROLLBACK on failure
-- **Column Width Persistence** — Resize columns and widths are saved per table, restored automatically on next open
-- **Server-Side Sorting** — Click column headers to sort (asc → desc → none); sort cycles via server queries
-- **Filter Bar** — Add column filters with operators (equals, contains, greater than, IS NULL, raw SQL, etc.)
-- **Header Context Menu** — Right-click column headers for: Copy name, Filter, Hide column, Sort, Reset positions
-- **Cell Context Menu** — Right-click cells for: Copy cell, Copy row as JSON, Copy row as INSERT
-- **Query Editor** — Monaco-based SQL editor with syntax highlighting, auto-complete, and multi-query execution
-- **Query History & Log** — All executed queries (SELECT, COUNT, UPDATE, BEGIN/COMMIT) logged with timestamps and execution time
-- **Bottom Query Log Panel** — Toggleable log panel in the status bar showing real-time query activity with copy support
-- **Export** — Export query results to CSV, JSON, or SQL INSERT statements
-- **Keyboard Shortcuts** — Ctrl+Enter (run query), Ctrl+S (save changes), Ctrl+Shift+N (new query tab), Ctrl+. (cycle tab type)
-
-### UI & Experience
-
-- **Dark Theme** — Modern dark interface with custom Shellway color palette
-- **Framer Motion Animations** — Smooth transitions and micro-interactions throughout
-- **Lucide Icons** — Consistent, clean icon system
-- **Custom Title Bar** — Native-feeling frameless window with custom controls
-- **Tabbed Connections** — Multiple active connections as tabs
-- **Settings Panel** — Comprehensive global settings for terminal, SFTP, SSH, and appearance
-- **Toast Notifications** — Non-blocking success/error/info notifications
-- **Command Snippets** — Save and reuse frequently used commands
+- **Sessions.** Groups, colors, notes, per-session overrides, startup commands, import and export (secrets are stripped).
+- **Every way to log in.** Password, public key, key plus password, keyboard-interactive, GSSAPI/Kerberos and agent forwarding. SOCKS4, SOCKS5 and HTTP proxies.
+- **Host key checks** on first connect and when a key changes, with a manager for trusted keys.
+- **Automatic reconnect** with backoff you control.
+- **Multi-window.** Pop any tool out into its own window and split panes side by side.
+- **Auto-update** from GitHub Releases.
 
 ---
 
 ## Screenshots
 
-> *Coming soon — the app features a modern dark-themed UI with tabbed sessions, split terminal/SFTP views, and a connection activity log.*
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/create-site.png" alt="Create site wizard with templates for Laravel, Node.js, static sites, PHP, Docker Compose and blank sites"><p align="center"><sub>Create a site: folder, web server, DNS, HTTPS and deploys</sub></p></td>
+    <td width="50%"><img src="docs/screenshots/review-before-run.png" alt="Review panel showing the exact commands and a diff of nginx.conf before anything runs"><p align="center"><sub>Every change shows its commands and diff before it runs</sub></p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/software.png" alt="Software catalog with the nginx panel: test config, reload, restart and http settings"><p align="center"><sub>Software catalog and nginx settings</sub></p></td>
+    <td><img src="docs/screenshots/security.png" alt="Security page with firewall, fail2ban, SSH access, keys and hardening"><p align="center"><sub>Firewall, fail2ban, SSH and hardening with a lockout guard</sub></p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/databases.png" alt="Databases page with databases, users and backups"><p align="center"><sub>Databases, users and backups</sub></p></td>
+    <td><img src="docs/screenshots/sql.png" alt="SQL client showing an orders table in a data grid"><p align="center"><sub>SQL client over the same SSH connection</sub></p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/services.png" alt="Services list with systemd units, CPU, memory and start on boot"><p align="center"><sub>Services, workers and containers in one list</sub></p></td>
+    <td><img src="docs/screenshots/activity.png" alt="Activity history of changes made from Shellway"><p align="center"><sub>Every change is recorded with its output</sub></p></td>
+  </tr>
+</table>
+
+<sub>All screenshots were taken against a throwaway Docker test server with demo data.</sub>
 
 ---
 
-## Architecture
+## How Shellway keeps your server safe
 
-Shellway follows Electron's process isolation model:
+Shellway was built to be used on production servers, so the rules are strict:
 
-```
-+---------------------------+        IPC Bridge         +---------------------------+
-|     Main Process          | <======================>  |    Renderer Process        |
-|  (Node.js / Electron)     |     (contextBridge)       |  (React / TypeScript)     |
-|                           |                           |                           |
-|  - SSHService (ssh2)      |   window.shellway.ssh     |  - App.tsx                |
-|  - SFTPService            |   window.shellway.sftp    |  - Zustand stores         |
-|  - LogService             |   window.shellway.log     |  - UI Components          |
-|  - HostKeyStore           |   window.shellway.hostkey |  - xterm.js terminal      |
-|  - SessionStore           |   window.shellway.sessions|  - SFTP file browser      |
-|  - SettingsStore          |   window.shellway.settings|  - Activity log panel     |
-|  - ReconnectionManager    |   window.shellway.terminal|  - Reconnection overlay   |
-|  - TransferQueue          |                           |  - Host key manager       |
-|  - Encryption utils       |                           |  - Session form (7 tabs)  |
-+---------------------------+                           +---------------------------+
-```
-
-- **Main Process** handles all SSH/SFTP connections via `ssh2`, encrypted storage via `electron-store` + AES-256-GCM, and exposes functionality through IPC handlers.
-- **Preload Script** bridges main ↔ renderer using `contextBridge`, exposing a typed `window.shellway` API.
-- **Renderer Process** is a React SPA with Zustand state management, Tailwind CSS styling, and xterm.js terminal emulation.
+1. **Nothing runs without review.** Each action builds a plan in the app's main process. You see every command, which ones need root and a diff of each file before you press Run.
+2. **Config edits can undo themselves.** Shellway backs up the file, writes the new one, runs the right test (for example `nginx -t` or `php-fpm -t`) and reloads the service. If any step fails, the backup is restored. If the file changed on the server since you reviewed it, the run stops and asks you to review again.
+3. **No lockouts.** Before a firewall or SSH change, Shellway starts a 60 second undo timer on the server, applies the change, then logs in again over a fresh connection. If that login fails, the change is undone automatically. Your SSH port is never closed.
+4. **No stored sudo password.** Changes run with `sudo -n`, which never prompts. If your user needs a password for sudo, Shellway tells you how to allow it for the commands it needs.
+5. **No hammering.** One run per click and no retry loops, so a protected server (fail2ban and friends) is never flooded.
+6. **Your secrets stay local.** Passwords, passphrases and keys are encrypted at rest with AES-256-GCM. The window runs sandboxed with context isolation, and exported sessions never include secrets.
 
 ---
 
-## Tech Stack
+## Download
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | [Electron](https://www.electronjs.org/) 33+ |
-| Build Tool | [electron-vite](https://electron-vite.org/) |
-| Packaging | [electron-builder](https://www.electron.build/) |
-| Frontend | [React](https://react.dev/) 18 + [TypeScript](https://www.typescriptlang.org/) 5 |
-| State Management | [Zustand](https://zustand-demo.pmnd.rs/) 4 |
-| Styling | [Tailwind CSS](https://tailwindcss.com/) 3 |
-| Terminal | [xterm.js](https://xtermjs.org/) 6 |
-| SSH/SFTP | [ssh2](https://github.com/mscdex/ssh2) |
-| Proxy | [socks](https://github.com/JoshGlazebrook/socks) (SOCKS4/5 & HTTP CONNECT) |
-| Storage | [electron-store](https://github.com/sindresorhus/electron-store) (AES-256-GCM encrypted) |
-| Animations | [Framer Motion](https://www.framer.com/motion/) 11 |
-| SQL Data Grid | [AG Grid](https://www.ag-grid.com/) 35 |
-| SQL Editor | [Monaco Editor](https://microsoft.github.io/monaco-editor/) (via @monaco-editor/react) |
-| Icons | [Lucide React](https://lucide.dev/) |
+Get the latest version from **[GitHub Releases](https://github.com/WMOH-DEV/shellway/releases/latest)**:
 
----
+| Platform | File |
+| --- | --- |
+| macOS (Apple silicon and Intel) | `.dmg` |
+| Windows (64-bit) | `-setup.exe` |
+| Linux (64-bit) | `.AppImage` (needs `libfuse2`) |
 
-## Prerequisites
+Shellway updates itself when a new release is out.
 
-Before you begin, ensure you have the following installed:
+### Quick start
 
-- **Node.js** >= 18.x (LTS recommended)
-- **npm** >= 9.x (comes with Node.js)
-- **Git** (for cloning the repository)
-
-### Platform-Specific Requirements
-
-**Windows:**
-- No additional requirements. Building native modules uses prebuilt binaries.
-
-**macOS:**
-- **Xcode Command Line Tools**: `xcode-select --install`
-- For notarization (optional): Apple Developer account + certificates
-
-**Linux:**
-- Build essentials: `sudo apt install build-essential libsecret-1-dev`
-- For AppImage: `sudo apt install libfuse2`
+1. Click **+** in the sidebar and add your server (host, user, and a key or password).
+2. Connect. The **Server** tab scans the machine and shows the Overview.
+3. Fix what is listed under **Needs attention**, or open **Sites › Create site** to put your first app online.
 
 ---
 
-## Getting Started
+## Build from source
 
-### 1. Clone the Repository
+You need **Node.js 18 or newer** and npm. On macOS install the Xcode command line tools (`xcode-select --install`). On Linux install `build-essential` and `libsecret-1-dev`.
 
 ```bash
-git clone https://github.com/shellway/shellway.git
+git clone https://github.com/WMOH-DEV/shellway.git
 cd shellway
-```
-
-### 2. Install Dependencies
-
-```bash
 npm install
-```
-
-### 3. Run in Development Mode
-
-```bash
 npm run dev
 ```
 
-This launches the Electron app with hot-reload enabled for the renderer process. Changes to React components will update instantly. Changes to main process files require a restart.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the app with hot reload |
+| `npm run build` | Production build into `out/` |
+| `npm run typecheck` | Type check the main and renderer code |
+| `npm test` | Run the unit and component tests (Vitest) |
+| `npm run dist:mac` | Build the macOS `.dmg` (run on a Mac) |
+| `npm run dist:win` | Build the Windows installer |
+| `npm run build && npx electron-builder --linux` | Build the Linux AppImage |
 
-### 4. Type Checking
+Installers are written to `dist/`.
 
-```bash
-npm run typecheck
+### Tech stack
+
+Electron, electron-vite and electron-builder · React 18 and TypeScript · Zustand · Tailwind CSS · xterm.js · ssh2 · Monaco Editor · AG Grid · Vitest.
+
+### How the code is organized
+
+```
+electron/          Main process: SSH, SFTP, SQL, the server action engine, IPC, windows
+  ipc/             IPC handlers, one file per feature
+  services/        Long-lived services (SSH, transfers, server scans, actions, deploys)
+  preload.ts       The typed API the window is allowed to call
+src/               Renderer (React)
+  components/      UI by feature: server, sql, sftp, terminal, deploy, ssl, settings, ui
+  stores/          Zustand stores
+  utils/server/    Server tab logic: probes, action plans, parsers (pure and unit tested)
+resources/         Icons and the scripts Shellway places on a server
+docs/screenshots/  Images used in this README
 ```
 
-This runs TypeScript checking on both the renderer (`tsconfig.web.json`) and main process (`tsconfig.node.json`) configurations.
-
-### 5. Linting
-
-```bash
-npm run lint
-```
+Server features follow one pattern. A **probe** reads facts from the server, an **action** turns your request into a reviewed plan of steps, and the **action engine** in the main process runs that plan. The window never sends shell commands of its own.
 
 ---
 
-## Development
+## Keyboard shortcuts
 
-### Available Scripts
-
-| Command | Description |
-|---------|------------|
-| `npm run dev` | Start the app in development mode with hot-reload |
-| `npm run build` | Build the app for production (compiles to `out/`) |
-| `npm run preview` | Preview the production build locally |
-| `npm run typecheck` | Run TypeScript type checking on all code |
-| `npm run lint` | Run ESLint with auto-fix on `.ts` and `.tsx` files |
-| `npm run dist:win` | Build + package Windows installer (NSIS `.exe`) |
-| `npm run dist:mac` | Build + package macOS installer (`.dmg`) |
-| `npm run dist:all` | Build + package for Windows and macOS |
-
-### Hot-Reload Workflow
-
-During development (`npm run dev`):
-
-- **Renderer changes** (anything in `src/`) — instant hot-reload in the browser window
-- **Preload changes** (`electron/preload.ts`) — requires window reload (`Ctrl+R` / `Cmd+R`)
-- **Main process changes** (`electron/main.ts`, `electron/services/`, `electron/ipc/`) — requires full app restart (`Ctrl+C` then `npm run dev`)
-
----
-
-## Building Installers
-
-Shellway uses `electron-builder` to package the application into native installers for each platform.
-
-### Windows Installer
-
-Generates an **NSIS installer** (`.exe`) for 64-bit Windows:
-
-```bash
-npm run dist:win
-```
-
-**Output:** `dist/shellway-0.1.0-setup.exe`
-
-The Windows installer:
-- Creates a desktop shortcut
-- Allows the user to choose the installation directory
-- Supports silent installation: `shellway-0.1.0-setup.exe /S`
-- Supports custom install path: `shellway-0.1.0-setup.exe /D=C:\MyApps\Shellway`
-- Includes a proper uninstaller in Add/Remove Programs
-
-### macOS Installer
-
-Generates a **DMG disk image** for both Intel (x64) and Apple Silicon (arm64):
-
-```bash
-npm run dist:mac
-```
-
-**Output:** `dist/shellway-0.1.0.dmg`
-
-> **Note:** Building macOS installers requires running on macOS. Cross-compilation from Windows/Linux is not supported by electron-builder for DMG targets.
-
-The macOS build:
-- Produces a universal DMG with both x64 and arm64 architectures
-- Includes entitlements for file system access (SFTP transfers)
-- Notarization is disabled by default — enable it in `electron-builder.yml` by setting `notarize: true` and configuring your Apple Developer credentials
-
-**To enable notarization:**
-
-1. Set environment variables:
-   ```bash
-   export APPLE_ID="your-apple-id@example.com"
-   export APPLE_APP_SPECIFIC_PASSWORD="your-app-specific-password"
-   export APPLE_TEAM_ID="your-team-id"
-   ```
-2. Update `electron-builder.yml`:
-   ```yaml
-   mac:
-     notarize: true
-   ```
-
-### Linux Installer
-
-Generates an **AppImage** for 64-bit Linux:
-
-```bash
-npm run build && npx electron-builder --linux
-```
-
-**Output:** `dist/shellway-0.1.0.AppImage`
-
-The AppImage:
-- Is a self-contained portable executable
-- Requires `libfuse2` on the host system
-- Categorized as a "Network" application in desktop environments
-
-### All Platforms at Once
-
-To build for Windows and macOS simultaneously (must be run on macOS):
-
-```bash
-npm run dist:all
-```
-
-### Build Output
-
-All installers are written to the `dist/` directory:
-
-```
-dist/
-  shellway-0.1.0-setup.exe       # Windows NSIS installer
-  shellway-0.1.0.dmg             # macOS disk image
-  shellway-0.1.0.AppImage        # Linux AppImage
-  win-unpacked/                   # Unpacked Windows app (for testing)
-  mac/                            # Unpacked macOS app (for testing)
-```
-
-### CI/CD Publishing
-
-The project is configured for GitHub Releases publishing:
-
-```yaml
-# electron-builder.yml
-publish:
-  provider: github
-  owner: shellway
-  repo: shellway
-```
-
-To publish a release:
-
-```bash
-# Set GitHub token
-export GH_TOKEN="your-github-personal-access-token"
-
-# Build and publish
-npx electron-builder --win --publish always
-npx electron-builder --mac --publish always
-```
-
----
-
-## Project Structure
-
-```
-shellway/
-  electron/                      # Main process (Node.js)
-    main.ts                      # Electron entry point, window creation, IPC registration
-    preload.ts                   # Context bridge — exposes window.shellway API
-    ipc/                         # IPC handler modules
-      ssh.ipc.ts                 # SSH connection/disconnect/reconnect handlers
-      sftp.ipc.ts                # SFTP file operations handlers
-      terminal.ipc.ts            # Terminal shell create/resize/input handlers
-      session.ipc.ts             # Session CRUD handlers
-      settings.ipc.ts            # Settings read/write handlers
-      log.ipc.ts                 # Activity log handlers
-      hostkey.ipc.ts             # Host key management handlers
-      sql.ipc.ts                 # SQL client handlers (connect, query, disconnect)
-    services/                    # Business logic services
-      SSHService.ts              # SSH connection manager (ssh2 wrapper)
-      SFTPService.ts             # SFTP file operations
-      SessionStore.ts            # Encrypted session persistence
-      SettingsStore.ts           # Global settings persistence
-      LogService.ts              # Per-session activity logging
-      ReconnectionManager.ts     # Exponential backoff reconnection
-      HostKeyStore.ts            # Trusted host key management
-      TransferQueue.ts           # File transfer queue with concurrency
-      SQLService.ts              # SQL client (MySQL/PostgreSQL via SSH tunnel)
-      SQLConfigStore.ts          # Saved database connection configs
-    utils/
-      encryption.ts              # AES-256-GCM encryption/decryption
-
-  src/                           # Renderer process (React)
-    main.tsx                     # React entry point
-    App.tsx                      # Root component, event listeners, global dialogs
-    index.css                    # Tailwind imports + custom theme
-    env.d.ts                     # Window type augmentation for window.shellway
-    types/                       # Shared TypeScript types
-      session.ts                 # Session, Auth, Proxy, Overrides, ConnectionTab types
-      settings.ts                # AppSettings type
-      log.ts                     # LogEntry, LogLevel, LogSource types
-      hostkey.ts                 # TrustedHostKey type
-      sftp.ts                    # SFTP-specific types
-      transfer.ts                # Transfer state types
-      sql.ts                     # SQL client types (SSLMode, StagedChange, QueryHistoryEntry)
-    stores/                      # Zustand state stores
-      connectionStore.ts         # Active connections & tabs
-      sessionStore.ts            # Session profiles
-      uiStore.ts                 # UI state (panels, modals, split view)
-      logStore.ts                # Per-session log entries
-      hostkeyStore.ts            # Host key management state
-      transferStore.ts           # File transfer state
-      sqlStore.ts                # SQL client state (connections, staged changes, history)
-    hooks/                       # React hooks
-      useSession.ts              # Session-related hooks
-      useKeyboardShortcuts.ts    # Global keyboard shortcut handler
-    utils/
-      resolveSettings.ts         # Deep-merge session overrides with globals
-    components/
-      App.tsx                    # Root layout
-      ConnectionView.tsx         # Main connection view (tabs, split, log, reconnection)
-      SplitView.tsx              # Resizable split panel component
-      WelcomeScreen.tsx          # Shown when no connections are active
-      layout/
-        AppShell.tsx             # Main app shell layout
-        Sidebar.tsx              # Left sidebar with session list & actions
-        TitleBar.tsx             # Custom frameless title bar
-      sessions/
-        SessionManager.tsx       # Session list, search, filtering
-        SessionCard.tsx          # Session card with quick-launch buttons
-        SessionForm.tsx          # 7-tab session editor (Login/Terminal/SFTP/SSH/Proxy/Notes/Advanced)
-        KBDIDialog.tsx           # Keyboard-interactive challenge dialog
-      terminal/
-        TerminalView.tsx         # xterm.js terminal wrapper
-        TerminalTabs.tsx         # Terminal tab bar
-        TerminalToolbar.tsx      # Terminal action toolbar
-      sftp/
-        SFTPView.tsx             # SFTP dual-pane file manager
-        FileBrowser.tsx          # Single file browser panel
-        FilePanel.tsx            # File panel container
-      keys/
-        HostKeyManager.tsx       # Host key management panel
-        HostKeyVerifyDialog.tsx  # New/changed host key verification dialog
-      log/
-        ActivityLog.tsx          # Activity log panel
-        LogToolbar.tsx           # Log filtering/search/export toolbar
-        LogEntry.tsx             # Individual log entry row
-      reconnection/
-        ReconnectionOverlay.tsx  # Reconnection status overlay
-      port-forwarding/
-        PortForwardingView.tsx   # Port forwarding rule manager
-      settings/                  # Global settings UI
-      sql/                       # SQL client components
-        SQLView.tsx              # Main SQL panel with query log toggle
-        SQLConnectDialog.tsx     # Database connection form (name, tag, SSL)
-        DatabasePickerDialog.tsx # Searchable database list modal
-        SchemaSidebar.tsx        # Database/table/view tree browser
-        DataGrid.tsx             # ag-grid wrapper (column widths, context menus, editing)
-        DataTabView.tsx          # Table data view with change tracking & transactional save
-        QueryEditor.tsx          # Monaco-based SQL query editor
-        SQLStatusBar.tsx         # Status bar with inline save/discard actions
-        SQLQueryLog.tsx          # Compact real-time query log panel
-        QueryHistoryPanel.tsx    # Query history browser
-        useSQLShortcuts.ts       # SQL-specific keyboard shortcuts
-      snippets/                  # Command snippet manager
-      ui/                        # Reusable UI primitives
-        Button.tsx               # Button (primary/secondary/ghost/danger/outline)
-        Input.tsx                # Text input
-        Select.tsx               # Dropdown select
-        Modal.tsx                # Modal dialog
-        Tabs.tsx                 # Tab navigation
-        Toggle.tsx               # Toggle switch
-        Toast.tsx                # Toast notifications
-        ...
-
-  resources/                     # Build resources (icons, entitlements)
-  electron-builder.yml           # electron-builder packaging config
-  electron.vite.config.ts        # electron-vite build config
-  tailwind.config.ts             # Tailwind CSS config with Shellway theme
-  tsconfig.json                  # Base TypeScript config
-  tsconfig.web.json              # Renderer TypeScript config
-  tsconfig.node.json             # Main process TypeScript config
-  postcss.config.js              # PostCSS config
-  package.json                   # Dependencies and scripts
-```
-
----
-
-## Configuration
-
-### Global Settings
-
-Shellway stores global settings via `electron-store` at the OS-standard config path:
-
-- **Windows:** `%APPDATA%/shellway-settings/`
-- **macOS:** `~/Library/Application Support/shellway-settings/`
-- **Linux:** `~/.config/shellway-settings/`
-
-### Session Data
-
-Session profiles (with encrypted secrets) are stored separately:
-
-- **Windows:** `%APPDATA%/shellway-sessions/`
-- **macOS:** `~/Library/Application Support/shellway-sessions/`
-- **Linux:** `~/.config/shellway-sessions/`
-
-### Trusted Host Keys
-
-Known host keys are persisted at:
-
-- **Windows:** `%APPDATA%/shellway-hostkeys/`
-- **macOS:** `~/Library/Application Support/shellway-hostkeys/`
-- **Linux:** `~/.config/shellway-hostkeys/`
-
----
-
-## Keyboard Shortcuts
+These are the defaults. Change any of them in **Settings › Shortcuts**.
 
 | Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+T` | Quick-launch terminal for active session |
-| `Ctrl+Shift+F` | Quick-launch SFTP for active session |
-| `Ctrl+Shift+B` | Toggle split view (Terminal + SFTP) |
-| `Ctrl+1` | Switch to Terminal sub-tab |
-| `Ctrl+2` | Switch to SFTP sub-tab |
-| `Ctrl+3` | Switch to SQL sub-tab |
-| **SQL Client** | |
-| `Ctrl+Enter` | Execute SQL query |
-| `Ctrl+S` | Save pending cell edits |
-| `Ctrl+Shift+N` | New query tab |
-| `Ctrl+.` | Cycle SQL tab type (Data → Query → History) |
+| --- | --- |
+| `Cmd/Ctrl + Shift + T` | New terminal tab |
+| `Cmd/Ctrl + Shift + F` | Switch to SFTP |
+| `Cmd/Ctrl + Shift + D` | Switch to SQL |
+| `Cmd/Ctrl + Shift + B` | Toggle split view |
+| `Cmd/Ctrl + Alt + N` | New window |
+| `Cmd/Ctrl + Shift + S` | Snippet palette (terminal) |
+| `Cmd/Ctrl + Enter` | Run query (SQL) |
+| `Cmd/Ctrl + S` | Save staged changes (SQL) |
+| `Cmd/Ctrl + Shift + N` | New query tab (SQL) |
+| `F5` | Refresh data (SQL) |
 
 ---
 
-## Security
+## Contributing
 
-Shellway takes security seriously:
+Contributions are welcome, from typo fixes to new server features.
 
-- **AES-256-GCM Encryption** — All passwords, passphrases, private key data, KBDI saved responses, and proxy passwords are encrypted at rest using AES-256-GCM with a per-installation master key
-- **No Plaintext Secrets** — Secrets are never written to disk in plaintext
-- **Export Stripping** — When exporting session profiles, all secret fields are automatically stripped
-- **Host Key Verification** — Interactive verification on first connect or when a host key changes, preventing MITM attacks
-- **Context Isolation** — Renderer process runs with `contextIsolation: true` and `nodeIntegration: false`; all main process access goes through the typed `contextBridge` preload API
-- **Process Sandboxing** — Electron's sandbox is enabled for the renderer process
+**Found a bug or have an idea?** [Open an issue](https://github.com/WMOH-DEV/shellway/issues) with your OS, the Shellway version (Settings › About) and the steps to reproduce it. Screenshots help a lot.
+
+**Found a security problem?** Please do not open a public issue. Report it privately through [GitHub security advisories](https://github.com/WMOH-DEV/shellway/security/advisories/new) or by email to owner@waelzone.com.
+
+### Sending a pull request
+
+1. Fork the repository and create a branch from `main` (`feat/short-name` or `fix/short-name`).
+2. Make your change and add or update tests next to the code you touched.
+3. Run the checks before you push:
+   ```bash
+   npm run typecheck
+   npm test
+   ```
+4. Use [Conventional Commits](https://www.conventionalcommits.org/) for messages, for example `fix(sftp): keep timestamps on upload`.
+5. Open the pull request with a short description of what changed and why. Add a screenshot for anything visible.
+
+### House rules
+
+- **Never test against a real server.** Server features are tested with pure unit tests and with throwaway Docker containers (see `electron/integration/`). Do not point tests or debugging sessions at production machines.
+- **Server changes go through the action engine.** New features add a probe and an action with a plan the user reviews. No hidden commands, no retry loops, `sudo -n` only.
+- **Keep it simple and readable.** Small functions, clear names, no speculative abstractions.
+- **No comments in client code.** Code that ships in the app (`src/`) should explain itself through naming. Shipped code can be read by anyone, so never put secrets or security details in strings or comments.
+- **Plain language in the UI.** Short sentences a busy person can act on.
+
+By contributing you agree that your contribution is licensed under the Apache License 2.0, like the rest of the project.
 
 ---
 
-## License
+## License and credit
 
-This project is licensed under the [MIT License](LICENSE).
+Shellway is open source under the **[Apache License 2.0](LICENSE)**.
+
+You are free to use, change and share it, including commercially. If you redistribute Shellway or build something on it, the license requires you to:
+
+- keep the [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) files with your copy, and
+- keep the credit to the original author, as written in `NOTICE`.
+
+A visible line such as *"Based on [Shellway](https://github.com/WMOH-DEV/shellway) by Wael Mohamed Essaid"* in your README or About screen is the easiest way to do that.
+
+Versions up to and including 0.26.3 were released under the MIT License.
+
+---
+
+## Author
+
+Created and maintained by **Wael Mohamed Essaid**.
+
+[waelzone.com](https://waelzone.com) · [GitHub](https://github.com/WMOH-DEV)
+
+If Shellway saves you time, a star on GitHub helps other people find it.

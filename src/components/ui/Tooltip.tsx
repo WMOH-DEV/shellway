@@ -14,6 +14,7 @@ interface TooltipProps {
   side?: "top" | "bottom" | "left" | "right";
   delay?: number;
   className?: string;
+  triggerClassName?: string;
 }
 
 // Transform to offset the tooltip so it appears correctly on each side
@@ -30,6 +31,7 @@ export function Tooltip({
   side = "top",
   delay = 400,
   className,
+  triggerClassName,
 }: TooltipProps) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -85,7 +87,7 @@ export function Tooltip({
   return (
     <div
       ref={triggerRef}
-      className="relative inline-flex"
+      className={cn("relative inline-flex", triggerClassName)}
       onMouseEnter={show}
       onMouseLeave={hide}
       // Hide immediately on click — pointer stays on element so mouseLeave won't fire

@@ -18,7 +18,7 @@ export function WelcomeScreen() {
   return (
     <div className="flex flex-col items-center justify-center h-full px-8 animate-fade-in">
       {/* Logo */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
+      <div className="w-16 h-16 rounded-2xl bg-nd-accent-solid flex items-center justify-center mb-6">
         <Wifi size={28} className="text-white" />
       </div>
 

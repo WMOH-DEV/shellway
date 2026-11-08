@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -12,7 +12,7 @@ import {
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/components/ui/Toast'
-import { TERMINAL_THEMES } from '@/data/terminalThemes'
+import { useTokenThemes } from '@/components/ui/tokenThemes'
 import type { ServiceLogEntry } from '@/types/serviceManager'
 
 interface ServiceLogViewerProps {
@@ -21,7 +21,9 @@ interface ServiceLogViewerProps {
   logs: ServiceLogEntry[]
   isLoading: boolean
   onLoadLogs: (lines: number) => void
-  onClose: () => void
+  onClose?: () => void
+  heading?: string
+  toolbarExtra?: ReactNode
 }
 
 const LINE_COUNT_OPTIONS = [
@@ -73,6 +75,8 @@ export function ServiceLogViewer({
   isLoading,
   onLoadLogs,
   onClose,
+  heading,
+  toolbarExtra,
 }: ServiceLogViewerProps) {
   const [lineCount, setLineCount] = useState(100)
   const [follow, setFollow] = useState(true)
@@ -87,6 +91,7 @@ export function ServiceLogViewer({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const prevLogsRef = useRef<ServiceLogEntry[]>([])
   const followRef = useRef(follow)
+  const { log: logTheme } = useTokenThemes()
 
   // Keep ref in sync
   useEffect(() => { followRef.current = follow }, [follow])
@@ -94,8 +99,6 @@ export function ServiceLogViewer({
   // ── Initialize xterm.js ──
   useEffect(() => {
     if (!containerRef.current) return
-
-    const theme = TERMINAL_THEMES['default']
 
     const terminal = new Terminal({
       fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
@@ -108,10 +111,7 @@ export function ServiceLogViewer({
       disableStdin: true,          // read-only log viewer
       convertEol: true,
       allowProposedApi: true,
-      theme: {
-        ...theme,
-        background: '#0c0e14',     // slightly darker than terminal for differentiation
-      },
+      theme: logTheme,
     })
 
     const fitAddon = new FitAddon()
@@ -187,6 +187,10 @@ export function ServiceLogViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = logTheme
+  }, [logTheme])
+
   // ── Write logs to terminal when they change ──
   useEffect(() => {
     const terminal = terminalRef.current
@@ -219,7 +223,7 @@ export function ServiceLogViewer({
       terminal.reset()
 
       // Write header
-      terminal.writeln(`${DIM}── Journal logs: ${unit} ──${RESET}`)
+      terminal.writeln(`${DIM}── ${heading ?? `Journal logs: ${unit}`} ──${RESET}`)
       terminal.writeln(`${DIM}${logs.length} entries loaded · Select text to copy · Ctrl+F to search${RESET}`)
       terminal.writeln('')
 
@@ -238,7 +242,7 @@ export function ServiceLogViewer({
     if (followRef.current) {
       terminal.scrollToBottom()
     }
-  }, [logs, unit])
+  }, [logs, unit, heading])
 
   // ── Fit on visibility changes ──
   useEffect(() => {
@@ -404,6 +408,8 @@ export function ServiceLogViewer({
           <span className="text-[10px]">Follow</span>
         </Button>
 
+        {toolbarExtra}
+
         <div className="flex-1" />
 
         {/* Export */}
@@ -416,12 +422,14 @@ export function ServiceLogViewer({
         </Button>
 
         {/* Close */}
-        <Button
-          variant="ghost" size="sm" onClick={onClose}
-          className="h-6 w-6 p-0" title="Close log viewer"
-        >
-          <X size={12} />
-        </Button>
+        {onClose && (
+          <Button
+            variant="ghost" size="sm" onClick={onClose}
+            className="h-6 w-6 p-0" title="Close log viewer"
+          >
+            <X size={12} />
+          </Button>
+        )}
       </div>
 
       {/* ── Search bar (conditionally shown) ── */}
@@ -497,16 +505,16 @@ export function ServiceLogViewer({
         <div className="w-px h-3 bg-nd-border" />
         <span className="flex items-center gap-1.5">
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />ERR
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-error inline-block" />ERR
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block" />WARN
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-warning inline-block" />WARN
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />NOTICE
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-info inline-block" />NOTICE
           </span>
           <span className="flex items-center gap-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 inline-block" />INFO
+            <span className="w-1.5 h-1.5 rounded-full bg-nd-text-muted inline-block" />INFO
           </span>
         </span>
         <div className="flex-1" />
@@ -526,7 +534,8 @@ function formatLogLine(entry: ServiceLogEntry): string {
   const label = PRIORITY_LABELS[priority] || priority.toUpperCase().padStart(5)
 
   // Format: [timestamp] [BADGE] message
-  return `${DIM}${ts}${RESET} ${ansi.badge}${label}${RESET} ${ansi.text}${entry.message}${RESET}`
+  const stamp = ts ? `${DIM}${ts}${RESET} ` : ''
+  return `${stamp}${ansi.badge}${label}${RESET} ${ansi.text}${entry.message}${RESET}`
 }
 
 /** Plain timestamp for export (no ANSI) */

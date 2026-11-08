@@ -1,0 +1,38 @@
+@@root
+yes
+@@installed
+yes
+@@conf
+ENABLED=yes
+@@verbose
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere
+@@numbered
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 80/tcp                     ALLOW IN    Anywhere
+[ 3] 443/tcp                    ALLOW IN    Anywhere
+[ 4] 3306/tcp                   ALLOW IN    10.0.0.0/8                 # MySQL from private network
+[ 5] 6379/tcp                   DENY IN     Anywhere
+[ 6] Nginx Full                 ALLOW IN    Anywhere
+[ 7] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 8] 80/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 9] 443/tcp (v6)               ALLOW IN    Anywhere (v6)
+
+@@docker
+yes
+@@published
+cadvisor	127.0.0.1:8080->8080/tcp
+web	0.0.0.0:8081->80/tcp, [::]:8081->80/tcp
+worker
+@@session
+198.51.100.23 51234 203.0.113.10 22

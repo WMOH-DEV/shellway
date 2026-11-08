@@ -1,0 +1,53 @@
+@@SW@@ SUDO
+full=1
+@@SW@@ OS
+PRETTY_NAME="Ubuntu 24.04 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04 LTS (Noble Numbat)"
+ID=ubuntu
+ID_LIKE=debian
+@@SW@@ ARCH
+x86_64
+@@SW@@ WEB
+nginx=/usr/sbin/nginx
+apache=
+caddy=
+@@SW@@ CERTBOT
+path=/snap/bin/certbot
+certbot 2.11.0
+@@SW@@ METHOD
+snap=1
+dpkg=
+@@SW@@ PLUGINS
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+* apache
+Description: Apache Web Server plugin
+Interfaces: Authenticator, Installer, Plugin
+Entry point: apache = certbot_apache._internal.entrypoint:ENTRYPOINT
+
+* nginx
+Description: Nginx Web Server plugin
+Interfaces: Authenticator, Installer, Plugin
+Entry point: nginx = certbot_nginx._internal.configurator:NginxConfigurator
+
+* standalone
+Description: Spin up a temporary webserver
+Interfaces: Authenticator, Plugin
+Entry point: standalone = certbot._internal.plugins.standalone:Authenticator
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+@@SW@@ SNAPD
+snap    2.63
+snapd   2.63
+series  16
+ubuntu  24.04
+kernel  6.8.0-45-generic
+@@SW@@ PM
+apt=/usr/bin/apt-get
+dnf=
+yum=
+@@SW@@ TIMER
+timer=snap.certbot.renew.timer
