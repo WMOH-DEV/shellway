@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Cloud, Folder, Lock, Play, Server } from 'lucide-react'
 import { CardLabel } from '@/components/ssl/Card'
+import type { CodeSource } from '@/types/createSite'
 
 function SideCard({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -11,13 +12,26 @@ function SideCard({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function SetsUpCard({ serverLabel }: { serverLabel: string }) {
+interface SetsUpProps {
+  serverLabel: string
+  codeSource: CodeSource
+  dnsByHand: boolean
+}
+
+const CODE_ITEMS: Record<CodeSource, string | null> = {
+  git: 'Auto deploys and first deploy',
+  new: 'New project, its repository and first deploy',
+  none: null
+}
+
+export function SetsUpCard({ serverLabel, codeSource, dnsByHand }: SetsUpProps) {
+  const code = CODE_ITEMS[codeSource]
   const items = [
-    { icon: Folder, text: 'Folder and permissions' },
+    { icon: Folder, text: codeSource === 'none' ? 'Folder with a placeholder page' : 'Folder and permissions' },
     { icon: Server, text: `${serverLabel} site` },
-    { icon: Cloud, text: 'DNS record on Cloudflare' },
+    { icon: Cloud, text: dnsByHand ? 'DNS record you add by hand' : 'DNS record on Cloudflare' },
     { icon: Lock, text: 'HTTPS certificate' },
-    { icon: Play, text: 'Auto deploys and first deploy' }
+    ...(code === null ? [] : [{ icon: Play, text: code }])
   ]
   return (
     <SideCard label="Shellway will set up">

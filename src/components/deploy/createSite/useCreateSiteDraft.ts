@@ -39,6 +39,7 @@ export interface CreateSiteDraftModel {
   projectCheck: ProjectCheckState | null
   checkProject: (again?: boolean) => Promise<void>
   changeCodeSource: (source: CodeSource) => void
+  confirmStack: () => void
 }
 
 export type GithubState =
@@ -125,7 +126,14 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
     }
     const suggestion = suggestStack(result.data)
     setRepoRead({ key, status: 'read', suggestion })
-    if (!templatePicked.current) applySuggestion(suggestion)
+    setFields((current) => {
+      const stillThisRepo = current.codeSource === 'git' && repoKey(current) === key
+      return stillThisRepo && !templatePicked.current ? { ...current, ...suggestedDraft({ ...current, email }, suggestion, tools) } : current
+    })
+  }
+
+  const confirmStack = () => {
+    templatePicked.current = true
   }
 
   const pickTemplate = (template: TemplateId) => {
@@ -159,7 +167,13 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
   const changeCodeSource = (codeSource: CodeSource) => {
     const allowed = allowedTemplates(codeSource)
     const template = allowed.includes(fields.template) ? fields.template : allowed[0]
-    patch({ codeSource, template, ...(template === fields.template ? {} : { commands: null, database: defaultDatabase(template, tools) }) })
+    const keepsEnv = codeSource === 'git' || fields.envText !== fields.suggestedEnvText
+    patch({
+      codeSource,
+      template,
+      ...(template === fields.template ? {} : { commands: null, database: defaultDatabase(template, tools) }),
+      ...(keepsEnv ? {} : { envText: '', suggestedEnvText: '' })
+    })
   }
 
   return {
@@ -176,6 +190,7 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
     readRepo,
     pickTemplate,
     applySuggestion,
+    confirmStack,
     github,
     loadGithub,
     projectCheck,

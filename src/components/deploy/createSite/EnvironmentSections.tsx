@@ -27,12 +27,12 @@ function databaseOptions(engines: DatabaseEngine[], model: CreateSiteDraftModel)
   return needsDatabase(model.draft.template) ? options : [...options, NO_DATABASE]
 }
 
-function SecretValue({ value }: { value: string }) {
+function SecretValue({ name, value }: { name: string; value: string }) {
   const [shown, setShown] = useState(false)
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span className="truncate font-mono">{shown ? value : MASK}</span>
-      <Button size="sm" variant="ghost" aria-label={shown ? 'Hide' : 'Show'} onClick={() => setShown(!shown)}>
+      <Button size="sm" variant="ghost" aria-label={`${shown ? 'Hide' : 'Show'} ${name}`} onClick={() => setShown(!shown)}>
         {shown ? <EyeOff size={12} /> : <Eye size={12} />}
       </Button>
     </span>
@@ -68,7 +68,7 @@ export function EnvironmentSection({ model }: { model: CreateSiteDraftModel }) {
             {managed.map(([key, value]) => (
               <div key={key} className="contents">
                 <dt className="font-mono text-nd-text-muted">{key}</dt>
-                <dd className="min-w-0 text-nd-text-primary">{isSecretKey(key) ? <SecretValue value={value} /> : <span className="truncate font-mono">{value}</span>}</dd>
+                <dd className="min-w-0 text-nd-text-primary">{isSecretKey(key) ? <SecretValue name={key} value={value} /> : <span className="truncate font-mono">{value}</span>}</dd>
               </div>
             ))}
           </dl>

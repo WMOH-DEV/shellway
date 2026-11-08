@@ -1,12 +1,12 @@
 import type { DnsInput, SiteServer } from '@/types/createSite'
 import { repoLabel } from '@/utils/deploy/siteDetail'
 import { TEMPLATES } from '@/utils/createSite/templates'
-import { WIZARD_STEPS, commandsOf, type CreateSiteDraft, type WizardStep } from '@/utils/createSite/wizard'
+import { WIZARD_STEPS, commandsOf, repoUrlOf, type CreateSiteDraft, type WizardStep } from '@/utils/createSite/wizard'
 import { pluralize } from '@/utils/ssl/time'
 import type { StepperStep } from './CreateSiteStepper'
 
 const HINTS: Record<StepperStep, string> = {
-  site: 'domain and repository',
+  site: 'domain and code',
   stack: 'what the code is built with',
   commands: 'deploy commands, database, env',
   domain: 'DNS record, certificate',
@@ -26,7 +26,15 @@ function dnsLabel(dns: DnsInput | null): string {
   return dns.proxied ? 'proxied' : 'DNS only'
 }
 
+function codeLabel(draft: CreateSiteDraft): string {
+  if (draft.codeSource === 'none') return 'no code yet'
+  const url = repoUrlOf(draft)
+  if (draft.codeSource === 'new') return url === '' ? 'new project' : `new project in ${repoLabel(url)}`
+  return url === '' ? '' : repoLabel(url)
+}
+
 function commandCount(draft: CreateSiteDraft, server: SiteServer): string {
+  if (draft.codeSource === 'none') return 'no deploys'
   try {
     const { buildSteps, activateSteps } = commandsOf(draft, server)
     return pluralize(buildSteps.length + activateSteps.length, 'command')
@@ -37,7 +45,7 @@ function commandCount(draft: CreateSiteDraft, server: SiteServer): string {
 
 function summaries({ draft, server, dns, planSteps }: DetailFacts): Record<WizardStep, string> {
   return {
-    site: draft.domain === '' ? HINTS.site : [draft.domain, repoLabel(draft.repoUrl)].join(' · '),
+    site: draft.domain === '' ? HINTS.site : [draft.domain, codeLabel(draft)].filter(Boolean).join(' · '),
     stack: [TEMPLATES[draft.template].label, ...(server.kind === 'apache' ? ['Apache'] : [])].join(' · '),
     commands: commandCount(draft, server),
     domain: `${dnsLabel(dns)} · Let's Encrypt`,

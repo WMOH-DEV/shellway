@@ -163,6 +163,21 @@ describe('Create site, stack from the repository', () => {
     expect(screen.getByRole('button', { name: /^Laravel/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('keeps the stack the user went on with when the repository read finishes late', async () => {
+    const reading = deferred<{ success: boolean; data: unknown }>()
+    const vite = { files: ['package.json', 'index.html'], packageJson: '{"scripts":{"build":"vite build"}}', composerJson: null, envExample: null }
+    const { user, api } = setup({ 'createSite.inspectRepo': vi.fn(() => reading.promise) })
+    await walkToStack(user)
+    await user.click(continueButton())
+    reading.resolve({ success: true, data: vite })
+    expect(await screen.findByDisplayValue('php8.3 artisan migrate --force')).toBeInTheDocument()
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    expect(api['createSite.start'].mock.calls[0][2].template).toBe('laravel')
+  })
+
   it('lets the user pick the stack when the repository cannot be read from this PC', async () => {
     const { user } = setup({ 'createSite.inspectRepo': vi.fn().mockResolvedValue({ success: false, error: 'Permission denied (publickey).' }) })
     await walkToStack(user)
@@ -251,7 +266,7 @@ describe('Create site, from domain to start', () => {
     expect(input.database).toEqual({ engine: 'mysql', name: 'shop', user: 'shop' })
     expect(input.jobs).toEqual({ scheduler: true, queueWorker: true })
     const secrets = api['createSite.start'].mock.calls[0][3]
-    expect(secrets.dbPassword).toMatch(/^[A-Za-z0-9]{24}$/)
+    expect(secrets.dbPassword).toMatch(/^(?=.*_)(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])[A-Za-z0-9_]{24}$/)
     expect(secrets.appKey).toMatch(/^base64:[A-Za-z0-9+/]{43}=$/)
     expect(JSON.stringify(input)).not.toContain(secrets.dbPassword)
     expect(await screen.findByRole('heading', { name: 'Creating shop.example.com' })).toBeInTheDocument()
@@ -340,7 +355,11 @@ describe('Create site, code source', () => {
     await enterDomain(user)
     await user.click(screen.getByRole('button', { name: /No code yet/ }))
     await waitFor(() => expect(continueButton()).toBeEnabled())
+    const setsUp = screen.getByRole('region', { name: 'Shellway will set up' })
+    expect(within(setsUp).getByText('Folder with a placeholder page')).toBeInTheDocument()
+    expect(within(setsUp).queryByText(/deploy/)).toBeNull()
     await user.click(continueButton())
+    expect(screen.getByText('shop.example.com · no code yet')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /^Laravel/ })).toBeDisabled()
     await user.click(continueButton())
     expect(await screen.findByText(/A site without code has no deploys/)).toBeInTheDocument()

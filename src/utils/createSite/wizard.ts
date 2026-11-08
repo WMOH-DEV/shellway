@@ -48,8 +48,10 @@ export interface CreateSiteDraft {
   redirect: boolean
   staging: boolean
   commands: DeployCommands | null
+  commandsBasis: string
   database: DatabaseChoice
   envText: string
+  suggestedEnvText: string
   dbPassword: string
   appKey: string
   jobs: LaravelJobs
@@ -130,8 +132,10 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     redirect: true,
     staging: true,
     commands: null,
+    commandsBasis: '',
     database: defaultDatabase(template, tools),
     envText: '',
+    suggestedEnvText: '',
     dbPassword: generatePassword(),
     appKey: generateAppKey(),
     jobs: availableJobs(tools, ALL_JOBS),
@@ -270,8 +274,9 @@ export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSit
   return templateProblem(draft, context.tools)
 }
 
-export function commandsStepProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
+export function commandsStepProblem(draft: CreateSiteDraft, tools: ServerTools, server: SiteServer): string | null {
   if (draft.codeSource === 'none') return null
+  if (staleCommands(draft, server)) return 'Earlier settings changed after you edited the commands. Use the new defaults or keep yours.'
   if (draft.database === 'none' && needsDatabase(draft.template)) return 'Laravel runs its migrations on every deploy, so pick a database. SQLite needs no server.'
   if (draft.database !== 'none' && !databaseChoices(draft.template, tools).includes(draft.database)) return 'Pick a database this server has'
   return null
@@ -294,7 +299,25 @@ export const buildOutputOf = (draft: Pick<CreateSiteDraft, 'template' | 'staticB
   isStatic(draft) && draft.staticBuild && draft.codeSource === 'git' ? draft.outputDir.trim() : null
 
 export const defaultCommandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
-  defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) }, { buildScript: draft.repoBuildScript })
+  defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) }, { buildScript: draft.codeSource === 'git' && draft.repoBuildScript })
+
+export const commandsKey = (draft: CreateSiteDraft, server: SiteServer): string => JSON.stringify(defaultCommandsOf(draft, server))
+
+export function staleCommands(draft: CreateSiteDraft, server: SiteServer): boolean {
+  if (draft.commands === null) return false
+  const key = commandsKey(draft, server)
+  return draft.commandsBasis !== key && JSON.stringify(draft.commands) !== key
+}
+
+function suggestedEnv(draft: CreateSiteDraft, envExample: string | null): Partial<CreateSiteDraft> {
+  if (draft.envText !== '' && draft.envText !== draft.suggestedEnvText) return {}
+  return { envText: envExample ?? '', suggestedEnvText: envExample ?? '' }
+}
+
+function suggestedStatic(template: TemplateId, outputDir: string | null): Partial<CreateSiteDraft> {
+  if (template !== 'static') return {}
+  return outputDir === null ? { staticBuild: false } : { staticBuild: true, outputDir }
+}
 
 export function suggestedDraft(draft: CreateSiteDraft, suggestion: StackSuggestion, tools: ServerTools): Partial<CreateSiteDraft> {
   const template = suggestion.template ?? draft.template
@@ -305,8 +328,8 @@ export function suggestedDraft(draft: CreateSiteDraft, suggestion: StackSuggesti
     database: template === draft.template ? draft.database : defaultDatabase(template, tools),
     repoBuildScript: suggestion.buildScript && tools.node !== null,
     ...(phpVersion !== null ? { phpVersion } : {}),
-    ...(suggestion.outputDir !== null ? { staticBuild: true, outputDir: suggestion.outputDir } : {}),
-    ...(draft.envText === '' && suggestion.envExample !== null ? { envText: suggestion.envExample } : {})
+    ...suggestedStatic(template, suggestion.outputDir),
+    ...suggestedEnv(draft, suggestion.envExample)
   }
 }
 

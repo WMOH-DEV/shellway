@@ -49,7 +49,7 @@ const isFormStep = (step: WizardStep): step is FormStep => step !== 'review'
 
 const NEXT_HINTS: Record<FormStep, string> = {
   site: 'Next: the stack',
-  stack: 'Next: deploy commands',
+  stack: 'Next: commands and environment',
   commands: 'Next: DNS and HTTPS',
   domain: 'Next: review the plan'
 }
@@ -70,7 +70,7 @@ function stepProblem(step: FormStep, model: CreateSiteDraftModel, context: Serve
   switch (step) {
     case 'site': return siteStepProblem(model.draft, model.nameCheck, context, model.projectCheck)
     case 'stack': return stackStepProblem(model.draft, context)
-    case 'commands': return commandsStepProblem(model.draft, context.tools)
+    case 'commands': return commandsStepProblem(model.draft, context.tools, context.server)
     case 'domain': return domainStepProblem(model.draft)
   }
 }
@@ -139,7 +139,10 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
   }
 
   const back = () => (stepIndex === 0 ? onCancel() : setStep(WIZARD_STEPS[stepIndex - 1]))
-  const next = () => setStep(WIZARD_STEPS[stepIndex + 1])
+  const next = () => {
+    if (step === 'stack') model.confirmStack()
+    setStep(WIZARD_STEPS[stepIndex + 1])
+  }
 
   const footer = (
     <>
@@ -154,7 +157,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
   const aside = (
     <>
       <CreateSiteStepper current={step} details={details} onSelect={setStep} />
-      {step === 'review' ? <IfStepFailsCard /> : <SetsUpCard serverLabel={driver.label} />}
+      {step === 'review' ? <IfStepFailsCard /> : <SetsUpCard serverLabel={driver.label} codeSource={model.draft.codeSource} dnsByHand={dns === null || dns.zoneId === null} />}
     </>
   )
 

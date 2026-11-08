@@ -4,7 +4,7 @@ import { StepHeading } from '@/components/ssl/https/StepHeading'
 import type { ServerTools, SiteServer } from '@/types/createSite'
 import type { DeployCommands } from '@/utils/createSite/deploySite'
 import { TEMPLATES } from '@/utils/createSite/templates'
-import { commandsOf, defaultCommandsOf } from '@/utils/createSite/wizard'
+import { commandsKey, commandsOf, defaultCommandsOf, staleCommands } from '@/utils/createSite/wizard'
 import { StepsEditor } from '../StepsEditor'
 import { ACTIVATE_HINT, BUILD_HINT, Section } from '../setup/SiteSections'
 import { DatabaseSection, EnvironmentSection } from './EnvironmentSections'
@@ -25,7 +25,8 @@ export function CommandsStep({ model, connectionId, server, tools }: CommandsSte
   const label = TEMPLATES[draft.template].label
   const commands = commandsOf(draft, server)
   const edited = draft.commands !== null && !sameCommands(draft.commands, defaultCommandsOf(draft, server))
-  const change = (changes: Partial<DeployCommands>) => patch({ commands: { ...commands, ...changes } })
+  const stale = staleCommands(draft, server)
+  const change = (changes: Partial<DeployCommands>) => patch({ commands: { ...commands, ...changes }, commandsBasis: commandsKey(draft, server) })
   if (draft.codeSource === 'none') {
     return (
       <div className="flex flex-col gap-5">
@@ -41,7 +42,14 @@ export function CommandsStep({ model, connectionId, server, tools }: CommandsSte
         <StepsEditor connectionId={connectionId} title="Build" hint={BUILD_HINT} steps={commands.buildSteps} onChange={(buildSteps) => change({ buildSteps })} />
         <div className="border-t border-nd-border" />
         <StepsEditor connectionId={connectionId} title="After going live" hint={ACTIVATE_HINT} steps={commands.activateSteps} onChange={(activateSteps) => change({ activateSteps })} />
-        {edited && (
+        {stale && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-nd-warning/30 bg-nd-warning/[0.07] px-3 py-2">
+            <span className="text-xs text-nd-text-primary">You changed the stack, PHP version, port, site name or folder after editing these commands. They may still use the old values.</span>
+            <Button size="sm" variant="ghost" onClick={() => patch({ commands: null })}><RotateCcw size={12} /> Use the new defaults</Button>
+            <Button size="sm" variant="ghost" onClick={() => patch({ commandsBasis: commandsKey(draft, server) })}>Keep my commands</Button>
+          </div>
+        )}
+        {edited && !stale && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-nd-text-muted">These differ from the {label} defaults.</span>
             <Button size="sm" variant="ghost" onClick={() => patch({ commands: null })}><RotateCcw size={12} /> Reset to the defaults</Button>

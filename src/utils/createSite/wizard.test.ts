@@ -4,6 +4,7 @@ import { buildPlan } from './plan'
 import type { StackSuggestion } from './repoSuggest'
 import { NGINX, allTools, baseInput } from './testFixtures'
 import {
+  commandsKey,
   commandsOf,
   commandsStepProblem,
   dnsInput,
@@ -152,9 +153,24 @@ describe('code sources', () => {
   })
 
   it('needs a database for Laravel, and no commands for a site without code', () => {
-    expect(commandsStepProblem(draft({ database: 'none' }), allTools())).toMatch(/pick a database/)
-    expect(commandsStepProblem(draft({ template: 'php', database: 'none' }), allTools())).toBeNull()
-    expect(commandsStepProblem(draft({ codeSource: 'none', database: 'none' }), allTools())).toBeNull()
+    expect(commandsStepProblem(draft({ database: 'none' }), allTools(), NGINX.server)).toMatch(/pick a database/)
+    expect(commandsStepProblem(draft({ template: 'php', database: 'none' }), allTools(), NGINX.server)).toBeNull()
+    expect(commandsStepProblem(draft({ codeSource: 'none', database: 'none' }), allTools(), NGINX.server)).toBeNull()
+  })
+
+  it('flags edited commands once an earlier setting changes what the defaults would be', () => {
+    const edited = (base: CreateSiteDraft) => ({ ...base, commands: { ...commandsOf(base, NGINX.server), activateSteps: [] }, commandsBasis: commandsKey(base, NGINX.server) })
+    const php82 = edited(draft({ phpVersion: '8.2' }))
+    expect(commandsStepProblem(php82, allTools(), NGINX.server)).toBeNull()
+    const moved = { ...php82, phpVersion: '8.3' }
+    expect(commandsStepProblem(moved, allTools(), NGINX.server)).toMatch(/Earlier settings changed/)
+    expect(commandsStepProblem({ ...moved, commandsBasis: commandsKey(moved, NGINX.server) }, allTools(), NGINX.server)).toBeNull()
+  })
+
+  it('never adds the repository build to a new project', () => {
+    const steps = (overrides: Partial<CreateSiteDraft>) => commandsOf(draft({ template: 'node', repoBuildScript: true, ...overrides }), NGINX.server).buildSteps.map((step) => step.command)
+    expect(steps({})).toContain('npm run build')
+    expect(steps({ codeSource: 'new' })).not.toContain('npm run build')
   })
 
   it('builds the input for a new GitHub project with the repository Shellway will create', () => {
@@ -239,6 +255,12 @@ describe('suggestedDraft', () => {
     const changes = suggestedDraft(draft({ template: 'node', database: 'none' }), suggestion({ envExample: 'APP_NAME=Shop\n' }), allTools())
     expect(changes).toMatchObject({ template: 'laravel', commands: null, database: 'mysql', envText: 'APP_NAME=Shop\n' })
     expect(suggestedDraft(draft({ envText: 'MINE=1' }), suggestion({ envExample: 'APP_NAME=Shop\n' }), allTools())).not.toHaveProperty('envText')
+  })
+
+  it('replaces what it suggested for another repository, but never what the user wrote', () => {
+    const fromA = draft({ envText: 'VITE_A=1\n', suggestedEnvText: 'VITE_A=1\n', template: 'static', staticBuild: true })
+    expect(suggestedDraft(fromA, suggestion({ template: 'static', envExample: null }), allTools())).toMatchObject({ envText: '', staticBuild: false })
+    expect(suggestedDraft({ ...fromA, envText: 'VITE_A=2\n' }, suggestion({ template: 'static' }), allTools())).not.toHaveProperty('envText')
   })
 
   it('keeps the chosen database when the stack does not change', () => {
