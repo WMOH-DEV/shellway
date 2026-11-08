@@ -39,7 +39,7 @@ describe('buildServiceList', () => {
   })
 
   it('offers Clear for a boot-only unit that failed, and keeps Start in the menu', () => {
-    const facts = { [PROBE.systemd]: ok({ installed: true, units: [unit('systemd-networkd-wait-online', 'failed', 'failed', { oneshot: true }), unit('redis-server', 'failed', 'failed', { oneshot: false })] }) }
+    const facts = { [PROBE.systemd]: ok({ installed: true, units: [unit('systemd-networkd-wait-online', 'failed', 'failed', { runsOnce: true }), unit('redis-server', 'failed', 'failed', { runsOnce: false })] }) }
     const [waitOnline, redis] = ['systemd:systemd-networkd-wait-online', 'systemd:redis-server'].map((id) => buildServiceList(facts).find((item) => item.id === id)!)
     expect(waitOnline.verbs).toEqual(['reset-failed', 'start', 'disable'])
     expect(primaryVerb(waitOnline)).toBe('reset-failed')

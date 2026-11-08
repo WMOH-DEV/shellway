@@ -13,6 +13,7 @@ const FACTS: ServerFacts = {
     installed: true,
     units: [
       { name: 'redis-server', description: 'Advanced key-value store', load: 'loaded', active: 'failed', sub: 'failed', enabled: true, cpuPercent: null, memoryBytes: null, sinceSeconds: 120 },
+      { name: 'systemd-networkd-wait-online', description: 'Wait for Network to be Configured', load: 'loaded', active: 'failed', sub: 'failed', enabled: true, cpuPercent: null, memoryBytes: null, sinceSeconds: 259201, runsOnce: true },
       { name: 'nginx', description: 'web server', load: 'loaded', active: 'active', sub: 'running', enabled: true, cpuPercent: 0.4, memoryBytes: 39845888, sinceSeconds: 2160000 }
     ]
   }),
@@ -42,6 +43,14 @@ describe('ServicesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(launch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'services.control', params: { kind: 'systemd', name: 'nginx', verb: 'reload', user: null } }))
     expect(screen.getByText(/Supervisor programs: Needs sudo/)).toBeInTheDocument()
+  })
+
+  it('offers Clear for a failed unit that only runs once', () => {
+    render(<ServicesPage ctx={ctx} />)
+    const clear = screen.getByRole('button', { name: 'Clear' })
+    expect(clear).toHaveAttribute('title', 'This runs once and nothing runs it again. Clear removes the failed mark without running it.')
+    fireEvent.click(clear)
+    expect(launch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'services.control', params: { kind: 'systemd', name: 'systemd-networkd-wait-online', verb: 'reset-failed', user: null } }))
   })
 
   it('filters to failed services', () => {

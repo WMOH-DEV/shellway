@@ -47,13 +47,13 @@ function runningVerbs(reloadable: boolean): ControlVerb[] {
   return reloadable ? ['reload', 'restart', 'stop'] : ['restart', 'stop']
 }
 
-function stoppedVerbs(state: ServiceState, oneshot: boolean): ControlVerb[] {
-  return state === 'failed' && oneshot ? ['reset-failed', 'start'] : ['start']
+function stoppedVerbs(state: ServiceState, runsOnce: boolean): ControlVerb[] {
+  return state === 'failed' && runsOnce ? ['reset-failed', 'start'] : ['start']
 }
 
 function systemdItem(unit: SystemdUnit): ServiceItem {
   const state = systemdState(unit)
-  const verbs = state === 'running' ? runningVerbs(RELOADABLE.test(unit.name)) : stoppedVerbs(state, unit.oneshot === true)
+  const verbs = state === 'running' ? runningVerbs(RELOADABLE.test(unit.name)) : stoppedVerbs(state, unit.runsOnce === true)
   const bootVerbs: ControlVerb[] = unit.enabled === null ? [] : [unit.enabled ? 'disable' : 'enable']
   return {
     id: serviceId('systemd', unit.name),

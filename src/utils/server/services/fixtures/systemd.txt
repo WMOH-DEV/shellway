@@ -10,6 +10,8 @@ apt-daily.service          loaded    inactive dead    Daily apt download activit
 ghost.service              not-found inactive dead    ghost.service
 ssh.service                loaded    active   running OpenBSD Secure Shell server
 ● systemd-networkd-wait-online.service loaded failed failed Wait for Network to be Configured
+● certbot.service            loaded    failed   failed  Certbot
+● ufw.service                loaded    failed   failed  Uncomplicated firewall
 @@files
 nginx.service                  enabled         enabled
 php8.3-fpm.service             enabled         enabled
@@ -47,8 +49,25 @@ Type=oneshot
 MemoryCurrent=[not set]
 CPUUsageNSec=[not set]
 Id=systemd-networkd-wait-online.service
+TriggeredBy=
 ActiveEnterTimestampMonotonic=0
 InactiveEnterTimestampMonotonic=1900800000000
+
+Type=oneshot
+MemoryCurrent=[not set]
+CPUUsageNSec=[not set]
+Id=certbot.service
+TriggeredBy=certbot.timer
+ActiveEnterTimestampMonotonic=0
+InactiveEnterTimestampMonotonic=2100000000000
+
+Type=oneshot
+MemoryCurrent=[not set]
+CPUUsageNSec=[not set]
+Id=ufw.service
+TriggeredBy=
+ActiveEnterTimestampMonotonic=0
+InactiveEnterTimestampMonotonic=5000000
 
 @@sample 1001000000000
 CPUUsageNSec=1004000000

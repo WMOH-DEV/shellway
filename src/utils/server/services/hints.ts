@@ -100,13 +100,6 @@ const RULES: HintRule[] = [
     }
   },
   {
-    id: 'open-files',
-    match: (input, log) => {
-      if (!/Too many open files/i.test(log)) return null
-      return { text: `The server had run out of open files when ${input.item.name} failed. Another program was most likely holding too many files open at that moment, so look at what ran at that time.`, fix: null }
-    }
-  },
-  {
     id: 'redis-log',
     match: (input, log) => {
       if (!/^redis(-server)?$/.test(input.item.name) || !/Can't open the log file/i.test(log)) return null
@@ -128,6 +121,14 @@ const RULES: HintRule[] = [
     match: (input, log) => {
       if (input.item.kind !== 'systemd' || !/start-limit-hit|Start request repeated too quickly/.test(log)) return null
       return { text: 'systemd gave up after it failed several times in a row. Fix the cause, then start it again.', fix: controlFix(input, 'start', 'Start') }
+    }
+  },
+  {
+    id: 'open-files',
+    match: (input, log) => {
+      if (/Too many open files in system/i.test(log)) return { text: `The whole server had run out of open files when ${input.item.name} failed. Another program was most likely holding too many files open at that moment.`, fix: null }
+      if (!/Too many open files/i.test(log)) return null
+      return { text: `${input.item.name} hit its own limit of open files or file watchers when it failed. If it keeps happening, raise its LimitNOFILE or the server's fs.inotify.max_user_instances.`, fix: null }
     }
   },
   {

@@ -15,13 +15,17 @@ const byName = (name: string) => units().find((unit) => unit.name === name)
 
 describe('parseSystemd', () => {
   it('keeps useful units, failed ones and installed stopped ones, and drops noise', () => {
-    expect(units().map((unit) => unit.name)).toEqual(['acme-api', 'mysql', 'nginx', 'php8.2-fpm', 'php8.3-fpm', 'redis-server', 'ssh', 'systemd-networkd-wait-online'])
+    expect(units().map((unit) => unit.name)).toEqual(['acme-api', 'certbot', 'mysql', 'nginx', 'php8.2-fpm', 'php8.3-fpm', 'redis-server', 'ssh', 'systemd-networkd-wait-online', 'ufw'])
   })
 
   it('reads systemctl show records whose Id line comes after Type, memory and CPU', () => {
-    expect(byName('systemd-networkd-wait-online')).toMatchObject({ active: 'failed', oneshot: true, sinceSeconds: 259201 })
-    expect(byName('nginx')?.oneshot).toBe(false)
-    expect(byName('redis-server')).toMatchObject({ memoryBytes: null, oneshot: false })
+    expect(byName('systemd-networkd-wait-online')).toMatchObject({ active: 'failed', runsOnce: true, sinceSeconds: 259201 })
+    expect(byName('nginx')?.runsOnce).toBe(false)
+    expect(byName('redis-server')).toMatchObject({ memoryBytes: null, runsOnce: false })
+  })
+
+  it('does not treat a oneshot unit that a timer runs as a run-once unit', () => {
+    expect(byName('certbot')).toMatchObject({ active: 'failed', runsOnce: false })
   })
 
   it('computes CPU from two samples and memory from MemoryCurrent', () => {

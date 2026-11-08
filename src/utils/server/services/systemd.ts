@@ -10,7 +10,7 @@ echo "@@uptime $(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
 units=$(systemctl list-units --type=service --state=running,failed --plain --no-legend --no-pager 2>/dev/null | awk '{ print ($1 == "●" ? $2 : $1) }')
 [ -n "$units" ] || exit 0
 echo "@@sample $(date +%s%N)"
-systemctl show -p Id,Type,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic $units 2>/dev/null
+systemctl show -p Id,Type,TriggeredBy,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic $units 2>/dev/null
 sleep 1
 echo "@@sample $(date +%s%N)"
 systemctl show -p Id,CPUUsageNSec $units 2>/dev/null
@@ -106,9 +106,11 @@ function sinceSeconds(unit: SystemdUnit, record: ShowRecord | undefined, uptime:
   return Math.max(0, Math.round(uptime - monotonicUs / 1e6))
 }
 
+const runsOnce = (unit: SystemdUnit, record: ShowRecord | undefined): boolean => record?.Type === 'oneshot' && !record.TriggeredBy && !ALLOW.test(unit.name)
+
 function withUsage(unit: SystemdUnit, sampled: Sample[], uptime: number | null): SystemdUnit {
   const record = sampled[0]?.records.get(unit.name)
-  return { ...unit, cpuPercent: unit.sub === 'running' ? cpuPercent(unit.name, sampled) : null, memoryBytes: unit.sub === 'running' ? memoryBytes(record) : null, sinceSeconds: sinceSeconds(unit, record, uptime), oneshot: record?.Type === 'oneshot' }
+  return { ...unit, cpuPercent: unit.sub === 'running' ? cpuPercent(unit.name, sampled) : null, memoryBytes: unit.sub === 'running' ? memoryBytes(record) : null, sinceSeconds: sinceSeconds(unit, record, uptime), runsOnce: runsOnce(unit, record) }
 }
 
 function installedButNotLoaded(states: Map<string, boolean | null>, loaded: Set<string>): SystemdUnit[] {

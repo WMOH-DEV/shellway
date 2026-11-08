@@ -19,7 +19,7 @@ const STATE_TEXT: Record<ServiceState, string> = { running: 'text-nd-text-second
 
 export const VERB_LABEL: Record<ControlVerb, string> = { start: 'Start', stop: 'Stop', restart: 'Restart', reload: 'Reload', enable: 'Start on boot', disable: 'Do not start on boot', 'reset-failed': 'Clear' }
 
-const CLEAR_TITLE = 'This runs once, at boot. Clear removes the failed mark without running it again.'
+const CLEAR_TITLE = 'This runs once and nothing runs it again. Clear removes the failed mark without running it.'
 
 const RUN_VERBS: readonly ControlVerb[] = ['reset-failed', 'start', 'reload', 'restart', 'stop']
 
