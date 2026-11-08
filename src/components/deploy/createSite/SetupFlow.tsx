@@ -163,7 +163,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
 
   return (
     <WizardFrame subtitle={model.draft.domain || `folder, ${driver.label}, DNS, HTTPS and deploys, in one go`} onBack={onCancel} aside={aside} footer={footer}>
-      {step === 'site' && <SiteStep model={model} tools={context.tools} />}
+      {step === 'site' && <SiteStep model={model} tools={context.tools} serverIp={context.serverIp} />}
       {step === 'stack' && <StackStep model={model} tools={context.tools} serverLabel={driver.label} serverName={serverName} />}
       {step === 'commands' && <CommandsStep model={model} connectionId={connectionId} server={context.server} tools={context.tools} />}
       {step === 'domain' && <DomainStep model={model} zone={zone} dns={dns} />}

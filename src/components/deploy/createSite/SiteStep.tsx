@@ -11,9 +11,10 @@ import type { CreateSiteDraftModel } from './useCreateSiteDraft'
 interface SiteStepProps {
   model: CreateSiteDraftModel
   tools: ServerTools
+  serverIp: string | null
 }
 
-function AddressSection({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>) {
+function AddressSection({ model, tools, serverIp }: SiteStepProps) {
   const { draft } = model
   return (
     <section aria-label="Address" className="flex flex-col gap-3.5 rounded-[10px] border border-nd-border bg-nd-surface p-4">
@@ -28,7 +29,7 @@ function AddressSection({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>
           onBlur={() => void model.checkName()}
           onKeyDown={(e) => e.key === 'Enter' && void model.checkName()}
         />
-        {draft.domain !== '' && <NameStatus domain={draft.domain} check={model.nameCheck} checking={model.checking} onRecheck={() => void model.checkName()} />}
+        {draft.domain !== '' && <NameStatus site={draft} serverIp={serverIp} check={model.nameCheck} checking={model.checking} onRecheck={() => void model.checkName()} />}
       </div>
       <div className="flex flex-col gap-0.5">
         <Toggle checked={draft.includeWww} onChange={(includeWww) => model.patch({ includeWww })} label={`Also www.${draft.domain || 'your domain'}`} />
@@ -45,11 +46,11 @@ function AddressSection({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>
   )
 }
 
-export function SiteStep({ model, tools }: SiteStepProps) {
+export function SiteStep({ model, tools, serverIp }: SiteStepProps) {
   return (
     <div className="flex flex-col gap-5">
       <StepHeading title="Site and code" subtitle="Start with the address, then where the code comes from. Shellway fills in the rest; you can change any of it." />
-      <AddressSection model={model} tools={tools} />
+      <AddressSection model={model} tools={tools} serverIp={serverIp} />
       <CodeSection model={model} />
     </div>
   )

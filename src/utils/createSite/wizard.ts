@@ -11,6 +11,7 @@ import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from './scaf
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
+import { existingDnsOf } from './existingDns'
 import { phpNeed } from './php'
 import { assertPoolOwner } from './phpPool'
 import { TEMPLATES, usesPhp } from './templates'
@@ -161,11 +162,12 @@ const fails = (check: () => unknown): boolean => {
   }
 }
 
-export function nameCheckProblem(check: NameCheckState | null, domain: string): string | null {
+export function nameCheckProblem(check: NameCheckState | null, site: Pick<CreateSiteDraft, 'domain' | 'includeWww'>, serverIp: string | null): string | null {
+  const { domain } = site
   if (check === null || check.domain !== domain) return `Checking ${domain}…`
   if (check.error !== null) return check.error
   if (check.result === null) return `Checking ${domain}…`
-  if (check.result.records.length > 0) return `${domain} already has DNS records. Pick a name that is not in use yet.`
+  if (existingDnsOf(check.result.records, site, serverIp).blocking.length > 0) return `${domain} already has DNS records that point somewhere else. Pick a name that is not in use yet.`
   if (check.result.servedBy !== null) return `${domain} is already served by ${check.result.servedBy}.`
   return null
 }
@@ -256,7 +258,7 @@ export function allowedTemplates(source: CodeSource): readonly TemplateId[] {
 
 export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | null, context: CreateSiteContext, project: ProjectCheckState | null = null): string | null {
   if (fails(() => assertDomain(draft.domain))) return 'Enter a domain such as shop.example.com'
-  const nameProblem = nameCheckProblem(check, draft.domain)
+  const nameProblem = nameCheckProblem(check, draft, context.serverIp)
   if (nameProblem !== null) return nameProblem
   if (fails(() => assertSiteName(draft.siteName))) return 'Site name: lowercase letters, digits, dots and dashes'
   if (context.deploySiteNames.includes(draft.siteName)) return `There is already a site named ${draft.siteName}`

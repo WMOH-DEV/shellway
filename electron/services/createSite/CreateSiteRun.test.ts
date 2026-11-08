@@ -418,6 +418,14 @@ describe('CreateSiteRun', () => {
     expect(ports.dns!.create).not.toHaveBeenCalled()
   })
 
+  it('keeps a record that already points at this server and never counts it as made by the run', async () => {
+    ports.dns!.find = vi.fn(async (_zone: string, name: string) => name === 'shop.example.com' ? [{ id: 'theirs', type: 'A', name, content: '203.0.113.10', proxied: true, comment: '' }] : [])
+    const record = await startRun(NGINX).run('start')
+    expect(record.phase).toBe('done')
+    expect(ports.dns!.create).toHaveBeenCalledTimes(1)
+    expect(record.created.dnsRecords.map((made) => made.name)).toEqual(['www.shop.example.com'])
+  })
+
   it('refuses to overwrite a Deploy site with the same name', async () => {
     ports.deploy.siteNames = vi.fn(async () => ['shop'])
     const record = await startRun(NGINX).run('start')

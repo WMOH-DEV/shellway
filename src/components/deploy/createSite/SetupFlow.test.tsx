@@ -67,8 +67,18 @@ describe('Create site, step 1', () => {
     const taken = { ...FREE_NAME, records: [{ type: 'A', name: 'shop.example.com', content: '198.51.100.7' }] }
     const { user } = setup({ 'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: taken }) })
     await enterDomain(user)
-    expect(await screen.findByRole('status')).toHaveTextContent('shop.example.com already has DNS records (A 198.51.100.7)')
+    expect(await screen.findByRole('status')).toHaveTextContent('shop.example.com already has DNS records that point somewhere else (A shop.example.com → 198.51.100.7)')
     expect(continueButton()).toBeDisabled()
+  })
+
+  it('keeps a record that already points at this server and lets the user go on', async () => {
+    const pointing = { ...FREE_NAME, records: [{ type: 'A', name: 'shop.example.com', content: '203.0.113.10' }] }
+    const { user } = setup({ 'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: pointing }) })
+    await enterDomain(user)
+    await user.click(screen.getByRole('switch', { name: /Also www/ }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Already points at this server (A shop.example.com → 203.0.113.10) · kept as it is')
+    await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
+    expect(continueButton()).toBeEnabled()
   })
 
   it('blocks Next when the name is already served by a site file', async () => {

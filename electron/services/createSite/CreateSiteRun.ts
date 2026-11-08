@@ -10,6 +10,7 @@ import { siteNames } from '../../../src/utils/createSite/templates/shared'
 import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
 import { DATABASE_CHECKED, createDatabaseScript } from '../../../src/utils/createSite/database'
 import { envFileText, envPathOf, privateEnvFileScript } from '../../../src/utils/createSite/env'
+import { matchesPlan } from '../../../src/utils/createSite/existingDns'
 import { jobFiles } from '../../../src/utils/createSite/laravelJobs'
 import { redact, usableSecrets } from '../server/StepOutput'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../../../src/utils/ssl/originCa/scripts'
@@ -325,6 +326,10 @@ export class CreateSiteRun {
       if (fromThisRun) {
         this.say(`${record.name} was already created by this run. Keeping it.\n`)
         this.recordDns(zoneId, fromThisRun.id, record)
+        continue
+      }
+      if (existing.length > 0 && existing.every((found) => matchesPlan(found, record))) {
+        this.say(`${record.name} already points at ${record.content}. Kept as it is.\n`)
         continue
       }
       if (existing.length > 0) throw new Error(`${record.name} already has a DNS record (${existing[0].type} ${existing[0].content}). Nothing was changed in Cloudflare.`)

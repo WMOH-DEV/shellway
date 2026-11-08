@@ -291,7 +291,7 @@ function dnsAction(input: CreateSiteInput): PlanAction {
     summary: `${records.map((record) => recordSummary(record, zone)).join(' · ')} · ${proxyLabel(records, dns.proxied)}`,
     chip: 'new',
     records,
-    note: `Created in Cloudflare zone ${zone} with your token. Nothing else in the zone changes.`
+    note: `Created in Cloudflare zone ${zone} with your token. A record that already points here is kept as it is. Nothing else in the zone changes.`
   })
 }
 

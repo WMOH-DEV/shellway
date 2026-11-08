@@ -74,8 +74,20 @@ describe('siteStepProblem', () => {
   })
 
   it('blocks a name that already has DNS records or is already served', () => {
-    expect(siteStepProblem(draft(), checked({ records: [{ type: 'A', name: 'shop.example.com', content: '198.51.100.7' }] }), context())).toMatch(/already has DNS records/)
+    expect(siteStepProblem(draft(), checked({ records: [{ type: 'A', name: 'shop.example.com', content: '198.51.100.7' }] }), context())).toMatch(/already has DNS records that point somewhere else/)
     expect(siteStepProblem(draft(), checked({ servedBy: '/etc/nginx/sites-enabled/old.conf' }), context())).toMatch(/already served by/)
+  })
+
+  it('accepts records that already point at this server, the way Shellway would make them', () => {
+    const records = [{ type: 'A', name: 'shop.example.com', content: '203.0.113.10' }, { type: 'CNAME', name: 'www.shop.example.com', content: 'shop.example.com' }]
+    expect(siteStepProblem(draft(), checked({ records }), context())).toBeNull()
+    expect(siteStepProblem(draft(), checked({ records: [{ type: 'AAAA', name: 'shop.example.com', content: '2001:db8::1' }, records[0]] }), context())).toMatch(/point somewhere else/)
+  })
+
+  it('ignores a www record when the site does not use www', () => {
+    const records = [{ type: 'A', name: 'www.shop.example.com', content: '198.51.100.7' }]
+    expect(siteStepProblem(draft({ includeWww: false }), checked({ records }), context())).toBeNull()
+    expect(siteStepProblem(draft({ includeWww: true }), checked({ records }), context())).toMatch(/point somewhere else/)
   })
 
   it('waits for a check of the current domain', () => {

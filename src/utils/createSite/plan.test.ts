@@ -48,7 +48,7 @@ describe('buildPlan for the Laravel mockup on nginx', () => {
         { type: 'CNAME', name: 'www.shop.example.com', content: 'shop.example.com', proxied: true }
       ],
       commands: [],
-      note: 'Created in Cloudflare zone example.com with your token. Nothing else in the zone changes.'
+      note: 'Created in Cloudflare zone example.com with your token. A record that already points here is kept as it is. Nothing else in the zone changes.'
     })
   })
 
