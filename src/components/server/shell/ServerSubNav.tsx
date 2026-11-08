@@ -82,7 +82,7 @@ function CollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle(
   return (
     <div className={cn('mt-1 flex border-t border-nd-border pt-2', collapsed ? 'justify-center' : 'justify-end')}>
       <Tooltip content={label} side="right">
-        <button type="button" aria-label={label} aria-expanded={!collapsed} onClick={onToggle} className="rounded-[7px] p-2 text-nd-text-muted transition-colors hover:bg-nd-surface hover:text-nd-text-primary">
+        <button type="button" aria-label={label} onClick={onToggle} className="rounded-[7px] p-2 text-nd-text-muted transition-colors hover:bg-nd-surface hover:text-nd-text-primary">
           <Icon size={16} />
         </button>
       </Tooltip>

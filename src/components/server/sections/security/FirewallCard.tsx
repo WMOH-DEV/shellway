@@ -62,19 +62,21 @@ function DockerNotice({ ufw }: { ufw: UfwFacts }) {
 function RuleList({ groups, actions }: { groups: UfwRuleGroup[]; actions: SecurityActions }) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const matches = filterRuleGroups(groups, query)
-  const visible = query.trim() || expanded ? matches : matches.slice(0, RULES_SHOWN)
+  const searchable = groups.length > RULES_SHOWN
+  const search = searchable ? query.trim() : ''
+  const matches = filterRuleGroups(groups, search)
+  const visible = search || expanded ? matches : matches.slice(0, RULES_SHOWN)
   return (
     <div className="flex flex-col gap-1.5">
-      {groups.length > RULES_SHOWN && (
+      {searchable && (
         <Input aria-label="Search firewall rules" placeholder={`Search ${groups.length} rules by port, address or note`} icon={<Search size={14} />} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Escape' && setQuery('')} />
       )}
       <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_80px_minmax(0,1.6fr)_96px] gap-3 px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-dim">
         <span>Port</span><span>From</span><span>Action</span><span>Note</span><span />
       </div>
       {visible.map((group) => <RuleRow key={group.key} group={group} actions={actions} />)}
-      {matches.length === 0 && <p className="px-3 text-[13px] text-nd-text-muted">No rule matches {query.trim()}.</p>}
-      {!query.trim() && <ShowAllToggle total={matches.length} limit={RULES_SHOWN} expanded={expanded} noun="rules" onToggle={() => setExpanded(!expanded)} />}
+      {matches.length === 0 && <p className="px-3 text-[13px] text-nd-text-muted">No rule matches {search}.</p>}
+      {!search && <ShowAllToggle total={matches.length} limit={RULES_SHOWN} expanded={expanded} noun="rules" onToggle={() => setExpanded(!expanded)} />}
     </div>
   )
 }

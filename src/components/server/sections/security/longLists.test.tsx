@@ -44,5 +44,17 @@ describe('long firewall and ignore lists', () => {
     expect(screen.getAllByText(/^203\.0\.113\./)).toHaveLength(12)
     fireEvent.click(screen.getByRole('button', { name: 'Show all 35 addresses' }))
     expect(screen.getAllByText(/^203\.0\.113\./)).toHaveLength(35)
+    fireEvent.click(screen.getByRole('button', { name: 'Show fewer' }))
+    expect(screen.getAllByText(/^203\.0\.113\./)).toHaveLength(12)
+  })
+
+  it('drops a search when the list shrinks and the search box goes away', () => {
+    const base = parseUfw(fixture('ufw-root.txt'))
+    const many = { ...base, rules: Array.from({ length: 30 }, (_, index) => blocked(index)) }
+    const { rerender } = render(<FirewallCard result={ok(many)} actions={actions} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search firewall rules' }), { target: { value: 'nothing matches this' } })
+    rerender(<FirewallCard result={ok({ ...base, rules: [blocked(1), blocked(2)] })} actions={actions} />)
+    expect(screen.queryByRole('textbox', { name: 'Search firewall rules' })).toBeNull()
+    expect(screen.getAllByText(/^198\.51\.100\./)).toHaveLength(2)
   })
 })

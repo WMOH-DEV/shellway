@@ -64,6 +64,8 @@ describe('ServerView', () => {
   })
 
   it('collapses the sidebar to icons and back, and remembers the choice', () => {
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() }
+    vi.stubGlobal('localStorage', storage)
     render(<ServerView tab={tab} active attention={[item({ area: 'overview', level: 'warning' })]} />)
     const nav = screen.getByRole('navigation', { name: 'Server sections' })
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
@@ -73,6 +75,8 @@ describe('ServerView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }))
     expect(nav).toHaveTextContent('Overview')
     expect(useServerSidebarStore.getState().choice).toBe('expanded')
+    expect(storage.setItem.mock.calls).toEqual([['shellway.server.sidebar', 'collapsed'], ['shellway.server.sidebar', 'expanded']])
+    vi.unstubAllGlobals()
   })
 
   it('follows the window width until the user picks, then keeps the pick', () => {
