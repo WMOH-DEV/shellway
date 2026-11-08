@@ -2,7 +2,7 @@
 # Shellway deploy runner. Installed by Shellway; safe to read, do not edit by hand.
 set -u
 
-RUNNER_VERSION=2
+RUNNER_VERSION=3
 ROOT="${SHELLWAY_DEPLOY_ROOT:-$HOME/.shellway-deploy}"
 CRONTAB_BIN="${SHELLWAY_CRONTAB:-crontab}"
 HEALTH_DELAY="${SHELLWAY_HEALTH_DELAY:-3}"
@@ -1114,8 +1114,9 @@ cmd_sync_cron() {
 
 cmd_remove() {
   load_site "$1"
-  is_busy && die "a deploy is running"
+  acquire_lock || die "a deploy is running"
   rm -rf "$SDIR"
+  LOCKED=0
   cmd_sync_cron
   log "removed site $SITE; $SITE_PATH and $DEPLOY_ROOT were left untouched"
 }

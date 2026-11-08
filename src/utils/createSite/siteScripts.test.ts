@@ -18,6 +18,7 @@ import {
   removeSiteScript,
   sitePaths
 } from './siteScripts'
+import { LEFT_IN_PLACE } from './refusal'
 import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, type ServerCase } from './testFixtures'
 
 const TEXT = 'server {\n    listen 80;\n}\n'
@@ -476,7 +477,7 @@ describe('removeCertificateScript', () => {
     const root = mkdtempSync(join(tmpdir(), 'cert-'))
     mkdirSync(join(root, 'nginx', 'sites-available'), { recursive: true })
     mkdirSync(join(root, 'letsencrypt', 'renewal'), { recursive: true })
-    if (present) writeFileSync(join(root, 'letsencrypt', 'renewal', 'shop.example.com.conf'), '')
+    if (present) writeFileSync(join(root, 'letsencrypt', 'renewal', 'shop.example.com.conf'), `fullchain = ${root}/letsencrypt/live/shop.example.com/fullchain.pem\n`)
     writeFileSync(join(root, 'nginx-T'), '')
     const log = join(root, 'log')
     const fakes = [
@@ -506,6 +507,18 @@ describe('removeCertificateScript', () => {
     const result = run(removeCertificateScript('shop.example.com'))
     expect(result.status).toBe(3)
     expect(result.stderr).toContain(other)
+    expect(result.stderr).toContain(LEFT_IN_PLACE)
+    expect(result.log).toBe('')
+  })
+
+  it('keeps the certificate when another program under /etc uses it', () => {
+    const { root, run, uses } = box()
+    mkdirSync(join(root, 'postfix'))
+    const mail = join(root, 'postfix', 'main.cf')
+    writeFileSync(mail, uses)
+    const result = run(removeCertificateScript('shop.example.com'))
+    expect(result.status).toBe(3)
+    expect(result.stderr).toContain(mail)
     expect(result.log).toBe('')
   })
 

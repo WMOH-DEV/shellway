@@ -24,14 +24,16 @@ function fakeStore(records: RunRecord[]): RunStore {
   } as unknown as RunStore
 }
 
-function makeService(store: RunStore, facts: Partial<ServerFacts> = {}) {
+const MACHINE = '0123456789abcdef0123456789abcdef'
+
+function makeService(store: RunStore, facts: Partial<ServerFacts> = {}, machine = MACHINE) {
   const ssl = {
     service: () => ({ readConfig: async () => ({ facts: { nginx: '1.24', apache: null, serving: 'nginx', user: 'deploy', ...facts }, blocks: [] }) }),
     cloudflareStatus: async () => ({ saved: true, error: null, zones: [{ id: 'z1', name: 'example.com' }], permissions: [] }),
     dnsClient: () => null
   } as unknown as SslCoordinator
   return new CreateSiteService({
-    execFor: () => vi.fn(async () => ({ code: 0, stdout: '', stderr: '', stdoutBytes: 0 })),
+    execFor: () => vi.fn(async (command: string) => ({ code: 0, stdout: command.includes('machine-id') ? `${machine}\n` : '', stderr: '', stdoutBytes: 0 })),
     sessionOf: () => 'session-1',
     ssl,
     deploy: {} as DeployCoordinator,
@@ -118,5 +120,56 @@ describe('CreateSiteService', () => {
     const input = { ...INPUT, ...changes }
     const secrets = { dbPassword: input.database === null ? null : SECRETS.dbPassword, appKey: input.template === 'laravel' ? SECRETS.appKey : null, envText: '' }
     await expect(makeService(fakeStore([])).start('c1', 'session-1', input, secrets)).rejects.toThrow(message)
+  })
+
+  describe('deleting a finished site', () => {
+    const finished = (changes: Partial<RunRecord> = {}) => storedRun({ phase: 'done', machineId: MACHINE, ...changes })
+
+    it('records which server a new site is made on', async () => {
+      const facts = { paths: { apache: null }, sudo: { full: true, apache: false } } as unknown as Partial<ServerFacts>
+      const record = await makeService(fakeStore([]), facts).start('c1', 'session-1', INPUT, SECRETS)
+      expect(record.machineId).toBe(MACHINE)
+    })
+
+    it('lists finished sites but not removed ones', () => {
+      const store = fakeStore([finished(), storedRun({ id: 'run-2', phase: 'removed' })])
+      expect(makeService(store).runs('session-1').map((run) => run.id)).toEqual(['run-1'])
+    })
+
+    it('deletes a finished site on the same server once its name is typed', async () => {
+      const store = fakeStore([finished()])
+      const record = await makeService(store).deleteSite('c1', 'run-1', 'shop')
+      expect(record).toMatchObject({ phase: 'removed', deleting: true })
+    })
+
+    it.each<[string, Partial<RunRecord>, string, string]>([
+      ['a run that is not finished', { phase: 'failed' }, 'shop', 'Only a site that Create site finished'],
+      ['a removal that was not a delete', { phase: 'remove-failed' }, 'shop', 'Only a site that Create site finished'],
+      ['the wrong typed name', {}, 'shop2', 'Type shop to confirm'],
+      ['another connection', { sessionId: 'session-2' }, 'shop', 'different server connection'],
+      ['a run from before the server was recorded', { machineId: undefined }, 'shop', 'before Shellway recorded which server'],
+      ['a run whose server had no readable machine ID', { machineId: null }, 'shop', 'could not read the machine ID'],
+      ['a different server behind the same connection', { machineId: 'f'.repeat(32) }, 'shop', 'different server than the one this site was made on'],
+      ['a login as another user than the site owner', { input: { ...INPUT, owner: 'someone' } }, 'shop', 'belongs to someone, but Shellway is logged in as deploy']
+    ])('refuses %s and changes nothing', async (_what, changes, typed, message) => {
+      const store = fakeStore([finished(changes)])
+      await expect(makeService(store).deleteSite('c1', 'run-1', typed)).rejects.toThrow(message)
+      expect(store.save).not.toHaveBeenCalled()
+    })
+
+    it('lets a delete that failed be tried again', async () => {
+      const store = fakeStore([finished({ phase: 'remove-failed', deleting: true })])
+      expect((await makeService(store).deleteSite('c1', 'run-1', 'shop')).phase).toBe('removed')
+    })
+
+    it('never runs the failed-run Remove on a finished site', async () => {
+      await expect(makeService(fakeStore([finished()])).remove('c1', 'run-1')).rejects.toThrow('Use Delete site instead')
+      await expect(makeService(fakeStore([finished({ phase: 'remove-failed', deleting: true })])).remove('c1', 'run-1')).rejects.toThrow('Use Delete site instead')
+    })
+
+    it('tells the user to try deleting again when Shellway closed mid-delete', () => {
+      const [run] = makeService(fakeStore([finished({ phase: 'removing', deleting: true })])).runs('session-1')
+      expect(run).toMatchObject({ phase: 'remove-failed', error: 'Shellway closed while deleting. Press Try deleting again to pick up from here.' })
+    })
   })
 })

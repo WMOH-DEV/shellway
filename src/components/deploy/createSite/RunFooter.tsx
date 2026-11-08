@@ -1,12 +1,13 @@
 import { ExternalLink, RotateCcw, SkipForward, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { RunRecord } from '@/types/createSite'
-import { canResume } from '@/utils/createSite/runView'
+import { canDelete, canResume } from '@/utils/createSite/runView'
 import type { CreateRun } from './useCreateRun'
 
 interface RunFooterProps {
   run: CreateRun & { record: RunRecord }
   onRemove: () => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -34,22 +35,32 @@ function ResumeActions({ run, onRemove }: Pick<RunFooterProps, 'run' | 'onRemove
   )
 }
 
-function PhaseActions({ run, onRemove }: Pick<RunFooterProps, 'run' | 'onRemove'>) {
-  const { phase, domain } = run.record
+function DoneActions({ run, onDelete }: Pick<RunFooterProps, 'run' | 'onDelete'>) {
+  return (
+    <>
+      {canDelete(run.record) && <Button variant="ghost" onClick={onDelete} disabled={run.busy}><Trash2 size={13} /> Delete site</Button>}
+      <Button variant="primary" onClick={() => openSite(run.record.domain)}><ExternalLink size={13} /> Open site</Button>
+    </>
+  )
+}
+
+function PhaseActions({ run, onRemove, onDelete }: Pick<RunFooterProps, 'run' | 'onRemove' | 'onDelete'>) {
+  const { phase, deleting } = run.record
   if (phase === 'running') return <RunningActions run={run} />
   if (canResume(run.record)) return <ResumeActions run={run} onRemove={onRemove} />
-  if (phase === 'done') return <Button variant="primary" onClick={() => openSite(domain)}><ExternalLink size={13} /> Open site</Button>
+  if (phase === 'done') return <DoneActions run={run} onDelete={onDelete} />
+  if (phase === 'remove-failed' && deleting) return <Button variant="primary" onClick={onDelete} disabled={run.busy}><Trash2 size={13} /> Try deleting again</Button>
   if (phase === 'remove-failed') return <Button variant="primary" onClick={onRemove} disabled={run.busy}><Trash2 size={13} /> Try removing again</Button>
   return null
 }
 
-export function RunFooter({ run, onRemove, onClose }: RunFooterProps) {
+export function RunFooter({ run, onRemove, onDelete, onClose }: RunFooterProps) {
   return (
     <footer className="flex flex-wrap items-center gap-2.5 border-t border-nd-border bg-nd-bg-secondary px-7 py-3">
       <Button onClick={onClose}>Back to sites</Button>
       <div className="flex-1" />
       {run.error && <span role="alert" className="max-w-[40%] truncate text-xs text-nd-error-fg" title={run.error}>{run.error}</span>}
-      <PhaseActions run={run} onRemove={onRemove} />
+      <PhaseActions run={run} onRemove={onRemove} onDelete={onDelete} />
     </footer>
   )
 }

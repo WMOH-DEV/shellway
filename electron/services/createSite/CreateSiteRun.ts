@@ -3,7 +3,7 @@ import type { CreatedDnsRecord, CreatedResources, CreateSiteInput, CreateSiteSec
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
 import { poolLayout, poolText } from '../../../src/utils/createSite/phpPool'
 import { buildPlan } from '../../../src/utils/createSite/plan'
-import { PROJECT_SHELL, ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
+import { FOLDER_CREATED, PROJECT_SHELL, ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
 import { localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } from '../../../src/utils/createSite/scaffold'
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
 import { siteNames } from '../../../src/utils/createSite/templates/shared'
@@ -213,10 +213,8 @@ export class CreateSiteRun {
   }
 
   private async createFolder(action: PlanAction): Promise<void> {
-    const recordedBefore = this.record.created.folder !== null
-    if (!recordedBefore) this.created({ folder: { path: this.input.folder, createdByRun: true, ...this.placeholderHash() } })
     const result = await this.root(action)
-    if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ folder: null })
+    if (this.record.created.folder === null && result.stdout.includes(FOLDER_CREATED)) this.created({ folder: { path: this.input.folder, createdByRun: true, ...this.placeholderHash() } })
     this.mustSucceed(result, 'Creating the folder failed.')
   }
 

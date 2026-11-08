@@ -408,6 +408,27 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
       expect(existsSync(join(root, 'sites', 'app', 'lock'))).toBe(false)
     })
 
+    it('refuses to remove a site while a deploy holds the lock', async () => {
+      writeSite('app', {})
+      mkdirSync(join(root, 'sites', 'app', 'lock'))
+      writeFileSync(join(root, 'sites', 'app', 'lock', 'pid'), String(process.pid))
+      const result = await runner('remove', 'app')
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('a deploy is running')
+      expect(existsSync(join(root, 'sites', 'app', 'site.conf'))).toBe(true)
+    })
+
+    it('removes a site whose lock owner is gone and leaves the site folder alone', async () => {
+      writeSite('app', {})
+      mkdirSync(join(www, 'app-deploy'), { recursive: true })
+      mkdirSync(join(root, 'sites', 'app', 'lock'))
+      writeFileSync(join(root, 'sites', 'app', 'lock', 'pid'), '999999')
+      const result = await runner('remove', 'app')
+      expect(result.code).toBe(0)
+      expect(existsSync(join(root, 'sites', 'app'))).toBe(false)
+      expect(existsSync(join(www, 'app-deploy'))).toBe(true)
+    })
+
     it('closes a deploy that a killed runner left running', async () => {
       writeSite('app', {})
       writeFileSync(join(root, 'sites', 'app', 'history.tsv'), 'old\trunning\tmanual\t-\t100\t\t0\t\n')

@@ -16,6 +16,7 @@ interface CreateSiteWizardProps {
   sessionId: string
   serverName: string
   initialRun: RunRecord | null
+  openDelete?: boolean
   prefill?: CreateSitePrefill
   onClose: () => void
 }
@@ -40,7 +41,7 @@ function Setup(props: SetupProps) {
   return frame(<ContextProblem message={`Shellway found no nginx or Apache on ${props.serverName}. Create site needs one of them to serve the site.`} />)
 }
 
-export function CreateSiteWizard({ connectionId, sessionId, serverName, initialRun, prefill, onClose }: CreateSiteWizardProps) {
+export function CreateSiteWizard({ connectionId, sessionId, serverName, initialRun, openDelete, prefill, onClose }: CreateSiteWizardProps) {
   const run = useCreateRun(connectionId, sessionId, initialRun)
   const [plan, setPlan] = useState<PlanAction[] | null>(null)
   const { record } = run
@@ -50,7 +51,7 @@ export function CreateSiteWizard({ connectionId, sessionId, serverName, initialR
     void run.start(input, secrets)
   }
 
-  if (record) return <RunScreen run={{ ...run, record }} plan={plan} onClose={onClose} />
+  if (record) return <RunScreen run={{ ...run, record }} plan={plan} openDelete={openDelete} onClose={onClose} />
   return (
     <Setup
       connectionId={connectionId}

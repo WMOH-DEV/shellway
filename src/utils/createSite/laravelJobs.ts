@@ -2,6 +2,7 @@ import type { CreateSiteInput, LaravelJobs, ServerTools } from '@/types/createSi
 import { EXIT_REFUSED } from '../ssl/originCa/exitCodes'
 import { heredoc } from '../ssl/originCa/heredoc'
 import { pinPhpVersion } from './php'
+import { LEFT_IN_PLACE } from './refusal'
 import { assertFolder, assertOwner, assertSiteName } from './validate'
 
 type JobFacts = Pick<CreateSiteInput, 'siteName' | 'folder' | 'owner' | 'phpVersion' | 'server'>
@@ -79,20 +80,25 @@ export function createJobsScript(facts: JobFacts, jobs: LaravelJobs): string {
   ].join('\n')
 }
 
-export function removeJobsScript(siteName: string, files: JobFiles): string {
-  const unit = queueUnitName(siteName)
+const removeUnlessChanged = (path: string, text: string, remove: string[]): string[] => [
+  `if [ -e ${quote(path)} ] && ! cmp -s ${quote(path)} - ${heredoc(text).trimEnd()}`,
+  `then changed="$changed ${path}"`,
+  `elif [ -e ${quote(path)} ]; then`,
+  ...remove.map((line) => `  ${line}`),
+  'fi'
+]
+
+export function removeJobsScript(facts: JobFacts, files: JobFiles): string {
+  const unit = quote(queueUnitName(facts.siteName))
   return [
     'set -e',
-    ...(files.unitFile
-      ? [
-          `if [ -e ${quote(files.unitFile)} ]; then`,
-          `  systemctl disable --now ${quote(unit)} || true`,
-          `  rm -f ${quote(files.unitFile)}`,
-          '  systemctl daemon-reload',
-          'fi'
-        ]
-      : []),
-    ...(files.cronFile ? [`rm -f ${quote(files.cronFile)}`] : []),
+    "changed=''",
+    ...(files.unitFile ? removeUnlessChanged(files.unitFile, unitText(facts), [`systemctl disable --now ${unit} || true`, `rm -f ${quote(files.unitFile)}`, 'systemctl daemon-reload']) : []),
+    ...(files.cronFile ? removeUnlessChanged(files.cronFile, cronText(facts), [`rm -f ${quote(files.cronFile)}`]) : []),
+    'if [ -n "$changed" ]; then',
+    `  echo "Changed after Shellway wrote it:$changed. ${LEFT_IN_PLACE}" >&2`,
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
     ''
   ].join('\n')
 }

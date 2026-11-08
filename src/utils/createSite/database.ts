@@ -138,3 +138,18 @@ export function databaseEnv(database: SiteDatabase | null, password: string): [s
     ['DB_PASSWORD', password]
   ]
 }
+
+const MANUAL_CLIENT: Record<ServerDatabaseEngine, string> = { mysql: 'sudo mysql', postgresql: 'cd /tmp && sudo -u postgres psql' }
+
+export function manualDropCommand(engine: ServerDatabaseEngine, name: string, user: string): string {
+  const statements = dropStatements(engine, assertMatches(name, DB_NAME, 'database name'), assertMatches(user, DB_USER, 'database user'))
+  return [`${MANUAL_CLIENT[engine]} <<'SQL'`, ...statements, 'SQL'].join('\n')
+}
+
+export function databaseSizeCommand(database: SiteDatabase): string {
+  switch (database.engine) {
+    case 'sqlite': return `du -sh ${quote(database.path)} 2>/dev/null | cut -f1`
+    case 'mysql': return `mysql --batch -N -e "SELECT IF(s < 1048576, CONCAT(CEIL(s / 1024), 'K'), CONCAT(ROUND(s / 1048576, 1), 'M')) FROM (SELECT COALESCE(SUM(data_length + index_length), 0) AS s FROM information_schema.tables WHERE table_schema = '${assertMatches(database.name, DB_NAME, 'database name')}') t" 2>/dev/null`
+    case 'postgresql': return `(cd /tmp && ${PSQL} -tA -c "SELECT pg_size_pretty(pg_database_size('${assertMatches(database.name, DB_NAME, 'database name')}'))" 2>/dev/null)`
+  }
+}

@@ -7,8 +7,9 @@ import { FOLDER_CREATED, PROJECT_SHELL, ROOT_SHELL } from '../../../src/utils/cr
 import { APACHE_DEBIAN, NGINX, allTools, baseInput, type ServerCase } from '../../../src/utils/createSite/testFixtures'
 import type { ExecOptions } from '../../utils/sshExec'
 import { CreateSiteRun, dnsComment, newRunRecord } from './CreateSiteRun'
+import type { DnsRecord } from '../ssl/CloudflareClient'
 import type { CreateSitePorts } from './ports'
-import { removeCreated } from './removeRun'
+import { deleteSite, removeCreated } from './removeRun'
 
 const SHA = 'a'.repeat(64)
 const SHA_AFTER_HTTPS = 'b'.repeat(64)
@@ -27,6 +28,7 @@ let certificateOnServer: boolean
 let saved: RunRecord[]
 let output: string
 let dnsCreated: number
+let dnsRecords: DnsRecord[]
 let ports: CreateSitePorts
 
 const ok = (stdout = '') => ({ code: 0, stdout, stderr: '', stdoutBytes: stdout.length })
@@ -54,13 +56,15 @@ function makePorts(): CreateSitePorts {
   return {
     exec,
     dns: {
-      find: vi.fn(async () => []),
+      find: vi.fn(async (_zone: string, name: string) => dnsRecords.filter((record) => record.name === name)),
       create: vi.fn(async (_zone, record) => {
         if (failAt === 'dns') throw new Error('Cloudflare refused the record')
         dnsCreated += 1
-        return { id: `rec-${dnsCreated}`, type: record.type, name: record.name, content: record.content, proxied: record.proxied, comment: record.comment }
+        const made = { id: `rec-${dnsCreated}`, type: record.type, name: record.name, content: record.content, proxied: record.proxied, comment: record.comment }
+        dnsRecords.push(made)
+        return made
       }),
-      remove: vi.fn(async () => {})
+      remove: vi.fn(async (_zone: string, id: string) => { dnsRecords = dnsRecords.filter((record) => record.id !== id) })
     },
     deploy: {
       ensureRunner: vi.fn(async () => {}),
@@ -120,6 +124,7 @@ beforeEach(() => {
   saved = []
   output = ''
   dnsCreated = 0
+  dnsRecords = []
   ports = makePorts()
 })
 
@@ -630,11 +635,31 @@ describe('removeCreated', () => {
 
   it('treats a DNS record or Deploy site that is already gone as removed', async () => {
     const created = await startRun(NGINX).run('start')
-    ports.dns!.remove = vi.fn(async () => { throw new Error('Record does not exist') })
+    dnsRecords = []
     ports.deploy.remove = vi.fn(async () => { throw new Error('No such site') })
     const record = await removeCreated(created, ports, NGINX.driver)
     expect(record.phase).toBe('removed')
-    expect(output).toContain('is already gone')
+    expect(output).toContain('The DNS record for shop.example.com is already gone')
+    expect(output).toContain('Deploy site shop is already gone')
+    expect(ports.dns!.remove).not.toHaveBeenCalled()
+  })
+
+  it('treats a DNS record that disappears while it is being deleted as removed', async () => {
+    const created = await startRun(NGINX).run('start')
+    ports.dns!.remove = vi.fn(async (_zone: string, id: string) => {
+      dnsRecords = dnsRecords.filter((record) => record.id !== id)
+      throw new Error('Record does not exist')
+    })
+    expect((await removeCreated(created, ports, NGINX.driver)).phase).toBe('removed')
+  })
+
+  it('stops instead of deleting a DNS record that now points somewhere else', async () => {
+    const created = await startRun(NGINX).run('start')
+    dnsRecords = dnsRecords.map((record) => (record.type === 'A' ? { ...record, content: '198.51.100.7' } : record))
+    const record = await removeCreated(created, ports, NGINX.driver)
+    expect(record.phase).toBe('remove-failed')
+    expect(record.error).toBe('DNS record A shop.example.com was not removed: The DNS record A shop.example.com now points at 198.51.100.7, not 203.0.113.10. It was left in place.')
+    expect(ports.dns!.remove).not.toHaveBeenCalled()
   })
 
   it('leaves alone what the run did not create', async () => {
@@ -646,5 +671,108 @@ describe('removeCreated', () => {
     expect(calls).toEqual([])
     expect(ports.deploy.remove).not.toHaveBeenCalled()
     expect(ports.dns!.remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleteSite', () => {
+  const LEFT = `It was left in place.`
+
+  function refuseWhen(match: string, code: number, stderr: string): void {
+    const exec = ports.exec
+    ports.exec = vi.fn(async (command: string, options: ExecOptions = {}) => {
+      const stdin = typeof options.stdin === 'string' ? options.stdin : ''
+      if (stdin.includes(match)) {
+        calls.push({ command, stdin })
+        return { code, stdout: '', stderr, stdoutBytes: 0 }
+      }
+      return exec(command, options)
+    })
+  }
+
+  it('removes what makes the site run and keeps the folder, database and env file', async () => {
+    const created = await startRun(NGINX, { jobs: { scheduler: true, queueWorker: true } }).run('start')
+    calls = []
+    const record = await deleteSite(created, ports, NGINX.driver)
+    expect(record).toMatchObject({ phase: 'removed', deleting: true })
+    expect(record.created).toMatchObject({ deploySite: null, jobs: null, dnsRecords: [], siteFile: null, phpPool: null, certificate: null })
+    expect(record.created.folder).toEqual(created.created.folder)
+    expect(record.created.database).toEqual(created.created.database)
+    expect(record.created.envFile).toEqual(created.created.envFile)
+    const scripts = calls.map((call) => call.stdin).join('\n')
+    expect(scripts).not.toMatch(/DROP DATABASE|rm -rf|shop-deploy|shared\/\.env/)
+    expect(ports.deploy.remove).toHaveBeenCalledWith('shop')
+    expect(dnsRecords).toEqual([])
+  })
+
+  it('keeps a site file changed by hand with the PHP pool and certificate it uses, and removes the rest', async () => {
+    const created = await startRun(NGINX).run('start')
+    calls = []
+    refuseWhen('keep=$(mktemp -d)', 3, `/etc/nginx/sites-available/shop.conf changed after Shellway wrote it. ${LEFT}`)
+    refuseWhen('certbot delete', 3, `The certificate shop.example.com is still used by /etc/nginx/sites-available/shop.conf . ${LEFT}`)
+    const record = await deleteSite(created, ports, NGINX.driver)
+    expect(record.phase).toBe('removed')
+    expect(record.kept).toEqual([
+      `/etc/nginx/sites-available/shop.conf changed after Shellway wrote it. ${LEFT}`,
+      `/etc/php/8.3/fpm/pool.d/shop.conf is used by the site file that was kept. ${LEFT}`,
+      `The certificate shop.example.com is still used by /etc/nginx/sites-available/shop.conf . ${LEFT}`
+    ])
+    expect(record.kept?.[1]).toBe(`/etc/php/8.3/fpm/pool.d/shop.conf is used by the site file that was kept. ${LEFT}`)
+    expect(record.created).toMatchObject({ siteFile: null, phpPool: null, certificate: null })
+    expect(calls.some((call) => call.stdin.includes("rm -f '/etc/php/8.3/fpm/pool.d/shop.conf'"))).toBe(false)
+  })
+
+  it('stops on a real failure and picks up from there without repeating what was done', async () => {
+    const created = await startRun(NGINX).run('start')
+    refuseWhen('keep=$(mktemp -d)', 4, 'nginx rejected the configuration without this site, so /etc/nginx/sites-available/shop.conf was put back.')
+    const failed = await deleteSite(created, ports, NGINX.driver)
+    expect(failed).toMatchObject({ phase: 'remove-failed', deleting: true })
+    expect(failed.error).toContain('was put back')
+    expect(failed.created.deploySite).toBeNull()
+    expect(failed.created.siteFile).not.toBeNull()
+    expect(failed.created.phpPool).not.toBeNull()
+    ports = makePorts()
+    const second = await deleteSite(failed, ports, NGINX.driver)
+    expect(second.phase).toBe('removed')
+    expect(ports.deploy.remove).not.toHaveBeenCalled()
+  })
+
+  it('still keeps the PHP pool on a retry after its site file was kept', async () => {
+    const created = await startRun(APACHE_DEBIAN).run('start')
+    refuseWhen("'shop-le-ssl'", 3, `/etc/apache2/sites-available/shop-le-ssl.conf changed after Shellway wrote it. ${LEFT}`)
+    refuseWhen("'/etc/apache2/sites-available/shop.conf'", 4, 'Apache rejected the configuration without this site, so /etc/apache2/sites-available/shop.conf was put back.')
+    const failed = await deleteSite(created, ports, APACHE_DEBIAN.driver)
+    expect(failed).toMatchObject({ phase: 'remove-failed', siteFileKept: true })
+    ports = makePorts()
+    calls = []
+    const second = await deleteSite(failed, ports, APACHE_DEBIAN.driver)
+    expect(second.phase).toBe('removed')
+    expect(second.kept).toContain(`/etc/php/8.3/fpm/pool.d/shop.conf is used by the site file that was kept. ${LEFT}`)
+    expect(calls.some((call) => call.stdin.includes("rm -f '/etc/php/8.3/fpm/pool.d/shop.conf'"))).toBe(false)
+  })
+
+  it('stops on a refusal that does not say it left the file in place', async () => {
+    const created = await startRun(NGINX).run('start')
+    refuseWhen('keep=$(mktemp -d)', 3, 'something else went wrong')
+    expect((await deleteSite(created, ports, NGINX.driver)).phase).toBe('remove-failed')
+  })
+
+  it('keeps a DNS record that now points somewhere else and goes on', async () => {
+    const created = await startRun(NGINX).run('start')
+    dnsRecords = dnsRecords.map((record) => (record.type === 'A' ? { ...record, content: '198.51.100.7' } : record))
+    const record = await deleteSite(created, ports, NGINX.driver)
+    expect(record.phase).toBe('removed')
+    expect(record.kept).toEqual(['The DNS record A shop.example.com now points at 198.51.100.7, not 203.0.113.10. It was left in place.'])
+    expect(dnsRecords.map((r) => r.type)).toEqual(['A'])
+  })
+
+  it('stops a Node app under pm2 as the site user after removing its Deploy site', async () => {
+    const created = await startRun(NGINX, { template: 'node', database: null }).run('start')
+    calls = []
+    const record = await deleteSite(created, ports, NGINX.driver)
+    expect(record.phase).toBe('removed')
+    const app = calls.find((call) => call.stdin.includes('pm2 delete'))
+    expect(app).toMatchObject({ command: PROJECT_SHELL })
+    expect(app?.stdin).toContain("pm2 delete 'shop'")
+    expect(app?.stdin).toContain('pm2 save --force')
   })
 })

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { CreatedDnsRecord, CreatedResources, RunRecord } from '@/types/createSite'
-import { jobFiles, removeJobsScript } from './laravelJobs'
 import { keptResources, removalSteps, type RemovalStep } from './removal'
 import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removePlaceholderFolderScript, removeSiteScript } from './siteScripts'
 import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, baseInput, type ServerCase } from './testFixtures'
@@ -47,8 +46,8 @@ describe('removalSteps', () => {
   it('removes everything the run created in reverse order', () => {
     expect(removalSteps(record(NGINX, everything(NGINX)), NGINX.driver)).toEqual([
       { kind: 'deploy-site', title: 'Deploy site shop', siteName: 'shop' },
-      { kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com' },
-      { kind: 'dns-record', title: 'DNS record CNAME www.shop.example.com', zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com' },
+      { kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', expected: { type: 'A', content: '203.0.113.10' } },
+      { kind: 'dns-record', title: 'DNS record CNAME www.shop.example.com', zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', expected: { type: 'CNAME', content: 'shop.example.com' } },
       {
         kind: 'site-file',
         title: 'nginx site /etc/nginx/sites-available/shop.conf',
@@ -80,12 +79,14 @@ describe('removalSteps', () => {
     const jobs = { cronFile: '/etc/cron.d/shellway-shop', unitFile: '/etc/passwd' }
     const steps = removalSteps(record(NGINX, { deploySite: 'shop', jobs }), NGINX.driver)
     expect(steps.map((step) => step.kind)).toEqual(['deploy-site', 'jobs'])
-    expect(steps[1]).toEqual({
+    expect(steps[1]).toMatchObject({
       kind: 'jobs',
       title: 'Scheduler and queue worker /etc/cron.d/shellway-shop, /etc/systemd/system/shellway-shop-queue.service',
-      command: ROOT_SHELL,
-      script: removeJobsScript('shop', jobFiles('shop', { scheduler: true, queueWorker: true }))
+      command: ROOT_SHELL
     })
+    const script = steps[1].kind === 'jobs' ? steps[1].script : ''
+    expect(script).toContain("systemctl disable --now 'shellway-shop-queue.service'")
+    expect(script).toContain("rm -f '/etc/cron.d/shellway-shop'")
     expect(steps[1]).not.toHaveProperty('script', expect.stringContaining('/etc/passwd'))
   })
 
@@ -105,7 +106,7 @@ describe('removalSteps', () => {
 
   it('deletes each DNS record once and skips records without an id', () => {
     const steps = removalSteps(record(NGINX, { dnsRecords: [A, A, { ...CNAME, recordId: '' }] }), NGINX.driver)
-    expect(steps).toEqual([{ kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com' }])
+    expect(steps).toEqual([{ kind: 'dns-record', title: 'DNS record A shop.example.com', zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', expected: { type: 'A', content: '203.0.113.10' } }])
   })
 
   it.each(SERVER_CASES)('$name: removes the site file it wrote', (c) => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CreateSiteInput, CreateSiteSecrets, ResumeMode, RunRecord } from '@/types/createSite'
+import type { CreateSiteInput, CreateSiteSecrets, Leftover, ResumeMode, RunRecord } from '@/types/createSite'
 import type { DeployResult } from '@/types/deploy'
 import { createSiteApi } from './createSiteApi'
 
@@ -13,6 +13,8 @@ export interface CreateRun {
   stop: () => Promise<void>
   resume: (mode: ResumeMode) => Promise<void>
   remove: () => Promise<void>
+  deleteSite: (typedName: string) => Promise<void>
+  leftovers: () => Promise<DeployResult<Leftover[]>>
 }
 
 function useRunEvents(initial: RunRecord | null) {
@@ -91,5 +93,15 @@ export function useCreateRun(connectionId: string, sessionId: string, initial: R
     await replaceRecord(() => createSiteApi().remove(connectionId, record.id), 'Could not remove what this run created')
   }
 
-  return { record, output, busy, stopRequested: stopRequested && record?.phase === 'running', error, start, stop, resume, remove }
+  const deleteSite = async (typedName: string) => {
+    if (!record) return
+    await replaceRecord(() => createSiteApi().deleteSite(connectionId, record.id, typedName), 'Could not delete the site')
+  }
+
+  const leftovers = async (): Promise<DeployResult<Leftover[]>> => {
+    if (!record) return { success: false, error: 'No site' }
+    return createSiteApi().leftovers(connectionId, record.id).catch((err: Error) => ({ success: false, error: err.message }))
+  }
+
+  return { record, output, busy, stopRequested: stopRequested && record?.phase === 'running', error, start, stop, resume, remove, deleteSite, leftovers }
 }

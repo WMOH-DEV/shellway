@@ -128,6 +128,8 @@ export function registerCreateSiteIPC(): void {
   handle('create-site:resume', (c, runId, mode) => requireService().resume(str(c, 'connection'), str(runId, 'run'), resumeMode(mode)))
   handle('create-site:stop', (runId) => requireService().stop(str(runId, 'run')))
   handle('create-site:remove', (c, runId) => requireService().remove(str(c, 'connection'), str(runId, 'run')))
+  handle('create-site:delete', (c, runId, typedName) => requireService().deleteSite(str(c, 'connection'), str(runId, 'run'), str(typedName, 'site name')))
+  handle('create-site:leftovers', (c, runId) => requireService().leftovers(str(c, 'connection'), str(runId, 'run')))
   handle('create-site:github-account', () => requireService().githubAccount())
   handle('create-site:check-project', (request) => requireService().checkProject(projectCheckRequest(request)))
   handle('create-site:inspect-repo', (url, branch) => requireLocalGit().inspect(str(url, 'repository'), str(branch, 'branch')))

@@ -1,9 +1,12 @@
 import { isAbsolute, posix } from 'path'
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, NameCheck, ProjectCheckRequest, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
+import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, Leftover, NameCheck, ProjectCheckRequest, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
 import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from '../../../src/utils/createSite/scaffold'
 import type { ServerFacts } from '../../../src/types/ssl'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
 import { needsDatabase, siteDatabase } from '../../../src/utils/createSite/database'
+import { leftoverSizesScript, leftoversOf, withSizes } from '../../../src/utils/createSite/deletion'
+import { deleteBlockedReason, isFinishedSite } from '../../../src/utils/createSite/runView'
+import { ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
 import { assertSecrets } from '../../../src/utils/createSite/env'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { assertDomain } from '../../../src/utils/createSite/validate'
@@ -18,7 +21,7 @@ import type { SslCoordinator } from '../ssl/SslCoordinator'
 import { CreateSiteRun, newRunRecord } from './CreateSiteRun'
 import type { CreateSitePorts, DeployPort, DnsPort, ProjectPort } from './ports'
 import { checkNewProject } from './projectPort'
-import { removeCreated } from './removeRun'
+import { deleteSite, removeCreated } from './removeRun'
 import type { RunStore } from './RunStore'
 import { TOOLS_SCRIPT, detectTools } from './serverTools'
 
@@ -35,16 +38,19 @@ export interface CreateSiteDeps {
 }
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/
-const FINISHED: ReadonlySet<RunRecord['phase']> = new Set(['done', 'removed'])
 const ZONE_ID = /^[A-Za-z0-9]{1,64}$/
+const MACHINE_ID = /^[0-9a-f]{32}$/
+const MACHINE_ID_COMMAND = 'cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null || true'
+const PROBE_TIMEOUT_MS = 30_000
 const CLOSED_MID_STEP = 'Shellway closed while this step was running. Check the server, then Retry or Continue from here.'
 const CLOSED_MID_REMOVAL = 'Shellway closed while removing. Press Remove again to pick up from here.'
+const CLOSED_MID_DELETE = 'Shellway closed while deleting. Press Try deleting again to pick up from here.'
 
 const sameServer = (a: SiteServer | null, b: SiteServer): boolean =>
   a !== null && a.kind === b.kind && (a.kind !== 'apache' || b.kind !== 'apache' || a.layout === b.layout)
 
 function interrupted(record: RunRecord): RunRecord {
-  if (record.phase === 'removing') return { ...record, phase: 'remove-failed', error: CLOSED_MID_REMOVAL }
+  if (record.phase === 'removing') return { ...record, phase: 'remove-failed', error: record.deleting ? CLOSED_MID_DELETE : CLOSED_MID_REMOVAL }
   const steps = record.steps.map((step) => (step.id === record.current && step.status === 'pending' && step.startedAt !== null ? { ...step, status: 'failed' as const } : step))
   return { ...record, steps, phase: 'failed', error: CLOSED_MID_STEP }
 }
@@ -156,7 +162,7 @@ export class CreateSiteService {
       if (invalid) throw new Error(invalid)
       await this.checkAgainstServer(connectionId, input)
       const plan = buildPlan(input, await ports.tools(), driver)
-      const record = newRunRecord(ports.runId, sessionId, input, plan, this.deps.now())
+      const record = { ...newRunRecord(ports.runId, sessionId, input, plan, this.deps.now()), machineId: await this.machineId(connectionId) }
       this.deps.store.saveSecrets(record.id, secrets)
       ports.save(record)
       return new CreateSiteRun(record, ports, driver, secrets)
@@ -177,19 +183,66 @@ export class CreateSiteService {
   async remove(connectionId: string, runId: string): Promise<RunRecord> {
     const record = this.stored(runId)
     if (this.active.has(runId) || record.phase === 'running' || record.phase === 'removing') throw new Error('Stop the run before removing what it created.')
+    if (record.phase === 'done' || record.phase === 'removed' || record.deleting) throw new Error('This site is finished. Use Delete site instead.')
     this.assertSameServer(connectionId, record.sessionId)
+    return this.withRemoval(connectionId, record, async (ports) => {
+      await this.assertOwner(connectionId, record)
+      return removeCreated(record, ports, driverFor(record.server))
+    })
+  }
+
+  async deleteSite(connectionId: string, runId: string, typedName: string): Promise<RunRecord> {
+    const record = this.stored(runId)
+    if (this.active.has(runId) || !isFinishedSite(record)) throw new Error('Only a site that Create site finished can be deleted here.')
+    if (typedName !== record.input.siteName) throw new Error(`Type ${record.input.siteName} to confirm.`)
+    this.assertSameServer(connectionId, record.sessionId)
+    return this.withRemoval(connectionId, record, async (ports) => {
+      await this.assertSameMachine(connectionId, record)
+      await this.assertOwner(connectionId, record)
+      if (record.created.deploySite !== null) await ports.deploy.ensureRunner()
+      return deleteSite(record, ports, driverFor(record.server))
+    })
+  }
+
+  async leftovers(connectionId: string, runId: string): Promise<Leftover[]> {
+    const record = this.stored(runId)
+    this.assertSameServer(connectionId, record.sessionId)
+    const items = leftoversOf(record)
+    const result = await this.exec(connectionId)(ROOT_SHELL, { stdin: leftoverSizesScript(record), timeoutMs: PROBE_TIMEOUT_MS })
+    return result.code === 0 ? withSizes(items, result.stdout) : items
+  }
+
+  runs(sessionId: string): RunRecord[] {
+    return this.deps.store.forSession(sessionId).map((run) => this.settled(run)).filter((run) => run.phase !== 'removed')
+  }
+
+  private async withRemoval(connectionId: string, { id, sessionId }: RunRecord, work: (ports: CreateSitePorts) => Promise<RunRecord>): Promise<RunRecord> {
+    if (this.removing.has(id)) throw new Error('This site is already being removed.')
     this.claim(connectionId)
-    this.removing.add(runId)
+    this.removing.add(id)
     try {
-      return await removeCreated(record, this.ports(connectionId, record.sessionId, runId), driverFor(record.server))
+      return await work(this.ports(connectionId, sessionId, id))
     } finally {
-      this.removing.delete(runId)
+      this.removing.delete(id)
       this.busy.delete(connectionId)
     }
   }
 
-  runs(sessionId: string): RunRecord[] {
-    return this.deps.store.forSession(sessionId).map((run) => this.settled(run)).filter((run) => !FINISHED.has(run.phase))
+  private async machineId(connectionId: string): Promise<string | null> {
+    const result = await this.exec(connectionId)(MACHINE_ID_COMMAND, { timeoutMs: PROBE_TIMEOUT_MS })
+    const id = result.stdout.trim()
+    return MACHINE_ID.test(id) ? id : null
+  }
+
+  private async assertOwner(connectionId: string, { input }: RunRecord): Promise<void> {
+    const { facts } = await this.deps.ssl.service(connectionId).readConfig()
+    if (facts.user !== input.owner) throw new Error(`This site belongs to ${input.owner}, but Shellway is logged in as ${facts.user}. Connect as ${input.owner} to remove it. Nothing was changed.`)
+  }
+
+  private async assertSameMachine(connectionId: string, record: RunRecord): Promise<void> {
+    const blocked = deleteBlockedReason(record)
+    if (blocked !== null) throw new Error(blocked)
+    if ((await this.machineId(connectionId)) !== record.machineId) throw new Error('This connection reaches a different server than the one this site was made on. Nothing was changed.')
   }
 
   private settled(record: RunRecord): RunRecord {

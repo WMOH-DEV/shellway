@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { PageSpinner } from '@/components/ui/Spinner'
 import { CreateSiteWizard } from '@/components/deploy/createSite/CreateSiteWizard'
 import { KeySetup } from '@/components/deploy/KeySetup'
@@ -34,6 +34,10 @@ function Missing({ ctx, what }: { ctx: ServerSectionContext; what: string }) {
 
 function CreatePage({ ctx, data, createRuns }: PageProps) {
   const runId = ctx.route.params?.run
+  const openDelete = ctx.route.params?.delete === '1' && createRuns.loaded
+  useEffect(() => {
+    if (openDelete && runId) ctx.navigate({ section: 'sites', sub: 'create', params: { run: runId } })
+  }, [openDelete, runId, ctx])
   if (runId && !createRuns.loaded) return <PageSpinner />
   const close = () => {
     void data.deploy.refresh()
@@ -48,6 +52,7 @@ function CreatePage({ ctx, data, createRuns }: PageProps) {
       sessionId={data.sessionId}
       serverName={data.serverName}
       initialRun={createRuns.runs.find((run) => run.id === runId) ?? null}
+      openDelete={openDelete}
       prefill={createPrefill(ctx.route.params)}
       onClose={close}
     />
@@ -82,7 +87,7 @@ function SitePages({ ctx, data, createRuns, onShip }: PageProps) {
 function Page(props: PageProps) {
   const { sub } = props.ctx.route
   if (sub === 'create') return <CreatePage {...props} />
-  if (sub && SSL_PAGES.has(sub)) return <SslPages ctx={props.ctx} data={props.data} />
+  if (sub && SSL_PAGES.has(sub)) return <SslPages ctx={props.ctx} data={props.data} createRuns={props.createRuns} />
   if (sub === 'site' || sub === 'add' || sub === 'key') return <SitePages {...props} />
   return <SitesListPage ctx={props.ctx} data={props.data} unfinished={props.createRuns.unfinished} onShip={props.onShip} />
 }

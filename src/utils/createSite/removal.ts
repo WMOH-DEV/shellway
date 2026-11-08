@@ -1,16 +1,18 @@
-import type { CreatedDnsRecord, CreatedResources, RunRecord, SiteServer } from '@/types/createSite'
+import type { CreatedDnsRecord, CreatedResources, DnsRecordPlan, RunRecord, SiteServer } from '@/types/createSite'
 import type { WebServerDriver } from '../webServer/driver'
 import { databaseLabel, removeDatabaseScript } from './database'
 import { jobFiles, removeJobsScript } from './laravelJobs'
+import { stopAppScript } from './pm2'
 import { removePoolScript } from './phpPool'
-import { ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removePlaceholderFolderScript, removeSiteScript, sitePaths } from './siteScripts'
+import { PROJECT_SHELL, ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removePlaceholderFolderScript, removeSiteScript, sitePaths } from './siteScripts'
 import { assertLineage } from './validate'
 
 export type RemovalStep =
   | { kind: 'deploy-site'; title: string; siteName: string }
+  | { kind: 'app'; title: string; command: string; script: string }
   | { kind: 'jobs'; title: string; command: string; script: string }
   | { kind: 'certificate'; title: string; command: string; script: string }
-  | { kind: 'dns-record'; title: string; zoneId: string; recordId: string; name: string }
+  | { kind: 'dns-record'; title: string; zoneId: string; recordId: string; name: string; expected: Pick<DnsRecordPlan, 'type' | 'content'> }
   | { kind: 'site-file'; title: string; path: string; command: string; script: string }
   | { kind: 'php-pool'; title: string; path: string; command: string; script: string }
   | { kind: 'env-file'; title: string; path: string; command: string; script: string }
@@ -21,12 +23,19 @@ function deploySiteSteps({ deploySite }: CreatedResources): RemovalStep[] {
   return deploySite === null ? [] : [{ kind: 'deploy-site', title: `Deploy site ${deploySite}`, siteName: deploySite }]
 }
 
+const deployStarted = ({ steps }: RunRecord): boolean => steps.some((step) => step.id === 'first-deploy' && step.startedAt !== null)
+
+function appSteps(record: RunRecord): RemovalStep[] {
+  const script = deployStarted(record) ? stopAppScript(record.input) : null
+  return script === null ? [] : [{ kind: 'app', title: `The running app ${record.input.siteName}`, command: PROJECT_SHELL, script }]
+}
+
 function jobsSteps({ jobs }: CreatedResources, input: RunRecord['input']): RemovalStep[] {
   if (jobs === null) return []
   const files = jobFiles(input.siteName, { scheduler: jobs.cronFile !== null, queueWorker: jobs.unitFile !== null })
   const names = [files.cronFile, files.unitFile].filter((path): path is string => path !== null)
   if (names.length === 0) return []
-  return [{ kind: 'jobs', title: `Scheduler and queue worker ${names.join(', ')}`, command: ROOT_SHELL, script: removeJobsScript(input.siteName, files) }]
+  return [{ kind: 'jobs', title: `Scheduler and queue worker ${names.join(', ')}`, command: ROOT_SHELL, script: removeJobsScript(input, files) }]
 }
 
 function certificateSteps({ certificate }: CreatedResources): RemovalStep[] {
@@ -44,8 +53,17 @@ function uniqueRecords(records: CreatedDnsRecord[]): CreatedDnsRecord[] {
   })
 }
 
-function dnsSteps({ dnsRecords }: CreatedResources): RemovalStep[] {
-  return uniqueRecords(dnsRecords).map(({ zoneId, recordId, name, type }) => ({ kind: 'dns-record', title: `DNS record ${type} ${name}`, zoneId, recordId, name }))
+const expectedContent = (type: CreatedDnsRecord['type'], input: RunRecord['input']): string => (type === 'A' ? (input.dns?.serverIp ?? '') : input.domain)
+
+function dnsSteps({ dnsRecords }: CreatedResources, input: RunRecord['input']): RemovalStep[] {
+  return uniqueRecords(dnsRecords).map(({ zoneId, recordId, name, type }) => ({
+    kind: 'dns-record',
+    title: `DNS record ${type} ${name}`,
+    zoneId,
+    recordId,
+    name,
+    expected: { type, content: expectedContent(type, input) }
+  }))
 }
 
 function siteNameOf(server: SiteServer, path: string): string {
@@ -90,18 +108,23 @@ export function keptResources({ repo, localCopy }: CreatedResources): string[] {
   ]
 }
 
-export function removalSteps(record: RunRecord, driver: WebServerDriver): RemovalStep[] {
+function siteConfigSteps(record: RunRecord, driver: WebServerDriver): RemovalStep[] {
   const { created, server } = record
   return [
     ...deploySiteSteps(created),
+    ...appSteps(record),
     ...jobsSteps(created, record.input),
-    ...dnsSteps(created),
+    ...dnsSteps(created, record.input),
     ...siteFileStep(created.httpsSiteFile, server, driver),
     ...siteFileStep(created.siteFile, server, driver),
     ...poolSteps(created, record.input),
-    ...certificateSteps(created),
-    ...envFileSteps(created),
-    ...databaseSteps(created),
-    ...folderSteps(created)
+    ...certificateSteps(created)
   ]
+}
+
+export const deleteSteps = siteConfigSteps
+
+export function removalSteps(record: RunRecord, driver: WebServerDriver): RemovalStep[] {
+  const { created } = record
+  return [...siteConfigSteps(record, driver), ...envFileSteps(created), ...databaseSteps(created), ...folderSteps(created)]
 }

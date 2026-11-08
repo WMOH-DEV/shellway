@@ -59,6 +59,11 @@ describe('Create site entry in the Deploy overview', () => {
     expect(createSite.onOpenRun).toHaveBeenCalledWith(run)
   })
 
+  it('says a delete did not finish, not that the site was not created', () => {
+    renderOverview({ installed: true, version: 3, bundledVersion: 3 }, makeRun({ phase: 'remove-failed', deleting: true }))
+    expect(screen.getByText('Deleting shop.example.com did not finish.')).toBeInTheDocument()
+  })
+
   it('says a run is still going while it runs', () => {
     renderOverview({ installed: true, version: 3, bundledVersion: 3 }, makeRun({ phase: 'running' }))
     expect(screen.getByText('A Create site run for shop.example.com is still going.')).toBeInTheDocument()

@@ -186,6 +186,10 @@ export interface RunRecord {
   error: string | null
   deployKey: string | null
   deployKeyAdded?: boolean
+  machineId?: string | null
+  deleting?: boolean
+  kept?: string[]
+  siteFileKept?: boolean
 }
 
 export interface CloudflareZoneRef {
@@ -217,6 +221,13 @@ export interface NameCheck {
 }
 
 export type ResumeMode = 'retry' | 'continue'
+
+export interface Leftover {
+  id: string
+  title: string
+  command: string | null
+  size: string | null
+}
 
 export interface CreateSiteOutput {
   runId: string

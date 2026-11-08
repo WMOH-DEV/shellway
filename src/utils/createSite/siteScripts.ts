@@ -2,6 +2,7 @@ import type { SiteServer } from '@/types/createSite'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../ssl/originCa/exitCodes'
 import { heredoc } from '../ssl/originCa/heredoc'
 import type { WebServerDriver } from '../webServer/driver'
+import { LEFT_IN_PLACE, changedByHand, leftInPlace } from './refusal'
 import { assertConf, assertFolder, assertLineage, assertModule, assertOwner, assertSha256, assertSiteName } from './validate'
 
 export const ROOT_SHELL = 'sudo -n sh -s'
@@ -96,7 +97,7 @@ export function removeSiteScript({ driver, server, siteName, sha256 }: SiteScrip
   return [
     'set -e',
     `if [ -f ${file} ] && [ "$(sha256sum ${file} | cut -d' ' -f1)" != ${quote(assertSha256(sha256))} ]; then`,
-    `  echo ${quote(`${paths.file} changed after Shellway wrote it. It was left in place.`)} >&2`,
+    `  echo ${quote(changedByHand(paths.file))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     'keep=$(mktemp -d)',
@@ -186,11 +187,11 @@ export function removeFolderScript(folder: string): string {
     '  fi',
     'done',
     `if [ -L ${current} ] || [ -e ${current} ]; then`,
-    `  echo ${quote(`${deployRootOf(folder)} has a deployed release. It was left in place.`)} >&2`,
+    `  echo ${quote(leftInPlace(`${deployRootOf(folder)} has a deployed release.`))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `if [ -d ${deployRoot} ] && ! rmdir ${deployRoot}; then`,
-    `  echo ${quote(`${deployRootOf(folder)} has files in it. It was left in place.`)} >&2`,
+    `  echo ${quote(leftInPlace(`${deployRootOf(folder)} has files in it.`))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `if [ -L ${site} ] && [ "$(readlink ${site})" = ${current} ]; then rm -f ${site}; fi`,
@@ -226,7 +227,7 @@ export function removePlaceholderFolderScript(folder: string, sha256: string): s
     `if [ ! -e ${site} ]; then echo ${quote(`${folder} is already gone.`)}; exit 0; fi`,
     `if [ -f ${index} ] && [ "$(sha256sum ${index} | cut -d' ' -f1)" = ${quote(assertSha256(sha256))} ]; then rm -f ${index}; fi`,
     `if ! rmdir ${site} 2>/dev/null; then`,
-    `  echo ${quote(`${folder} has files in it. It was left in place.`)} >&2`,
+    `  echo ${quote(leftInPlace(`${folder} has files in it.`))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     ''
@@ -239,15 +240,13 @@ export function removeEnvFileScript(path: string, sha256: string): string {
     'set -e',
     `if [ ! -f ${file} ]; then echo ${quote(`${path} is already gone.`)}; exit 0; fi`,
     `if [ "$(sha256sum ${file} | cut -d' ' -f1)" != ${quote(assertSha256(sha256))} ]; then`,
-    `  echo ${quote(`${path} changed after Shellway wrote it. It was left in place.`)} >&2`,
+    `  echo ${quote(changedByHand(path))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `rm -f ${file}`,
     ''
   ].join('\n')
 }
-
-export const WEB_SERVER_CONFIG_DIRS = ['/etc/nginx', '/etc/apache2', '/etc/httpd']
 
 export function removeCertificateScript(lineage: string): string {
   const name = assertLineage(lineage)
@@ -258,7 +257,7 @@ export function removeCertificateScript(lineage: string): string {
     `  echo ${quote(`The certificate ${name} is already gone.`)}`,
     '  exit 0',
     'fi',
-    `used=$(grep -RlsF ${live} ${WEB_SERVER_CONFIG_DIRS.join(' ')} || true)`,
+    `used=$(grep -rlsF --exclude-dir=letsencrypt ${live} /etc/ | tr '\\n' ' ' || true)`,
     'loaded=""',
     `if command -v nginx >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -qF ${live}; then loaded="nginx -T"; fi`,
     'for ctl in apache2ctl apachectl; do',
@@ -269,8 +268,7 @@ export function removeCertificateScript(lineage: string): string {
     '  break',
     'done',
     'if [ -n "$used$loaded" ]; then',
-    `  echo ${quote(`The certificate ${name} is still used, so it was kept:`)} >&2`,
-    '  echo "$used $loaded" >&2',
+    `  echo "The certificate ${name} is still used by $used$loaded. ${LEFT_IN_PLACE}" >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `certbot delete --non-interactive --cert-name ${quote(name)}`,

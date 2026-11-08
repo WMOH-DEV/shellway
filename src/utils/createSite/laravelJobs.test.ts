@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ALL_JOBS, NO_JOBS, availableJobs, createJobsScript, cronText, jobFiles, removeJobsScript, unitText } from './laravelJobs'
+import { LEFT_IN_PLACE } from './refusal'
 import { baseInput } from './testFixtures'
 
 describe('jobFiles', () => {
@@ -70,8 +75,60 @@ describe('createJobsScript', () => {
 
 describe('removeJobsScript', () => {
   it('stops the worker before removing its unit, and removes the cron file', () => {
-    const script = removeJobsScript('shop', jobFiles('shop', ALL_JOBS))
+    const script = removeJobsScript(baseInput(), jobFiles('shop', ALL_JOBS))
     expect(script.indexOf('systemctl disable --now')).toBeLessThan(script.indexOf("rm -f '/etc/systemd/system/shellway-shop-queue.service'"))
     expect(script).toContain("rm -f '/etc/cron.d/shellway-shop'")
+  })
+
+  describe('on a server', () => {
+    let root = ''
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), 'jobs-'))
+      mkdirSync(join(root, 'cron.d'))
+      mkdirSync(join(root, 'systemd', 'system'), { recursive: true })
+    })
+    afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+    const run = (script: string) => {
+      const fakes = `systemctl() { echo "systemctl $*" >> '${root}/log'; }\n`
+      return spawnSync('sh', ['-s'], { input: fakes + script.replaceAll('/etc/', `${root}/`), encoding: 'utf8' })
+    }
+    const cron = () => join(root, 'cron.d', 'shellway-shop')
+    const unit = () => join(root, 'systemd', 'system', 'shellway-shop-queue.service')
+
+    it('removes both files when they are what Shellway wrote', () => {
+      writeFileSync(cron(), cronText(baseInput()))
+      writeFileSync(unit(), unitText(baseInput()))
+      const result = run(removeJobsScript(baseInput(), jobFiles('shop', ALL_JOBS)))
+      expect(result.status).toBe(0)
+      expect(existsSync(cron())).toBe(false)
+      expect(existsSync(unit())).toBe(false)
+    })
+
+    it('keeps the file changed by hand and still removes the unchanged one', () => {
+      writeFileSync(cron(), cronText(baseInput()).replace('* * * * *', '*/5 * * * *'))
+      writeFileSync(unit(), unitText(baseInput()))
+      const result = run(removeJobsScript(baseInput(), jobFiles('shop', ALL_JOBS)))
+      expect(result.status).toBe(3)
+      expect(result.stderr.trim()).toBe(`Changed after Shellway wrote it: ${cron()}. ${LEFT_IN_PLACE}`)
+      expect(existsSync(cron())).toBe(true)
+      expect(existsSync(unit())).toBe(false)
+      expect(readFileSync(join(root, 'log'), 'utf8')).toContain("disable --now shellway-shop-queue.service")
+    })
+
+    it('stops nothing when the queue worker unit was changed by hand', () => {
+      writeFileSync(cron(), cronText(baseInput()))
+      writeFileSync(unit(), unitText(baseInput()).replace('--tries=3', '--tries=5'))
+      const result = run(removeJobsScript(baseInput(), jobFiles('shop', ALL_JOBS)))
+      expect(result.status).toBe(3)
+      expect(result.stderr).toContain(`${unit()}. ${LEFT_IN_PLACE}`)
+      expect(existsSync(unit())).toBe(true)
+      expect(existsSync(cron())).toBe(false)
+      expect(existsSync(join(root, 'log'))).toBe(false)
+    })
+
+    it('succeeds when the files are already gone', () => {
+      expect(run(removeJobsScript(baseInput(), jobFiles('shop', ALL_JOBS))).status).toBe(0)
+    })
   })
 })

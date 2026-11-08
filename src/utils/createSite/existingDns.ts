@@ -8,7 +8,7 @@ export interface ExistingDns {
   blocking: ExistingDnsRecord[]
 }
 
-export const matchesPlan = (found: Pick<ExistingDnsRecord, 'type' | 'content'>, planned: DnsRecordPlan): boolean =>
+export const matchesPlan = (found: Pick<ExistingDnsRecord, 'type' | 'content'>, planned: Pick<DnsRecordPlan, 'type' | 'content'>): boolean =>
   found.type === planned.type && found.content.toLowerCase() === planned.content.toLowerCase()
 
 export function existingDnsOf(records: ExistingDnsRecord[], site: Pick<CreateSiteInput, 'domain' | 'includeWww'>, serverIp: string | null): ExistingDns {

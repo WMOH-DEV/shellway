@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
-import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
+import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, Leftover, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
 import { serverApi } from "./preload/server";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
@@ -1225,6 +1225,10 @@ const api = {
     stop: (runId: string) => ipcRenderer.invoke("create-site:stop", runId) as Promise<DeployResult>,
     remove: (connectionId: string, runId: string) =>
       ipcRenderer.invoke("create-site:remove", connectionId, runId) as Promise<DeployResult<RunRecord>>,
+    deleteSite: (connectionId: string, runId: string, typedName: string) =>
+      ipcRenderer.invoke("create-site:delete", connectionId, runId, typedName) as Promise<DeployResult<RunRecord>>,
+    leftovers: (connectionId: string, runId: string) =>
+      ipcRenderer.invoke("create-site:leftovers", connectionId, runId) as Promise<DeployResult<Leftover[]>>,
     runs: (sessionId: string) => ipcRenderer.invoke("create-site:runs", sessionId) as Promise<DeployResult<RunRecord[]>>,
     onUpdate: (callback: (record: RunRecord) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, record: RunRecord) => callback(record);

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { cn } from '@/utils/cn'
 import { timeAgo } from '@/utils/deploy/siteStatus'
 import type { HostnameStatus, SslReport } from '@/types/ssl'
@@ -31,9 +31,10 @@ interface HostnameDetailProps {
   onSetZoneStrict: (zone: string) => void
   onRefresh: () => Promise<void>
   embedded?: boolean
+  footer?: ReactNode
 }
 
-export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onSetZoneStrict, onRefresh, embedded }: HostnameDetailProps) {
+export function HostnameDetail({ connectionId, sessionId, host, report, now, loading, error, run, onBack, onAddHttps, onSwitchOrigin, onSetZoneStrict, onRefresh, embedded, footer }: HostnameDetailProps) {
   const { facts, blocks } = report
   const [confirmForce, setConfirmForce] = useState(false)
   const block = blocks.find((b) => b.id === host.blockId)
@@ -79,6 +80,7 @@ export function HostnameDetail({ connectionId, sessionId, host, report, now, loa
           onChanged={onRefresh}
         />
         {facts.certbot && <RenewalCard renewal={facts.renewal} />}
+        {footer}
       </div>
       {confirmForce && host.lineage && (
         <ForceRenewModal command={certbotCommand(host.lineage, 'force')} onConfirm={force} onClose={() => setConfirmForce(false)} />

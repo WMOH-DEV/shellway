@@ -11,6 +11,8 @@ import { phpVersionIn, vhostServer } from '@/utils/server/sites/vhost'
 import { useActionLauncher } from '../../../action'
 import { CodeBox, Label, Notice, SectionCard } from '../../../kit'
 import type { SitePageProps } from '../SiteDetailPage'
+import { isFinishedSite } from '@/utils/createSite/runView'
+import { DeleteSiteRow } from '../DeleteSiteRow'
 import { runForSite } from '../useCreateRuns'
 
 function PhpVersionCard({ page }: { page: SitePageProps }) {
@@ -72,7 +74,8 @@ function DangerCard({ page }: { page: SitePageProps }) {
         <p className="flex-1 text-[13px] text-nd-text-muted">Stop deploying this site and delete its settings, history and deploy key. The code on the server stays.</p>
         <Button variant="danger" onClick={() => runs.askRemove(true)}><Trash2 size={13} /> Remove from Shellway</Button>
       </div>
-      {created && (
+      {created && isFinishedSite(created) && <DeleteSiteRow ctx={ctx} run={created} />}
+      {created && !isFinishedSite(created) && (
         <div className="flex items-center gap-3">
           <p className="flex-1 text-[13px] text-nd-text-muted">Create site made this site. Remove the folder, web server site, DNS records and certificate it created.</p>
           <Button variant="danger" onClick={() => ctx.navigate({ section: 'sites', sub: 'create', params: { run: created.id } })}>Review what it created</Button>

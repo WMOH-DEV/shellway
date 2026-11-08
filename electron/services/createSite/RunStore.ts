@@ -5,7 +5,7 @@ import { defaultCommands } from '../../../src/utils/createSite/deploySite'
 import { NO_JOBS } from '../../../src/utils/createSite/laravelJobs'
 import { NOTHING_CREATED } from './CreateSiteRun'
 
-const KEEP_FINISHED_RUNS = 50
+const KEEP_REMOVED_RUNS = 50
 const FINISHED: ReadonlySet<RunRecord['phase']> = new Set(['done', 'removed'])
 
 interface Schema {
@@ -73,8 +73,8 @@ export class RunStore {
   save(record: RunRecord): void {
     const runs = { ...this.store.get('runs'), [record.id]: record }
     const all = Object.values(runs).sort((a, b) => b.createdAt - a.createdAt)
-    const finished = all.filter((run) => FINISHED.has(run.phase)).slice(0, KEEP_FINISHED_RUNS)
-    const kept = [...all.filter((run) => !FINISHED.has(run.phase)), ...finished]
+    const removed = all.filter((run) => run.phase === 'removed').slice(0, KEEP_REMOVED_RUNS)
+    const kept = [...all.filter((run) => run.phase !== 'removed'), ...removed]
     this.store.set('runs', Object.fromEntries(kept.map((run) => [run.id, run])))
     if (FINISHED.has(record.phase)) this.forgetSecrets(record.id)
   }

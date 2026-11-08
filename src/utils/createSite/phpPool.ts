@@ -2,6 +2,7 @@ import type { CreateSiteInput, SiteServer } from '@/types/createSite'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../ssl/originCa/exitCodes'
 import { heredoc } from '../ssl/originCa/heredoc'
 import { assertOwner, assertPhpVersion, assertSha256, assertSiteName } from './validate'
+import { changedByHand } from './refusal'
 
 type PoolFacts = Pick<CreateSiteInput, 'server' | 'phpVersion' | 'siteName'>
 
@@ -101,7 +102,7 @@ export function removePoolScript(facts: PoolFacts, sha256: string): string {
     'set -e',
     `if [ ! -f ${file} ]; then echo ${quote(`${layout.file} is already gone.`)}; exit 0; fi`,
     `if [ "$(sha256sum ${file} | cut -d' ' -f1)" != ${quote(assertSha256(sha256))} ]; then`,
-    `  echo ${quote(`${layout.file} changed after Shellway wrote it. It was left in place.`)} >&2`,
+    `  echo ${quote(changedByHand(layout.file))} >&2`,
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `rm -f ${file}`,

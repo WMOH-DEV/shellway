@@ -2,8 +2,9 @@ import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { RunRecord } from '@/types/createSite'
 
-function noticeText({ domain, phase }: RunRecord): string {
+function noticeText({ domain, phase, deleting }: RunRecord): string {
   const going = phase === 'running' || phase === 'removing'
+  if (deleting) return going ? `Deleting ${domain} is still going.` : `Deleting ${domain} did not finish.`
   return going ? `A Create site run for ${domain} is still going.` : `A Create site run for ${domain} did not finish.`
 }
 

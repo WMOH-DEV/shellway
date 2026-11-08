@@ -5,13 +5,17 @@ import { ErrorState, LoadingState } from '@/components/ssl/LoadState'
 import { SwitchWizard } from '@/components/ssl/originCa/SwitchWizard'
 import { SslSettings } from '@/components/ssl/settings/SslSettings'
 import { ZoneModeScreen } from '@/components/ssl/zoneMode/ZoneModeScreen'
+import { isFinishedSite } from '@/utils/createSite/runView'
+import { SectionCard } from '../../kit'
 import type { ServerSectionContext } from '../types'
+import { DeleteSiteRow } from './DeleteSiteRow'
 import { hostnameRoute, originRoute, returnRoute, sitesRoute, siteRoute, sslSettingsRoute, zoneRoute } from './routes'
+import { runForHost, type CreateRuns } from './useCreateRuns'
 import type { SitesData } from './useSitesData'
 
 export const SSL_PAGES: ReadonlySet<string> = new Set(['https', 'hostname', 'origin', 'zone', 'ssl-settings'])
 
-export function SslPages({ ctx, data }: { ctx: ServerSectionContext; data: SitesData }) {
+export function SslPages({ ctx, data, createRuns }: { ctx: ServerSectionContext; data: SitesData; createRuns: CreateRuns }) {
   const { report, loading, error, refresh } = data.ssl
   const run = useCertbotRun(data.connectionId, () => void refresh())
   const params = ctx.route.params ?? {}
@@ -75,9 +79,13 @@ export function SslPages({ ctx, data }: { ctx: ServerSectionContext; data: Sites
     )
   }
 
+  const made = runForHost(createRuns.runs, host.name)
+  const deleteCard = made && isFinishedSite(made) ? <SectionCard title="Delete site"><DeleteSiteRow ctx={ctx} run={made} /></SectionCard> : undefined
+
   return (
     <HostnameDetail
       key={host.name}
+      footer={deleteCard}
       connectionId={data.connectionId}
       sessionId={data.sessionId}
       host={host}

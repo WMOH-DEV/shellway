@@ -1,3 +1,4 @@
+import type { CreateSiteInput } from '@/types/createSite'
 import type { DeployStep } from '@/types/deploy'
 import { assertFolder, assertOwner, assertPort, assertSiteName } from './validate'
 
@@ -41,4 +42,36 @@ export function pm2ActivateSteps(siteName: string, sitePath: string, port: numbe
     step(`if pm2 describe ${name} >/dev/null 2>&1; then ${env} pm2 restart ${name} --update-env; else ${env} pm2 start npm --name ${name} --cwd ${quote(assertFolder(sitePath))} -- start; fi`),
     step('pm2 save')
   ]
+}
+
+const RUNNER_PATH = 'PATH="$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"'
+
+function stopPm2Script(siteName: string): string {
+  const name = quote(assertSiteName(siteName))
+  return [
+    'set -e',
+    RUNNER_PATH,
+    "if ! command -v pm2 >/dev/null 2>&1; then echo 'pm2 is not installed, so nothing runs under it.'; exit 0; fi",
+    `if pm2 describe ${name} >/dev/null 2>&1; then`,
+    `  pm2 delete ${name}`,
+    '  pm2 save --force',
+    'fi',
+    ''
+  ].join('\n')
+}
+
+function stopComposeScript(siteName: string): string {
+  return [
+    'set -e',
+    RUNNER_PATH,
+    "if ! command -v docker >/dev/null 2>&1; then echo 'Docker is not installed, so nothing runs under it.'; exit 0; fi",
+    `docker compose -p ${quote(assertSiteName(siteName))} down`,
+    ''
+  ].join('\n')
+}
+
+export function stopAppScript({ template, codeSource, siteName }: Pick<CreateSiteInput, 'template' | 'codeSource' | 'siteName'>): string | null {
+  if (codeSource === 'none') return null
+  if (template === 'node') return stopPm2Script(siteName)
+  return template === 'compose' ? stopComposeScript(siteName) : null
 }

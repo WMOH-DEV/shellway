@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CreateSiteInput, CreateSiteSecrets, RunRecord } from '../../src/types/createSite'
 import { siteDatabase } from '../../src/utils/createSite/database'
+import { leftoverSizesScript, leftoversOf, withSizes } from '../../src/utils/createSite/deletion'
 import { buildPlan } from '../../src/utils/createSite/plan'
 import { laravelScaffoldScript } from '../../src/utils/createSite/scaffold'
 import { PROJECT_SHELL } from '../../src/utils/createSite/siteScripts'
@@ -10,7 +11,7 @@ import type { RemoteExec } from '../services/deploy/DeployService'
 import { CreateSiteRun, newRunRecord } from '../services/createSite/CreateSiteRun'
 import type { CreateSitePorts } from '../services/createSite/ports'
 import { readArchive } from '../services/createSite/projectArchive'
-import { removeCreated } from '../services/createSite/removeRun'
+import { deleteSite, removeCreated } from '../services/createSite/removeRun'
 import { TOOLS_SCRIPT, parseTools } from '../services/createSite/serverTools'
 import { ExecTimeoutError, type ExecResult } from '../utils/sshExec'
 
@@ -39,10 +40,11 @@ const exec: RemoteExec = (command, options = {}) => new Promise<ExecResult>((res
 
 const asRoot = (script: string): string => spawnSync(DOCKER, ['exec', '-i', '-u', 'root', BOX, 'sh', '-s'], { input: script, encoding: 'utf8' }).stdout
 
-const TEST_SITES = ['itlaravel', 'itplaceholder', 'itspa']
+const TEST_SITES = ['itlaravel', 'itplaceholder', 'itspa', 'itdelete', 'itedited']
 
 const clearTestSites = (): void => {
   asRoot(TEST_SITES.map((name) => `systemctl disable --now shellway-${name}-queue.service 2>/dev/null
+mysql -e 'DROP DATABASE IF EXISTS ${name}; DROP USER IF EXISTS ${name}@localhost;'
 rm -rf /var/www/${name} /var/www/${name}-deploy /etc/php/8.3/fpm/pool.d/${name}.conf /etc/nginx/sites-available/${name}.conf /etc/nginx/sites-enabled/${name}.conf /etc/cron.d/shellway-${name} /etc/systemd/system/shellway-${name}-queue.service
 `).join('') + 'systemctl daemon-reload\nnginx -s reload\nkill -USR2 "$(cat /run/php/php8.3-fpm.pid)"\n')
 }
@@ -147,6 +149,47 @@ describe.skipIf(!ENABLED)('Create site on a Docker server', () => {
     asRoot('set -e\nmkdir -p /var/www/itspa-deploy/releases/1/dist\necho app-shell > /var/www/itspa-deploy/releases/1/dist/index.html\nchown -R deploy: /var/www/itspa-deploy/releases\n')
     expect(asRoot("curl -s -H 'Host: itspa.example.com' http://127.0.0.1/some/client/route\n").trim()).toBe('app-shell')
     await removeCreated(record, sitePorts, NGINX.driver)
+  }, LONG_MS)
+
+  it('deletes a finished Laravel site: what runs it is gone, its folder, uploads, env file and database stay', async () => {
+    const site = { domain: 'itdelete.example.com', siteName: 'itdelete', folder: '/var/www/itdelete' }
+    const { record, log, sitePorts } = await createSite({ ...site, database: siteDatabase('mysql', site), jobs: { scheduler: true, queueWorker: true } }, SECRETS)
+    expect(record.phase, failure(record, log)).toBe('done')
+    asRoot('set -e\nmkdir -p /var/www/itdelete-deploy/shared/storage\necho photo > /var/www/itdelete-deploy/shared/storage/upload.jpg\n')
+    asRoot("mysql itdelete -e 'CREATE TABLE notes (id INT); INSERT INTO notes VALUES (7);'\n")
+
+    const deleted = await deleteSite(record, sitePorts, NGINX.driver)
+    expect(deleted.phase, `${deleted.error}\n${log.join('').slice(-4000)}`).toBe('removed')
+    expect(deleted.kept ?? []).toEqual([])
+    expect(asRoot('ls /etc/php/8.3/fpm/pool.d/itdelete.conf /etc/nginx/sites-available/itdelete.conf /etc/nginx/sites-enabled/itdelete.conf /etc/cron.d/shellway-itdelete /etc/systemd/system/shellway-itdelete-queue.service 2>/dev/null; echo end\n').trim()).toBe('end')
+    expect(asRoot('systemctl is-active shellway-itdelete-queue.service\n').trim()).not.toBe('active')
+    expect(fetchSite(site.domain)).not.toContain('itdelete-deploy')
+    expect(asRoot('cat /var/www/itdelete-deploy/shared/storage/upload.jpg\n').trim()).toBe('photo')
+    expect(asRoot('stat -c %a /var/www/itdelete-deploy/shared/.env\n').trim()).toBe('600')
+    expect(asRoot('readlink /var/www/itdelete\n').trim()).toBe('/var/www/itdelete-deploy/current')
+    expect(asRoot("mysql itdelete -N -e 'select id from notes'\n").trim()).toBe('7')
+    expect(asRoot('systemctl is-active php8.3-fpm nginx\n').trim()).toBe('active\nactive')
+
+    const sizes = withSizes(leftoversOf(deleted), asRoot(leftoverSizesScript(deleted)))
+    expect(sizes.find((item) => item.id === 'folder')?.size).toMatch(/^\d+(\.\d+)?[KMG]$/)
+    expect(sizes.find((item) => item.id === 'database')?.size).toMatch(/^\d+(\.\d+)?[KM]$/)
+  }, LONG_MS)
+
+  it('keeps a site file changed by hand, and the PHP pool it uses, while deleting the rest', async () => {
+    const site = { domain: 'itedited.example.com', siteName: 'itedited', folder: '/var/www/itedited' }
+    const { record, log, sitePorts } = await createSite({ ...site, database: siteDatabase('mysql', site), jobs: { scheduler: true, queueWorker: true } }, SECRETS)
+    expect(record.phase, failure(record, log)).toBe('done')
+    asRoot("sed -i 's/server_name /server_name edited.example.com /' /etc/nginx/sites-available/itedited.conf\nnginx -s reload\n")
+
+    const deleted = await deleteSite(record, sitePorts, NGINX.driver)
+    expect(deleted.phase, `${deleted.error}\n${log.join('').slice(-4000)}`).toBe('removed')
+    expect(deleted.kept).toEqual([
+      '/etc/nginx/sites-available/itedited.conf changed after Shellway wrote it. It was left in place.',
+      '/etc/php/8.3/fpm/pool.d/itedited.conf is used by the site file that was kept. It was left in place.'
+    ])
+    expect(asRoot('ls /etc/nginx/sites-available/itedited.conf /etc/php/8.3/fpm/pool.d/itedited.conf\n').trim().split('\n')).toHaveLength(2)
+    expect(asRoot('ls /etc/cron.d/shellway-itedited 2>/dev/null; echo end\n').trim()).toBe('end')
+    expect(fetchSite(site.domain)).toBe('php 8.3 as deploy in /var/www/itedited-deploy/releases/1/public')
   }, LONG_MS)
 
   it('makes a new Laravel project on the server as the login user and sends it back as a safe archive', async () => {
