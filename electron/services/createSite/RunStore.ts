@@ -16,7 +16,17 @@ interface Schema {
 
 function withDefaults(run: RunRecord): RunRecord {
   const saved = run.input
-  const filled = { ...saved, database: saved.database ?? null, env: saved.env ?? false, jobs: saved.jobs ?? NO_JOBS, buildOutput: saved.buildOutput ?? null, spa: saved.spa ?? false }
+  const filled = {
+    ...saved,
+    codeSource: saved.codeSource ?? 'git',
+    newRepo: saved.newRepo ?? null,
+    localParent: saved.localParent ?? null,
+    database: saved.database ?? null,
+    env: saved.env ?? false,
+    jobs: saved.jobs ?? NO_JOBS,
+    buildOutput: saved.buildOutput ?? null,
+    spa: saved.spa ?? false
+  }
   const input = saved.buildSteps ? filled : { ...filled, ...defaultCommands(filled) }
   return { ...run, input, created: { ...NOTHING_CREATED, ...run.created } }
 }

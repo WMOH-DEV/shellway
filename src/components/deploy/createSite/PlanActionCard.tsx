@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, ChevronDown, ChevronRight, Clock, Cloud, Code, Cpu, Database, FileKey, Folder, LayoutGrid, Lock, Package, Play, RefreshCw, Server, type LucideIcon } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, Clock, Cloud, Code, Cpu, Database, FileKey, Folder, GitBranch, LayoutGrid, Lock, Package, Play, RefreshCw, Server, Sparkles, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { PlanAction, PlanActionId, PlanChip } from '@/types/createSite'
 import { cn } from '@/utils/cn'
@@ -12,6 +12,8 @@ interface PlanActionCardProps {
 }
 
 const ICONS: Record<PlanActionId, LucideIcon> = {
+  repo: GitBranch,
+  scaffold: Sparkles,
   php: Code,
   composer: Package,
   pm2: RefreshCw,

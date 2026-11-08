@@ -3,7 +3,7 @@ import type { WebServerDriver } from '../webServer/driver'
 import { databaseLabel, removeDatabaseScript } from './database'
 import { jobFiles, removeJobsScript } from './laravelJobs'
 import { removePoolScript } from './phpPool'
-import { ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removeSiteScript, sitePaths } from './siteScripts'
+import { ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removePlaceholderFolderScript, removeSiteScript, sitePaths } from './siteScripts'
 import { assertLineage } from './validate'
 
 export type RemovalStep =
@@ -79,7 +79,15 @@ function databaseSteps({ database }: CreatedResources): RemovalStep[] {
 
 function folderSteps({ folder }: CreatedResources): RemovalStep[] {
   if (folder === null || !folder.createdByRun) return []
-  return [{ kind: 'folder', title: `Folder ${folder.path}`, path: folder.path, command: ROOT_SHELL, script: removeFolderScript(folder.path) }]
+  const script = folder.placeholderSha256 ? removePlaceholderFolderScript(folder.path, folder.placeholderSha256) : removeFolderScript(folder.path)
+  return [{ kind: 'folder', title: `Folder ${folder.path}`, path: folder.path, command: ROOT_SHELL, script }]
+}
+
+export function keptResources({ repo, localCopy }: CreatedResources): string[] {
+  return [
+    ...(repo?.createdByRun ? [`The repository ${repo.url}. Delete it on GitHub if you no longer want it.`] : []),
+    ...(localCopy !== null ? [`The project folder ${localCopy} on this PC.`] : [])
+  ]
 }
 
 export function removalSteps(record: RunRecord, driver: WebServerDriver): RemovalStep[] {

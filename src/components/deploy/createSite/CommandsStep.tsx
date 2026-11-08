@@ -26,6 +26,14 @@ export function CommandsStep({ model, connectionId, server, tools }: CommandsSte
   const commands = commandsOf(draft, server)
   const edited = draft.commands !== null && !sameCommands(draft.commands, defaultCommandsOf(draft, server))
   const change = (changes: Partial<DeployCommands>) => patch({ commands: { ...commands, ...changes } })
+  if (draft.codeSource === 'none') {
+    return (
+      <div className="flex flex-col gap-5">
+        <StepHeading title="Commands and environment" subtitle="A site without code has no deploys, so there is nothing to set here." />
+        <p className="text-xs text-nd-text-muted">Pick Use my git repository or Start a new project in the first step to add deploy commands, a database and an env file.</p>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-5">
       <StepHeading title="Commands and environment" subtitle={`What runs on every deploy, the database and the env file. Filled in for ${label}; change anything.`} />

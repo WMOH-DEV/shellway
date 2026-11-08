@@ -62,6 +62,55 @@ describe('LocalGit', () => {
     expect((await local.inspect(origin, 'main')).packageJson).toBeNull()
   })
 
+  it('commits a new project and pushes it to an empty repository, then tracks it', async () => {
+    expect(await local.remoteHeads(origin)).toEqual([])
+    const project = join(base, 'project')
+    mkdirSync(project)
+    writeFileSync(join(project, 'index.html'), '<h1>hi</h1>')
+    const previous = { ...process.env }
+    Object.assign(process.env, gitEnv)
+    try {
+      const head = await local.commitProject(project, 'main', 'Start shop')
+      await local.pushProject(project, origin, 'main')
+      expect(await local.remoteHeads(origin)).toEqual(['refs/heads/main'])
+      expect(await local.lsRemote(origin, 'main')).toBe(head)
+      expect(git(project, 'config', 'branch.main.remote')).toBe('origin')
+    } finally {
+      process.env = previous
+    }
+  })
+
+  it('says how to fix a PC where git has no name and email', async () => {
+    const project = join(base, 'project')
+    mkdirSync(project)
+    writeFileSync(join(project, 'index.html'), 'x')
+    const config = join(base, 'gitconfig')
+    writeFileSync(config, '[user]\n\tuseConfigOnly = true\n')
+    const previous = { ...process.env }
+    for (const key of Object.keys(gitEnv)) delete process.env[key]
+    Object.assign(process.env, { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1' })
+    try {
+      await expect(local.commitProject(project, 'main', 'Start shop')).rejects.toThrow(/no name and email yet/)
+    } finally {
+      process.env = previous
+    }
+  })
+
+  it('never overwrites a repository that already has commits', async () => {
+    commit('theirs')
+    const project = join(base, 'project')
+    mkdirSync(project)
+    writeFileSync(join(project, 'index.html'), 'mine')
+    const previous = { ...process.env }
+    Object.assign(process.env, gitEnv)
+    try {
+      await local.commitProject(project, 'main', 'Start shop')
+      await expect(local.pushProject(project, origin, 'main')).rejects.toThrow()
+    } finally {
+      process.env = previous
+    }
+  })
+
   it('creates a full bundle when the server has nothing', async () => {
     const head = commit('one')
     expect(await local.fetch(origin, 'main')).toBe(head)

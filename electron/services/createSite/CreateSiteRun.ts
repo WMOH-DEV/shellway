@@ -3,7 +3,8 @@ import type { CreatedDnsRecord, CreatedResources, CreateSiteInput, CreateSiteSec
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
 import { poolLayout, poolText } from '../../../src/utils/createSite/phpPool'
 import { buildPlan } from '../../../src/utils/createSite/plan'
-import { ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
+import { PROJECT_SHELL, ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
+import { localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } from '../../../src/utils/createSite/scaffold'
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
 import { siteNames } from '../../../src/utils/createSite/templates/shared'
 import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
@@ -19,6 +20,7 @@ import type { CreateSitePorts, OutputWriter } from './ports'
 
 const ROOT_TIMEOUT_MS = 120_000
 const INSTALL_TIMEOUT_MS = 900_000
+const ARCHIVE_LIMIT_BYTES = 64 * 1024 * 1024
 const SHORT_TIMEOUT_MS = 30_000
 const DNS_COMMENT = 'Created by Shellway Create site'
 const NOT_THERE = 'shellway: not there'
@@ -29,7 +31,7 @@ export const dnsComment = (runId: string): string => `${DNS_COMMENT} ${runId}`
 
 const sha256Of = (text: string): string => createHash('sha256').update(text.endsWith('\n') ? text : `${text}\n`).digest('hex')
 
-export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+export const NOTHING_CREATED: CreatedResources = { folder: null, repo: null, localCopy: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 export function newRunRecord(id: string, sessionId: string, input: CreateSiteInput, plan: PlanAction[], now: number): RunRecord {
   const steps: RunStep[] = plan.map((action) => ({ id: action.id, status: 'pending', startedAt: null, finishedAt: null }))
@@ -98,6 +100,8 @@ export class CreateSiteRun {
 
   private execute(action: PlanAction): Promise<void> {
     switch (action.id) {
+      case 'repo': return this.prepareRepo()
+      case 'scaffold': return this.makeProject(action)
       case 'php': return this.install(action, `Installing PHP ${this.input.phpVersion} failed.`)
       case 'composer': return this.install(action, 'Installing composer failed.')
       case 'pm2': return this.install(action, 'Setting up pm2 failed.')
@@ -115,16 +119,102 @@ export class CreateSiteRun {
     }
   }
 
+  private async prepareRepo(): Promise<void> {
+    const { newRepo, repoUrl } = this.input
+    if (newRepo === null || this.record.created.repo !== null) return
+    const { project } = this.ports
+    if (newRepo.kind === 'empty') {
+      this.say(`git ls-remote --heads ${repoUrl}\n`)
+      if ((await project.remoteHeads(repoUrl)).length > 0) throw new Error(`${repoUrl} has commits now, so Shellway will not push a new project to it.`)
+      this.created({ repo: { url: repoUrl, createdByRun: false } })
+      return
+    }
+    const label = `github.com/${newRepo.owner}/${newRepo.name}`
+    if (await project.githubRepoExists(newRepo.owner, newRepo.name)) {
+      if ((await project.remoteHeads(repoUrl)).length > 0) throw new Error(`${label} already exists and has commits. Nothing was changed.`)
+      this.say(`${label} already exists and is empty, so Shellway uses it.\n`)
+      this.created({ repo: { url: repoUrl, createdByRun: false } })
+      return
+    }
+    this.say(`GitHub: create ${newRepo.private ? 'private' : 'public'} repository ${label}\n`)
+    const created = await project.createGithubRepo(newRepo.name, newRepo.private)
+    this.created({ repo: { url: created.sshUrl, createdByRun: true } })
+    if (created.sshUrl !== repoUrl) throw new Error(`GitHub created ${created.sshUrl}, not ${repoUrl}. The saved token belongs to another account. Remove what this run created, then start again.`)
+  }
+
+  private get localProject(): string | null {
+    const { localParent, siteName } = this.input
+    return localParent === null ? null : localProjectPath(localParent, siteName)
+  }
+
+  private async makeProject(action: PlanAction): Promise<void> {
+    const dir = this.localProject
+    if (dir === null) return
+    if (this.record.created.localCopy === null) {
+      await this.writeProject(action, dir)
+      this.created({ localCopy: dir })
+    }
+    await this.pushProject(dir)
+  }
+
+  private async writeProject(action: PlanAction, dir: string): Promise<void> {
+    const { project } = this.ports
+    this.say(`Creating ${dir} on this PC\n`)
+    await project.makeFolder(dir)
+    try {
+      if (scaffoldsOnServer(this.input.template)) await project.extractArchive(dir, await this.laravelArchive(action))
+      else await project.writeFiles(dir, scaffoldFiles(this.input))
+      this.say(`git commit in ${dir}\n`)
+      await project.commit(dir, this.input.branch, `Start ${this.input.siteName}`)
+    } catch (err) {
+      await project.removeFolder(dir).catch(() => undefined)
+      throw err
+    }
+  }
+
+  private async laravelArchive(action: PlanAction): Promise<string> {
+    if (action.script === null) throw new Error('The new project has no script.')
+    this.say(`$ ${PROJECT_SHELL}\n${action.script.trimEnd().split('\n').map((line) => `  ${line}`).join('\n')}\n`)
+    const result = await this.ports.exec(PROJECT_SHELL, { stdin: action.script, timeoutMs: INSTALL_TIMEOUT_MS, onStderr: this.output, maxOutputBytes: ARCHIVE_LIMIT_BYTES })
+    if (result.code !== 0) throw new Error(lastLine(result.stderr) || 'Creating the Laravel project failed.')
+    if (result.stdoutBytes > ARCHIVE_LIMIT_BYTES) throw new Error('The new project is too large to copy to this PC.')
+    return result.stdout
+  }
+
+  private pushUrls(): string[] {
+    const { newRepo, repoUrl } = this.input
+    return newRepo?.kind === 'github' ? [repoUrl, `https://github.com/${newRepo.owner}/${newRepo.name}.git`] : [repoUrl]
+  }
+
+  private async pushProject(dir: string): Promise<void> {
+    const failures: string[] = []
+    for (const url of this.pushUrls()) {
+      this.say(`git push ${url} HEAD:${this.input.branch}\n`)
+      try {
+        await this.ports.project.push(dir, url, this.input.branch)
+        return
+      } catch (err) {
+        failures.push((err as Error).message)
+      }
+    }
+    throw new Error(`Could not push the new project from this PC: ${failures.join(' / ')}`)
+  }
+
   private async install(action: PlanAction, fallback: string): Promise<void> {
     this.mustSucceed(await this.root(action, INSTALL_TIMEOUT_MS), fallback)
   }
 
   private async createFolder(action: PlanAction): Promise<void> {
     const recordedBefore = this.record.created.folder !== null
-    if (!recordedBefore) this.created({ folder: { path: this.input.folder, createdByRun: true } })
+    if (!recordedBefore) this.created({ folder: { path: this.input.folder, createdByRun: true, ...this.placeholderHash() } })
     const result = await this.root(action)
     if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ folder: null })
     this.mustSucceed(result, 'Creating the folder failed.')
+  }
+
+  private placeholderHash(): { placeholderSha256?: string } {
+    const { codeSource, domain, folder } = this.input
+    return codeSource === 'none' ? { placeholderSha256: sha256Of(placeholderPage(domain, folder)) } : {}
   }
 
   private async createPool(action: PlanAction): Promise<void> {
@@ -171,8 +261,13 @@ export class CreateSiteRun {
     this.mustSucceed(result, 'Creating the database failed.')
   }
 
+  private async envBase(): Promise<string> {
+    const dir = this.record.created.localCopy
+    return dir === null ? '' : ((await this.ports.project.readFile(dir, '.env.example')) ?? '')
+  }
+
   private async writeEnvFile(): Promise<void> {
-    const content = envFileText(this.input, this.neededSecrets())
+    const content = envFileText(this.input, this.neededSecrets(), await this.envBase())
     const path = envPathOf(this.input.folder)
     this.created({ envFile: { path, sha256: sha256Of(content) } })
     await this.ports.deploy.writeEnv(assertSiteName(this.input.siteName), content)
@@ -282,7 +377,23 @@ export class CreateSiteRun {
       }
       this.created({ deploySite: config.name })
     }
-    if (this.input.sourceMode === 'auto' && this.record.deployKey === null) this.update({ deployKey: await deploy.keygen(config.name) })
+    if (this.input.sourceMode === 'auto' && this.record.deployKey === null) {
+      const deployKey = await deploy.keygen(config.name)
+      this.update({ deployKey })
+      await this.registerCreatedRepoKey(config.name, deployKey)
+    }
+  }
+
+  private async registerCreatedRepoKey(name: string, publicKey: string): Promise<void> {
+    const { newRepo } = this.input
+    if (newRepo?.kind !== 'github') return
+    this.say(`GitHub: add a read-only deploy key to github.com/${newRepo.owner}/${newRepo.name}\n`)
+    try {
+      await this.ports.project.registerDeployKey(newRepo.owner, newRepo.name, `Shellway deploy: ${name}`, publicKey)
+      this.update({ deployKeyAdded: true })
+    } catch (err) {
+      this.say(`${(err as Error).message}. Add the key below to the repository by hand.\n`)
+    }
   }
 
   private async firstDeploy(): Promise<void> {

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
-import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, NameCheck, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
+import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
 import { serverApi } from "./preload/server";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
@@ -1213,6 +1213,9 @@ const api = {
       ipcRenderer.invoke("create-site:context", connectionId, sessionId) as Promise<DeployResult<CreateSiteContext>>,
     checkName: (connectionId: string, domain: string) =>
       ipcRenderer.invoke("create-site:check-name", connectionId, domain) as Promise<DeployResult<NameCheck>>,
+    githubAccount: () => ipcRenderer.invoke("create-site:github-account") as Promise<DeployResult<string | null>>,
+    checkProject: (request: ProjectCheckRequest) =>
+      ipcRenderer.invoke("create-site:check-project", request) as Promise<DeployResult<string | null>>,
     inspectRepo: (repoUrl: string, branch: string) =>
       ipcRenderer.invoke("create-site:inspect-repo", repoUrl, branch) as Promise<DeployResult<RepoFiles>>,
     start: (connectionId: string, sessionId: string, input: CreateSiteInput, secrets: CreateSiteSecrets) =>

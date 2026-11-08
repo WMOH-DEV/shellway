@@ -7,6 +7,7 @@ import type { DeployCoordinator } from '../deploy/DeployCoordinator'
 import type { SslCoordinator } from '../ssl/SslCoordinator'
 import { newRunRecord } from './CreateSiteRun'
 import { CreateSiteService } from './CreateSiteService'
+import type { ProjectPort } from './ports'
 import type { RunStore } from './RunStore'
 
 const INPUT = baseInput({ dns: { zoneId: 'z1', zoneName: 'example.com', serverIp: '203.0.113.10', proxied: true } })
@@ -34,6 +35,7 @@ function makeService(store: RunStore, facts: Partial<ServerFacts> = {}) {
     sessionOf: () => 'session-1',
     ssl,
     deploy: {} as DeployCoordinator,
+    project: {} as ProjectPort,
     store,
     broadcast: vi.fn(),
     newId: () => 'run-new',
@@ -98,5 +100,23 @@ describe('CreateSiteService', () => {
 
   it('refuses a domain outside the chosen zone', async () => {
     await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, domain: 'shop.example.org' }, SECRETS)).rejects.toThrow('is not in the example.com zone')
+  })
+
+  const NEW_PROJECT: Partial<CreateSiteInput> = { codeSource: 'new', newRepo: { kind: 'github', owner: 'acme', name: 'shop', private: true }, localParent: '/home/dev/Projects' }
+
+  it.each<[string, Partial<CreateSiteInput>]>([
+    ['Invalid code settings', { localParent: '/home/dev/Projects' }],
+    ['Invalid code source', { codeSource: 'zip' as CreateSiteInput['codeSource'] }],
+    ['Invalid new project settings', { ...NEW_PROJECT, localParent: 'Projects' }],
+    ['Invalid new project settings', { ...NEW_PROJECT, newRepo: null }],
+    ['compose cannot start as a new project', { ...NEW_PROJECT, template: 'compose', database: null }],
+    ['Invalid new repository settings', { ...NEW_PROJECT, repoUrl: 'git@github.com:someone-else/shop.git' }],
+    ['Invalid new repository settings', { ...NEW_PROJECT, newRepo: { kind: 'github', owner: 'acme', name: 'shop;rm', private: true } }],
+    ['Invalid settings for a site without code', { codeSource: 'none', template: 'laravel' }],
+    ['Invalid settings for a site without code', { codeSource: 'none', template: 'static', database: null, env: false, buildSteps: [{ command: 'npm run build', optional: false, timeoutSeconds: null }], activateSteps: [] }]
+  ])('refuses code settings that do not fit together: %s', async (message, changes) => {
+    const input = { ...INPUT, ...changes }
+    const secrets = { dbPassword: input.database === null ? null : SECRETS.dbPassword, appKey: input.template === 'laravel' ? SECRETS.appKey : null, envText: '' }
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', input, secrets)).rejects.toThrow(message)
   })
 })

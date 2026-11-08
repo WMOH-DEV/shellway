@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { CreatedDnsRecord, CreatedResources, RunRecord } from '@/types/createSite'
 import { jobFiles, removeJobsScript } from './laravelJobs'
-import { removalSteps, type RemovalStep } from './removal'
-import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removeSiteScript } from './siteScripts'
+import { keptResources, removalSteps, type RemovalStep } from './removal'
+import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removePlaceholderFolderScript, removeSiteScript } from './siteScripts'
 import { APACHE_DEBIAN, APACHE_RHEL, NGINX, SERVER_CASES, baseInput, type ServerCase } from './testFixtures'
 
 const SHA = createHash('sha256').update('server {}\n').digest('hex')
@@ -11,7 +11,7 @@ const A: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.e
 const CNAME: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', type: 'CNAME' }
 const ORDER: RemovalStep['kind'][] = ['deploy-site', 'dns-record', 'site-file', 'certificate', 'folder']
 
-const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+const NO_RESOURCES: CreatedResources = { folder: null, repo: null, localCopy: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 const siteFileFor = ({ server }: ServerCase): CreatedResources['siteFile'] => {
   if (server.kind === 'nginx') return { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA }
@@ -123,6 +123,24 @@ describe('removalSteps', () => {
 
   it.each(['shop.example.com; rm -rf /', '../live', 'shop\nexample'])('refuses the certificate name %j', (lineage) => {
     expect(() => removalSteps(record(NGINX, { certificate: { lineage, issuedByRun: true } }), NGINX.driver)).toThrow('is not a valid certificate name')
+  })
+})
+
+describe('removing a site without code', () => {
+  it('removes the placeholder folder only when its page is unchanged', () => {
+    const steps = removalSteps(record(NGINX, { folder: { path: '/var/www/shop', createdByRun: true, placeholderSha256: SHA } }), NGINX.driver)
+    expect(steps).toEqual([expect.objectContaining({ kind: 'folder', script: removePlaceholderFolderScript('/var/www/shop', SHA) })])
+  })
+})
+
+describe('keptResources', () => {
+  it('names the repository Shellway created and the project on this PC, which are never deleted', () => {
+    expect(keptResources({ ...NO_RESOURCES, repo: { url: 'git@github.com:acme/shop.git', createdByRun: true }, localCopy: '/home/dev/Projects/shop' })).toEqual([
+      'The repository git@github.com:acme/shop.git. Delete it on GitHub if you no longer want it.',
+      'The project folder /home/dev/Projects/shop on this PC.'
+    ])
+    expect(keptResources({ ...NO_RESOURCES, repo: { url: 'git@example.com:acme/shop.git', createdByRun: false } })).toEqual([])
+    expect(removalSteps(record(NGINX, { repo: { url: 'git@github.com:acme/shop.git', createdByRun: true }, localCopy: '/home/dev/Projects/shop' }), NGINX.driver)).toEqual([])
   })
 })
 

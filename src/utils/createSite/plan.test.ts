@@ -335,3 +335,36 @@ describe('buildPlan scheduler and queue step', () => {
     expect(plan(NGINX, { template: 'php', jobs: ALL }).map((a) => a.id)).not.toContain('jobs')
   })
 })
+
+describe('buildPlan for a new project', () => {
+  const NEW: Partial<CreateSiteInput> = { codeSource: 'new', newRepo: { kind: 'github', owner: 'acme', name: 'shop', private: true }, localParent: '/home/dev/Projects' }
+
+  it('creates the repository first and the project after PHP and composer are ready', () => {
+    const ids = plan(NGINX, NEW, allTools({ composer: false })).map((a) => a.id)
+    expect(ids.slice(0, 4)).toEqual(['repo', 'composer', 'scaffold', 'folder'])
+    expect(byId(plan(NGINX, NEW), 'repo')).toMatchObject({ summary: expect.stringContaining('github.com/acme/shop'), chip: 'new' })
+  })
+
+  it('makes Laravel on the server as the login user, never as root', () => {
+    expect(byId(plan(NGINX, NEW), 'scaffold')).toMatchObject({ commands: ['sh -s'], chip: 'new' })
+    expect(byId(plan(NGINX, NEW), 'scaffold').script).toContain('create-project laravel/laravel')
+  })
+
+  it('writes other stacks on this PC and lists their files', () => {
+    const scaffold = byId(plan(NGINX, { ...NEW, template: 'node', database: null }), 'scaffold')
+    expect(scaffold.script).toBeNull()
+    expect(scaffold.config).toBe('package.json\npackage-lock.json\nserver.js\n.gitignore')
+  })
+
+  it('checks an empty repository again before pushing to it', () => {
+    expect(byId(plan(NGINX, { ...NEW, newRepo: { kind: 'empty' } }), 'repo').note).toContain('refuses if it is no longer empty')
+  })
+})
+
+describe('buildPlan for a site without code', () => {
+  it('makes a placeholder folder and the site, with no database, deploys or env file', () => {
+    const actions = plan(NGINX, { codeSource: 'none', template: 'static', database: null, buildSteps: [], activateSteps: [], env: false })
+    expect(actions.map((a) => a.id)).toEqual(['folder', 'site', 'dns', 'https'])
+    expect(byId(actions, 'folder').script).toContain('index.html')
+  })
+})

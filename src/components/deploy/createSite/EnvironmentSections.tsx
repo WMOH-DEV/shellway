@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { DatabaseEngine, ServerTools } from '@/types/createSite'
-import { databaseChoices, databaseNames, engineLabel, siteDatabase, sqlitePath, type DatabaseChoice } from '@/utils/createSite/database'
+import { databaseChoices, databaseNames, engineLabel, needsDatabase, siteDatabase, sqlitePath, type DatabaseChoice } from '@/utils/createSite/database'
 import { envPathOf, isSecretKey, managedEnv, stackUsesEnv } from '@/utils/createSite/env'
 import { MASK } from '@/utils/server/databases/identifiers'
 import { Choice, Section } from '../setup/SiteSections'
@@ -20,11 +20,11 @@ function engineHint(engine: DatabaseEngine, model: CreateSiteDraftModel): string
   return `On this server. Shellway creates database ${name} and user ${user} with a new password.`
 }
 
+const NO_DATABASE = { value: 'none' as const, label: 'No database', hint: 'Shellway creates none. You can add one later from the Server tab.' }
+
 function databaseOptions(engines: DatabaseEngine[], model: CreateSiteDraftModel): { value: DatabaseChoice; label: string; hint: string }[] {
-  return [
-    ...engines.map((engine) => ({ value: engine as DatabaseChoice, label: engineLabel(engine), hint: engineHint(engine, model) })),
-    { value: 'none', label: 'No database', hint: 'Shellway creates none. You can add one later from the Server tab.' }
-  ]
+  const options = engines.map((engine) => ({ value: engine as DatabaseChoice, label: engineLabel(engine), hint: engineHint(engine, model) }))
+  return needsDatabase(model.draft.template) ? options : [...options, NO_DATABASE]
 }
 
 function SecretValue({ value }: { value: string }) {

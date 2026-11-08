@@ -1,9 +1,20 @@
 import { useRef, useState } from 'react'
-import type { ServerTools, TemplateId } from '@/types/createSite'
+import type { CodeSource, ServerTools, TemplateId } from '@/types/createSite'
 import { defaultDatabase } from '@/utils/createSite/database'
 import { suggestStack, type StackSuggestion } from '@/utils/createSite/repoSuggest'
 import { isIssuableName } from '@/utils/ssl/https/issueCommands'
-import { folderForName, newDraft, siteNameFromDomain, suggestedDraft, type CreateSiteDraft, type NameCheckState } from '@/utils/createSite/wizard'
+import {
+  allowedTemplates,
+  folderForName,
+  newDraft,
+  projectCheckKey,
+  projectCheckRequest,
+  siteNameFromDomain,
+  suggestedDraft,
+  type CreateSiteDraft,
+  type NameCheckState,
+  type ProjectCheckState
+} from '@/utils/createSite/wizard'
 import { useRememberedEmail } from '@/components/ssl/https/useIssue'
 import { createSiteApi } from './createSiteApi'
 
@@ -23,7 +34,17 @@ export interface CreateSiteDraftModel {
   readRepo: () => Promise<void>
   pickTemplate: (template: TemplateId) => void
   applySuggestion: (suggestion: StackSuggestion) => void
+  github: GithubState
+  loadGithub: () => Promise<void>
+  projectCheck: ProjectCheckState | null
+  checkProject: (again?: boolean) => Promise<void>
+  changeCodeSource: (source: CodeSource) => void
 }
+
+export type GithubState =
+  | { status: 'idle' | 'loading' | 'missing' }
+  | { status: 'ready'; login: string }
+  | { status: 'failed'; error: string }
 
 export type RepoRead =
   | { key: string; status: 'reading' }
@@ -53,6 +74,9 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
   const [repoRead, setRepoRead] = useState<RepoRead | null>(null)
   const latestRepo = useRef('')
   const templatePicked = useRef(prefill.template !== undefined)
+  const [github, setGithub] = useState<GithubState>({ status: 'idle' })
+  const [projectCheck, setProjectCheck] = useState<ProjectCheckState | null>(null)
+  const latestProject = useRef('')
   useRememberedEmail(sessionId, setEmail)
 
   const patch = (changes: Partial<DraftFields>) => setFields((current) => ({ ...current, ...changes }))
@@ -109,5 +133,53 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
     patch({ template, commands: null, database: defaultDatabase(template, tools) })
   }
 
-  return { draft: { ...fields, email }, nameCheck, checking, patch, setEmail, changeDomain, changeSiteName, changeFolder, checkName, repoRead, readRepo, pickTemplate, applySuggestion }
+  const loadGithub = async () => {
+    setGithub({ status: 'loading' })
+    const result = await createSiteApi().githubAccount()
+    if (!result.success) {
+      setGithub({ status: 'failed', error: result.error ?? 'Could not reach GitHub' })
+      return
+    }
+    const login = result.data ?? null
+    setGithub(login === null ? { status: 'missing' } : { status: 'ready', login })
+    patch({ githubOwner: login ?? '' })
+  }
+
+  const checkProject = async (again = false) => {
+    const draft = { ...fields, email }
+    const key = projectCheckKey(draft)
+    if (!again && (projectCheck?.key === key || latestProject.current === key)) return
+    setProjectCheck(null)
+    latestProject.current = key
+    const result = await createSiteApi().checkProject(projectCheckRequest(draft))
+    if (latestProject.current !== key) return
+    setProjectCheck({ key, problem: result.success ? result.data ?? null : result.error ?? 'Could not check the new project' })
+  }
+
+  const changeCodeSource = (codeSource: CodeSource) => {
+    const allowed = allowedTemplates(codeSource)
+    const template = allowed.includes(fields.template) ? fields.template : allowed[0]
+    patch({ codeSource, template, ...(template === fields.template ? {} : { commands: null, database: defaultDatabase(template, tools) }) })
+  }
+
+  return {
+    draft: { ...fields, email },
+    nameCheck,
+    checking,
+    patch,
+    setEmail,
+    changeDomain,
+    changeSiteName,
+    changeFolder,
+    checkName,
+    repoRead,
+    readRepo,
+    pickTemplate,
+    applySuggestion,
+    github,
+    loadGithub,
+    projectCheck,
+    checkProject,
+    changeCodeSource
+  }
 }

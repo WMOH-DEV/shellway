@@ -18,7 +18,7 @@ export function CloudflareTokenCard({ onOpen }: { onOpen(): void }) {
   )
 }
 
-function GithubTokenForm({ onSaved, onCancel }: { onSaved(): void; onCancel?(): void }) {
+export function GithubTokenForm({ onSaved, onCancel }: { onSaved(): void; onCancel?(): void }) {
   const [token, setToken] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()

@@ -60,6 +60,8 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   })
 }
 
+export const savedGithubToken = (): string | null => localStore?.githubToken() ?? null
+
 export function requireLocalGit(): LocalGit {
   if (!localGit) throw new Error('Deploy service is not ready')
   return localGit

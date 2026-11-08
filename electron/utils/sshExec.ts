@@ -13,6 +13,7 @@ export interface ExecOptions {
   timeoutMs?: number
   stdin?: string | Buffer | Readable
   onOutput?: (chunk: string) => void
+  onStderr?: (chunk: string) => void
   maxOutputBytes?: number
 }
 
@@ -70,7 +71,7 @@ export class TailBuffer {
 export function sshExec(
   conn: SSHConnection,
   command: string,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput, maxOutputBytes = Infinity }: ExecOptions = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput, onStderr = onOutput, maxOutputBytes = Infinity }: ExecOptions = {}
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     if (conn.status !== 'connected') {
@@ -101,7 +102,7 @@ export function sshExec(
       const outText = new StringDecoder('utf8')
       const errText = new StringDecoder('utf8')
       stream.on('data', (d: Buffer) => { stdout.push(d); onOutput?.(outText.write(d)) })
-      stream.stderr.on('data', (d: Buffer) => { stderr.push(d); onOutput?.(errText.write(d)) })
+      stream.stderr.on('data', (d: Buffer) => { stderr.push(d); onStderr?.(errText.write(d)) })
       stream.on('error', (streamErr: Error) => settle(() => reject(streamErr)))
       stream.stderr.on('error', () => {})
       stream.on('close', (code: number) => {

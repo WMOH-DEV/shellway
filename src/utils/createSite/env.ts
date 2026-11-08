@@ -34,7 +34,18 @@ export function managedEnv(facts: EnvFacts, secrets: Pick<CreateSiteSecrets, 'ap
   return [...appEntries(facts, secrets?.appKey ?? MASK), ...databaseEnv(facts.database, secrets?.dbPassword ?? MASK)]
 }
 
-export const envFileText = (facts: EnvFacts, secrets: CreateSiteSecrets): string => setEnvKeys(secrets.envText, managedEnv(facts, secrets))
+const ENTRY = /^([A-Z0-9_]+)=(.*)$/
+
+const envEntriesOf = (text: string): EnvEntry[] =>
+  text.split('\n').flatMap((line): EnvEntry[] => {
+    const match = ENTRY.exec(line.trim())
+    return match ? [[match[1], match[2]]] : []
+  })
+
+export const withEnvBase = (base: string, userText: string): string => (base.trim() === '' ? userText : setEnvKeys(base, envEntriesOf(userText)))
+
+export const envFileText = (facts: EnvFacts, secrets: CreateSiteSecrets, base = ''): string =>
+  setEnvKeys(withEnvBase(base, secrets.envText), managedEnv(facts, secrets))
 
 export const writesEnv = (facts: EnvFacts, userText: string): boolean =>
   stackUsesEnv(facts.template) && (managedEnv(facts, null).length > 0 || userText.trim() !== '')

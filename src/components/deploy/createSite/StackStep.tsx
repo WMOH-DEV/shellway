@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
 import { StepHeading } from '@/components/ssl/https/StepHeading'
-import type { PhpTools, ServerTools } from '@/types/createSite'
+import type { CodeSource, PhpTools, ServerTools, TemplateId } from '@/types/createSite'
+import { TEMPLATE_IDS, allowedTemplates } from '@/utils/createSite/wizard'
 import { compareVersions } from '@/utils/createSite/php'
 import { TEMPLATES, usesPhp } from '@/utils/createSite/templates'
 import { Choice, Section, toInt } from '../setup/SiteSections'
@@ -61,6 +62,7 @@ const STATIC_KINDS: { value: StaticKind; label: string; hint: string }[] = [
 function StaticSettings({ model, tools }: Pick<StackStepProps, 'model' | 'tools'>) {
   const { draft, patch } = model
   if (draft.template !== 'static') return null
+  if (draft.codeSource !== 'git') return <SpaToggle model={model} />
   return (
     <Section title="How the site is made">
       <Choice value={draft.staticBuild ? 'built' : 'files'} options={STATIC_KINDS} onChange={(kind) => patch({ staticBuild: kind === 'built', commands: null })} />
@@ -70,9 +72,24 @@ function StaticSettings({ model, tools }: Pick<StackStepProps, 'model' | 'tools'
         </div>
       )}
       {draft.staticBuild && tools.node === null && <span className="text-2xs text-nd-text-muted">Node.js is not installed on this server, so it cannot build the site.</span>}
-      <Toggle checked={draft.spa} onChange={(spa) => patch({ spa })} label="Single-page app: send every unknown path to index.html" />
+      <SpaToggle model={model} />
     </Section>
   )
+}
+
+function SpaToggle({ model }: { model: CreateSiteDraftModel }) {
+  return <Toggle checked={model.draft.spa} onChange={(spa) => model.patch({ spa })} label="Single-page app: send every unknown path to index.html" />
+}
+
+const NOT_HERE: Record<Exclude<CodeSource, 'git'>, string> = {
+  new: 'Needs your own repository',
+  none: 'Needs code'
+}
+
+function notHere(source: CodeSource): Partial<Record<TemplateId, string>> {
+  if (source === 'git') return {}
+  const allowed = allowedTemplates(source)
+  return Object.fromEntries(TEMPLATE_IDS.filter((id) => !allowed.includes(id)).map((id) => [id, NOT_HERE[source]]))
 }
 
 function RepoNote({ read, model }: { read: RepoRead; model: CreateSiteDraftModel }) {
@@ -98,15 +115,16 @@ function RepoNote({ read, model }: { read: RepoRead; model: CreateSiteDraftModel
 }
 
 export function StackStep({ model, tools, serverLabel, serverName }: StackStepProps) {
-  const { readRepo, repoRead } = model
+  const { readRepo, repoRead, draft } = model
+  const isGit = draft.codeSource === 'git'
   useEffect(() => {
-    void readRepo()
-  }, [])
+    if (isGit) void readRepo()
+  }, [isGit])
   return (
     <div className="flex flex-col gap-5">
       <StepHeading title="Stack" subtitle="What the code is built with. It decides what gets installed, how the web server runs the site and which commands run on each deploy." />
-      {repoRead !== null && <RepoNote read={repoRead} model={model} />}
-      <TemplateCards value={model.draft.template} tools={tools} serverLabel={serverLabel} serverName={serverName} onChange={model.pickTemplate} />
+      {isGit && repoRead !== null && <RepoNote read={repoRead} model={model} />}
+      <TemplateCards value={draft.template} tools={tools} serverLabel={serverLabel} serverName={serverName} notHere={notHere(draft.codeSource)} onChange={model.pickTemplate} />
       <TemplateSettings model={model} tools={tools} />
       <StaticSettings model={model} tools={tools} />
     </div>

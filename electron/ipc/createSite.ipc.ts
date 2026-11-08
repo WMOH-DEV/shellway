@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { ipcMain } from 'electron'
 import { getSSHService } from './ssh.ipc'
-import { requireCoordinator as deployCoordinator, requireLocalGit } from './deploy.ipc'
+import { requireCoordinator as deployCoordinator, requireLocalGit, savedGithubToken } from './deploy.ipc'
 import { requireCoordinator as sslCoordinator } from './ssl.ipc'
 import { broadcast } from '../services/WindowManager'
 import { withServerActivity } from './server.ipc'
@@ -9,7 +9,8 @@ import { sshExec } from '../utils/sshExec'
 import type { RemoteExec } from '../services/deploy/DeployService'
 import { CreateSiteService } from '../services/createSite/CreateSiteService'
 import { RunStore } from '../services/createSite/RunStore'
-import type { CreateSiteInput, ResumeMode } from '../../src/types/createSite'
+import { createProjectPort } from '../services/createSite/projectPort'
+import type { CreateSiteInput, NewRepo, ProjectCheckRequest, ResumeMode } from '../../src/types/createSite'
 import type { DeployResult } from '../../src/types/deploy'
 
 let service: CreateSiteService | null = null
@@ -50,8 +51,31 @@ function createSiteInput(value: unknown): CreateSiteInput {
   if (typeof https.email !== 'string' || typeof https.redirect !== 'boolean' || typeof https.staging !== 'boolean') throw new Error('Invalid HTTPS settings')
   if (input.dns !== null) dnsSettings(input.dns)
   laravelJobs(input.jobs)
+  codeSettings(input)
   if ((input.buildOutput !== null && typeof input.buildOutput !== 'string') || typeof input.spa !== 'boolean') throw new Error('Invalid static site settings')
   return input as unknown as CreateSiteInput
+}
+
+const CODE_SOURCES: readonly unknown[] = ['git', 'new', 'none']
+
+function newRepo(value: unknown): NewRepo {
+  const repo = value as Record<string, unknown> | null
+  if (typeof repo !== 'object' || repo === null) throw new Error('Invalid repository settings')
+  if (repo.kind === 'empty') return { kind: 'empty' }
+  if (repo.kind !== 'github' || typeof repo.owner !== 'string' || typeof repo.name !== 'string' || typeof repo.private !== 'boolean') throw new Error('Invalid repository settings')
+  return { kind: 'github', owner: repo.owner, name: repo.name, private: repo.private }
+}
+
+function projectCheckRequest(value: unknown): ProjectCheckRequest {
+  const request = value as Record<string, unknown> | null
+  if (typeof request !== 'object' || request === null) throw new Error('Invalid project')
+  return { repo: newRepo(request.repo), repoUrl: typeof request.repoUrl === 'string' ? request.repoUrl : '', localParent: str(request.localParent, 'folder'), siteName: str(request.siteName, 'site name') }
+}
+
+function codeSettings(input: Record<string, unknown>): void {
+  if (!CODE_SOURCES.includes(input.codeSource)) throw new Error('Invalid code source')
+  if (input.newRepo !== null) newRepo(input.newRepo)
+  if (input.localParent !== null && typeof input.localParent !== 'string') throw new Error('Invalid project folder')
 }
 
 function laravelJobs(value: unknown): void {
@@ -89,6 +113,7 @@ function requireService(): CreateSiteService {
 export function registerCreateSiteIPC(): void {
   service = new CreateSiteService({
     execFor,
+    project: createProjectPort({ git: requireLocalGit(), githubToken: savedGithubToken }),
     sessionOf,
     ssl: sslCoordinator(),
     deploy: deployCoordinator(),
@@ -103,6 +128,8 @@ export function registerCreateSiteIPC(): void {
   handle('create-site:resume', (c, runId, mode) => requireService().resume(str(c, 'connection'), str(runId, 'run'), resumeMode(mode)))
   handle('create-site:stop', (runId) => requireService().stop(str(runId, 'run')))
   handle('create-site:remove', (c, runId) => requireService().remove(str(c, 'connection'), str(runId, 'run')))
+  handle('create-site:github-account', () => requireService().githubAccount())
+  handle('create-site:check-project', (request) => requireService().checkProject(projectCheckRequest(request)))
   handle('create-site:inspect-repo', (url, branch) => requireLocalGit().inspect(str(url, 'repository'), str(branch, 'branch')))
   handle('create-site:runs', (s) => requireService().runs(str(s, 'session')))
 }

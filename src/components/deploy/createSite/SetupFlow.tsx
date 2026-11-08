@@ -68,7 +68,7 @@ function reviewPlan(input: () => CreateSiteInput, context: ServerContext, driver
 
 function stepProblem(step: FormStep, model: CreateSiteDraftModel, context: ServerContext): string | null {
   switch (step) {
-    case 'site': return siteStepProblem(model.draft, model.nameCheck, context)
+    case 'site': return siteStepProblem(model.draft, model.nameCheck, context, model.projectCheck)
     case 'stack': return stackStepProblem(model.draft, context)
     case 'commands': return commandsStepProblem(model.draft, context.tools)
     case 'domain': return domainStepProblem(model.draft)

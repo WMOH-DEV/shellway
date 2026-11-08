@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CreateSiteSecrets, CreateSiteInput, PlanActionId, RunRecord } from '../../../src/types/createSite'
 import { buildPlan } from '../../../src/utils/createSite/plan'
-import { FOLDER_CREATED, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
+import { FOLDER_CREATED, PROJECT_SHELL, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
 import { APACHE_DEBIAN, NGINX, allTools, baseInput, type ServerCase } from '../../../src/utils/createSite/testFixtures'
 import type { ExecOptions } from '../../utils/sshExec'
 import { CreateSiteRun, dnsComment, newRunRecord } from './CreateSiteRun'
@@ -70,6 +70,20 @@ function makePorts(): CreateSitePorts {
       writeEnv: vi.fn(async () => {}),
       deployAndWait: vi.fn(async () => ({ id: 'd1', status: failAt === 'first-deploy' ? 'failed' : 'success', trigger: 'manual', commit: 'abc', started: 1, finished: 2, warnings: 0, note: failAt === 'first-deploy' ? 'health check failed' : '', subject: '' }) as const)
     },
+    project: {
+      githubLogin: vi.fn(async () => 'acme'),
+      githubRepoExists: vi.fn(async () => false),
+      createGithubRepo: vi.fn(async () => ({ sshUrl: 'git@github.com:acme/shop.git', httpsUrl: 'https://github.com/acme/shop.git' })),
+      registerDeployKey: vi.fn(async () => {}),
+      remoteHeads: vi.fn(async (): Promise<string[]> => []),
+      makeFolder: vi.fn(async () => {}),
+      removeFolder: vi.fn(async () => {}),
+      writeFiles: vi.fn(async () => {}),
+      extractArchive: vi.fn(async () => {}),
+      readFile: vi.fn(async (): Promise<string | null> => null),
+      commit: vi.fn(async () => 'abc123'),
+      push: vi.fn(async () => {})
+    },
     tools: vi.fn(async () => allTools({ apacheModules: ['proxy', 'proxy_http', 'headers', 'ssl'] })),
     siteBlockId: vi.fn(async () => 'shop.conf:1'),
     issue: vi.fn(async () => {
@@ -127,7 +141,9 @@ describe('CreateSiteRun', () => {
       ],
       httpsSiteFile: null,
       certificate: { lineage: 'shop.example.com', issuedByRun: true },
-      deploySite: 'shop'
+      deploySite: 'shop',
+      repo: null,
+      localCopy: null
     })
     expect(record.deployKey).toBe('ssh-ed25519 AAAAexample shellway')
     expect(ports.issue).toHaveBeenCalledWith({ blockId: 'shop.conf:1', names: ['shop.example.com', 'www.shop.example.com'], email: 'admin@example.com', redirect: true, staging: true }, expect.any(Function))
@@ -413,6 +429,116 @@ describe('CreateSiteRun', () => {
     await startRun(NGINX).run('start')
     expect(saved.length).toBeGreaterThan(10)
     expect(saved[saved.length - 1].phase).toBe('done')
+  })
+})
+
+const LARAVEL_PROJECT: Partial<CreateSiteInput> = {
+  codeSource: 'new',
+  newRepo: { kind: 'github', owner: 'acme', name: 'shop', private: true },
+  localParent: '/home/dev/Projects'
+}
+
+const GITHUB_PROJECT: Partial<CreateSiteInput> = { ...LARAVEL_PROJECT, template: 'node', database: null }
+
+const EMPTY_REPO_PROJECT: Partial<CreateSiteInput> = { ...GITHUB_PROJECT, newRepo: { kind: 'empty' } }
+
+describe('CreateSiteRun with a new project', () => {
+  it('creates the GitHub repository, writes and pushes the project, then adds the deploy key itself', async () => {
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(record.phase).toBe('done')
+    expect(record.steps.slice(0, 2).map((step) => step.id)).toEqual(['repo', 'scaffold'])
+    expect(ports.project.createGithubRepo).toHaveBeenCalledWith('shop', true)
+    expect(ports.project.makeFolder).toHaveBeenCalledWith('/home/dev/Projects/shop')
+    expect(ports.project.writeFiles).toHaveBeenCalledWith('/home/dev/Projects/shop', expect.objectContaining({ 'package.json': expect.any(String) }))
+    expect(ports.project.commit).toHaveBeenCalledWith('/home/dev/Projects/shop', 'main', 'Start shop')
+    expect(ports.project.push).toHaveBeenCalledWith('/home/dev/Projects/shop', 'git@github.com:acme/shop.git', 'main')
+    expect(ports.project.registerDeployKey).toHaveBeenCalledWith('acme', 'shop', 'Shellway deploy: shop', 'ssh-ed25519 AAAAexample shellway')
+    expect(record.created.repo).toEqual({ url: 'git@github.com:acme/shop.git', createdByRun: true })
+    expect(record.created.localCopy).toBe('/home/dev/Projects/shop')
+    expect(record.deployKeyAdded).toBe(true)
+  })
+
+  it('uses a GitHub repository that already exists only when it is still empty', async () => {
+    vi.mocked(ports.project.githubRepoExists).mockResolvedValue(true)
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(ports.project.createGithubRepo).not.toHaveBeenCalled()
+    expect(record.created.repo).toEqual({ url: 'git@github.com:acme/shop.git', createdByRun: false })
+  })
+
+  it('stops before writing anything when the repository has commits', async () => {
+    vi.mocked(ports.project.remoteHeads).mockResolvedValue(['main'])
+    const record = await startRun(NGINX, EMPTY_REPO_PROJECT).run('start')
+    expect(record.phase).toBe('failed')
+    expect(statuses(record).repo).toBe('failed')
+    expect(record.error).toContain('has commits now')
+    expect(ports.project.makeFolder).not.toHaveBeenCalled()
+    expect(record.created.repo).toBeNull()
+  })
+
+  it('stops when GitHub made the repository under another account, keeping it in the record', async () => {
+    vi.mocked(ports.project.createGithubRepo).mockResolvedValue({ sshUrl: 'git@github.com:other/shop.git', httpsUrl: 'https://github.com/other/shop.git' })
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(record.phase).toBe('failed')
+    expect(record.error).toContain('another account')
+    expect(record.created.repo).toEqual({ url: 'git@github.com:other/shop.git', createdByRun: true })
+  })
+
+  it('removes the half-made folder on this PC when the commit fails, and records no local copy', async () => {
+    vi.mocked(ports.project.commit).mockRejectedValue(new Error('git has no name and email set on this PC'))
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(statuses(record).scaffold).toBe('failed')
+    expect(ports.project.removeFolder).toHaveBeenCalledWith('/home/dev/Projects/shop')
+    expect(record.created.localCopy).toBeNull()
+    expect(ports.project.push).not.toHaveBeenCalled()
+  })
+
+  it('pushes over HTTPS when the SSH push to GitHub fails', async () => {
+    vi.mocked(ports.project.push).mockRejectedValueOnce(new Error('Permission denied (publickey)'))
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(record.phase).toBe('done')
+    expect(vi.mocked(ports.project.push).mock.calls.map(([, url]) => url)).toEqual(['git@github.com:acme/shop.git', 'https://github.com/acme/shop.git'])
+  })
+
+  it('only pushes again on retry once the project was committed', async () => {
+    vi.mocked(ports.project.push).mockRejectedValue(new Error('offline'))
+    const run = startRun(NGINX, EMPTY_REPO_PROJECT)
+    const failedRecord = await run.run('start')
+    expect(failedRecord.error).toContain('Could not push the new project from this PC: offline')
+    vi.mocked(ports.project.push).mockResolvedValue()
+    const record = await run.run('retry')
+    expect(record.phase).toBe('done')
+    expect(ports.project.makeFolder).toHaveBeenCalledTimes(1)
+    expect(ports.project.push).toHaveBeenCalledTimes(2)
+  })
+
+  it('carries on with a message when GitHub refuses the deploy key', async () => {
+    vi.mocked(ports.project.registerDeployKey).mockRejectedValue(new Error('GitHub refused the deploy key'))
+    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    expect(record.phase).toBe('done')
+    expect(record.deployKeyAdded).toBeUndefined()
+    expect(output).toContain('Add the key below to the repository by hand')
+  })
+
+  it('makes a Laravel project on the server as the login user and builds the env file from its .env.example', async () => {
+    vi.mocked(ports.project.readFile).mockResolvedValue('APP_NAME=Laravel\nBROADCAST_CONNECTION=log\n')
+    const record = await startRun(NGINX, LARAVEL_PROJECT).run('start')
+    expect(record.phase).toBe('done')
+    expect(calls.find((call) => call.command === PROJECT_SHELL)?.stdin).toContain('create-project laravel/laravel')
+    expect(ports.project.extractArchive).toHaveBeenCalledWith('/home/dev/Projects/shop', '')
+    expect(ports.project.readFile).toHaveBeenCalledWith('/home/dev/Projects/shop', '.env.example')
+    const [, content] = vi.mocked(ports.deploy.writeEnv).mock.calls[0]
+    expect(content).toContain('BROADCAST_CONNECTION=log\n')
+    expect(content).toContain(`DB_PASSWORD=${PASSWORD}\n`)
+  })
+})
+
+describe('CreateSiteRun with no code yet', () => {
+  it('makes a placeholder folder and the site, without a database or deploys', async () => {
+    const record = await startRun(NGINX, { codeSource: 'none', template: 'static', database: null, buildSteps: [], activateSteps: [], env: false }).run('start')
+    expect(record.phase).toBe('done')
+    expect(Object.keys(statuses(record))).toEqual(['folder', 'site', 'dns', 'https'])
+    expect(record.created.folder).toEqual({ path: '/var/www/shop', createdByRun: true, placeholderSha256: expect.stringMatching(/^[0-9a-f]{64}$/) })
+    expect(ports.deploy.save).not.toHaveBeenCalled()
   })
 })
 

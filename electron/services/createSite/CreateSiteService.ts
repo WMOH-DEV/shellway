@@ -1,8 +1,9 @@
-import { posix } from 'path'
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, NameCheck, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
+import { isAbsolute, posix } from 'path'
+import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, NameCheck, ProjectCheckRequest, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
+import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from '../../../src/utils/createSite/scaffold'
 import type { ServerFacts } from '../../../src/types/ssl'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
-import { siteDatabase } from '../../../src/utils/createSite/database'
+import { needsDatabase, siteDatabase } from '../../../src/utils/createSite/database'
 import { assertSecrets } from '../../../src/utils/createSite/env'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { assertDomain } from '../../../src/utils/createSite/validate'
@@ -15,13 +16,15 @@ import { validateSiteConfig } from '../deploy/siteFiles'
 import { resolveAddresses } from '../ssl/dnsEdge'
 import type { SslCoordinator } from '../ssl/SslCoordinator'
 import { CreateSiteRun, newRunRecord } from './CreateSiteRun'
-import type { CreateSitePorts, DeployPort, DnsPort } from './ports'
+import type { CreateSitePorts, DeployPort, DnsPort, ProjectPort } from './ports'
+import { checkNewProject } from './projectPort'
 import { removeCreated } from './removeRun'
 import type { RunStore } from './RunStore'
 import { TOOLS_SCRIPT, detectTools } from './serverTools'
 
 export interface CreateSiteDeps {
   execFor: (connectionId: string) => RemoteExec | null
+  project: ProjectPort
   sessionOf: (connectionId: string) => string | null
   ssl: SslCoordinator
   deploy: DeployCoordinator
@@ -48,7 +51,35 @@ function interrupted(record: RunRecord): RunRecord {
 
 function assertDatabaseMatches(input: CreateSiteInput): void {
   const { database } = input
+  if (database === null && input.codeSource !== 'none' && needsDatabase(input.template)) throw new Error('Laravel needs a database for its migrations')
   if (database !== null && JSON.stringify(database) !== JSON.stringify(siteDatabase(database.engine, input))) throw new Error('Invalid database settings')
+}
+
+const GITHUB_NAME = /^[A-Za-z0-9._-]{1,100}$/
+
+function assertNewProject(input: CreateSiteInput): void {
+  const { newRepo, localParent } = input
+  if (newRepo === null || localParent === null || !isAbsolute(localParent)) throw new Error('Invalid new project settings')
+  if (!NEW_PROJECT_TEMPLATES.includes(input.template)) throw new Error(`${input.template} cannot start as a new project`)
+  if (newRepo.kind === 'empty') return
+  const valid = GITHUB_NAME.test(newRepo.owner) && GITHUB_NAME.test(newRepo.name) && typeof newRepo.private === 'boolean'
+  if (!valid || input.repoUrl !== githubSshUrlOf(newRepo.owner, newRepo.name)) throw new Error('Invalid new repository settings')
+}
+
+function assertNoCode(input: CreateSiteInput): void {
+  const quiet = input.database === null && !input.env && input.buildSteps.length === 0 && input.activateSteps.length === 0
+  if (!NO_CODE_TEMPLATES.includes(input.template) || !quiet || input.newRepo !== null) throw new Error('Invalid settings for a site without code')
+}
+
+function assertCodeSource(input: CreateSiteInput): void {
+  switch (input.codeSource) {
+    case 'git':
+      if (input.newRepo !== null || input.localParent !== null) throw new Error('Invalid code settings')
+      return
+    case 'new': return assertNewProject(input)
+    case 'none': return assertNoCode(input)
+    default: throw new Error('Invalid code source')
+  }
 }
 
 function serverOf(facts: ServerFacts): SiteServer | null {
@@ -105,14 +136,23 @@ export class CreateSiteService {
     }
   }
 
+  githubAccount(): Promise<string | null> {
+    return this.deps.project.githubLogin()
+  }
+
+  checkProject(request: ProjectCheckRequest): Promise<string | null> {
+    return checkNewProject(this.deps.project, request)
+  }
+
   start(connectionId: string, sessionId: string, input: CreateSiteInput, rawSecrets: unknown): Promise<RunRecord> {
     this.assertSameServer(connectionId, sessionId)
     return this.begin(connectionId, async () => {
       const secrets = assertSecrets(input, rawSecrets)
       assertDatabaseMatches(input)
+      assertCodeSource(input)
       const ports = this.ports(connectionId, sessionId, this.deps.newId())
       const driver = driverFor(input.server)
-      const invalid = validateSiteConfig(deploySiteConfig(input))
+      const invalid = input.codeSource === 'none' ? null : validateSiteConfig(deploySiteConfig(input))
       if (invalid) throw new Error(invalid)
       await this.checkAgainstServer(connectionId, input)
       const plan = buildPlan(input, await ports.tools(), driver)
@@ -286,6 +326,7 @@ export class CreateSiteService {
       exec,
       dns: this.dnsPort(),
       deploy: this.deployPort(connectionId, sessionId, say),
+      project: this.deps.project,
       tools: async () => {
         const { facts } = await ssl.service(connectionId).readConfig()
         output(`$ sh -s\n${TOOLS_SCRIPT.trimEnd().split('\n').map((line) => `  ${line}`).join('\n')}\n`)

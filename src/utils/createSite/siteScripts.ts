@@ -6,6 +6,8 @@ import { assertConf, assertFolder, assertLineage, assertModule, assertOwner, ass
 
 export const ROOT_SHELL = 'sudo -n sh -s'
 
+export const PROJECT_SHELL = 'sh -s'
+
 export interface SitePaths {
   file: string
   enabledLink: string | null
@@ -192,6 +194,41 @@ export function removeFolderScript(folder: string): string {
     `  exit ${EXIT_REFUSED}`,
     'fi',
     `if [ -L ${site} ] && [ "$(readlink ${site})" = ${current} ]; then rm -f ${site}; fi`,
+    ''
+  ].join('\n')
+}
+
+export function placeholderFolderScript(folder: string, owner: string, page: string): string {
+  const site = quote(assertFolder(folder))
+  const index = quote(`${folder}/index.html`)
+  return [
+    'set -e',
+    `if [ -e ${site} ] || [ -L ${site} ]; then`,
+    `  echo ${quote(`${folder} already exists. Nothing was changed.`)} >&2`,
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
+    `mkdir -p "$(dirname ${site})"`,
+    `mkdir ${site}`,
+    `echo ${quote(FOLDER_CREATED)}`,
+    `cat > ${index} ${heredoc(page).trimEnd()}`,
+    `chown -R ${quote(`${assertOwner(owner)}:`)} ${site}`,
+    `chmod 755 ${site}`,
+    `chmod 644 ${index}`,
+    ''
+  ].join('\n')
+}
+
+export function removePlaceholderFolderScript(folder: string, sha256: string): string {
+  const site = quote(assertFolder(folder))
+  const index = quote(`${folder}/index.html`)
+  return [
+    'set -e',
+    `if [ ! -e ${site} ]; then echo ${quote(`${folder} is already gone.`)}; exit 0; fi`,
+    `if [ -f ${index} ] && [ "$(sha256sum ${index} | cut -d' ' -f1)" = ${quote(assertSha256(sha256))} ]; then rm -f ${index}; fi`,
+    `if ! rmdir ${site} 2>/dev/null; then`,
+    `  echo ${quote(`${folder} has files in it. It was left in place.`)} >&2`,
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
     ''
   ].join('\n')
 }

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import type { RunRecord } from '@/types/createSite'
-import { removalSteps, type RemovalStep } from '@/utils/createSite/removal'
+import { keptResources, removalSteps, type RemovalStep } from '@/utils/createSite/removal'
 import { driverFor } from '@/utils/createSite/wizard'
 
 interface RemoveConfirmProps {
@@ -30,6 +30,18 @@ function RemovalList({ steps }: { steps: RemovalStep[] }) {
   )
 }
 
+function KeptList({ items }: { items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <>
+      <p className="text-sm text-nd-text-secondary">Kept, because Shellway never deletes your code:</p>
+      <ul aria-label="Will be kept" className="flex list-disc flex-col gap-1 pl-5 text-xs text-nd-text-primary">
+        {items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </>
+  )
+}
+
 export function RemoveConfirm({ record, onConfirm, onClose }: RemoveConfirmProps) {
   const steps = plannedRemoval(record)
   const blocked = typeof steps === 'string'
@@ -37,6 +49,7 @@ export function RemoveConfirm({ record, onConfirm, onClose }: RemoveConfirmProps
     <Modal open onClose={onClose} title="Remove what this wizard created?">
       <div className="flex flex-col gap-3">
         {blocked ? <p role="alert" className="text-sm text-nd-error-fg">{steps}</p> : <RemovalList steps={steps} />}
+        <KeptList items={keptResources(record.created)} />
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>

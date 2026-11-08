@@ -1,7 +1,7 @@
 import { Box, Container, File, Hexagon, Plus, Text, type LucideIcon } from 'lucide-react'
 import type { ServerTools, TemplateId } from '@/types/createSite'
 import { cn } from '@/utils/cn'
-import { templateAvailability, type AvailabilityState } from '@/utils/createSite/availability'
+import { templateAvailability, type Availability, type AvailabilityState } from '@/utils/createSite/availability'
 import { TEMPLATES } from '@/utils/createSite/templates'
 import { TEMPLATE_IDS } from '@/utils/createSite/wizard'
 import { CardLabel } from '@/components/ssl/Card'
@@ -11,6 +11,7 @@ interface TemplateCardsProps {
   tools: ServerTools
   serverLabel: string
   serverName: string
+  notHere: Partial<Record<TemplateId, string>>
   onChange: (template: TemplateId) => void
 }
 
@@ -33,9 +34,9 @@ function blurb(id: TemplateId, serverLabel: string): string {
   }
 }
 
-function TemplateCard({ id, selected, tools, serverLabel, onSelect }: { id: TemplateId; selected: boolean; tools: ServerTools; serverLabel: string; onSelect: () => void }) {
+function TemplateCard({ id, selected, tools, serverLabel, notHere, onSelect }: { id: TemplateId; selected: boolean; tools: ServerTools; serverLabel: string; notHere: string | undefined; onSelect: () => void }) {
   const Icon = ICONS[id]
-  const availability = templateAvailability(id, tools)
+  const availability: Availability = notHere === undefined ? templateAvailability(id, tools) : { state: 'blocked', reason: notHere }
   const blocked = availability.state === 'blocked'
   return (
     <button
@@ -62,7 +63,7 @@ function TemplateCard({ id, selected, tools, serverLabel, onSelect }: { id: Temp
   )
 }
 
-export function TemplateCards({ value, tools, serverLabel, serverName, onChange }: TemplateCardsProps) {
+export function TemplateCards({ value, tools, serverLabel, serverName, notHere, onChange }: TemplateCardsProps) {
   return (
     <section aria-label="Template" className="flex flex-col gap-3">
       <div className="flex items-baseline gap-2.5">
@@ -71,7 +72,7 @@ export function TemplateCards({ value, tools, serverLabel, serverName, onChange 
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
         {TEMPLATE_IDS.map((id) => (
-          <TemplateCard key={id} id={id} selected={id === value} tools={tools} serverLabel={serverLabel} onSelect={() => onChange(id)} />
+          <TemplateCard key={id} id={id} selected={id === value} tools={tools} serverLabel={serverLabel} notHere={notHere[id]} onSelect={() => onChange(id)} />
         ))}
       </div>
     </section>

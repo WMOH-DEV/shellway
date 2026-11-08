@@ -12,7 +12,8 @@ import { createJobsScript, cronText, jobFiles, unitText } from './laravelJobs'
 import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPool'
 import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
-import { ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, sitePaths } from './siteScripts'
+import { laravelScaffoldScript, localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } from './scaffold'
+import { PROJECT_SHELL, ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, placeholderFolderScript, sitePaths } from './siteScripts'
 import { TEMPLATES, siteFileText, usesPhp, type SiteTemplate } from './templates'
 import { siteNames } from './templates/shared'
 import { assertDomain, assertFolder, assertHealthPath, assertIpv4, assertOwner, assertPhpVersion, assertPort } from './validate'
@@ -26,6 +27,8 @@ const asRoot = (script: string): Pick<PlanAction, 'commands' | 'script'> => ({ c
 const MANUAL_DNS_NOTE = 'No Cloudflare zone for this domain. Create the record at your DNS provider, then press Check again.'
 
 const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
+  repo: 'Repository',
+  scaffold: 'New project',
   php: 'PHP',
   composer: 'Composer',
   pm2: 'pm2',
@@ -43,7 +46,7 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3, jobs: 0.25 }
+const MINUTES: Record<PlanActionId, number> = { repo: 0.25, scaffold: 1.5, php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3, jobs: 0.25 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
@@ -100,7 +103,61 @@ function pm2Action(input: CreateSiteInput, template: SiteTemplate, tools: Server
   })]
 }
 
-function folderAction({ folder, owner }: CreateSiteInput): PlanAction {
+function repoActions(input: CreateSiteInput): PlanAction[] {
+  const { newRepo } = input
+  if (input.codeSource !== 'new' || newRepo === null) return []
+  if (newRepo.kind === 'empty') {
+    return [action({ id: 'repo', title: TITLES.repo, summary: `Use the empty repository ${repoLabel(input.repoUrl)}`, chip: 'ready', note: 'Checked again before anything is pushed. Shellway refuses if it is no longer empty.' })]
+  }
+  return [action({
+    id: 'repo',
+    title: TITLES.repo,
+    summary: `Create ${newRepo.private ? 'private' : 'public'} repository github.com/${newRepo.owner}/${newRepo.name}`,
+    chip: 'new',
+    note: 'Created with your saved GitHub token. Shellway never deletes it, not even when you remove what this run created.'
+  })]
+}
+
+function scaffoldActions(input: CreateSiteInput, template: SiteTemplate): PlanAction[] {
+  if (input.codeSource !== 'new' || input.localParent === null) return []
+  const local = localProjectPath(input.localParent, input.siteName)
+  const push = `committed in ${local} on this PC and pushed to ${input.branch} with your own git login`
+  if (scaffoldsOnServer(template.id)) {
+    return [action({
+      id: 'scaffold',
+      title: TITLES.scaffold,
+      summary: `Laravel from composer create-project, ${push}`,
+      chip: 'new',
+      commands: [PROJECT_SHELL],
+      script: laravelScaffoldScript(input),
+      note: `Made on the server as ${assertOwner(input.owner)} in a temporary folder that is removed afterwards. vendor and .env are left out. Shellway never deletes the folder on this PC.`
+    })]
+  }
+  const files = Object.keys(scaffoldFiles(input))
+  return [action({
+    id: 'scaffold',
+    title: TITLES.scaffold,
+    summary: `${template.label} starter, ${push}`,
+    chip: 'new',
+    config: files.join('\n'),
+    note: 'Written on this PC. Shellway never deletes the folder on this PC.'
+  })]
+}
+
+function placeholderFolderAction({ folder, owner, domain }: CreateSiteInput): PlanAction {
+  return action({
+    id: 'folder',
+    title: TITLES.folder,
+    summary: `${assertFolder(folder)} owned by ${assertOwner(owner)}, with a placeholder page`,
+    chip: 'new',
+    ...asRoot(placeholderFolderScript(folder, owner, placeholderPage(domain, folder))),
+    note: 'No deploys are set up. Upload files into the folder yourself, for example from the Files tab.'
+  })
+}
+
+function folderAction(input: CreateSiteInput): PlanAction {
+  if (input.codeSource === 'none') return placeholderFolderAction(input)
+  const { folder, owner } = input
   return action({
     id: 'folder',
     title: TITLES.folder,
@@ -325,23 +382,27 @@ function jobsActions(input: CreateSiteInput, template: SiteTemplate, tools: Serv
   })]
 }
 
+function codeActions(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
+  if (input.codeSource === 'none') return []
+  return [deploysAction(input, template), ...envActions(input), firstDeployAction(input), ...jobsActions(input, template, tools)]
+}
+
 export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: WebServerDriver): PlanAction[] {
   const template = TEMPLATES[input.template]
   return [
+    ...repoActions(input),
     ...phpAction(input, template, tools),
     ...composerAction(input, template, tools),
     ...pm2Action(input, template, tools),
+    ...scaffoldActions(input, template),
     folderAction(input),
     ...poolActions(input, template),
     ...modulesActions(input, template, tools),
     siteAction(input, template, driver),
-    ...databaseActions(input),
+    ...(input.codeSource === 'none' ? [] : databaseActions(input)),
     dnsAction(input),
     httpsAction(input, driver),
-    deploysAction(input, template),
-    ...envActions(input),
-    firstDeployAction(input),
-    ...jobsActions(input, template, tools)
+    ...codeActions(input, template, tools)
   ]
 }
 

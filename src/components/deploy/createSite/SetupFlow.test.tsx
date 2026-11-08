@@ -282,3 +282,75 @@ describe('Create site, from domain to start', () => {
     expect(screen.queryByRole('region', { name: 'Apache modules' })).not.toBeInTheDocument()
   })
 })
+
+describe('Create site, code source', () => {
+  const planCards = () => within(screen.getByRole('list', { name: 'Plan' })).getAllByRole('region').map((card) => card.getAttribute('aria-label'))
+
+  async function walkThroughToCreate(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(continueButton())
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+  }
+
+  it('starts a new project in a new private GitHub repository and keeps a copy on this PC', async () => {
+    const { user, api } = setup()
+    await enterDomain(user)
+    await user.click(screen.getByRole('button', { name: /Start a new project/ }))
+    expect(await screen.findByText(/Creates github.com\/acme\/shop/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Folder on this PC'), '/home/dev/Projects')
+    await waitFor(() => expect(api['createSite.checkProject']).toHaveBeenCalledWith({ repo: { kind: 'github', owner: 'acme', name: 'shop', private: true }, repoUrl: 'git@github.com:acme/shop.git', localParent: '/home/dev/Projects', siteName: 'shop' }))
+    await waitFor(() => expect(continueButton()).toBeEnabled())
+    await user.click(continueButton())
+    expect(await screen.findByRole('button', { name: /Docker Compose/ })).toBeDisabled()
+    expect(api['createSite.inspectRepo']).not.toHaveBeenCalled()
+    await walkThroughToCreate(user)
+    expect(planCards().slice(0, 2)).toEqual(['Repository', 'New project'])
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input] = api['createSite.start'].mock.calls[0]
+    expect(input).toMatchObject({
+      codeSource: 'new',
+      newRepo: { kind: 'github', owner: 'acme', name: 'shop', private: true },
+      repoUrl: 'git@github.com:acme/shop.git',
+      localParent: '/home/dev/Projects',
+      template: 'laravel'
+    })
+  })
+
+  it('holds Continue while the new project check finds a problem', async () => {
+    const { user } = setup({ 'createSite.checkProject': vi.fn().mockResolvedValue({ success: true, data: 'github.com/acme/shop already exists and has commits.' }) })
+    await enterDomain(user)
+    await user.click(screen.getByRole('button', { name: /Start a new project/ }))
+    await user.type(await screen.findByLabelText('Folder on this PC'), '/home/dev/Projects')
+    expect(await screen.findByText('github.com/acme/shop already exists and has commits.')).toBeInTheDocument()
+    expect(continueButton()).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check the repository and folder again' })).toBeInTheDocument()
+  })
+
+  it('asks for a GitHub token when none is saved', async () => {
+    const { user } = setup({ 'createSite.githubAccount': vi.fn().mockResolvedValue({ success: true, data: null }) })
+    await enterDomain(user)
+    await user.click(screen.getByRole('button', { name: /Start a new project/ }))
+    expect(await screen.findByText(/No GitHub token is saved/)).toBeInTheDocument()
+    expect(continueButton()).toBeDisabled()
+  })
+
+  it('makes a site with no code yet: a placeholder page, the site, DNS and HTTPS only', async () => {
+    const { user, api } = setup()
+    await enterDomain(user)
+    await user.click(screen.getByRole('button', { name: /No code yet/ }))
+    await waitFor(() => expect(continueButton()).toBeEnabled())
+    await user.click(continueButton())
+    expect(await screen.findByRole('button', { name: /^Laravel/ })).toBeDisabled()
+    await user.click(continueButton())
+    expect(await screen.findByText(/A site without code has no deploys/)).toBeInTheDocument()
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    expect(planCards()).toEqual(['Folder', 'nginx site', 'DNS record', 'HTTPS'])
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input, secrets] = api['createSite.start'].mock.calls[0]
+    expect(input).toMatchObject({ codeSource: 'none', template: 'static', repoUrl: '', database: null, env: false, buildSteps: [], activateSteps: [] })
+    expect(secrets).toMatchObject({ dbPassword: null, appKey: null })
+  })
+})

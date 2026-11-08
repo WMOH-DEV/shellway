@@ -27,6 +27,8 @@ export function databaseChoices(template: TemplateId, tools: ServerTools): Datab
   return SQLITE_STACKS.has(template) ? [...servers, 'sqlite'] : servers
 }
 
+export const needsDatabase = (template: TemplateId): boolean => template === 'laravel'
+
 export const defaultDatabase = (template: TemplateId, tools: ServerTools): DatabaseChoice => databaseChoices(template, tools)[0] ?? 'none'
 
 function assertMatches(value: string, pattern: RegExp, what: string): string {

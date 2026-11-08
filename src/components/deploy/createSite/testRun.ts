@@ -3,7 +3,7 @@ import { mockNovadeck } from '@/test/novadeck'
 import type { CreateSiteContext, CreateSiteOutput, CreatedResources, NameCheck, RepoFiles, RunRecord, RunStep } from '@/types/createSite'
 import { allTools, baseInput } from '@/utils/createSite/testFixtures'
 
-export const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+export const NO_RESOURCES: CreatedResources = { folder: null, repo: null, localCopy: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 export const runStep = (id: RunStep['id'], status: RunStep['status'], startedAt: number | null = null, finishedAt: number | null = null): RunStep => ({ id, status, startedAt, finishedAt })
 
@@ -61,6 +61,8 @@ export function fakeBackend(overrides: Record<string, unknown> = {}): FakeBacken
     'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext() }),
     'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: FREE_NAME }),
     'createSite.inspectRepo': vi.fn().mockResolvedValue({ success: true, data: LARAVEL_REPO }),
+    'createSite.githubAccount': vi.fn().mockResolvedValue({ success: true, data: 'acme' }),
+    'createSite.checkProject': vi.fn().mockResolvedValue({ success: true, data: null }),
     'createSite.start': vi.fn().mockResolvedValue({ success: true, data: makeRun({ phase: 'running', steps: [runStep('folder', 'pending', 1_800_000_000_000)], current: 'folder', error: null }) }),
     'createSite.resume': vi.fn().mockResolvedValue({ success: true, data: makeRun({ phase: 'running', error: null }) }),
     'createSite.stop': vi.fn().mockResolvedValue({ success: true }),

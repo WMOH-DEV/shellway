@@ -21,12 +21,28 @@ export interface DeployPort {
   deployAndWait: (name: string) => Promise<DeployRecord | null>
 }
 
+export interface ProjectPort {
+  githubLogin: () => Promise<string | null>
+  githubRepoExists: (owner: string, name: string) => Promise<boolean>
+  createGithubRepo: (name: string, isPrivate: boolean) => Promise<{ sshUrl: string; httpsUrl: string }>
+  registerDeployKey: (owner: string, name: string, title: string, publicKey: string) => Promise<void>
+  remoteHeads: (url: string) => Promise<string[]>
+  makeFolder: (path: string) => Promise<void>
+  removeFolder: (path: string) => Promise<void>
+  writeFiles: (dir: string, files: Record<string, string>) => Promise<void>
+  extractArchive: (dir: string, base64: string) => Promise<void>
+  readFile: (dir: string, path: string) => Promise<string | null>
+  commit: (dir: string, branch: string, message: string) => Promise<string>
+  push: (dir: string, url: string, branch: string) => Promise<void>
+}
+
 export type OutputWriter = (chunk: string) => void
 
 export interface CreateSitePorts {
   exec: RemoteExec
   dns: DnsPort | null
   deploy: DeployPort
+  project: ProjectPort
   tools: () => Promise<ServerTools>
   siteBlockId: (file: string, domain: string) => Promise<string | null>
   issue: (request: IssueRequest, onOutput: OutputWriter) => Promise<IssueResult>

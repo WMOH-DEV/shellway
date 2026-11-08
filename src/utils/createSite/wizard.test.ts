@@ -5,7 +5,9 @@ import type { StackSuggestion } from './repoSuggest'
 import { NGINX, allTools, baseInput } from './testFixtures'
 import {
   commandsOf,
+  commandsStepProblem,
   dnsInput,
+  projectCheckKey,
   domainStepProblem,
   newDraft,
   siteNameFromDomain,
@@ -115,6 +117,61 @@ describe('code and domain checks', () => {
   it("needs an email for Let's Encrypt", () => {
     expect(domainStepProblem(draft())).toBeNull()
     expect(domainStepProblem(draft({ email: 'nope' }))).toMatch(/email/)
+  })
+})
+
+describe('code sources', () => {
+  const NEW_GITHUB: Partial<CreateSiteDraft> = { codeSource: 'new', repoKind: 'github', githubOwner: 'acme', localParent: ' /home/dev/Projects ', repoUrl: '' }
+  const siteProblem = (overrides: Partial<CreateSiteDraft>, problem: string | null = null) => {
+    const value = draft(overrides)
+    return siteStepProblem(value, checked(), context(), { key: projectCheckKey(value), problem })
+  }
+
+  it('needs a GitHub login, a valid name and a folder on this PC for a new project', () => {
+    expect(siteProblem(NEW_GITHUB)).toBeNull()
+    expect(siteProblem({ ...NEW_GITHUB, githubOwner: '' })).toMatch(/Connect GitHub/)
+    expect(siteProblem({ ...NEW_GITHUB, repoName: 'my repo' })).toMatch(/Repository name/)
+    expect(siteProblem({ ...NEW_GITHUB, localParent: '  ' })).toMatch(/Choose where the project goes/)
+    expect(siteProblem({ ...NEW_GITHUB, repoKind: 'empty' })).toMatch(/URL of the empty repository/)
+  })
+
+  it('waits for the check of the current repository and folder, and shows what it found', () => {
+    expect(siteStepProblem(draft(NEW_GITHUB), checked(), context(), null)).toMatch(/Checking the repository/)
+    expect(siteStepProblem(draft(NEW_GITHUB), checked(), context(), { key: projectCheckKey(draft({ ...NEW_GITHUB, repoName: 'old' })), problem: null })).toMatch(/Checking the repository/)
+    expect(siteProblem(NEW_GITHUB, '/home/dev/Projects/shop already exists')).toBe('/home/dev/Projects/shop already exists')
+  })
+
+  it('needs nothing about code for a site without code', () => {
+    expect(siteStepProblem(draft({ codeSource: 'none', repoUrl: '', branch: '' }), checked(), context())).toBeNull()
+  })
+
+  it('offers only the stacks each code source can use', () => {
+    expect(stackStepProblem(draft({ codeSource: 'new', template: 'compose' }), context())).toMatch(/cannot start as a new project/)
+    expect(stackStepProblem(draft({ codeSource: 'none', template: 'laravel' }), context())).toMatch(/Static site or PHP/)
+    expect(stackStepProblem(draft({ codeSource: 'none', template: 'static' }), context())).toBeNull()
+  })
+
+  it('needs a database for Laravel, and no commands for a site without code', () => {
+    expect(commandsStepProblem(draft({ database: 'none' }), allTools())).toMatch(/pick a database/)
+    expect(commandsStepProblem(draft({ template: 'php', database: 'none' }), allTools())).toBeNull()
+    expect(commandsStepProblem(draft({ codeSource: 'none', database: 'none' }), allTools())).toBeNull()
+  })
+
+  it('builds the input for a new GitHub project with the repository Shellway will create', () => {
+    const input = toInput(draft({ ...NEW_GITHUB, repoName: 'shop-site', repoPrivate: false }), context(), ZONE)
+    expect(input).toMatchObject({
+      codeSource: 'new',
+      newRepo: { kind: 'github', owner: 'acme', name: 'shop-site', private: false },
+      repoUrl: 'git@github.com:acme/shop-site.git',
+      localParent: '/home/dev/Projects'
+    })
+    expect(toInput(draft({ ...NEW_GITHUB, repoKind: 'empty', repoUrl: 'git@example.com:me/shop.git' }), context(), ZONE)).toMatchObject({ newRepo: { kind: 'empty' }, repoUrl: 'git@example.com:me/shop.git' })
+  })
+
+  it('builds the input for a site without code with no deploys, database, env file or jobs', () => {
+    const input = toInput(draft({ codeSource: 'none', template: 'static' }), context(), ZONE)
+    expect(input).toMatchObject({ codeSource: 'none', newRepo: null, localParent: null, repoUrl: '', buildSteps: [], activateSteps: [], database: null, env: false, jobs: { scheduler: false, queueWorker: false } })
+    expect(() => buildPlan(input, allTools(), NGINX.driver)).not.toThrow()
   })
 })
 

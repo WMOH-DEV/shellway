@@ -31,6 +31,17 @@ export interface LaravelJobs {
   queueWorker: boolean
 }
 
+export type CodeSource = 'git' | 'new' | 'none'
+
+export type NewRepo = { kind: 'github'; owner: string; name: string; private: boolean } | { kind: 'empty' }
+
+export interface ProjectCheckRequest {
+  repo: NewRepo
+  repoUrl: string
+  localParent: string
+  siteName: string
+}
+
 export interface RepoFiles {
   files: string[]
   packageJson: string | null
@@ -76,6 +87,9 @@ export interface CreateSiteInput {
   siteName: string
   folder: string
   owner: string
+  codeSource: CodeSource
+  newRepo: NewRepo | null
+  localParent: string | null
   template: TemplateId
   server: SiteServer
   phpVersion: string
@@ -96,7 +110,7 @@ export interface CreateSiteInput {
   healthPath: string
 }
 
-export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy' | 'jobs'
+export type PlanActionId = 'repo' | 'scaffold' | 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy' | 'jobs'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 
@@ -141,7 +155,9 @@ export interface CreatedDnsRecord {
 }
 
 export interface CreatedResources {
-  folder: { path: string; createdByRun: boolean } | null
+  folder: { path: string; createdByRun: boolean; placeholderSha256?: string } | null
+  repo: { url: string; createdByRun: boolean } | null
+  localCopy: string | null
   siteFile: { path: string; enabledLink: string | null; sha256: string } | null
   phpPool: { path: string; sha256: string } | null
   database: SiteDatabase | null
@@ -169,6 +185,7 @@ export interface RunRecord {
   current: PlanActionId | null
   error: string | null
   deployKey: string | null
+  deployKeyAdded?: boolean
 }
 
 export interface CloudflareZoneRef {

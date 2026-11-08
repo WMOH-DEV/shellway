@@ -56,6 +56,8 @@ describe('Create site run screen', () => {
         database: null,
         envFile: null,
         jobs: null,
+        repo: null,
+        localCopy: null,
         modulesEnabled: [],
         dnsRecords: [{ zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', type: 'A' }],
         httpsSiteFile: null,
@@ -121,6 +123,11 @@ describe('Create site run screen', () => {
     expect(within(card).getByText('ssh-ed25519 AAAAexample shellway-deploy')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Copy' })).toBeInTheDocument()
     expect(within(card).getByText(/acme\/shop/)).toBeInTheDocument()
+  })
+
+  it('says the deploy key is already on GitHub when Shellway added it', () => {
+    setup(makeRun({ phase: 'running', error: null, deployKey: 'ssh-ed25519 AAAAexample shellway-deploy', deployKeyAdded: true }))
+    expect(within(screen.getByRole('region', { name: 'Deploy key' })).getByText(/^Shellway added this key to/)).toBeInTheDocument()
   })
 
   it('explains removal results', () => {

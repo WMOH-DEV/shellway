@@ -12,10 +12,11 @@ import { isValidBranch } from './siteFiles'
 const run = promisify(execFile)
 const NETWORK_TIMEOUT_MS = 120_000
 const LOCAL_TIMEOUT_MS = 60_000
-const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' }
+const gitEnv = (): NodeJS.ProcessEnv => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' })
 const REMOTE_PROTOCOLS = ['https', 'ssh', 'git'].flatMap((name) => ['-c', `protocol.${name}.allow=always`])
 const REMOTE_URL = /^(https:\/\/|ssh:\/\/|git:\/\/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)[^\s]+$/
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/
+const NO_IDENTITY = /tell me who you are|empty ident|unable to auto-detect email/i
 const ROOT_FILE_CAP = 500
 const READ_FILE_CAP = 64 * 1024
 const READ_FILES = ['package.json', 'composer.json', '.env.example'] as const
@@ -170,6 +171,35 @@ export class LocalGit {
     return { files, packageJson, composerJson, envExample }
   }
 
+  async remoteHeads(url: string): Promise<string[]> {
+    this.assertUrl(url)
+    const { stdout } = await this.git([...this.protocols, 'ls-remote', '--heads', '--', url], NETWORK_TIMEOUT_MS, 'Could not reach the repository')
+    return stdout.split('\n').filter(Boolean).map((line) => line.split('\t')[1] ?? '')
+  }
+
+  async commitProject(dir: string, branch: string, message: string): Promise<string> {
+    if (!isValidBranch(branch)) throw new Error('Branch name is not valid')
+    await this.git(['init', '-q', dir], LOCAL_TIMEOUT_MS, 'Could not start a git repository')
+    await this.git(['-C', dir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`], LOCAL_TIMEOUT_MS, 'Could not name the branch')
+    await this.git(['-C', dir, 'add', '-A'], LOCAL_TIMEOUT_MS, 'Could not add the project files')
+    try {
+      await this.git(['-C', dir, 'commit', '-q', '--no-verify', '-m', message], LOCAL_TIMEOUT_MS, 'Could not commit the project')
+    } catch (err) {
+      if (NO_IDENTITY.test((err as Error).message)) throw new Error('git on this PC has no name and email yet. Run git config --global user.name and user.email, then Retry.')
+      throw err
+    }
+    const { stdout } = await this.git(['-C', dir, 'rev-parse', 'HEAD'], LOCAL_TIMEOUT_MS, 'Could not read the commit')
+    return stdout.trim()
+  }
+
+  async pushProject(dir: string, url: string, branch: string): Promise<void> {
+    this.assertRemote(url, branch)
+    await this.git([...this.protocols, '-C', dir, 'push', '-q', '--', url, `HEAD:refs/heads/${branch}`], NETWORK_TIMEOUT_MS, 'Could not push the project')
+    await this.git(['-C', dir, 'remote', 'add', 'origin', url], LOCAL_TIMEOUT_MS, 'Could not set the remote')
+    await this.git(['-C', dir, 'config', `branch.${branch}.remote`, 'origin'], LOCAL_TIMEOUT_MS, 'Could not set the upstream')
+    await this.git(['-C', dir, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`], LOCAL_TIMEOUT_MS, 'Could not set the upstream')
+  }
+
   async isAncestor(url: string, ancestor: string, descendant: string): Promise<boolean> {
     if (!COMMIT_SHA.test(ancestor) || !COMMIT_SHA.test(descendant)) return false
     return this.succeeds(['--git-dir', this.mirrorPath(url), 'merge-base', '--is-ancestor', ancestor, descendant])
@@ -226,9 +256,13 @@ export class LocalGit {
     }
   }
 
-  private assertRemote(url: string, branch: string): void {
+  private assertUrl(url: string): void {
     if (url.startsWith('-')) throw new Error('Repository URL is not valid')
     if (!this.options.allowLocalRepos && !REMOTE_URL.test(url)) throw new Error('Only https:// or ssh repository URLs can be deployed from this PC')
+  }
+
+  private assertRemote(url: string, branch: string): void {
+    this.assertUrl(url)
     if (!isValidBranch(branch)) throw new Error('Branch name is not valid')
   }
 
@@ -238,7 +272,7 @@ export class LocalGit {
 
   private async git(args: string[], timeout: number, fallback: string): Promise<{ stdout: string }> {
     try {
-      return await run('git', args, { timeout, env: GIT_ENV, maxBuffer: 8 * 1024 * 1024 })
+      return await run('git', args, { timeout, env: gitEnv(), maxBuffer: 8 * 1024 * 1024 })
     } catch (err) {
       throw gitError(err, fallback)
     }

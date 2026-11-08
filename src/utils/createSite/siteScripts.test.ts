@@ -12,7 +12,9 @@ import {
   enableModulesScript,
   removeCertificateScript,
   folderScript,
+  placeholderFolderScript,
   removeFolderScript,
+  removePlaceholderFolderScript,
   removeSiteScript,
   sitePaths
 } from './siteScripts'
@@ -378,6 +380,44 @@ describe('folderScript', () => {
     expect(result.status).toBe(3)
     expect(result.stdout).not.toContain(FOLDER_CREATED)
     expect(existsSync(join(root, 'shop-deploy/releases'))).toBe(false)
+  })
+})
+
+describe('placeholderFolderScript', () => {
+  const owner = userInfo().username
+  const runAsIs = (script: string) => spawnSync('sh', ['-s'], { input: script, encoding: 'utf8' })
+  const PAGE = '<h1>shop.example.com</h1>\n'
+
+  it('makes the folder with one page and refuses a folder that is already there', () => {
+    const folder = join(root, 'shop')
+    expect(runAsIs(placeholderFolderScript(folder, owner, PAGE)).status).toBe(0)
+    expect(readFileSync(join(folder, 'index.html'), 'utf8')).toBe(PAGE)
+    expect(runAsIs(placeholderFolderScript(folder, owner, 'other')).status).toBe(3)
+    expect(readFileSync(join(folder, 'index.html'), 'utf8')).toBe(PAGE)
+  })
+
+  it('removes the folder only while it holds nothing but the unchanged page', () => {
+    const folder = join(root, 'shop')
+    runAsIs(placeholderFolderScript(folder, owner, PAGE))
+    expect(runAsIs(removePlaceholderFolderScript(folder, sha256(PAGE))).status).toBe(0)
+    expect(existsSync(folder)).toBe(false)
+    expect(runAsIs(removePlaceholderFolderScript(folder, sha256(PAGE))).status).toBe(0)
+  })
+
+  it('keeps the folder and a page the user edited', () => {
+    const folder = join(root, 'shop')
+    runAsIs(placeholderFolderScript(folder, owner, PAGE))
+    writeFileSync(join(folder, 'index.html'), 'mine')
+    expect(runAsIs(removePlaceholderFolderScript(folder, sha256(PAGE))).status).toBe(3)
+    expect(readFileSync(join(folder, 'index.html'), 'utf8')).toBe('mine')
+  })
+
+  it('keeps files the user added', () => {
+    const folder = join(root, 'shop')
+    runAsIs(placeholderFolderScript(folder, owner, PAGE))
+    writeFileSync(join(folder, 'about.html'), 'about')
+    expect(runAsIs(removePlaceholderFolderScript(folder, sha256(PAGE))).status).toBe(3)
+    expect(existsSync(join(folder, 'about.html'))).toBe(true)
   })
 })
 

@@ -1,12 +1,13 @@
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, CreateSiteSecrets, DnsInput, LaravelJobs, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
+import type { CloudflareZoneRef, CodeSource, CreateSiteContext, NewRepo, ProjectCheckRequest, CreateSiteInput, CreateSiteSecrets, DnsInput, LaravelJobs, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
 import type { DeployStep, SourceMode } from '@/types/deploy'
 import { newSite, siteNameFromPath } from '../deploy/presets'
 import { defaultCommands, type DeployCommands } from './deploySite'
 import { generatePassword } from '../server/databases/password'
-import { databaseChoices, defaultDatabase, siteDatabase, type DatabaseChoice } from './database'
+import { databaseChoices, defaultDatabase, needsDatabase, siteDatabase, type DatabaseChoice } from './database'
 import { generateAppKey, writesEnv } from './env'
 import { ALL_JOBS, NO_JOBS, availableJobs } from './laravelJobs'
 import { phpVersionFor, type StackSuggestion } from './repoSuggest'
+import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from './scaffold'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
@@ -56,6 +57,12 @@ export interface CreateSiteDraft {
   outputDir: string
   spa: boolean
   repoBuildScript: boolean
+  codeSource: CodeSource
+  repoKind: NewRepo['kind']
+  repoName: string
+  repoPrivate: boolean
+  githubOwner: string
+  localParent: string
 }
 
 export interface NameCheckState {
@@ -71,6 +78,8 @@ const DEFAULT_OUTPUT_DIR = 'dist'
 const MAX_POLL_MINUTES = 60
 
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
+  repo: 'site',
+  scaffold: 'stack',
   php: 'stack',
   composer: 'stack',
   pm2: 'stack',
@@ -129,7 +138,13 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     staticBuild: false,
     outputDir: DEFAULT_OUTPUT_DIR,
     spa: false,
-    repoBuildScript: false
+    repoBuildScript: false,
+    codeSource: 'git',
+    repoKind: 'github',
+    repoName: '',
+    repoPrivate: true,
+    githubOwner: '',
+    localParent: ''
   }
 }
 
@@ -169,27 +184,86 @@ function templateProblem(draft: CreateSiteDraft, tools: ServerTools): string | n
   return null
 }
 
-function codeProblem(draft: CreateSiteDraft): string | null {
-  if (draft.repoUrl === '') return 'Enter the repository'
-  if (draft.branch === '') return 'Enter the branch'
-  const { pollMinutes } = draft
-  if (draft.sourceMode === 'auto' && (!Number.isInteger(pollMinutes) || pollMinutes < 1 || pollMinutes > MAX_POLL_MINUTES)) {
+const GITHUB_REPO_NAME = /^[A-Za-z0-9._-]{1,100}$/
+
+export const repoNameOf = (draft: Pick<CreateSiteDraft, 'repoName' | 'siteName'>): string => draft.repoName.trim() || draft.siteName
+
+function pollProblem({ sourceMode, pollMinutes }: CreateSiteDraft): string | null {
+  if (sourceMode === 'auto' && (!Number.isInteger(pollMinutes) || pollMinutes < 1 || pollMinutes > MAX_POLL_MINUTES)) {
     return `Check for new commits every 1 to ${MAX_POLL_MINUTES} minutes`
   }
   return null
 }
 
-export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | null, context: CreateSiteContext): string | null {
+function gitProblem(draft: CreateSiteDraft): string | null {
+  if (draft.repoUrl === '') return 'Enter the repository'
+  if (draft.branch === '') return 'Enter the branch'
+  return pollProblem(draft)
+}
+
+function newRepoProblem(draft: CreateSiteDraft): string | null {
+  if (draft.repoKind === 'empty') return draft.repoUrl === '' ? 'Enter the URL of the empty repository' : null
+  if (draft.githubOwner === '') return 'Connect GitHub to create the repository'
+  const name = repoNameOf(draft)
+  return GITHUB_REPO_NAME.test(name) && name !== '.' && name !== '..' ? null : 'Repository name: letters, digits, dots, dashes and underscores'
+}
+
+function newProjectProblem(draft: CreateSiteDraft, project: ProjectCheckState | null): string | null {
+  const repoProblem = newRepoProblem(draft)
+  if (repoProblem !== null) return repoProblem
+  if (draft.branch === '') return 'Enter the branch'
+  if (draft.localParent.trim() === '') return 'Choose where the project goes on this PC'
+  const pollIssue = pollProblem(draft)
+  if (pollIssue !== null) return pollIssue
+  if (project === null || project.key !== projectCheckKey(draft)) return 'Checking the repository and the folder on this PC…'
+  return project.problem
+}
+
+function codeProblem(draft: CreateSiteDraft, project: ProjectCheckState | null): string | null {
+  switch (draft.codeSource) {
+    case 'git': return gitProblem(draft)
+    case 'new': return newProjectProblem(draft, project)
+    case 'none': return null
+  }
+}
+
+export interface ProjectCheckState {
+  key: string
+  problem: string | null
+}
+
+export function projectCheckRequest(draft: CreateSiteDraft): ProjectCheckRequest {
+  const repo: NewRepo = draft.repoKind === 'github' ? { kind: 'github', owner: draft.githubOwner, name: repoNameOf(draft), private: draft.repoPrivate } : { kind: 'empty' }
+  return { repo, repoUrl: repoUrlOf(draft), localParent: draft.localParent.trim(), siteName: draft.siteName }
+}
+
+export const projectCheckKey = (draft: CreateSiteDraft): string => JSON.stringify(projectCheckRequest(draft))
+
+export function repoUrlOf(draft: CreateSiteDraft): string {
+  if (draft.codeSource === 'none') return ''
+  if (draft.codeSource === 'new' && draft.repoKind === 'github') return githubSshUrlOf(draft.githubOwner, repoNameOf(draft))
+  return draft.repoUrl
+}
+
+export function allowedTemplates(source: CodeSource): readonly TemplateId[] {
+  if (source === 'new') return NEW_PROJECT_TEMPLATES
+  return source === 'none' ? NO_CODE_TEMPLATES : TEMPLATE_IDS
+}
+
+export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | null, context: CreateSiteContext, project: ProjectCheckState | null = null): string | null {
   if (fails(() => assertDomain(draft.domain))) return 'Enter a domain such as shop.example.com'
   const nameProblem = nameCheckProblem(check, draft.domain)
   if (nameProblem !== null) return nameProblem
   if (fails(() => assertSiteName(draft.siteName))) return 'Site name: lowercase letters, digits, dots and dashes'
   if (context.deploySiteNames.includes(draft.siteName)) return `There is already a site named ${draft.siteName}`
   if (fails(() => assertFolder(draft.folder))) return 'Enter the folder as a full path, such as /var/www/shop'
-  return codeProblem(draft)
+  return codeProblem(draft, project)
 }
 
 export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSiteContext, 'tools' | 'owner'>): string | null {
+  if (!allowedTemplates(draft.codeSource).includes(draft.template)) {
+    return draft.codeSource === 'new' ? `${TEMPLATES[draft.template].label} cannot start as a new project. Use your own repository for it.` : 'Pick Static site or PHP for a site without code'
+  }
   if (usesPhp(TEMPLATES[draft.template]) && fails(() => assertPoolOwner(context.owner))) {
     return `You are logged in as root, and PHP-FPM will not run a site as root. Log in as a regular user (Setup can create one), then open Create site again.`
   }
@@ -197,6 +271,8 @@ export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSit
 }
 
 export function commandsStepProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
+  if (draft.codeSource === 'none') return null
+  if (draft.database === 'none' && needsDatabase(draft.template)) return 'Laravel runs its migrations on every deploy, so pick a database. SQLite needs no server.'
   if (draft.database !== 'none' && !databaseChoices(draft.template, tools).includes(draft.database)) return 'Pick a database this server has'
   return null
 }
@@ -214,8 +290,8 @@ export function dnsInput(draft: CreateSiteDraft, context: CreateSiteContext, zon
 
 const isStatic = (draft: Pick<CreateSiteDraft, 'template'>): boolean => draft.template === 'static'
 
-export const buildOutputOf = (draft: Pick<CreateSiteDraft, 'template' | 'staticBuild' | 'outputDir'>): string | null =>
-  isStatic(draft) && draft.staticBuild ? draft.outputDir.trim() : null
+export const buildOutputOf = (draft: Pick<CreateSiteDraft, 'template' | 'staticBuild' | 'outputDir' | 'codeSource'>): string | null =>
+  isStatic(draft) && draft.staticBuild && draft.codeSource === 'git' ? draft.outputDir.trim() : null
 
 export const defaultCommandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
   defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) }, { buildScript: draft.repoBuildScript })
@@ -248,22 +324,36 @@ const filledSteps = (steps: DeployStep[]): DeployStep[] =>
   steps.map((step) => ({ ...step, command: step.command.trim() })).filter((step) => step.command !== '')
 
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
-  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, staticBuild: _build, outputDir: _output, repoBuildScript: _repoBuild, ...site } = draft
+  const hasCode = draft.codeSource !== 'none'
   const { buildSteps, activateSteps } = commandsOf(draft, context.server)
-  const database = siteDatabase(choice, draft)
+  const database = hasCode ? siteDatabase(draft.database, draft) : null
+  const isNew = draft.codeSource === 'new'
   return {
-    ...site,
-    database,
-    jobs: draft.template === 'laravel' ? availableJobs(context.tools, draft.jobs) : NO_JOBS,
+    domain: draft.domain,
+    includeWww: draft.includeWww,
+    siteName: draft.siteName,
+    folder: draft.folder,
+    owner: context.owner,
+    codeSource: draft.codeSource,
+    newRepo: isNew ? projectCheckRequest(draft).repo : null,
+    localParent: isNew ? draft.localParent.trim() : null,
+    template: draft.template,
+    server: context.server,
+    phpVersion: draft.phpVersion,
+    appPort: draft.appPort,
     buildOutput: buildOutputOf(draft),
     spa: isStatic(draft) && draft.spa,
-    env: writesEnv({ ...draft, database }, envText),
-    owner: context.owner,
-    server: context.server,
-    buildSteps: filledSteps(buildSteps),
-    activateSteps: filledSteps(activateSteps),
+    repoUrl: repoUrlOf(draft),
+    branch: draft.branch,
+    sourceMode: draft.sourceMode,
+    pollMinutes: draft.pollMinutes,
+    buildSteps: hasCode ? filledSteps(buildSteps) : [],
+    activateSteps: hasCode ? filledSteps(activateSteps) : [],
+    database,
+    env: hasCode && writesEnv({ ...draft, database }, draft.envText),
+    jobs: hasCode && draft.template === 'laravel' ? availableJobs(context.tools, draft.jobs) : NO_JOBS,
     dns: dnsInput(draft, context, zone),
-    https: { email: email.trim(), redirect, staging },
+    https: { email: draft.email.trim(), redirect: draft.redirect, staging: draft.staging },
     healthPath: TEMPLATES[draft.template].healthPath
   }
 }
