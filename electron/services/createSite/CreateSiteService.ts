@@ -274,7 +274,8 @@ export class CreateSiteService {
     return {
       ensureRunner: async () => {
         say(`${RUNNER} version`)
-        if ((await service().runnerInfo()).installed) return
+        const runner = await service().runnerInfo()
+        if (runner.version !== null && runner.version >= runner.bundledVersion) return
         say(`mkdir -p "$HOME/.shellway-deploy/bin" && cat > ${RUNNER}.tmp && chmod 755 ${RUNNER}.tmp && mv -f ${RUNNER}.tmp ${RUNNER}`)
         await service().installRunner()
       },

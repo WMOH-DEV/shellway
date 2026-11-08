@@ -2,7 +2,7 @@
 # Shellway deploy runner. Installed by Shellway; safe to read, do not edit by hand.
 set -u
 
-RUNNER_VERSION=1
+RUNNER_VERSION=2
 ROOT="${SHELLWAY_DEPLOY_ROOT:-$HOME/.shellway-deploy}"
 CRONTAB_BIN="${SHELLWAY_CRONTAB:-crontab}"
 HEALTH_DELAY="${SHELLWAY_HEALTH_DELAY:-3}"
@@ -310,15 +310,31 @@ http_code() {
   fi
 }
 
+local_http_code() {
+  command -v curl >/dev/null 2>&1 || return 0
+  scheme="${1%%://*}"
+  rest="${1#*://}"
+  hostport="${rest%%/*}"
+  hostport="${hostport%%[?#]*}"
+  case "$hostport" in ''|*'['*|*@*) return 0 ;; esac
+  host="${hostport%%:*}"
+  port="${hostport#"$host"}"
+  port="${port#:}"
+  [ -n "$port" ] || { [ "$scheme" = https ] && port=443 || port=80; }
+  curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:$port:127.0.0.1" "$1"
+}
+
 health_ok() {
   [ -n "$HEALTH_URL" ] || return 0
   set_stage health
   mark phase health
   attempt=1
   while :; do
+    here="$(local_http_code "$HEALTH_URL")"
+    [ "$here" = "$HEALTH_STATUS" ] && { log "health check ok ($here on this server)"; return 0; }
     got="$(http_code "$HEALTH_URL")"
     [ "$got" = "$HEALTH_STATUS" ] && { log "health check ok ($got)"; return 0; }
-    log "health check attempt $attempt got ${got:-no response}, expected $HEALTH_STATUS"
+    log "health check attempt $attempt got ${here:-no response} on this server and ${got:-no response} at $HEALTH_URL, expected $HEALTH_STATUS"
     [ "$attempt" -ge "$HEALTH_ATTEMPTS" ] && return 1
     attempt=$((attempt + 1))
     sleep "$HEALTH_DELAY"

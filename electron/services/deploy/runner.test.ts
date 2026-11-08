@@ -299,6 +299,15 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
         expect(served('app', 'index.html')).toBe('v1')
         expect(siteFile('app', 'current')).not.toBe(await git(work, 'rev-parse', 'HEAD'))
       })
+
+      it('asks this server directly, so a CDN that blocks scripts cannot fail a healthy deploy', async () => {
+        status = 200
+        const port = (server.address() as { port: number }).port
+        writeSite('app', { HEALTH_URL: `http://shop.invalid:${port}/up?probe=1` })
+        await deployWithId('app', 'd1')
+        expect(lastStatus('app')).toBe('success')
+        expect(await deployLog('app', 'd1')).toContain('health check ok (200 on this server)')
+      })
     })
 
     it('rolls back to a kept release and runs only activate steps', async () => {
