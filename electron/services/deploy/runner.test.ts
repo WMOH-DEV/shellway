@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { createServer, type Server } from 'http'
+import { createServer as createHttpsServer } from 'https'
+import { ORIGIN_CA_ROOTS } from '../ssl/zoneMode/originCaRoots'
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, readlinkSync, readdirSync, rmSync, realpathSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
@@ -307,6 +309,25 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
         await deployWithId('app', 'd1')
         expect(lastStatus('app')).toBe('success')
         expect(await deployLog('app', 'd1')).toContain('health check ok (200 on this server)')
+      })
+
+      it('does not take an answer over HTTPS from a certificate that is not trusted for the name', async () => {
+        const fixtures = resolve(__dirname, '../ssl/zoneMode/fixtures')
+        const tls = createHttpsServer({ key: readFileSync(join(fixtures, 'selfsigned.key')), cert: readFileSync(join(fixtures, 'selfsigned.pem')) }, (_req, res) => { res.statusCode = 200; res.end('other site') })
+        await new Promise<void>((done) => tls.listen(0, '127.0.0.1', done))
+        try {
+          writeSite('app', { HEALTH_URL: `https://shop.invalid:${(tls.address() as { port: number }).port}/up` })
+          await deployWithId('app', 'd1')
+          expect(lastStatus('app')).toBe('failed')
+          expect(await deployLog('app', 'd1')).toContain('health check attempt 1 got 000 on this server')
+        } finally {
+          await new Promise<void>((done) => tls.close(() => done()))
+        }
+      })
+
+      it('carries the same Cloudflare Origin CA roots that the SSL checks use', () => {
+        const script = readFileSync(SCRIPT, 'utf8')
+        for (const root of ORIGIN_CA_ROOTS) expect(script).toContain(root.trim())
       })
     })
 
