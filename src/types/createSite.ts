@@ -1,4 +1,4 @@
-import type { SourceMode } from './deploy'
+import type { DeployStep, SourceMode } from './deploy'
 import type { ApacheLayout } from './ssl'
 
 export type TemplateId = 'laravel' | 'node' | 'static' | 'php' | 'compose' | 'blank'
@@ -49,12 +49,14 @@ export interface CreateSiteInput {
   branch: string
   sourceMode: SourceMode
   pollMinutes: number
+  buildSteps: DeployStep[]
+  activateSteps: DeployStep[]
   dns: DnsInput | null
   https: HttpsInput
   healthPath: string
 }
 
-export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
+export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 
@@ -101,6 +103,7 @@ export interface CreatedDnsRecord {
 export interface CreatedResources {
   folder: { path: string; createdByRun: boolean } | null
   siteFile: { path: string; enabledLink: string | null; sha256: string } | null
+  phpPool: { path: string; sha256: string } | null
   modulesEnabled: string[]
   dnsRecords: CreatedDnsRecord[]
   httpsSiteFile: { path: string; sha256: string } | null

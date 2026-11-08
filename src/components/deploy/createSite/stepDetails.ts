@@ -1,12 +1,14 @@
 import type { DnsInput, SiteServer } from '@/types/createSite'
 import { repoLabel } from '@/utils/deploy/siteDetail'
 import { TEMPLATES } from '@/utils/createSite/templates'
-import { WIZARD_STEPS, type CreateSiteDraft, type WizardStep } from '@/utils/createSite/wizard'
+import { WIZARD_STEPS, commandsOf, type CreateSiteDraft, type WizardStep } from '@/utils/createSite/wizard'
+import { pluralize } from '@/utils/ssl/time'
 import type { StepperStep } from './CreateSiteStepper'
 
 const HINTS: Record<StepperStep, string> = {
-  site: 'domain and template',
-  code: 'repository, branch, auto deploy',
+  site: 'domain and repository',
+  stack: 'what the code is built with',
+  commands: 'what runs on each deploy',
   domain: 'DNS record, certificate',
   review: 'every command, before it runs',
   create: 'runs step by step'
@@ -24,11 +26,20 @@ function dnsLabel(dns: DnsInput | null): string {
   return dns.proxied ? 'proxied' : 'DNS only'
 }
 
+function commandCount(draft: CreateSiteDraft, server: SiteServer): string {
+  try {
+    const { buildSteps, activateSteps } = commandsOf(draft, server)
+    return pluralize(buildSteps.length + activateSteps.length, 'command')
+  } catch {
+    return HINTS.commands
+  }
+}
+
 function summaries({ draft, server, dns, planSteps }: DetailFacts): Record<WizardStep, string> {
-  const site = [draft.domain, TEMPLATES[draft.template].label, ...(server.kind === 'apache' ? ['Apache'] : [])]
   return {
-    site: draft.domain === '' ? HINTS.site : site.join(' · '),
-    code: [repoLabel(draft.repoUrl), draft.branch, draft.sourceMode === 'auto' ? 'auto' : 'from my PC'].join(' · '),
+    site: draft.domain === '' ? HINTS.site : [draft.domain, repoLabel(draft.repoUrl)].join(' · '),
+    stack: [TEMPLATES[draft.template].label, ...(server.kind === 'apache' ? ['Apache'] : [])].join(' · '),
+    commands: commandCount(draft, server),
     domain: `${dnsLabel(dns)} · Let's Encrypt`,
     review: planSteps === null ? HINTS.review : `${planSteps} steps`
   }

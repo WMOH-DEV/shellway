@@ -19,11 +19,17 @@ async function enterDomain(user: ReturnType<typeof userEvent.setup>, domain = 's
 
 const continueButton = () => screen.getByRole('button', { name: /Continue/ })
 
-async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
+async function walkToStack(user: ReturnType<typeof userEvent.setup>) {
   await enterDomain(user)
+  await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
   await waitFor(() => expect(continueButton()).toBeEnabled())
   await user.click(continueButton())
-  await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
+}
+
+async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
+  await walkToStack(user)
+  await user.click(continueButton())
+  await screen.findByText('After going live')
   await user.click(continueButton())
   await screen.findByDisplayValue('admin@example.com')
   await user.click(continueButton())
@@ -31,11 +37,12 @@ async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
 
 describe('Create site, step 1', () => {
   it('disables a template the server cannot run and says why', async () => {
-    setup({ 'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext({ tools: allTools({ docker: false }) }) }) })
+    const { user } = setup({ 'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext({ tools: allTools({ docker: false }) }) }) })
+    await walkToStack(user)
     const compose = await screen.findByRole('button', { name: /Docker Compose/ })
     expect(compose).toBeDisabled()
     expect(within(compose).getByText('docker not installed')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Laravel/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^Laravel/ })).toBeEnabled()
   })
 
   it('fills the site name and folder from the domain and checks the name on blur', async () => {
@@ -45,6 +52,8 @@ describe('Create site, step 1', () => {
     expect(screen.getByLabelText('Site name')).toHaveValue('shop')
     expect(screen.getByLabelText('Folder')).toHaveValue('/var/www/shop')
     expect(await screen.findByText(/found in Cloudflare · name is free/)).toBeInTheDocument()
+    expect(continueButton()).toBeDisabled()
+    await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
     expect(continueButton()).toBeEnabled()
   })
 
@@ -65,14 +74,32 @@ describe('Create site, step 1', () => {
   })
 })
 
+describe('Create site, deploy commands', () => {
+  it('lets the user change a command and reset to the stack defaults', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    await user.click(continueButton())
+    const migrate = await screen.findByDisplayValue('php8.3 artisan migrate --force')
+    await user.clear(migrate)
+    await user.type(migrate, 'php8.3 artisan migrate --force --seed')
+    await user.click(screen.getByRole('button', { name: /Reset to the defaults/ }))
+    expect(screen.getByDisplayValue('php8.3 artisan migrate --force')).toBeInTheDocument()
+    await user.clear(screen.getByDisplayValue('php8.3 artisan migrate --force'))
+    await user.type(screen.getByDisplayValue(''), 'php8.3 artisan migrate --force --seed')
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    expect(api['createSite.start'].mock.calls[0][2].activateSteps[0].command).toBe('php8.3 artisan migrate --force --seed')
+  })
+})
+
 describe('Create site, from domain to start', () => {
   it('walks every step and starts the run with the input the plan was built from', async () => {
     const { user, api } = setup()
-    await enterDomain(user)
-    await waitFor(() => expect(continueButton()).toBeEnabled())
+    await walkToStack(user)
     await user.click(continueButton())
-
-    await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
+    expect(await screen.findByDisplayValue('php8.3 artisan migrate --force')).toBeInTheDocument()
     await user.click(continueButton())
 
     expect(await screen.findByDisplayValue('admin@example.com')).toBeInTheDocument()
@@ -81,7 +108,7 @@ describe('Create site, from domain to start', () => {
 
     const plan = screen.getByRole('list', { name: 'Plan' })
     expect(within(plan).getAllByRole('region').map((card) => card.getAttribute('aria-label'))).toEqual(
-      ['Folder', 'nginx site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check']
+      ['Folder', 'PHP pool', 'nginx site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check']
     )
     expect(screen.getByText(/needs full sudo · available/)).toBeInTheDocument()
 
@@ -97,15 +124,14 @@ describe('Create site, from domain to start', () => {
       dns: { zoneId: 'zone-1', zoneName: 'example.com', serverIp: '203.0.113.10', proxied: true },
       https: { email: 'admin@example.com', redirect: true, staging: true }
     })
+    expect(input.activateSteps[0].command).toBe('php8.3 artisan migrate --force')
     expect(await screen.findByRole('heading', { name: 'Creating shop.example.com' })).toBeInTheDocument()
   })
 
   it('creates the DNS record by hand when the token cannot edit DNS', async () => {
     const { user, api } = setup({ 'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext({ dnsEdit: false }) }) })
-    await enterDomain(user)
-    await waitFor(() => expect(continueButton()).toBeEnabled())
+    await walkToStack(user)
     await user.click(continueButton())
-    await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
     await user.click(continueButton())
     expect(await screen.findByText(/cannot create DNS records/)).toBeInTheDocument()
     await user.click(continueButton())

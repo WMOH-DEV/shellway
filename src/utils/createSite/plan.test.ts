@@ -20,10 +20,11 @@ describe('buildPlan for the Laravel mockup on nginx', () => {
   it('lists the actions in run order with the mockup titles, summaries and chips', () => {
     expect(actions.map(({ id, title, summary, chip }) => ({ id, title, summary, chip }))).toEqual([
       { id: 'folder', title: 'Folder', summary: '/var/www/shop-deploy owned by deploy, and /var/www/shop pointing at its current release', chip: 'new' },
+      { id: 'pool', title: 'PHP pool', summary: 'PHP 8.3-FPM runs this site as deploy on its own socket', chip: 'new' },
       { id: 'site', title: 'nginx site', summary: 'shop.conf from the Laravel template · PHP 8.3-fpm', chip: 'new' },
       { id: 'dns', title: 'DNS record', summary: 'A shop → 203.0.113.10 · CNAME www.shop → shop · both proxied', chip: 'new' },
       { id: 'https', title: 'HTTPS', summary: "Let's Encrypt via certbot · staging test first · HTTP → HTTPS redirect", chip: 'ready' },
-      { id: 'deploys', title: 'Deploys', summary: 'acme/shop · main · Auto on server every 2 min · Laravel preset, 6 commands', chip: 'needs you' },
+      { id: 'deploys', title: 'Deploys', summary: 'acme/shop · main · Auto on server every 2 min · Laravel preset, 7 commands', chip: 'needs you' },
       { id: 'first-deploy', title: 'First deploy and check', summary: 'Deploy main, then https://shop.example.com/ must return 200', chip: 'ready' }
     ])
   })
@@ -64,7 +65,7 @@ describe('buildPlan for the Laravel mockup on nginx', () => {
 describe('buildPlan on Apache', () => {
   it('Debian: enables only the missing modules before the site', () => {
     const actions = plan(APACHE_DEBIAN, {}, allTools({ apacheModules: ['headers', 'ssl'] }))
-    expect(actions.map((a) => a.id)).toEqual(['folder', 'modules', 'site', 'dns', 'https', 'deploys', 'first-deploy'])
+    expect(actions.map((a) => a.id)).toEqual(['folder', 'pool', 'modules', 'site', 'dns', 'https', 'deploys', 'first-deploy'])
     expect(byId(actions, 'modules')).toEqual({
       id: 'modules',
       title: 'Apache modules',
@@ -126,7 +127,8 @@ describe('buildPlan per template and server', () => {
     const input = baseInput({ server, template })
     const actions = buildPlan(input, allTools(), driver)
     const site = byId(actions, 'site')
-    expect(actions.map((a) => a.id)).toEqual(['folder', 'site', 'dns', 'https', 'deploys', 'first-deploy'])
+    const pool = template === 'laravel' || template === 'php' ? ['pool'] : []
+    expect(actions.map((a) => a.id)).toEqual(['folder', ...pool, 'site', 'dns', 'https', 'deploys', 'first-deploy'])
     expect(site.title).toBe(name === 'nginx' ? 'nginx site' : 'Apache site')
     expect(site.config).toBe(siteFileText(input))
     expect(site.script).toContain(`if ! ${driver.testCommand}; then`)
@@ -183,7 +185,7 @@ describe('buildPlan options', () => {
 
   it('From my PC needs no deploy key', () => {
     expect(byId(plan(NGINX, { sourceMode: 'pc' }), 'deploys')).toMatchObject({
-      summary: 'acme/shop · main · From my PC · Laravel preset, 6 commands',
+      summary: 'acme/shop · main · From my PC · Laravel preset, 7 commands',
       chip: 'ready',
       note: ''
     })

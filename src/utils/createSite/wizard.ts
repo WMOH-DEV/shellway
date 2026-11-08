@@ -1,21 +1,24 @@
 import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, DnsInput, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
-import type { SourceMode } from '@/types/deploy'
+import type { DeployStep, SourceMode } from '@/types/deploy'
 import { newSite, siteNameFromPath } from '../deploy/presets'
+import { defaultCommands, type DeployCommands } from './deploySite'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
 import { phpNeed } from './php'
+import { assertPoolOwner } from './phpPool'
 import { TEMPLATES, usesPhp } from './templates'
 import { assertDomain, assertFolder, assertPort, assertSiteName } from './validate'
 
-export const WIZARD_STEPS = ['site', 'code', 'domain', 'review'] as const
+export const WIZARD_STEPS = ['site', 'stack', 'commands', 'domain', 'review'] as const
 
 export type WizardStep = (typeof WIZARD_STEPS)[number]
 
 export const STEP_TITLES: Record<WizardStep | 'create', string> = {
-  site: 'Site and template',
-  code: 'Code',
-  domain: 'Domain and HTTPS',
+  site: 'Site and code',
+  stack: 'Stack',
+  commands: 'Deploy commands',
+  domain: 'DNS and HTTPS',
   review: 'Review the plan',
   create: 'Create'
 }
@@ -38,6 +41,7 @@ export interface CreateSiteDraft {
   email: string
   redirect: boolean
   staging: boolean
+  commands: DeployCommands | null
 }
 
 export interface NameCheckState {
@@ -52,16 +56,17 @@ const DEFAULT_APP_PORT = 3000
 const MAX_POLL_MINUTES = 60
 
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
-  php: 'site',
-  composer: 'site',
-  pm2: 'site',
+  php: 'stack',
+  composer: 'stack',
+  pm2: 'stack',
   folder: 'site',
-  modules: 'site',
-  site: 'site',
+  pool: 'stack',
+  modules: 'stack',
+  site: 'stack',
   dns: 'domain',
   https: 'domain',
-  deploys: 'code',
-  'first-deploy': 'code'
+  deploys: 'commands',
+  'first-deploy': 'commands'
 }
 
 export const hasServer = (context: CreateSiteContext): context is ServerContext => context.server !== null
@@ -95,7 +100,8 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     proxied: true,
     email: '',
     redirect: true,
-    staging: true
+    staging: true,
+    commands: null
   }
 }
 
@@ -126,17 +132,7 @@ function templateProblem(draft: CreateSiteDraft, tools: ServerTools): string | n
   return null
 }
 
-export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | null, context: CreateSiteContext): string | null {
-  if (fails(() => assertDomain(draft.domain))) return 'Enter a domain such as shop.example.com'
-  const nameProblem = nameCheckProblem(check, draft.domain)
-  if (nameProblem !== null) return nameProblem
-  if (fails(() => assertSiteName(draft.siteName))) return 'Site name: lowercase letters, digits, dots and dashes'
-  if (context.deploySiteNames.includes(draft.siteName)) return `There is already a site named ${draft.siteName}`
-  if (fails(() => assertFolder(draft.folder))) return 'Enter the folder as a full path, such as /var/www/shop'
-  return templateProblem(draft, context.tools)
-}
-
-export function codeStepProblem(draft: CreateSiteDraft): string | null {
+function codeProblem(draft: CreateSiteDraft): string | null {
   if (draft.repoUrl === '') return 'Enter the repository'
   if (draft.branch === '') return 'Enter the branch'
   const { pollMinutes } = draft
@@ -144,6 +140,23 @@ export function codeStepProblem(draft: CreateSiteDraft): string | null {
     return `Check for new commits every 1 to ${MAX_POLL_MINUTES} minutes`
   }
   return null
+}
+
+export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | null, context: CreateSiteContext): string | null {
+  if (fails(() => assertDomain(draft.domain))) return 'Enter a domain such as shop.example.com'
+  const nameProblem = nameCheckProblem(check, draft.domain)
+  if (nameProblem !== null) return nameProblem
+  if (fails(() => assertSiteName(draft.siteName))) return 'Site name: lowercase letters, digits, dots and dashes'
+  if (context.deploySiteNames.includes(draft.siteName)) return `There is already a site named ${draft.siteName}`
+  if (fails(() => assertFolder(draft.folder))) return 'Enter the folder as a full path, such as /var/www/shop'
+  return codeProblem(draft)
+}
+
+export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSiteContext, 'tools' | 'owner'>): string | null {
+  if (usesPhp(TEMPLATES[draft.template]) && fails(() => assertPoolOwner(context.owner))) {
+    return `You are logged in as root, and PHP-FPM will not run a site as root. Log in as a regular user (Setup can create one), then open Create site again.`
+  }
+  return templateProblem(draft, context.tools)
 }
 
 export function domainStepProblem(draft: CreateSiteDraft): string | null {
@@ -157,12 +170,21 @@ export function dnsInput(draft: CreateSiteDraft, context: CreateSiteContext, zon
   return { zoneId: zone.id, zoneName: zone.name, serverIp, proxied: draft.proxied }
 }
 
+export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
+  draft.commands ?? defaultCommands({ ...draft, server })
+
+const filledSteps = (steps: DeployStep[]): DeployStep[] =>
+  steps.map((step) => ({ ...step, command: step.command.trim() })).filter((step) => step.command !== '')
+
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
-  const { proxied: _proxied, email, redirect, staging, ...site } = draft
+  const { proxied: _proxied, email, redirect, staging, commands: _commands, ...site } = draft
+  const { buildSteps, activateSteps } = commandsOf(draft, context.server)
   return {
     ...site,
     owner: context.owner,
     server: context.server,
+    buildSteps: filledSteps(buildSteps),
+    activateSteps: filledSteps(activateSteps),
     dns: dnsInput(draft, context, zone),
     https: { email: email.trim(), redirect, staging },
     healthPath: TEMPLATES[draft.template].healthPath

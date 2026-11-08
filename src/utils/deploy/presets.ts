@@ -23,7 +23,7 @@ export const PRESETS: Preset[] = [
     label: 'Laravel',
     sharedPaths: ['.env', 'storage'],
     layout: 'releases',
-    buildSteps: () => [COMPOSER_INSTALL],
+    buildSteps: () => [COMPOSER_INSTALL, optional('php artisan storage:link')],
     activateSteps: [
       required('php artisan migrate --force'),
       required('php artisan config:cache'),

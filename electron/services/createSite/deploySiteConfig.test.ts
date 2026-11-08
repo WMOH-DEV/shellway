@@ -21,7 +21,7 @@ describe('deploySiteConfig', () => {
 
   it('runs php and composer with the PHP version the site uses, since the default php may be another version', () => {
     const config = deploySiteConfig(baseInput({ phpVersion: '8.4' }))
-    expect(config.buildSteps.map((step) => step.command)).toEqual(['php8.4 "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction'])
+    expect(config.buildSteps.map((step) => step.command)).toEqual(['php8.4 "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction', 'php8.4 artisan storage:link'])
     expect(config.activateSteps.map((step) => step.command)).toContain('php8.4 artisan config:cache')
   })
 
@@ -42,6 +42,13 @@ describe('deploySiteConfig', () => {
       "if pm2 describe 'shop' >/dev/null 2>&1; then PORT=3100 pm2 restart 'shop' --update-env; else PORT=3100 pm2 start npm --name 'shop' --cwd '/var/www/shop' -- start; fi",
       'pm2 save'
     ])
+  })
+
+  it('uses the commands from the input as they are, so the user edits in the wizard are what runs', () => {
+    const buildSteps = [{ command: 'make build', optional: true, timeoutSeconds: 60 }]
+    const config = deploySiteConfig(baseInput({ buildSteps, activateSteps: [] }))
+    expect(config.buildSteps).toEqual(buildSteps)
+    expect(config.activateSteps).toEqual([])
   })
 
   it('rejects a health path or folder the validators refuse', () => {

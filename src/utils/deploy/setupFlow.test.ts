@@ -83,7 +83,7 @@ describe('stepDetail', () => {
     expect(stepDetail('where', current, 'Laravel', null)).toBe('/var/www/example-app · Laravel')
     expect(stepDetail('code', current, 'Laravel', null)).toBe('acme/example-app · main · Auto')
     expect(stepDetail('layout', current, 'Laravel', null)).toBe('Releases · keep 5')
-    expect(stepDetail('commands', current, 'Laravel', null)).toBe('6 commands')
+    expect(stepDetail('commands', current, 'Laravel', null)).toBe('7 commands')
   })
 
   it('handles the in place layout, the PC source and no commands', () => {
@@ -112,7 +112,7 @@ describe('firstDeployPlan', () => {
     const plan = firstDeployPlan(site({ healthUrl: 'https://example.com/up', pollMinutes: 2 }))
     expect(plan.lines.map(flatten)).toEqual([
       'Clone [acme/example-app] at [main]',
-      'Build in [releases/<new>] · 1 command',
+      'Build in [releases/<new>] · 2 commands',
       'Point [current] at it',
       'Run 5 after-live commands',
       'Check [https://example.com/up] returns 200'
@@ -124,7 +124,7 @@ describe('firstDeployPlan', () => {
     const plan = firstDeployPlan(site({ layout: 'inplace', sourceMode: 'pc', pcAuto: true, activateSteps: [] }))
     expect(plan.lines.map(flatten)).toEqual([
       'Send [main] of [acme/example-app] from this PC',
-      'Run 1 build command in [/var/www/example-app]'
+      'Run 2 build commands in [/var/www/example-app]'
     ])
     expect(plan.footer && flatten(plan.footer)).toBe('Then deploys new commits while Shellway is open and connected.')
   })

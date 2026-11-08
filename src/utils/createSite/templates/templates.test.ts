@@ -17,7 +17,7 @@ describe('nginx templates', () => {
       '    root /var/www/shop/public;',
       '    index index.php;',
       '    location / { try_files $uri $uri/ /index.php?$query_string; }',
-      '    location ~ \\.php$ { fastcgi_pass unix:/run/php/php8.3-fpm.sock; include snippets/fastcgi-php.conf; }',
+      '    location ~ \\.php$ { try_files $uri =404; fastcgi_pass unix:/run/php/php8.3-fpm-shop.sock; fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name; include fastcgi_params; }',
       '    location ~ /\\.(?!well-known) { deny all; }',
       '}',
       ''
@@ -25,7 +25,7 @@ describe('nginx templates', () => {
   })
 
   it.each([
-    ['php', ['root /var/www/shop;', 'index index.php index.html;', 'location / { try_files $uri $uri/ =404; }', 'fastcgi_pass unix:/run/php/php8.3-fpm.sock']],
+    ['php', ['root /var/www/shop;', 'index index.php index.html;', 'location / { try_files $uri $uri/ =404; }', 'fastcgi_pass unix:/run/php/php8.3-fpm-shop.sock']],
     ['static', ['root /var/www/shop;', 'index index.html;', 'location / { try_files $uri $uri/ =404; }', 'location ~ /\\.(?!well-known) { deny all; }']],
     ['blank', ['root /var/www/shop;', 'index index.html;']],
     ['node', ['proxy_pass http://127.0.0.1:3000;', 'proxy_set_header Upgrade $http_upgrade;', 'proxy_set_header Connection "upgrade";', 'proxy_set_header Host $host;']],
@@ -58,7 +58,7 @@ describe('Apache templates', () => {
       '        Require all granted',
       '    </Directory>',
       '    <FilesMatch \\.php$>',
-      '        SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"',
+      '        SetHandler "proxy:unix:/run/php/php8.3-fpm-shop.sock|fcgi://localhost"',
       '    </FilesMatch>',
       '    ErrorLog ${APACHE_LOG_DIR}/shop-error.log',
       '    CustomLog ${APACHE_LOG_DIR}/shop-access.log combined',
@@ -70,12 +70,12 @@ describe('Apache templates', () => {
   it('uses the RHEL log folder and PHP-FPM socket', () => {
     const text = APACHE_TEMPLATES.laravel(baseInput({ server: APACHE_RHEL.server }))
     expect(text).toContain('    ErrorLog logs/shop-error.log\n    CustomLog logs/shop-access.log combined\n')
-    expect(text).toContain('SetHandler "proxy:unix:/run/php-fpm/www.sock|fcgi://localhost"')
+    expect(text).toContain('SetHandler "proxy:unix:/run/php-fpm/shop.sock|fcgi://localhost"')
     expect(text).not.toContain('APACHE_LOG_DIR')
   })
 
   it.each([
-    ['php', ['DocumentRoot /var/www/shop', '<Directory /var/www/shop>', 'AllowOverride All', 'SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"']],
+    ['php', ['DocumentRoot /var/www/shop', '<Directory /var/www/shop>', 'AllowOverride All', 'SetHandler "proxy:unix:/run/php/php8.3-fpm-shop.sock|fcgi://localhost"']],
     ['static', ['DocumentRoot /var/www/shop', 'Options FollowSymLinks', 'AllowOverride None', 'Require all granted']],
     ['blank', ['DocumentRoot /var/www/shop', 'AllowOverride None']],
     ['node', ['ProxyPreserveHost On', 'ProxyPass /.well-known/acme-challenge/ !', 'ProxyPass / http://127.0.0.1:3000/', 'ProxyPassReverse / http://127.0.0.1:3000/']],

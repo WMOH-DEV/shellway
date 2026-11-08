@@ -1,21 +1,16 @@
 import { Globe } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
 import { formatBytes } from '@/components/monitor/MonitorCharts'
 import { StepHeading } from '@/components/ssl/https/StepHeading'
-import type { PhpTools, ServerTools } from '@/types/createSite'
-import { TEMPLATES, usesPhp } from '@/utils/createSite/templates'
-import { toInt } from '../setup/SiteSections'
+import type { ServerTools } from '@/types/createSite'
+import { CodeSection } from './CodeSection'
 import { NameStatus } from './NameStatus'
-import { TemplateCards } from './TemplateCards'
 import type { CreateSiteDraftModel } from './useCreateSiteDraft'
 
 interface SiteStepProps {
   model: CreateSiteDraftModel
   tools: ServerTools
-  serverLabel: string
-  serverName: string
 }
 
 function AddressSection({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>) {
@@ -50,36 +45,12 @@ function AddressSection({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>
   )
 }
 
-function phpOptions({ installed, installable }: PhpTools) {
-  return [
-    ...installed.map((version) => ({ value: version, label: `${version} · installed` })),
-    ...installable.map((version) => ({ value: version, label: `${version} · will be installed` }))
-  ]
-}
-
-function TemplateSettings({ model, tools }: Pick<SiteStepProps, 'model' | 'tools'>) {
-  const { draft } = model
-  const template = TEMPLATES[draft.template]
-  if (!usesPhp(template) && !template.proxiesToApp) return null
-  return (
-    <div className="grid grid-cols-[220px] gap-3">
-      {usesPhp(template) && (
-        <Select label="PHP version" value={draft.phpVersion} options={phpOptions(tools.php)} onChange={(e) => model.patch({ phpVersion: e.target.value })} />
-      )}
-      {template.proxiesToApp && (
-        <Input label="App port" type="number" min={1} max={65535} value={draft.appPort} onChange={(e) => model.patch({ appPort: toInt(e.target.value, 0) })} />
-      )}
-    </div>
-  )
-}
-
-export function SiteStep({ model, tools, serverLabel, serverName }: SiteStepProps) {
+export function SiteStep({ model, tools }: SiteStepProps) {
   return (
     <div className="flex flex-col gap-5">
-      <StepHeading title="Site and template" subtitle="Start with the address. Shellway fills in the rest; you can change any of it." />
+      <StepHeading title="Site and code" subtitle="Start with the address, then where the code comes from. Shellway fills in the rest; you can change any of it." />
       <AddressSection model={model} tools={tools} />
-      <TemplateCards value={model.draft.template} tools={tools} serverLabel={serverLabel} serverName={serverName} onChange={(template) => model.patch({ template })} />
-      <TemplateSettings model={model} tools={tools} />
+      <CodeSection model={model} />
     </div>
   )
 }

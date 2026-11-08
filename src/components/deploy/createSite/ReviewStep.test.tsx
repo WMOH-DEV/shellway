@@ -21,22 +21,22 @@ describe('ReviewStep', () => {
   it('renders one card per nginx plan action, in run order', () => {
     const plan = planFor(NGINX)
     renderReview(plan)
-    expect(cardTitles()).toEqual(['Folder', 'nginx site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
+    expect(cardTitles()).toEqual(['Folder', 'PHP pool', 'nginx site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
     expect(cardTitles()).toEqual(plan.map((action) => action.title))
-    expect(screen.getByText('6 steps, in this order. Open any step to see exactly what runs.')).toBeInTheDocument()
+    expect(screen.getByText('7 steps, in this order. Open any step to see exactly what runs.')).toBeInTheDocument()
     expect(screen.getByText('1 step needs you')).toBeInTheDocument()
   })
 
   it('adds the Apache modules card when a module is missing', () => {
     renderReview(planFor(APACHE_DEBIAN, allTools({ apacheModules: ['headers', 'ssl'] })))
-    expect(cardTitles()).toEqual(['Folder', 'Apache modules', 'Apache site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
+    expect(cardTitles()).toEqual(['Folder', 'PHP pool', 'Apache modules', 'Apache site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
     const modules = screen.getByRole('region', { name: 'Apache modules' })
     expect(within(modules).getByText('3 to enable')).toBeInTheDocument()
   })
 
   it('leaves the modules card out when Apache has every module', () => {
     renderReview(planFor(APACHE_DEBIAN))
-    expect(cardTitles()).toEqual(['Folder', 'Apache site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
+    expect(cardTitles()).toEqual(['Folder', 'PHP pool', 'Apache site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check'])
   })
 
   it('shows the exact config and commands when a card is opened', async () => {
@@ -45,7 +45,7 @@ describe('ReviewStep', () => {
     const site = screen.getByRole('region', { name: 'nginx site' })
     expect(within(site).queryByLabelText('Config')).not.toBeInTheDocument()
     await user.click(within(site).getByRole('button', { name: 'Show details' }))
-    expect(within(site).getByLabelText('Config').textContent).toBe(plan[1].config)
+    expect(within(site).getByLabelText('Config').textContent).toBe(plan[2].config)
     expect(within(site).getByLabelText('Commands')).toHaveTextContent('$ sudo -n sh -s')
   })
 

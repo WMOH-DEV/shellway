@@ -1,5 +1,6 @@
 import type { CreatedDnsRecord, CreatedResources, RunRecord, SiteServer } from '@/types/createSite'
 import type { WebServerDriver } from '../webServer/driver'
+import { removePoolScript } from './phpPool'
 import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removeSiteScript, sitePaths } from './siteScripts'
 import { assertLineage } from './validate'
 
@@ -8,6 +9,7 @@ export type RemovalStep =
   | { kind: 'certificate'; title: string; command: string; script: string }
   | { kind: 'dns-record'; title: string; zoneId: string; recordId: string; name: string }
   | { kind: 'site-file'; title: string; path: string; command: string; script: string }
+  | { kind: 'php-pool'; title: string; path: string; command: string; script: string }
   | { kind: 'folder'; title: string; path: string; command: string; script: string }
 
 function deploySiteSteps({ deploySite }: CreatedResources): RemovalStep[] {
@@ -46,6 +48,11 @@ function siteFileStep(file: { path: string; sha256: string } | null, server: Sit
   return [{ kind: 'site-file', title: `${driver.label} site ${file.path}`, path: file.path, command: ROOT_SHELL, script }]
 }
 
+function poolSteps({ phpPool }: CreatedResources, input: RunRecord['input']): RemovalStep[] {
+  if (phpPool === null) return []
+  return [{ kind: 'php-pool', title: `PHP pool ${phpPool.path}`, path: phpPool.path, command: ROOT_SHELL, script: removePoolScript(input, phpPool.sha256) }]
+}
+
 function folderSteps({ folder }: CreatedResources): RemovalStep[] {
   if (folder === null || !folder.createdByRun) return []
   return [{ kind: 'folder', title: `Folder ${folder.path}`, path: folder.path, command: ROOT_SHELL, script: removeFolderScript(folder.path) }]
@@ -58,6 +65,7 @@ export function removalSteps(record: RunRecord, driver: WebServerDriver): Remova
     ...dnsSteps(created),
     ...siteFileStep(created.httpsSiteFile, server, driver),
     ...siteFileStep(created.siteFile, server, driver),
+    ...poolSteps(created, record.input),
     ...certificateSteps(created),
     ...folderSteps(created)
   ]

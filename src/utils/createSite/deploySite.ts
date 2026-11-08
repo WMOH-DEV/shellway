@@ -1,6 +1,6 @@
 import type { CreateSiteInput, SiteServer } from '../../types/createSite'
 import type { DeployStep, SiteConfig } from '../../types/deploy'
-import { applyPreset, newSite } from '../deploy/presets'
+import { applyPreset, newSite, presetById } from '../deploy/presets'
 import { pinPhpVersion } from './php'
 import { pm2ActivateSteps } from './pm2'
 import { TEMPLATES, usesPhp, type SiteTemplate } from './templates'
@@ -15,27 +15,43 @@ const pinPhp = (version: string) => (step: DeployStep): DeployStep => ({ ...step
 
 const hasVersionedPhp = (server: SiteServer): boolean => !(server.kind === 'apache' && server.layout === 'rhel')
 
-function stepPin(input: CreateSiteInput, template: SiteTemplate, name: string): (step: DeployStep) => DeployStep {
+function stepPin(input: Pick<CreateSiteInput, 'server' | 'phpVersion'>, template: SiteTemplate, name: string): (step: DeployStep) => DeployStep {
   if (template.id === 'compose') return pinComposeProject(name)
   if (usesPhp(template) && hasVersionedPhp(input.server)) return pinPhp(input.phpVersion)
   return (step) => step
 }
 
+export type CommandFacts = Pick<CreateSiteInput, 'template' | 'siteName' | 'folder' | 'appPort' | 'phpVersion' | 'server'>
+
+export interface DeployCommands {
+  buildSteps: DeployStep[]
+  activateSteps: DeployStep[]
+}
+
+export function defaultCommands(facts: CommandFacts): DeployCommands {
+  const template = TEMPLATES[facts.template]
+  const name = assertSiteName(facts.siteName)
+  const preset = presetById(template.preset)
+  const pin = stepPin(facts, template, name)
+  return {
+    buildSteps: preset.buildSteps({ buildScript: false }).map(pin),
+    activateSteps: [...preset.activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, facts.folder, facts.appPort) : [])]
+  }
+}
+
 export function deploySiteConfig(input: CreateSiteInput): SiteConfig {
   const template = TEMPLATES[input.template]
-  const name = assertSiteName(input.siteName)
   const preset = applyPreset(newSite(assertFolder(input.folder)), template.preset, { buildScript: false })
-  const pin = stepPin(input, template, name)
   return {
     ...preset,
-    name,
+    name: assertSiteName(input.siteName),
     repoUrl: input.repoUrl,
     branch: input.branch,
     sourceMode: input.sourceMode,
     pollMinutes: input.pollMinutes,
     layout: 'releases',
     healthUrl: `https://${assertDomain(input.domain)}${assertHealthPath(input.healthPath)}`,
-    buildSteps: preset.buildSteps.map(pin),
-    activateSteps: [...preset.activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, input.folder, input.appPort) : [])]
+    buildSteps: input.buildSteps.map((step) => ({ ...step })),
+    activateSteps: input.activateSteps.map((step) => ({ ...step }))
   }
 }

@@ -3,12 +3,13 @@ import type { CreateSiteContext, NameCheck } from '@/types/createSite'
 import { buildPlan } from './plan'
 import { NGINX, allTools, baseInput } from './testFixtures'
 import {
-  codeStepProblem,
+  commandsOf,
   dnsInput,
   domainStepProblem,
   newDraft,
   siteNameFromDomain,
   siteStepProblem,
+  stackStepProblem,
   stepForAction,
   toInput,
   type CreateSiteDraft,
@@ -78,18 +79,24 @@ describe('siteStepProblem', () => {
     expect(siteStepProblem(draft({ domain: 'not a domain' }), checked(), context())).toMatch(/Enter a domain/)
     expect(siteStepProblem(draft({ siteName: 'blog' }), checked(), context())).toMatch(/already a site named blog/)
     expect(siteStepProblem(draft({ folder: 'www/shop' }), checked(), context())).toMatch(/full path/)
-    expect(siteStepProblem(draft({ template: 'compose' }), checked(), context({ tools: allTools({ docker: false }) }))).toMatch(/docker not installed/)
-    expect(siteStepProblem(draft({ template: 'node', appPort: 0 }), checked(), context())).toMatch(/app port/)
+    expect(stackStepProblem(draft({ template: 'compose' }), context({ tools: allTools({ docker: false }) }))).toMatch(/docker not installed/)
+    expect(stackStepProblem(draft({ template: 'node', appPort: 0 }), context())).toMatch(/app port/)
+  })
+
+  it('refuses a PHP stack when logged in as root, since PHP-FPM will not run a pool as root', () => {
+    expect(stackStepProblem(draft(), context({ owner: 'root' }))).toMatch(/logged in as root/)
+    expect(stackStepProblem(draft({ template: 'static' }), context({ owner: 'root' }))).toBeNull()
   })
 })
 
-describe('code and domain steps', () => {
+describe('code and domain checks', () => {
   it('needs a repository, a branch and a sane check interval', () => {
-    expect(codeStepProblem(draft())).toBeNull()
-    expect(codeStepProblem(draft({ repoUrl: '' }))).toMatch(/repository/)
-    expect(codeStepProblem(draft({ branch: '' }))).toMatch(/branch/)
-    expect(codeStepProblem(draft({ pollMinutes: 0 }))).toMatch(/every 1 to 60/)
-    expect(codeStepProblem(draft({ pollMinutes: 0, sourceMode: 'pc' }))).toBeNull()
+    const problem = (overrides: Partial<CreateSiteDraft>) => siteStepProblem(draft(overrides), checked(), context())
+    expect(problem({})).toBeNull()
+    expect(problem({ repoUrl: '' })).toMatch(/repository/)
+    expect(problem({ branch: '' })).toMatch(/branch/)
+    expect(problem({ pollMinutes: 0 })).toMatch(/every 1 to 60/)
+    expect(problem({ pollMinutes: 0, sourceMode: 'pc' })).toBeNull()
   })
 
   it("needs an email for Let's Encrypt", () => {
@@ -119,6 +126,19 @@ describe('toInput', () => {
     expect(toInput(draft({ pollMinutes: 2 }), context(), ZONE)).toEqual(baseInput())
   })
 
+  it('uses the commands the user edited, without blank ones', () => {
+    const commands = { buildSteps: [{ command: '  composer install  ', optional: false, timeoutSeconds: null }, { command: ' ', optional: false, timeoutSeconds: null }], activateSteps: [] }
+    const input = toInput(draft({ commands }), context(), ZONE)
+    expect(input.buildSteps).toEqual([{ command: 'composer install', optional: false, timeoutSeconds: null }])
+    expect(input.activateSteps).toEqual([])
+  })
+
+  it('fills the stack defaults until the user edits them', () => {
+    const { buildSteps, activateSteps } = commandsOf(draft(), { kind: 'nginx' })
+    expect(buildSteps.map((step) => step.command)).toEqual(['php8.3 "$(command -v composer)" install --no-dev --optimize-autoloader --no-interaction', 'php8.3 artisan storage:link'])
+    expect(activateSteps[0].command).toBe('php8.3 artisan migrate --force')
+  })
+
   it('feeds buildPlan without throwing', () => {
     const input = toInput(draft(), context(), ZONE)
     expect(() => buildPlan(input, allTools(), NGINX.driver)).not.toThrow()
@@ -127,8 +147,9 @@ describe('toInput', () => {
 
 describe('stepForAction', () => {
   it('sends each plan card back to the step that edits it', () => {
-    expect(stepForAction('modules')).toBe('site')
+    expect(stepForAction('modules')).toBe('stack')
+    expect(stepForAction('folder')).toBe('site')
     expect(stepForAction('dns')).toBe('domain')
-    expect(stepForAction('deploys')).toBe('code')
+    expect(stepForAction('deploys')).toBe('commands')
   })
 })

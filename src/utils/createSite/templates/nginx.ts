@@ -9,7 +9,7 @@ function serverBlock(names: string[], body: string[]): string {
 }
 
 const phpLocation = (input: CreateSiteInput): string =>
-  `location ~ \\.php$ { fastcgi_pass unix:${phpFpmSocket(input)}; include snippets/fastcgi-php.conf; }`
+  `location ~ \\.php$ { try_files $uri =404; fastcgi_pass unix:${phpFpmSocket(input)}; fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name; include fastcgi_params; }`
 
 function laravel(input: CreateSiteInput): string {
   const { names, release } = siteVars(input)

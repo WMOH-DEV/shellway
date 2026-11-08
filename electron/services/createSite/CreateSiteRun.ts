@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { CreatedDnsRecord, CreatedResources, CreateSiteInput, PlanAction, ResumeMode, RunPhase, RunRecord, RunStep, RunStepStatus, ServerTools } from '../../../src/types/createSite'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
+import { poolLayout, poolText } from '../../../src/utils/createSite/phpPool'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
@@ -24,7 +25,7 @@ export const dnsComment = (runId: string): string => `${DNS_COMMENT} ${runId}`
 
 const sha256Of = (text: string): string => createHash('sha256').update(text.endsWith('\n') ? text : `${text}\n`).digest('hex')
 
-const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 export function newRunRecord(id: string, sessionId: string, input: CreateSiteInput, plan: PlanAction[], now: number): RunRecord {
   const steps: RunStep[] = plan.map((action) => ({ id: action.id, status: 'pending', startedAt: null, finishedAt: null }))
@@ -92,6 +93,7 @@ export class CreateSiteRun {
       case 'composer': return this.install(action, 'Installing composer failed.')
       case 'pm2': return this.install(action, 'Setting up pm2 failed.')
       case 'folder': return this.createFolder(action)
+      case 'pool': return this.createPool(action)
       case 'modules': return this.enableModules(action)
       case 'site': return this.createSite(action)
       case 'dns': return action.chip === 'needs you' ? this.checkManualDns() : this.createDnsRecords(action)
@@ -111,6 +113,15 @@ export class CreateSiteRun {
     const result = await this.root(action)
     if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ folder: null })
     this.mustSucceed(result, 'Creating the folder failed.')
+  }
+
+  private async createPool(action: PlanAction): Promise<void> {
+    const { file } = poolLayout(this.input)
+    const recordedBefore = this.record.created.phpPool !== null
+    if (!recordedBefore) this.created({ phpPool: { path: file, sha256: sha256Of(poolText(this.input)) } })
+    const result = await this.root(action)
+    if (SITE_SCRIPT_CLEAN_EXITS.has(result.code) && !recordedBefore) this.created({ phpPool: null })
+    this.mustSucceed(result, 'PHP-FPM did not accept the new pool.')
   }
 
   private async enableModules(action: PlanAction): Promise<void> {

@@ -151,6 +151,10 @@ export function LayoutSection({ draft }: SectionProps) {
   )
 }
 
+export const BUILD_HINT = 'Runs on the new code before it goes live. A required command failing stops the deploy and the live site stays as it was.'
+
+export const ACTIVATE_HINT = 'Runs right after the new code is live: migrations, caches, restarting workers.'
+
 export function CommandsSection({ draft, connectionId }: CommandsSectionProps) {
   const { site, patch } = draft
   return (
@@ -158,7 +162,7 @@ export function CommandsSection({ draft, connectionId }: CommandsSectionProps) {
       <StepsEditor
         connectionId={connectionId}
         title="Build"
-        hint="Runs on the new code before it goes live. A required command failing stops the deploy and the live site stays as it was."
+        hint={BUILD_HINT}
         steps={site.buildSteps}
         onChange={(buildSteps) => patch({ buildSteps })}
       />
@@ -166,7 +170,7 @@ export function CommandsSection({ draft, connectionId }: CommandsSectionProps) {
       <StepsEditor
         connectionId={connectionId}
         title="After going live"
-        hint="Runs right after the new code is live: migrations, caches, restarting workers."
+        hint={ACTIVATE_HINT}
         steps={site.activateSteps}
         onChange={(activateSteps) => patch({ activateSteps })}
       />

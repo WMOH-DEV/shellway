@@ -35,6 +35,7 @@ function answer(command: string, stdin: string) {
   if (stdin.includes('/etc/letsencrypt/renewal/')) return ok(certificateOnServer ? 'shellway: certificate exists\n' : '')
   if (stdin.includes('sha256sum')) return stdin.includes('-le-ssl') && !httpsDone ? ok('shellway: not there\n') : ok(`${httpsDone ? SHA_AFTER_HTTPS : SHA}  file\n`)
   if (stdin.includes(FOLDER_CREATED)) return failAt === 'folder' ? failed('/var/www/shop already exists. Nothing was changed.') : ok(`${FOLDER_CREATED}\n`)
+  if (stdin.includes('pool.d')) return failAt === 'pool' ? failed('PHP-FPM rejected the new pool. It was removed.') : ok()
   if (stdin.includes('a2enmod')) return failAt === 'modules' ? failed('ERROR: Module x does not exist!') : ok()
   if (stdin.includes('undo_site')) return failAt === 'site' ? failed('nginx rejected the new site. It was removed.') : ok()
   return ok()
@@ -103,10 +104,11 @@ describe('CreateSiteRun', () => {
   it('runs every action once, in order, and records what it created', async () => {
     const record = await startRun(NGINX).run('start')
     expect(record.phase).toBe('done')
-    expect(Object.values(statuses(record))).toEqual(['done', 'done', 'done', 'done', 'done', 'done'])
+    expect(Object.values(statuses(record))).toEqual(['done', 'done', 'done', 'done', 'done', 'done', 'done'])
     expect(record.created).toEqual({
       folder: { path: '/var/www/shop', createdByRun: true },
       siteFile: { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA_AFTER_HTTPS },
+      phpPool: { path: '/etc/php/8.3/fpm/pool.d/shop.conf', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
       modulesEnabled: [],
       dnsRecords: [
         { zoneId: 'zone-1', recordId: 'rec-1', name: 'shop.example.com', type: 'A' },
@@ -337,6 +339,13 @@ describe('CreateSiteRun', () => {
     expect(record.error).toContain('www.shop.example.com does not point at 203.0.113.10 yet')
   })
 
+  it('records the PHP pool before writing it and forgets it when PHP-FPM refuses it', async () => {
+    failAt = 'pool'
+    const record = await startRun(NGINX).run('start')
+    expect(record.phase).toBe('failed')
+    expect(record.created.phpPool).toBeNull()
+  })
+
   it('on Apache enables the missing modules and records the HTTPS file certbot added', async () => {
     const record = await startRun(APACHE_DEBIAN).run('start')
     expect(record.phase).toBe('done')
@@ -357,11 +366,12 @@ describe('removeCreated', () => {
     calls = []
     const record = await removeCreated(created, ports, APACHE_DEBIAN.driver)
     expect(record.phase).toBe('removed')
-    expect(record.created).toMatchObject({ folder: null, siteFile: null, httpsSiteFile: null, dnsRecords: [], certificate: null, deploySite: null })
+    expect(record.created).toMatchObject({ folder: null, siteFile: null, phpPool: null, httpsSiteFile: null, dnsRecords: [], certificate: null, deploySite: null })
     expect(ports.deploy.remove).toHaveBeenCalledWith('shop')
     expect(ports.dns!.remove).toHaveBeenNthCalledWith(1, 'zone-1', 'rec-1')
-    expect(calls.map((call) => call.command)).toEqual([ROOT_SHELL, ROOT_SHELL, ROOT_SHELL, ROOT_SHELL])
-    expect(calls[2].stdin).toContain("certbot delete --non-interactive --cert-name 'shop.example.com'")
+    expect(calls.map((call) => call.command)).toEqual([ROOT_SHELL, ROOT_SHELL, ROOT_SHELL, ROOT_SHELL, ROOT_SHELL])
+    expect(calls[2].stdin).toContain("rm -f '/etc/php/8.3/fpm/pool.d/shop.conf'")
+    expect(calls[3].stdin).toContain("certbot delete --non-interactive --cert-name 'shop.example.com'")
     expect(calls[0].stdin).toContain("a2dissite 'shop-le-ssl'")
   })
 

@@ -5,23 +5,24 @@ import type { CloudflareZoneRef, CreateSiteInput, PlanAction } from '@/types/cre
 import { buildPlan, planMeta } from '@/utils/createSite/plan'
 import {
   WIZARD_STEPS,
-  codeStepProblem,
   dnsInput,
   domainStepProblem,
   driverFor,
   siteStepProblem,
+  stackStepProblem,
   toInput,
   type ServerContext,
   type WizardStep
 } from '@/utils/createSite/wizard'
 import { pluralize } from '@/utils/ssl/time'
 import type { WebServerDriver } from '@/utils/webServer'
-import { CodeStep } from './CodeStep'
+import { CommandsStep } from './CommandsStep'
 import { CreateSiteStepper } from './CreateSiteStepper'
 import { DomainStep } from './DomainStep'
 import { ReviewStep } from './ReviewStep'
 import { IfStepFailsCard, SetsUpCard } from './SideCards'
 import { SiteStep } from './SiteStep'
+import { StackStep } from './StackStep'
 import { stepDetails } from './stepDetails'
 import { useCreateSiteDraft, type CreateSiteDraftModel, type CreateSitePrefill } from './useCreateSiteDraft'
 import { WizardFrame } from './WizardFrame'
@@ -45,8 +46,9 @@ type FormStep = Exclude<WizardStep, 'review'>
 const isFormStep = (step: WizardStep): step is FormStep => step !== 'review'
 
 const NEXT_HINTS: Record<FormStep, string> = {
-  site: 'Next: connect the repository',
-  code: 'Next: domain and HTTPS',
+  site: 'Next: the stack',
+  stack: 'Next: deploy commands',
+  commands: 'Next: DNS and HTTPS',
   domain: 'Next: review the plan'
 }
 
@@ -63,8 +65,12 @@ function reviewPlan(input: () => CreateSiteInput, context: ServerContext, driver
 }
 
 function stepProblem(step: FormStep, model: CreateSiteDraftModel, context: ServerContext): string | null {
-  if (step === 'site') return siteStepProblem(model.draft, model.nameCheck, context)
-  return step === 'code' ? codeStepProblem(model.draft) : domainStepProblem(model.draft)
+  switch (step) {
+    case 'site': return siteStepProblem(model.draft, model.nameCheck, context)
+    case 'stack': return stackStepProblem(model.draft, context)
+    case 'commands': return null
+    case 'domain': return domainStepProblem(model.draft)
+  }
 }
 
 function PlanFooterNote({ plan, fullSudo }: { plan: PlanAction[]; fullSudo: boolean }) {
@@ -147,8 +153,9 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
 
   return (
     <WizardFrame subtitle={model.draft.domain || `folder, ${driver.label}, DNS, HTTPS and deploys, in one go`} onBack={onCancel} aside={aside} footer={footer}>
-      {step === 'site' && <SiteStep model={model} tools={context.tools} serverLabel={driver.label} serverName={serverName} />}
-      {step === 'code' && <CodeStep model={model} />}
+      {step === 'site' && <SiteStep model={model} tools={context.tools} />}
+      {step === 'stack' && <StackStep model={model} tools={context.tools} serverLabel={driver.label} serverName={serverName} />}
+      {step === 'commands' && <CommandsStep model={model} connectionId={connectionId} server={context.server} />}
       {step === 'domain' && <DomainStep model={model} zone={zone} dns={dns} />}
       {plan !== null && <ReviewStep plan={plan} fullSudo={context.fullSudo} onEdit={setStep} />}
     </WizardFrame>

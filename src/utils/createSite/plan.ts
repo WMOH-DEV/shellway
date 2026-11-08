@@ -6,6 +6,7 @@ import { repoLabel } from '../deploy/siteDetail'
 import { issueCommand, stagingCommand } from '../ssl/https/issueCommands'
 import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
+import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPool'
 import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
 import { ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, sitePaths } from './siteScripts'
@@ -26,6 +27,7 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
   composer: 'Composer',
   pm2: 'pm2',
   folder: 'Folder',
+  pool: 'PHP pool',
   modules: 'Apache modules',
   dns: 'DNS record',
   https: 'HTTPS',
@@ -35,7 +37,7 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
+const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
@@ -100,6 +102,20 @@ function folderAction({ folder, owner }: CreateSiteInput): PlanAction {
     chip: 'new',
     ...asRoot(folderScript(folder, owner))
   })
+}
+
+function poolActions(input: CreateSiteInput, template: SiteTemplate): PlanAction[] {
+  if (!usesPhp(template)) return []
+  const { file, socket } = poolLayout(input)
+  return [action({
+    id: 'pool',
+    title: TITLES.pool,
+    summary: `PHP ${assertPhpVersion(input.phpVersion)}-FPM runs this site as ${assertPoolOwner(input.owner)} on its own socket`,
+    chip: 'new',
+    ...asRoot(createPoolScript(input)),
+    config: poolText(input),
+    note: `${file}, listening on ${socket}. The site can write its own storage and read its env file without opening them to other users. PHP-FPM must accept it before it reloads; otherwise the file is removed.`
+  })]
 }
 
 const apacheConfs = (input: CreateSiteInput, template: SiteTemplate): string[] =>
@@ -251,6 +267,7 @@ export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: We
     ...composerAction(input, template, tools),
     ...pm2Action(input, template, tools),
     folderAction(input),
+    ...poolActions(input, template),
     ...modulesActions(input, template, tools),
     siteAction(input, template, driver),
     dnsAction(input),

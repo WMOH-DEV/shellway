@@ -1,5 +1,6 @@
 import type { CreateSiteInput, SiteServer } from '@/types/createSite'
-import { assertDomain, assertFolder, assertPhpVersion, assertPort, assertSiteName } from '../validate'
+import { poolLayout } from '../phpPool'
+import { assertDomain, assertFolder, assertPort, assertSiteName } from '../validate'
 
 export interface SiteVars {
   siteName: string
@@ -20,10 +21,7 @@ export function siteVars(input: CreateSiteInput): SiteVars {
   }
 }
 
-export function phpFpmSocket({ server, phpVersion }: Pick<CreateSiteInput, 'server' | 'phpVersion'>): string {
-  if (server.kind === 'apache' && server.layout === 'rhel') return '/run/php-fpm/www.sock'
-  return `/run/php/php${assertPhpVersion(phpVersion)}-fpm.sock`
-}
+export const phpFpmSocket = (input: Pick<CreateSiteInput, 'server' | 'phpVersion' | 'siteName'>): string => poolLayout(input).socket
 
 export const appUpstream = ({ appPort }: Pick<CreateSiteInput, 'appPort'>): string => `http://127.0.0.1:${assertPort(appPort)}`
 

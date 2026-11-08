@@ -1,5 +1,7 @@
 import Store from 'electron-store'
 import type { RunRecord } from '../../../src/types/createSite'
+import { defaultCommands } from '../../../src/utils/createSite/deploySite'
+import { NOTHING_CREATED } from './CreateSiteRun'
 
 const KEEP_FINISHED_RUNS = 50
 const FINISHED: ReadonlySet<RunRecord['phase']> = new Set(['done', 'removed'])
@@ -8,15 +10,21 @@ interface Schema {
   runs: Record<string, RunRecord>
 }
 
+function withDefaults(run: RunRecord): RunRecord {
+  const input = { ...run.input, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
+  return { ...run, input, created: { ...NOTHING_CREATED, ...run.created } }
+}
+
 export class RunStore {
   private readonly store = new Store<Schema>({ name: 'shellway-create-site', defaults: { runs: {} } })
 
   get(id: string): RunRecord | null {
-    return this.store.get('runs')[id] ?? null
+    const run = this.store.get('runs')[id]
+    return run ? withDefaults(run) : null
   }
 
   forSession(sessionId: string): RunRecord[] {
-    return Object.values(this.store.get('runs')).filter((run) => run.sessionId === sessionId).sort((a, b) => b.createdAt - a.createdAt)
+    return Object.values(this.store.get('runs')).filter((run) => run.sessionId === sessionId).map(withDefaults).sort((a, b) => b.createdAt - a.createdAt)
   }
 
   save(record: RunRecord): void {
