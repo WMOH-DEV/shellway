@@ -73,6 +73,8 @@ export interface CreateSiteInput {
   server: SiteServer
   phpVersion: string
   appPort: number
+  buildOutput: string | null
+  spa: boolean
   repoUrl: string
   branch: string
   sourceMode: SourceMode

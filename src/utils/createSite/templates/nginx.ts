@@ -1,8 +1,9 @@
 import type { CreateSiteInput, TemplateId } from '@/types/createSite'
-import { appUpstream, fileText, indent, phpFpmSocket, siteVars } from './shared'
+import { appUpstream, fileText, indent, phpFpmSocket, siteVars, staticRoot } from './shared'
 
 const DENY_DOTFILES = 'location ~ /\\.(?!well-known) { deny all; }'
 const SERVE_FILES = 'location / { try_files $uri $uri/ =404; }'
+const SERVE_APP = 'location / { try_files $uri $uri/ /index.html; }'
 
 function serverBlock(names: string[], body: string[]): string {
   return fileText(['server {', indent('listen 80;'), indent(`server_name ${names.join(' ')};`), ...body.map(indent), '}'])
@@ -28,8 +29,8 @@ function php(input: CreateSiteInput): string {
 }
 
 function staticSite(input: CreateSiteInput): string {
-  const { names, release } = siteVars(input)
-  return serverBlock(names, [`root ${release};`, 'index index.html;', SERVE_FILES, DENY_DOTFILES])
+  const { names } = siteVars(input)
+  return serverBlock(names, [`root ${staticRoot(input)};`, 'index index.html;', input.spa ? SERVE_APP : SERVE_FILES, DENY_DOTFILES])
 }
 
 function reverseProxy(input: CreateSiteInput): string {

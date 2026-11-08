@@ -43,6 +43,18 @@ describe('nginx templates', () => {
   it('leaves out the www name when it is not asked for', () => {
     expect(NGINX_TEMPLATES.static(baseInput({ includeWww: false }))).toContain('    server_name shop.example.com;\n')
   })
+
+  it('serves the build output of a built static site and sends unknown paths to index.html for a single-page app', () => {
+    const text = lines(NGINX_TEMPLATES.static(baseInput({ template: 'static', buildOutput: 'dist', spa: true })))
+    expect(text).toContain('root /var/www/shop/dist;')
+    expect(text).toContain('location / { try_files $uri $uri/ /index.html; }')
+  })
+
+  it('refuses a build output that leaves the release', () => {
+    for (const buildOutput of ['../etc', '/dist', 'dist/../..', 'dist; rm -rf /', '']) {
+      expect(() => NGINX_TEMPLATES.static(baseInput({ template: 'static', buildOutput }))).toThrow()
+    }
+  })
 })
 
 describe('Apache templates', () => {
@@ -83,6 +95,12 @@ describe('Apache templates', () => {
   ] as Array<[TemplateId, string[]]>)('%s has its key lines', (template, expected) => {
     const text = APACHE_TEMPLATES[template](baseInput({ template, server: APACHE_DEBIAN.server, appPort: template === 'compose' ? 8080 : 3000 }))
     expect(lines(text)).toEqual(expect.arrayContaining(expected))
+  })
+
+  it('serves the build output and falls back to index.html for a single-page app', () => {
+    const text = lines(APACHE_TEMPLATES.static(baseInput({ template: 'static', server: APACHE_DEBIAN.server, buildOutput: 'build/web', spa: true })))
+    expect(text).toContain('DocumentRoot /var/www/shop/build/web')
+    expect(text).toContain('FallbackResource /index.html')
   })
 
   it('refuses to write an Apache site for nginx', () => {

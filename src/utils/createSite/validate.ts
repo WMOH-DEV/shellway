@@ -10,6 +10,7 @@ const MODULE = /^[a-z0-9_]{1,40}$/
 const CONF = /^[a-z0-9][a-z0-9._-]{0,63}$/
 const LINEAGE = /^[a-z0-9][a-z0-9.-]{0,252}$/
 const SHA256 = /^[0-9a-f]{64}$/
+const BUILD_OUTPUT = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}(?:\/[A-Za-z0-9_][A-Za-z0-9._-]{0,63}){0,7}$/
 
 const matching = (isValid: (value: string) => boolean, what: string) => (value: string): string => {
   if (!isValid(value)) throw new Error(`${JSON.stringify(value)} is not ${what}`)
@@ -24,6 +25,7 @@ export const assertFolder = matching(pattern(FOLDER), 'a valid folder')
 export const assertPhpVersion = matching(pattern(PHP_VERSION), 'a PHP version')
 export const assertOwner = matching(pattern(OWNER), 'a valid user name')
 export const assertIpv4 = matching(pattern(IPV4), 'an IPv4 address')
+export const assertBuildOutput = matching(pattern(BUILD_OUTPUT), 'a folder inside the repository, such as dist')
 export const assertHealthPath = matching(pattern(HEALTH_PATH), 'a valid health path')
 export const assertModule = matching(pattern(MODULE), 'a valid Apache module')
 export const assertConf = matching(pattern(CONF), 'a valid Apache conf')

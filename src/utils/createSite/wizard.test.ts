@@ -91,6 +91,13 @@ describe('siteStepProblem', () => {
     expect(stackStepProblem(draft(), context({ owner: 'root' }))).toMatch(/logged in as root/)
     expect(stackStepProblem(draft({ template: 'static' }), context({ owner: 'root' }))).toBeNull()
   })
+
+  it('needs a safe output folder and Node.js to build a static site', () => {
+    const built = (outputDir: string) => draft({ template: 'static', staticBuild: true, outputDir })
+    expect(stackStepProblem(built('../dist'), context())).toMatch(/folder the build writes to/)
+    expect(stackStepProblem(built('dist'), context({ tools: allTools({ node: null }) }))).toMatch(/Node.js is not installed/)
+    expect(stackStepProblem(built('dist'), context())).toBeNull()
+  })
 })
 
 describe('code and domain checks', () => {
@@ -140,6 +147,17 @@ describe('toInput', () => {
     const input = toInput(draft({ commands }), context(), ZONE)
     expect(input.buildSteps).toEqual([{ command: 'composer install', optional: false, timeoutSeconds: null }])
     expect(input.activateSteps).toEqual([])
+  })
+
+  it('builds a static site with npm only when the user asks, serving the output folder', () => {
+    const built = draft({ template: 'static', staticBuild: true, outputDir: ' dist ', spa: true })
+    const input = toInput(built, context(), ZONE)
+    expect(input).toMatchObject({ buildOutput: 'dist', spa: true })
+    expect(input.buildSteps.map((step) => step.command)).toEqual(['npm ci', 'npm run build'])
+    expect(input).not.toHaveProperty('staticBuild')
+    expect(input).not.toHaveProperty('outputDir')
+    expect(toInput(draft({ template: 'static' }), context(), ZONE)).toMatchObject({ buildOutput: null, spa: false, buildSteps: [] })
+    expect(toInput(draft({ staticBuild: true, spa: true }), context(), ZONE)).toMatchObject({ buildOutput: null, spa: false })
   })
 
   it('fills the stack defaults until the user edits them', () => {

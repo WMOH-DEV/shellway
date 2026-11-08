@@ -1,6 +1,6 @@
 import type { CreateSiteInput, SiteServer } from '@/types/createSite'
 import { poolLayout } from '../phpPool'
-import { assertDomain, assertFolder, assertPort, assertSiteName } from '../validate'
+import { assertBuildOutput, assertDomain, assertFolder, assertPort, assertSiteName } from '../validate'
 
 export interface SiteVars {
   siteName: string
@@ -19,6 +19,11 @@ export function siteVars(input: CreateSiteInput): SiteVars {
     names: siteNames(input),
     release: assertFolder(input.folder)
   }
+}
+
+export function staticRoot(input: Pick<CreateSiteInput, 'folder' | 'buildOutput'>): string {
+  const release = assertFolder(input.folder)
+  return input.buildOutput === null ? release : `${release}/${assertBuildOutput(input.buildOutput)}`
 }
 
 export const phpFpmSocket = (input: Pick<CreateSiteInput, 'server' | 'phpVersion' | 'siteName'>): string => poolLayout(input).socket

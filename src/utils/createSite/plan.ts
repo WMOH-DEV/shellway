@@ -155,7 +155,7 @@ function modulesActions(input: CreateSiteInput, template: SiteTemplate, tools: S
 function siteDetail(input: CreateSiteInput, template: SiteTemplate): string {
   if (usesPhp(template)) return ` · PHP ${assertPhpVersion(input.phpVersion)}-fpm${input.server.kind === 'apache' ? ' via proxy_fcgi' : ''}`
   if (template.proxiesToApp) return ` · proxy to 127.0.0.1:${assertPort(input.appPort)}`
-  return ''
+  return [...(input.buildOutput !== null ? [`serves ${input.buildOutput}`] : []), ...(input.spa ? ['single-page app'] : [])].map((part) => ` · ${part}`).join('')
 }
 
 function siteNote(server: SiteServer, file: string, driver: WebServerDriver): string {

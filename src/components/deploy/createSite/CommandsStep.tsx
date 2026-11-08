@@ -2,9 +2,9 @@ import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { StepHeading } from '@/components/ssl/https/StepHeading'
 import type { ServerTools, SiteServer } from '@/types/createSite'
-import { defaultCommands, type DeployCommands } from '@/utils/createSite/deploySite'
+import type { DeployCommands } from '@/utils/createSite/deploySite'
 import { TEMPLATES } from '@/utils/createSite/templates'
-import { commandsOf } from '@/utils/createSite/wizard'
+import { commandsOf, defaultCommandsOf } from '@/utils/createSite/wizard'
 import { StepsEditor } from '../StepsEditor'
 import { ACTIVATE_HINT, BUILD_HINT, Section } from '../setup/SiteSections'
 import { DatabaseSection, EnvironmentSection } from './EnvironmentSections'
@@ -24,7 +24,7 @@ export function CommandsStep({ model, connectionId, server, tools }: CommandsSte
   const { draft, patch } = model
   const label = TEMPLATES[draft.template].label
   const commands = commandsOf(draft, server)
-  const edited = draft.commands !== null && !sameCommands(draft.commands, defaultCommands({ ...draft, server }))
+  const edited = draft.commands !== null && !sameCommands(draft.commands, defaultCommandsOf(draft, server))
   const change = (changes: Partial<DeployCommands>) => patch({ commands: { ...commands, ...changes } })
   return (
     <div className="flex flex-col gap-5">

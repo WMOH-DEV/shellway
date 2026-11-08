@@ -1,5 +1,5 @@
 import type { CreateSiteInput, TemplateId } from '@/types/createSite'
-import { apacheLogDir, appUpstream, fileText, indent, phpFpmSocket, siteVars } from './shared'
+import { apacheLogDir, appUpstream, fileText, indent, phpFpmSocket, siteVars, staticRoot } from './shared'
 
 function virtualHost(input: CreateSiteInput, body: string[]): string {
   const { siteName, names } = siteVars(input)
@@ -35,7 +35,8 @@ const laravel = (input: CreateSiteInput): string =>
 
 const php = (input: CreateSiteInput): string => virtualHost(input, [...directory(siteVars(input).release, 'All'), ...phpHandler(input)])
 
-const staticSite = (input: CreateSiteInput): string => virtualHost(input, directory(siteVars(input).release, 'None'))
+const staticSite = (input: CreateSiteInput): string =>
+  virtualHost(input, [...directory(staticRoot(input), 'None'), ...(input.spa ? ['FallbackResource /index.html'] : [])])
 
 function reverseProxy(input: CreateSiteInput): string {
   const upstream = appUpstream(input)

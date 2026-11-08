@@ -129,6 +129,26 @@ describe('Create site, database and environment', () => {
   })
 })
 
+describe('Create site, static site', () => {
+  it('builds with npm, serves the output folder and falls back to index.html', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    await user.click(await screen.findByRole('button', { name: /^Static site/ }))
+    await user.click(screen.getByRole('button', { name: /^Built with npm/ }))
+    expect(screen.getByLabelText('Build output folder')).toHaveValue('dist')
+    await user.click(screen.getByRole('switch', { name: /Single-page app/ }))
+    await user.click(continueButton())
+    expect(await screen.findByDisplayValue('npm run build')).toBeInTheDocument()
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input] = api['createSite.start'].mock.calls[0]
+    expect(input).toMatchObject({ template: 'static', buildOutput: 'dist', spa: true })
+    expect(input.buildSteps.map((step: { command: string }) => step.command)).toEqual(['npm ci', 'npm run build'])
+  })
+})
+
 describe('Create site, Laravel scheduler and queue', () => {
   it('lets the user turn off the queue worker', async () => {
     const { user, api } = setup()

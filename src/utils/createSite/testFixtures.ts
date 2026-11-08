@@ -51,6 +51,8 @@ export function baseInput(overrides: Partial<CreateSiteInput> = {}): CreateSiteI
     server: { kind: 'nginx' },
     phpVersion: '8.3',
     appPort: 3000,
+    buildOutput: null,
+    spa: false,
     repoUrl: 'git@github.com:acme/shop.git',
     branch: 'main',
     sourceMode: 'auto',

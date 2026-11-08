@@ -26,7 +26,7 @@ function blurb(id: TemplateId, serverLabel: string): string {
   switch (id) {
     case 'laravel': return 'PHP-FPM, public/ as web root, composer, migrations, caches.'
     case 'node': return 'Reverse proxy to your app port, kept alive with pm2.'
-    case 'static': return `Built files served by ${serverLabel}. Optional build command.`
+    case 'static': return `Files served by ${serverLabel}, as they are or built with npm. Single-page apps too.`
     case 'php': return 'Plain PHP through PHP-FPM, index.php as entry.'
     case 'compose': return `docker compose up on deploy, ${serverLabel} proxies one service.`
     case 'blank': return `Folder and ${serverLabel} site only. You write the commands.`

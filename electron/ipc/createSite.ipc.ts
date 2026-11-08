@@ -50,6 +50,7 @@ function createSiteInput(value: unknown): CreateSiteInput {
   if (typeof https.email !== 'string' || typeof https.redirect !== 'boolean' || typeof https.staging !== 'boolean') throw new Error('Invalid HTTPS settings')
   if (input.dns !== null) dnsSettings(input.dns)
   laravelJobs(input.jobs)
+  if ((input.buildOutput !== null && typeof input.buildOutput !== 'string') || typeof input.spa !== 'boolean') throw new Error('Invalid static site settings')
   return input as unknown as CreateSiteInput
 }
 

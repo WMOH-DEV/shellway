@@ -12,7 +12,7 @@ import { templateAvailability } from './availability'
 import { phpNeed } from './php'
 import { assertPoolOwner } from './phpPool'
 import { TEMPLATES, usesPhp } from './templates'
-import { assertDomain, assertFolder, assertPort, assertSiteName } from './validate'
+import { assertBuildOutput, assertDomain, assertFolder, assertPort, assertSiteName } from './validate'
 
 export const WIZARD_STEPS = ['site', 'stack', 'commands', 'domain', 'review'] as const
 
@@ -51,6 +51,9 @@ export interface CreateSiteDraft {
   dbPassword: string
   appKey: string
   jobs: LaravelJobs
+  staticBuild: boolean
+  outputDir: string
+  spa: boolean
 }
 
 export interface NameCheckState {
@@ -62,6 +65,7 @@ export interface NameCheckState {
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[]
 
 const DEFAULT_APP_PORT = 3000
+const DEFAULT_OUTPUT_DIR = 'dist'
 const MAX_POLL_MINUTES = 60
 
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
@@ -119,7 +123,10 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     envText: '',
     dbPassword: generatePassword(),
     appKey: generateAppKey(),
-    jobs: availableJobs(tools, ALL_JOBS)
+    jobs: availableJobs(tools, ALL_JOBS),
+    staticBuild: false,
+    outputDir: DEFAULT_OUTPUT_DIR,
+    spa: false
   }
 }
 
@@ -141,10 +148,19 @@ export function nameCheckProblem(check: NameCheckState | null, domain: string): 
   return null
 }
 
+function staticBuildProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
+  const output = buildOutputOf(draft)
+  if (output === null) return null
+  if (fails(() => assertBuildOutput(output))) return 'Enter the folder the build writes to, such as dist'
+  return tools.node === null ? 'Node.js is not installed on this server, so the site cannot be built there. Install it, or serve the files as they are.' : null
+}
+
 function templateProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
   const template = TEMPLATES[draft.template]
   const availability = templateAvailability(draft.template, tools)
   if (availability.state === 'blocked') return `${template.label} cannot be used here: ${availability.reason}`
+  const buildProblem = staticBuildProblem(draft, tools)
+  if (buildProblem !== null) return buildProblem
   if (usesPhp(template) && phpNeed(tools.php, draft.phpVersion).kind === 'unavailable') return 'Pick a PHP version'
   if (template.proxiesToApp && fails(() => assertPort(draft.appPort))) return 'Enter an app port from 1 to 65535'
   return null
@@ -193,8 +209,15 @@ export function dnsInput(draft: CreateSiteDraft, context: CreateSiteContext, zon
   return { zoneId: zone.id, zoneName: zone.name, serverIp, proxied: draft.proxied }
 }
 
-export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
-  draft.commands ?? defaultCommands({ ...draft, server })
+const isStatic = (draft: Pick<CreateSiteDraft, 'template'>): boolean => draft.template === 'static'
+
+export const buildOutputOf = (draft: Pick<CreateSiteDraft, 'template' | 'staticBuild' | 'outputDir'>): string | null =>
+  isStatic(draft) && draft.staticBuild ? draft.outputDir.trim() : null
+
+export const defaultCommandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
+  defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) })
+
+export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands => draft.commands ?? defaultCommandsOf(draft, server)
 
 export function toSecrets(draft: CreateSiteDraft, input: CreateSiteInput): CreateSiteSecrets {
   return {
@@ -208,13 +231,15 @@ const filledSteps = (steps: DeployStep[]): DeployStep[] =>
   steps.map((step) => ({ ...step, command: step.command.trim() })).filter((step) => step.command !== '')
 
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
-  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, ...site } = draft
+  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, staticBuild: _build, outputDir: _output, ...site } = draft
   const { buildSteps, activateSteps } = commandsOf(draft, context.server)
   const database = siteDatabase(choice, draft)
   return {
     ...site,
     database,
     jobs: draft.template === 'laravel' ? availableJobs(context.tools, draft.jobs) : NO_JOBS,
+    buildOutput: buildOutputOf(draft),
+    spa: isStatic(draft) && draft.spa,
     env: writesEnv({ ...draft, database }, envText),
     owner: context.owner,
     server: context.server,

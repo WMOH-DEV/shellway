@@ -21,7 +21,14 @@ function stepPin(input: Pick<CreateSiteInput, 'server' | 'phpVersion'>, template
   return (step) => step
 }
 
-export type CommandFacts = Pick<CreateSiteInput, 'template' | 'siteName' | 'folder' | 'appPort' | 'phpVersion' | 'server'>
+export type CommandFacts = Pick<CreateSiteInput, 'template' | 'siteName' | 'folder' | 'appPort' | 'phpVersion' | 'server' | 'buildOutput'>
+
+const NPM_BUILD: DeployStep[] = [
+  { command: 'npm ci', optional: false, timeoutSeconds: null },
+  { command: 'npm run build', optional: false, timeoutSeconds: null }
+]
+
+const buildsWithNpm = ({ template, buildOutput }: Pick<CommandFacts, 'template' | 'buildOutput'>): boolean => template === 'static' && buildOutput !== null
 
 export interface DeployCommands {
   buildSteps: DeployStep[]
@@ -34,7 +41,7 @@ export function defaultCommands(facts: CommandFacts): DeployCommands {
   const preset = presetById(template.preset)
   const pin = stepPin(facts, template, name)
   return {
-    buildSteps: preset.buildSteps({ buildScript: false }).map(pin),
+    buildSteps: buildsWithNpm(facts) ? NPM_BUILD.map((step) => ({ ...step })) : preset.buildSteps({ buildScript: false }).map(pin),
     activateSteps: [...preset.activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, facts.folder, facts.appPort) : [])]
   }
 }

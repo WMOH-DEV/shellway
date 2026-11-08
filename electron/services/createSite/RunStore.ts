@@ -15,7 +15,9 @@ interface Schema {
 }
 
 function withDefaults(run: RunRecord): RunRecord {
-  const input = { ...run.input, database: run.input.database ?? null, env: run.input.env ?? false, jobs: run.input.jobs ?? NO_JOBS, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
+  const saved = run.input
+  const filled = { ...saved, database: saved.database ?? null, env: saved.env ?? false, jobs: saved.jobs ?? NO_JOBS, buildOutput: saved.buildOutput ?? null, spa: saved.spa ?? false }
+  const input = saved.buildSteps ? filled : { ...filled, ...defaultCommands(filled) }
   return { ...run, input, created: { ...NOTHING_CREATED, ...run.created } }
 }
 
