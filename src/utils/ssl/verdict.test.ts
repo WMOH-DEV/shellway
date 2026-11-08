@@ -67,7 +67,7 @@ describe('verdictFor', () => {
   })
 
   it('orders verdicts from worst to best', () => {
-    expect(VERDICT_ORDER).toEqual(['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'no-dns', 'ok'])
+    expect(VERDICT_ORDER).toEqual(['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok', 'no-dns'])
   })
 })
 

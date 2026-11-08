@@ -3,7 +3,7 @@ import type { CertKind, CheckedSide, EdgeInfo, OriginCert, Verdict } from '../..
 export const WARNING_DAYS = 14
 const DAY_SECONDS = 86_400
 
-export const VERDICT_ORDER: readonly Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'no-dns', 'ok']
+export const VERDICT_ORDER: readonly Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok', 'no-dns']
 
 export const KIND_LABELS: Record<CertKind, string> = {
   letsencrypt: "Let's Encrypt",

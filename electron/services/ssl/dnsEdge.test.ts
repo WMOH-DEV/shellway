@@ -65,7 +65,7 @@ describe('edgesWithoutZone', () => {
   })
 
   it('says so plainly when the name does not resolve', async () => {
-    const resolve = resolverFor({ 'gone.example.net': dnsError('ENOTFOUND') })
+    const resolve = resolverFor({ 'gone.example.net': dnsError('ENOTFOUND'), 'api.cloudflare.com': ['104.19.192.1'] })
     const edges = await edgesWithoutZone(['gone.example.net'], SERVER, REASON, resolve)
     expect(edges['gone.example.net']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS address found for this name', noRecord: true })
   })
@@ -77,8 +77,15 @@ describe('edgesWithoutZone', () => {
     expect(edges['slow.example.net'].noRecord).toBeUndefined()
   })
 
+  it('does not call a name missing when this computer cannot reach DNS at all', async () => {
+    const resolve = resolverFor({ 'gone.example.net': dnsError('ENOTFOUND'), 'api.cloudflare.com': dnsError('ENOTFOUND') })
+    const edges = await edgesWithoutZone(['gone.example.net'], SERVER, REASON, resolve)
+    expect(edges['gone.example.net']).toMatchObject({ state: 'unknown', unknownReason: 'DNS lookup failed (this computer could not reach DNS)' })
+    expect(edges['gone.example.net'].noRecord).toBeUndefined()
+  })
+
   it('treats an empty answer as no address', async () => {
-    const edges = await edgesWithoutZone(['empty.example.net'], SERVER, REASON, resolverFor({}))
+    const edges = await edgesWithoutZone(['empty.example.net'], SERVER, REASON, resolverFor({ 'api.cloudflare.com': ['104.19.192.1'] }))
     expect(edges['empty.example.net']).toMatchObject({ unknownReason: 'no DNS address found for this name', noRecord: true })
   })
 
