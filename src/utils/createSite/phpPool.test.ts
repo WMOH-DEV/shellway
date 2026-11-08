@@ -54,7 +54,7 @@ describe('createPoolScript', () => {
 
   it('removes the pool again when PHP-FPM rejects it, cannot reload, or never opens the socket', () => {
     expect(script).toMatch(/if ! php-fpm8\.3 -t; then\n {2}rm -f '\/etc\/php\/8\.3\/fpm\/pool\.d\/shop\.conf'/)
-    expect(script).toContain(`if ! [ -f '/run/php/php8.3-fpm.pid' ] && kill -USR2 "$(cat '/run/php/php8.3-fpm.pid')"; then`)
+    expect(script).toContain(`if ! { [ -f '/run/php/php8.3-fpm.pid' ] && kill -USR2 "$(cat '/run/php/php8.3-fpm.pid')"; }; then`)
     expect(script).toContain("if [ ! -S '/run/php/php8.3-fpm-shop.sock' ]; then")
   })
 })

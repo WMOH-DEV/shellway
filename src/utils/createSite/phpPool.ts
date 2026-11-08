@@ -57,7 +57,7 @@ export function poolText(facts: PoolFacts & Pick<CreateSiteInput, 'owner'>): str
   ].join('\n')
 }
 
-const reloadLine = ({ pidFile }: PoolLayout): string => `[ -f ${quote(pidFile)} ] && kill -USR2 "$(cat ${quote(pidFile)})"`
+const reloadLine = ({ pidFile }: PoolLayout): string => `{ [ -f ${quote(pidFile)} ] && kill -USR2 "$(cat ${quote(pidFile)})"; }`
 
 export function createPoolScript(facts: PoolFacts & Pick<CreateSiteInput, 'owner'>): string {
   const layout = poolLayout(facts)
