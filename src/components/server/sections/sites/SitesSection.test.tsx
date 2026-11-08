@@ -12,6 +12,9 @@ import { SitesSection } from './SitesSection'
 const launch = vi.fn()
 vi.mock('../../action', () => ({ useActionLauncher: () => ({ launch }) }))
 vi.mock('@/components/deploy/EnvEditor', () => ({ EnvEditor: () => null }))
+vi.mock('@/components/deploy/createSite/CreateSiteWizard', () => ({
+  CreateSiteWizard: ({ onClose }: { onClose: () => void }) => <button type="button" onClick={onClose}>Close Create site</button>
+}))
 
 const app = makeSummary({
   config: { name: 'app', path: '/var/www/app', healthUrl: 'https://app.example.com/up', activateSteps: [{ command: 'php artisan migrate --force', optional: false, timeoutSeconds: null }] },
@@ -37,6 +40,8 @@ const inventory = makeInventory({
 const ok = <T,>(data: T) => Promise.resolve({ success: true as const, data })
 const off = () => () => {}
 
+const sslCheck = vi.fn(() => ok(report))
+
 function installApi() {
   const tail = vi.fn(() => ok({ state: 'ok', text: '[2026-11-07] production.ERROR: boom\n' }))
   Object.assign(window, {
@@ -50,7 +55,7 @@ function installApi() {
         doctor: () => ok(null),
         webServerCheck: () => ok(null)
       },
-      ssl: { check: () => ok(report), lastReport: () => ok(report) },
+      ssl: { check: sslCheck, lastReport: () => ok(report) },
       createSite: { runs: () => ok([]) },
       server: {
         scan: () => ok({ [INVENTORY_PROBE]: { status: 'ok', data: inventory, at: 1 } }),
@@ -103,6 +108,15 @@ describe('Sites section', () => {
     expect(within(tabs).getByRole('tab', { name: /Domains & HTTPS/ })).toContainElement(screen.getByLabelText('has a problem'))
     await waitFor(() => expect(tail).toHaveBeenCalledWith('c1', { site: 'app', source: 'app', file: 'storage/logs/laravel.log', lines: 8 }))
     expect(await screen.findByText('[2026-11-07] production.ERROR: boom')).toBeInTheDocument()
+  })
+
+  it('checks HTTPS again when Create site closes, so a new site shows its certificate', async () => {
+    installApi()
+    const { user } = renderSection({ section: 'sites', sub: 'create' })
+    await waitFor(() => expect(sslCheck).toHaveBeenCalled())
+    const before = sslCheck.mock.calls.length
+    await user.click(await screen.findByRole('button', { name: 'Close Create site' }))
+    await waitFor(() => expect(sslCheck.mock.calls.length).toBeGreaterThan(before))
   })
 
   it('runs a preset command through the action engine', async () => {

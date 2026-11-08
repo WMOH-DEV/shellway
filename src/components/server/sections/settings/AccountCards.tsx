@@ -43,7 +43,7 @@ export function GithubTokenForm({ onSaved, onCancel }: { onSaved(): void; onCanc
         autoComplete="off"
         onChange={(e) => setToken(e.target.value)}
       />
-      <p className="text-2xs text-nd-text-muted">Use a fine-grained token for the repo with Administration: read and write.</p>
+      <p className="text-2xs text-nd-text-muted">Use a fine-grained token with Administration: read and write. For Create site to make new repositories, give it All repositories.</p>
       <div className="flex gap-2">
         <Button type="submit" variant="primary" disabled={token.trim() === '' || saving}>Save token</Button>
         {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}

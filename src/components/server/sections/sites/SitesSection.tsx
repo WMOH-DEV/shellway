@@ -37,6 +37,7 @@ function CreatePage({ ctx, data, createRuns }: PageProps) {
   if (runId && !createRuns.loaded) return <PageSpinner />
   const close = () => {
     void data.deploy.refresh()
+    void data.ssl.refresh()
     void createRuns.refresh()
     ctx.navigate(sitesRoute())
   }
