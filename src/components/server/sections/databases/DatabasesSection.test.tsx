@@ -31,7 +31,7 @@ describe('DatabasesSection', () => {
     render(<DatabasesSection ctx={ctx} />)
     expect(screen.getByRole('tab', { name: 'MariaDB' })).toBeInTheDocument()
     expect(screen.getByText('Shellway cannot sign in to MariaDB')).toBeInTheDocument()
-    expect(screen.getByText('[client] user=root password=your-root-password', { normalizer: (text) => text.replace(/\s+/g, ' ').trim() })).toBeInTheDocument()
+    expect(screen.getByText('[client] user=root password="your-root-password"', { normalizer: (text) => text.replace(/\s+/g, ' ').trim() })).toBeInTheDocument()
     expect(screen.getByText(/IDENTIFIED VIA unix_socket OR mysql_native_password/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy /root/.my.cnf' })).toBeInTheDocument()
   })

@@ -63,6 +63,11 @@ describe('parseMysql', () => {
     expect(facts.users[0].socketLogin).toBe(true)
   })
 
+  it('reads the MariaDB 11 version past its deprecated program name warning', () => {
+    const facts = parseMysql("@@version\nmysql: Deprecated program name. It will be removed in a future release, use '/usr/bin/mariadb' instead\n11.4.3-MariaDB-ubu2404\n")
+    expect(facts).toMatchObject({ flavor: 'mariadb', version: '11.4.3' })
+  })
+
   it('reports missing, stopped and no socket access', () => {
     expect(parseMysql('@@missing\n').status).toBe('missing')
     expect(parseMysql("@@failed\nERROR 2002 (HY000): Can't connect to local MySQL server through socket '/var/run/mysqld/mysqld.sock' (2)\n").status).toBe('stopped')
@@ -79,7 +84,7 @@ describe('parseMysql', () => {
     expect(current.flavor).toBe('mariadb')
     expect(current.reason).toMatch(/^root cannot sign in to MariaDB without a password/)
     expect(current.signInFixes?.map((fix) => fix.code)).toEqual([
-      '[client]\nuser=root\npassword=your-root-password',
+      '[client]\nuser=root\npassword="your-root-password"',
       "ALTER USER root@localhost IDENTIFIED VIA unix_socket OR mysql_native_password USING PASSWORD('your-root-password');"
     ])
     expect(denied('mysql from 11.4.2-MariaDB, client 15.2 for debian-linux-gnu (x86_64)').signInFixes).toHaveLength(2)

@@ -13,7 +13,7 @@ cd /tmp
 echo @@client
 mysql --version 2>/dev/null | head -n 1
 q() { ${MYSQL_CLIENT} -e "$1"; }
-if ! v=$(q 'SELECT VERSION()' 2>&1); then echo @@failed; printf '%s\\n' "$v" | head -n 3; exit 0; fi
+if ! v=$(q 'SELECT VERSION()' 2>&1); then echo @@failed; printf '%s\\n' "$v" | grep -v 'Deprecated program name' | head -n 3; exit 0; fi
 echo @@version
 printf '%s\\n' "$v"
 echo @@listen
@@ -36,19 +36,19 @@ interface Client {
 }
 
 function parseClient(line: string): Client {
-  if (!/mariadb/i.test(line)) return { flavor: 'mysql', version: /Ver (\d+\.\d+\.\d+)/.exec(line)?.[1] ?? '' }
+  if (!/mariadb/i.test(line)) return { flavor: 'mysql', version: '' }
   return { flavor: 'mariadb', version: /(\d+\.\d+\.\d+)-MariaDB/i.exec(line)?.[1] ?? '' }
 }
 
 const MY_CNF: SignInFix = {
   name: '/root/.my.cnf',
-  label: 'Save root\'s password as /root/.my.cnf, then run sudo chmod 600 /root/.my.cnf so only root can read it. Nothing in the database changes.',
-  code: '[client]\nuser=root\npassword=your-root-password'
+  label: 'Create /root/.my.cnf so only root can read it: sudo install -m 600 /dev/null /root/.my.cnf. Then put this in it, with the database root password in place of your-root-password. Nothing in the database changes.',
+  code: '[client]\nuser=root\npassword="your-root-password"'
 }
 
 const MARIADB_SOCKET: SignInFix = {
   name: 'the ALTER USER command',
-  label: 'Or let root also sign in through the socket. Run this in sudo mysql -p. Apps that use root\'s password keep working.',
+  label: 'Or let root also sign in through the socket. Open sudo mysql -p (it asks for the root password), then run this with root\'s current password. Apps that use that password keep working.',
   code: "ALTER USER root@localhost IDENTIFIED VIA unix_socket OR mysql_native_password USING PASSWORD('your-root-password');"
 }
 
@@ -145,7 +145,7 @@ export function parseMysql(stdout: string): EngineFacts {
   const sections = splitSections(stdout)
   if (hasSection(sections, 'missing')) return emptyEngine('mysql', 'missing', 'MySQL is not installed.')
   if (hasSection(sections, 'failed')) return failure(sectionLines(sections, 'failed'), parseClient(sectionLines(sections, 'client')[0] ?? ''))
-  const version = sectionLines(sections, 'version')[0] ?? ''
+  const version = sectionLines(sections, 'version').at(-1) ?? ''
   return {
     engine: 'mysql',
     status: 'ok',
