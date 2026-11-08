@@ -27,7 +27,8 @@ const deployNext = (user: string, canSwitch: boolean): string =>
 async function switchLogin(connectionId: string, sessionId: string, user: string): Promise<void> {
   const checked = await serverApi().setup.checkLogin(connectionId, user)
   if (!checked.success) throw new Error(checked.error)
-  await window.novadeck.sessions.update(sessionId, { username: user })
+  const saved = await window.novadeck.sessions.update(sessionId, { username: user })
+  if (!saved) throw new Error('This saved session no longer exists.')
   useSessionStore.getState().updateSession(sessionId, { username: user })
 }
 

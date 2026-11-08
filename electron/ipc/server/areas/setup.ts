@@ -12,7 +12,9 @@ export function registerSetupIPC(_ctx: ServerIpcContext): void {
     try {
       if (typeof connectionId !== 'string' || !CONNECTION_ID.test(connectionId)) throw new Error('Invalid connection')
       if (typeof user !== 'string') throw new Error('Choose a user to log in as')
-      await checkUserLogin(await sessionConfigOf(getSSHService().get(connectionId)), user)
+      const connection = getSSHService().get(connectionId)
+      if (!connection) throw new Error('Not connected. Reconnect, then try again.')
+      await checkUserLogin(await sessionConfigOf(connection), user)
       return { success: true, data: undefined }
     } catch (err) {
       return { success: false, error: (err as Error).message }

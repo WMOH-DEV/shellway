@@ -37,6 +37,14 @@ describe('RunResult deploy user switch', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('does not claim success when the saved session is gone', async () => {
+    const update = bridge(vi.fn(async () => ({ success: true, data: undefined })))
+    update.mockResolvedValue(null as never)
+    render(<RunResult run={finished()} deployUser="deploy" keyLogin {...ids} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Log in as deploy from now on' }))
+    expect(await screen.findByText(/This saved session no longer exists/)).toBeInTheDocument()
+  })
+
   it('offers nothing when no deploy user was created or the session logs in with a password', () => {
     bridge(vi.fn())
     const { rerender } = render(<RunResult run={finished('skipped')} deployUser="deploy" keyLogin {...ids} />)
