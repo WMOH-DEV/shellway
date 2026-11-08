@@ -19,7 +19,7 @@ export function zoneSslMode(zone: string, hostnames: HostnameStatus[]): SslMode 
   return hostnames.find((h) => h.edge.zone === zone && h.edge.sslMode !== null)?.edge.sslMode ?? null
 }
 
-export const offersStrict = (mode: SslMode | null): boolean => mode !== 'strict'
+export const offersStrict = (mode: SslMode | null): boolean => mode !== null && mode !== 'strict'
 
 export type ProbeTone = 'success' | 'error' | 'warning'
 

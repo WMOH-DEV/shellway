@@ -14,7 +14,7 @@ function ZoneModeControl({ zone, hostnames, onSetStrict }: { zone: string; hostn
   const mode = zoneSslMode(zone, hostnames)
   return (
     <span className="inline-flex items-center gap-2 text-xs text-nd-text-muted">
-      SSL mode: {modeLabel(mode)}
+      {mode === null ? 'SSL mode not checked: no site here uses this zone' : `SSL mode: ${modeLabel(mode)}`}
       {offersStrict(mode) && (
         <Button size="sm" aria-label={`Set ${zone} to ${STRICT_LABEL}`} onClick={() => onSetStrict(zone)}>Set to {STRICT_LABEL}</Button>
       )}

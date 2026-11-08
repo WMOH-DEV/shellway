@@ -285,6 +285,12 @@ describe('entry points', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set example.com to Full (strict)' }))
     expect(onSetStrict).toHaveBeenCalledWith('example.com')
   })
+
+  it('never offers to change a zone whose mode it could not see, because no site here uses it', () => {
+    render(<ZoneList zones={[{ id: 'z1', name: 'example.org' }]} hostnames={[]} onSetStrict={vi.fn()} />)
+    expect(screen.getByText('SSL mode not checked: no site here uses this zone')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Set example.org/ })).not.toBeInTheDocument()
+  })
 })
 
 describe('inside the SSL view', () => {
