@@ -67,18 +67,19 @@ describe('edgesWithoutZone', () => {
   it('says so plainly when the name does not resolve', async () => {
     const resolve = resolverFor({ 'gone.example.net': dnsError('ENOTFOUND') })
     const edges = await edgesWithoutZone(['gone.example.net'], SERVER, REASON, resolve)
-    expect(edges['gone.example.net']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS address found for this name' })
+    expect(edges['gone.example.net']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS address found for this name', noRecord: true })
   })
 
   it('names the error code for other lookup failures', async () => {
     const resolve = resolverFor({ 'slow.example.net': dnsError('ETIMEOUT') })
     const edges = await edgesWithoutZone(['slow.example.net'], SERVER, REASON, resolve)
-    expect(edges['slow.example.net'].unknownReason).toBe('DNS lookup failed (ETIMEOUT)')
+    expect(edges['slow.example.net']).toMatchObject({ unknownReason: 'DNS lookup failed (ETIMEOUT)' })
+    expect(edges['slow.example.net'].noRecord).toBeUndefined()
   })
 
   it('treats an empty answer as no address', async () => {
     const edges = await edgesWithoutZone(['empty.example.net'], SERVER, REASON, resolverFor({}))
-    expect(edges['empty.example.net'].unknownReason).toBe('no DNS address found for this name')
+    expect(edges['empty.example.net']).toMatchObject({ unknownReason: 'no DNS address found for this name', noRecord: true })
   })
 
   it('looks each host up exactly once', async () => {

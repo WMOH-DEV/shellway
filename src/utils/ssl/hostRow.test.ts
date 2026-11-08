@@ -6,7 +6,7 @@ import {
 import { formatDay } from './time'
 import { DAY, edgeOf, makeFacts, makeHost, makeOrigin, NOW, originExpiringIn, unknownEdge } from './testReport'
 
-const verdicts: Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok']
+const verdicts: Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'no-dns', 'ok']
 
 describe('filters', () => {
   const hosts = [
@@ -15,7 +15,7 @@ describe('filters', () => {
     makeHost({ name: 'c.example.com', verdict: 'unchecked', edge: unknownEdge })
   ]
 
-  it('needs action covers the four problem verdicts and not unchecked or ok', () => {
+  it('needs action covers the four problem verdicts and not unchecked, not in DNS or ok', () => {
     const flagged = verdicts.filter((verdict) => matchesFilter(makeHost({ verdict }), 'attention'))
     expect(flagged).toEqual(['broken', 'will-break', 'expiring', 'not-encrypted'])
   })

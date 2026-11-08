@@ -8,6 +8,7 @@ const VERDICT_TONES: Record<Verdict, Tone> = {
   expiring: 'warning',
   'not-encrypted': 'warning',
   unchecked: 'neutral',
+  'no-dns': 'neutral',
   ok: 'success'
 }
 

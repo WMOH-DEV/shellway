@@ -188,7 +188,7 @@ function splitByZone(hosts: string[], zones: CloudflareZone[]): { inZone: Map<Cl
 function edgeFromRecords(zone: string, sslMode: SslMode | null, host: string, found: ApiRecord[], serverAddresses: string[]): EdgeInfo {
   const wanted = host.toLowerCase()
   const records = found.filter((r) => ROUTING_RECORD_TYPES.has(r.type) && r.name.toLowerCase() === wanted)
-  if (records.length === 0) return { ...unknownEdge('no DNS record found'), zone, sslMode }
+  if (records.length === 0) return { ...unknownEdge('no DNS record found'), zone, sslMode, noRecord: true }
   const ours = new Set(serverAddresses.map((a) => a.toLowerCase()))
   const isAddress = (r: ApiRecord) => ADDRESS_RECORD_TYPES.has(r.type)
   const elsewhere = ours.size > 0 ? records.find((r) => isAddress(r) && !ours.has(r.content.toLowerCase())) : undefined

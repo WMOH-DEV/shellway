@@ -1,6 +1,6 @@
 export type CertKind = 'letsencrypt' | 'cloudflare-origin' | 'self-signed' | 'other' | 'none'
 
-export type Verdict = 'broken' | 'will-break' | 'expiring' | 'not-encrypted' | 'unchecked' | 'ok'
+export type Verdict = 'broken' | 'will-break' | 'expiring' | 'not-encrypted' | 'unchecked' | 'no-dns' | 'ok'
 
 export type SslMode = 'off' | 'flexible' | 'full' | 'strict' | 'origin_pull'
 
@@ -88,6 +88,7 @@ export interface EdgeInfo {
   recordContent: string | null
   sslMode: SslMode | null
   unknownReason: string | null
+  noRecord?: boolean
 }
 
 export interface HostnameStatus {

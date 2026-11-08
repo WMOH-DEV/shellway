@@ -21,6 +21,7 @@ const VERDICT_PHRASES: Record<Verdict, string> = {
   expiring: 'server certificate expires soon',
   'not-encrypted': 'not encrypted to the server',
   unchecked: 'could not be fully checked',
+  'no-dns': 'has no DNS record',
   ok: 'fine'
 }
 

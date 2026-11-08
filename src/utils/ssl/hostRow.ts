@@ -35,6 +35,7 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
   expiring: 'Expiring soon',
   'not-encrypted': 'Not encrypted to server',
   unchecked: 'Unchecked side',
+  'no-dns': 'Not in DNS',
   ok: 'OK'
 }
 

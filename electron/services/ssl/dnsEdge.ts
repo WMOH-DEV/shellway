@@ -72,7 +72,7 @@ function resolvedEdge(state: 'elsewhere' | 'not-on-cloudflare', address: string)
 }
 
 function edgeFor(addresses: string[], serverAddresses: string[], reasonWhenOnCloudflare: string): EdgeInfo {
-  if (addresses.length === 0) return unknownEdge(NO_ADDRESS)
+  if (addresses.length === 0) return { ...unknownEdge(NO_ADDRESS), noRecord: true }
   if (addresses.some(isCloudflareAddress)) return unknownEdge(reasonWhenOnCloudflare)
   const ours = new Set(serverAddresses.map((a) => a.toLowerCase()))
   if (ours.size > 0 && !addresses.some((a) => ours.has(a.toLowerCase()))) return resolvedEdge('elsewhere', addresses[0])
@@ -83,7 +83,8 @@ async function lookupEdge(host: string, serverAddresses: string[], reasonWhenOnC
   try {
     return edgeFor(await resolve(host), serverAddresses, reasonWhenOnCloudflare)
   } catch (err) {
-    return unknownEdge(lookupFailure(err))
+    const reason = lookupFailure(err)
+    return reason === NO_ADDRESS ? { ...unknownEdge(reason), noRecord: true } : unknownEdge(reason)
   }
 }
 

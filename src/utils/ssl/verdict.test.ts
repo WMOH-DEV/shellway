@@ -37,6 +37,7 @@ describe('verdictFor', () => {
     ['soon with healthy renewal', { origin: cert({ notAfter: NOW + 10 * DAY }) }, 'expiring', 'certbot should have renewed at 30 days left'],
     ['no certificate and not behind Cloudflare', { origin: cert({ kind: 'none', notAfter: null, names: [] }), edge: edge({ state: 'dns-only', sslMode: null }) }, 'not-encrypted', 'No HTTPS certificate on the server'],
     ['no certificate and an unknown edge', { origin: cert({ kind: 'none', notAfter: null, names: [] }), edge: edge({ state: 'unknown', sslMode: null, unknownReason: 'no token' }) }, 'not-encrypted', 'No HTTPS certificate on the server'],
+    ['no certificate and no DNS record', { origin: cert({ kind: 'none', notAfter: null, names: [] }), edge: edge({ state: 'unknown', sslMode: null, unknownReason: 'no DNS record found', noRecord: true }) }, 'no-dns', 'No DNS record, so visitors cannot reach this name'],
     ['flexible mode', { edge: edge({ sslMode: 'flexible' }) }, 'not-encrypted', 'Cloudflare reaches the server over plain HTTP'],
     ['zone not visible', { edge: edge({ state: 'unknown', sslMode: null, unknownReason: 'zone not visible to the token' }) }, 'unchecked', 'Cloudflare side: zone not visible to the token'],
     ['server side unreadable', { origin: null }, 'unchecked', 'Server side: not checked'],
@@ -66,7 +67,7 @@ describe('verdictFor', () => {
   })
 
   it('orders verdicts from worst to best', () => {
-    expect(VERDICT_ORDER).toEqual(['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok'])
+    expect(VERDICT_ORDER).toEqual(['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'no-dns', 'ok'])
   })
 })
 

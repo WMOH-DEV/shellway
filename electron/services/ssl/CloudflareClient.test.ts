@@ -258,7 +258,7 @@ describe('CloudflareClient.edges', () => {
       [RECORD_URL('app.example.com')]: ok([record('TXT', 'app.example.com', 'v=spf1', false), record('A', 'www.example.com', '203.0.113.10', true)])
     }
     const { edges } = await edgesFor(routes, ['app.example.com'])
-    expect(edges['app.example.com']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS record found', zone: 'example.com', sslMode: 'full' })
+    expect(edges['app.example.com']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS record found', zone: 'example.com', sslMode: 'full', noRecord: true })
   })
 
   it('matches a host to the longest zone suffix', async () => {
