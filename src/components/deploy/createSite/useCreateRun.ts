@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CreateSiteInput, ResumeMode, RunRecord } from '@/types/createSite'
+import type { CreateSiteInput, CreateSiteSecrets, ResumeMode, RunRecord } from '@/types/createSite'
 import type { DeployResult } from '@/types/deploy'
 import { createSiteApi } from './createSiteApi'
 
@@ -9,7 +9,7 @@ export interface CreateRun {
   busy: boolean
   stopRequested: boolean
   error: string | null
-  start: (input: CreateSiteInput) => Promise<void>
+  start: (input: CreateSiteInput, secrets: CreateSiteSecrets) => Promise<void>
   stop: () => Promise<void>
   resume: (mode: ResumeMode) => Promise<void>
   remove: () => Promise<void>
@@ -69,8 +69,8 @@ export function useCreateRun(connectionId: string, sessionId: string, initial: R
     if (result.success && result.data) setRecord(result.data)
   }
 
-  const start = async (input: CreateSiteInput) => {
-    const result = await call(() => createSiteApi().start(connectionId, sessionId, input), 'The run could not start')
+  const start = async (input: CreateSiteInput, secrets: CreateSiteSecrets) => {
+    const result = await call(() => createSiteApi().start(connectionId, sessionId, input, secrets), 'The run could not start')
     if (result.success && result.data) follow(result.data)
   }
 

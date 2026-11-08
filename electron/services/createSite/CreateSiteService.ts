@@ -2,6 +2,8 @@ import { posix } from 'path'
 import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, NameCheck, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
 import type { ServerFacts } from '../../../src/types/ssl'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
+import { siteDatabase } from '../../../src/utils/createSite/database'
+import { assertSecrets } from '../../../src/utils/createSite/env'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { assertDomain } from '../../../src/utils/createSite/validate'
 import { webServerDriver } from '../../../src/utils/webServer'
@@ -42,6 +44,11 @@ function interrupted(record: RunRecord): RunRecord {
   if (record.phase === 'removing') return { ...record, phase: 'remove-failed', error: CLOSED_MID_REMOVAL }
   const steps = record.steps.map((step) => (step.id === record.current && step.status === 'pending' && step.startedAt !== null ? { ...step, status: 'failed' as const } : step))
   return { ...record, steps, phase: 'failed', error: CLOSED_MID_STEP }
+}
+
+function assertDatabaseMatches(input: CreateSiteInput): void {
+  const { database } = input
+  if (database !== null && JSON.stringify(database) !== JSON.stringify(siteDatabase(database.engine, input))) throw new Error('Invalid database settings')
 }
 
 function serverOf(facts: ServerFacts): SiteServer | null {
@@ -98,9 +105,11 @@ export class CreateSiteService {
     }
   }
 
-  start(connectionId: string, sessionId: string, input: CreateSiteInput): Promise<RunRecord> {
+  start(connectionId: string, sessionId: string, input: CreateSiteInput, rawSecrets: unknown): Promise<RunRecord> {
     this.assertSameServer(connectionId, sessionId)
     return this.begin(connectionId, async () => {
+      const secrets = assertSecrets(input, rawSecrets)
+      assertDatabaseMatches(input)
       const ports = this.ports(connectionId, sessionId, this.deps.newId())
       const driver = driverFor(input.server)
       const invalid = validateSiteConfig(deploySiteConfig(input))
@@ -108,8 +117,9 @@ export class CreateSiteService {
       await this.checkAgainstServer(connectionId, input)
       const plan = buildPlan(input, await ports.tools(), driver)
       const record = newRunRecord(ports.runId, sessionId, input, plan, this.deps.now())
+      this.deps.store.saveSecrets(record.id, secrets)
       ports.save(record)
-      return new CreateSiteRun(record, ports, driver)
+      return new CreateSiteRun(record, ports, driver, secrets)
     }, 'start')
   }
 
@@ -117,7 +127,7 @@ export class CreateSiteService {
     const record = this.stored(runId)
     if (record.phase !== 'failed' && record.phase !== 'stopped') throw new Error('This run is not waiting for you.')
     this.assertSameServer(connectionId, record.sessionId)
-    return this.begin(connectionId, async () => new CreateSiteRun(record, this.ports(connectionId, record.sessionId, runId), driverFor(record.server)), mode)
+    return this.begin(connectionId, async () => new CreateSiteRun(record, this.ports(connectionId, record.sessionId, runId), driverFor(record.server), this.deps.store.secrets(runId)), mode)
   }
 
   stop(runId: string): void {
@@ -241,6 +251,10 @@ export class CreateSiteService {
         say(`${RUNNER} remove ${name}`)
         await service().removeSite(name)
         this.deps.broadcast('deploy:changed', connectionId)
+      },
+      writeEnv: async (name, content) => {
+        say(`write the env file of ${name} with umask 077 (contents hidden)`)
+        await service().writeEnv(name, content)
       },
       keygen: (name) => {
         say(`${RUNNER} keygen ${name}`)

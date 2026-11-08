@@ -1,7 +1,10 @@
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, DnsInput, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
+import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, CreateSiteSecrets, DnsInput, NameCheck, PlanActionId, ServerTools, SiteServer, TemplateId } from '@/types/createSite'
 import type { DeployStep, SourceMode } from '@/types/deploy'
 import { newSite, siteNameFromPath } from '../deploy/presets'
 import { defaultCommands, type DeployCommands } from './deploySite'
+import { generatePassword } from '../server/databases/password'
+import { databaseChoices, defaultDatabase, siteDatabase, type DatabaseChoice } from './database'
+import { generateAppKey, writesEnv } from './env'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
@@ -17,7 +20,7 @@ export type WizardStep = (typeof WIZARD_STEPS)[number]
 export const STEP_TITLES: Record<WizardStep | 'create', string> = {
   site: 'Site and code',
   stack: 'Stack',
-  commands: 'Deploy commands',
+  commands: 'Commands and environment',
   domain: 'DNS and HTTPS',
   review: 'Review the plan',
   create: 'Create'
@@ -42,6 +45,10 @@ export interface CreateSiteDraft {
   redirect: boolean
   staging: boolean
   commands: DeployCommands | null
+  database: DatabaseChoice
+  envText: string
+  dbPassword: string
+  appKey: string
 }
 
 export interface NameCheckState {
@@ -63,9 +70,11 @@ const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
   pool: 'stack',
   modules: 'stack',
   site: 'stack',
+  database: 'commands',
   dns: 'domain',
   https: 'domain',
   deploys: 'commands',
+  env: 'commands',
   'first-deploy': 'commands'
 }
 
@@ -85,12 +94,13 @@ function firstUsableTemplate(tools: ServerTools): TemplateId {
 
 export function newDraft(tools: ServerTools): CreateSiteDraft {
   const { branch, sourceMode, pollMinutes } = newSite()
+  const template = firstUsableTemplate(tools)
   return {
     domain: '',
     includeWww: true,
     siteName: '',
     folder: '',
-    template: firstUsableTemplate(tools),
+    template,
     phpVersion: tools.php.installed[0] ?? tools.php.installable[0] ?? '',
     appPort: DEFAULT_APP_PORT,
     repoUrl: '',
@@ -101,7 +111,11 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     email: '',
     redirect: true,
     staging: true,
-    commands: null
+    commands: null,
+    database: defaultDatabase(template, tools),
+    envText: '',
+    dbPassword: generatePassword(),
+    appKey: generateAppKey()
   }
 }
 
@@ -159,6 +173,11 @@ export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSit
   return templateProblem(draft, context.tools)
 }
 
+export function commandsStepProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
+  if (draft.database !== 'none' && !databaseChoices(draft.template, tools).includes(draft.database)) return 'Pick a database this server has'
+  return null
+}
+
 export function domainStepProblem(draft: CreateSiteDraft): string | null {
   return isValidEmail(draft.email.trim()) ? null : "Enter an email for Let's Encrypt"
 }
@@ -173,14 +192,25 @@ export function dnsInput(draft: CreateSiteDraft, context: CreateSiteContext, zon
 export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
   draft.commands ?? defaultCommands({ ...draft, server })
 
+export function toSecrets(draft: CreateSiteDraft, input: CreateSiteInput): CreateSiteSecrets {
+  return {
+    dbPassword: input.database !== null && input.database.engine !== 'sqlite' ? draft.dbPassword : null,
+    appKey: input.template === 'laravel' ? draft.appKey : null,
+    envText: draft.envText
+  }
+}
+
 const filledSteps = (steps: DeployStep[]): DeployStep[] =>
   steps.map((step) => ({ ...step, command: step.command.trim() })).filter((step) => step.command !== '')
 
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
-  const { proxied: _proxied, email, redirect, staging, commands: _commands, ...site } = draft
+  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, ...site } = draft
   const { buildSteps, activateSteps } = commandsOf(draft, context.server)
+  const database = siteDatabase(choice, draft)
   return {
     ...site,
+    database,
+    env: writesEnv({ ...draft, database }, envText),
     owner: context.owner,
     server: context.server,
     buildSteps: filledSteps(buildSteps),

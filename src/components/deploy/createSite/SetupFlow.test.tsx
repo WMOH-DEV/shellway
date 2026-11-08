@@ -84,13 +84,48 @@ describe('Create site, deploy commands', () => {
     await user.type(migrate, 'php8.3 artisan migrate --force --seed')
     await user.click(screen.getByRole('button', { name: /Reset to the defaults/ }))
     expect(screen.getByDisplayValue('php8.3 artisan migrate --force')).toBeInTheDocument()
-    await user.clear(screen.getByDisplayValue('php8.3 artisan migrate --force'))
-    await user.type(screen.getByDisplayValue(''), 'php8.3 artisan migrate --force --seed')
+    const reset = screen.getByDisplayValue('php8.3 artisan migrate --force')
+    await user.clear(reset)
+    await user.type(reset, 'php8.3 artisan migrate --force --seed')
     await user.click(continueButton())
     await screen.findByDisplayValue('admin@example.com')
     await user.click(continueButton())
     await user.click(screen.getByRole('button', { name: /Create site/ }))
     expect(api['createSite.start'].mock.calls[0][2].activateSteps[0].command).toBe('php8.3 artisan migrate --force --seed')
+  })
+})
+
+describe('Create site, database and environment', () => {
+  it('shows the values Shellway sets with secrets hidden, and sends the user settings apart from the site', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    await user.click(continueButton())
+    const list = await screen.findByLabelText('Set by Shellway')
+    expect(within(list).getByText('APP_URL')).toBeInTheDocument()
+    expect(within(list).getByText('https://shop.example.com')).toBeInTheDocument()
+    expect(within(list).getAllByText('••••')).toHaveLength(2)
+    await user.type(screen.getByLabelText('Your settings'), 'MAIL_MAILER=smtp')
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input, secrets] = api['createSite.start'].mock.calls[0]
+    expect(secrets.envText).toBe('MAIL_MAILER=smtp')
+    expect(JSON.stringify(input)).not.toContain('MAIL_MAILER')
+  })
+
+  it('lets the user pick SQLite or no database', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    await user.click(continueButton())
+    await user.click(await screen.findByRole('button', { name: /^SQLite/ }))
+    await user.click(continueButton())
+    await screen.findByDisplayValue('admin@example.com')
+    await user.click(continueButton())
+    await user.click(screen.getByRole('button', { name: /Create site/ }))
+    const [, , input, secrets] = api['createSite.start'].mock.calls[0]
+    expect(input.database).toEqual({ engine: 'sqlite', path: '/var/www/shop-deploy/shared/database.sqlite' })
+    expect(secrets.dbPassword).toBeNull()
   })
 })
 
@@ -108,7 +143,7 @@ describe('Create site, from domain to start', () => {
 
     const plan = screen.getByRole('list', { name: 'Plan' })
     expect(within(plan).getAllByRole('region').map((card) => card.getAttribute('aria-label'))).toEqual(
-      ['Folder', 'PHP pool', 'nginx site', 'DNS record', 'HTTPS', 'Deploys', 'First deploy and check']
+      ['Folder', 'PHP pool', 'nginx site', 'Database', 'DNS record', 'HTTPS', 'Deploys', 'Environment file', 'First deploy and check']
     )
     expect(screen.getByText(/needs full sudo · available/)).toBeInTheDocument()
 
@@ -125,6 +160,11 @@ describe('Create site, from domain to start', () => {
       https: { email: 'admin@example.com', redirect: true, staging: true }
     })
     expect(input.activateSteps[0].command).toBe('php8.3 artisan migrate --force')
+    expect(input.database).toEqual({ engine: 'mysql', name: 'shop', user: 'shop' })
+    const secrets = api['createSite.start'].mock.calls[0][3]
+    expect(secrets.dbPassword).toMatch(/^[A-Za-z0-9]{24}$/)
+    expect(secrets.appKey).toMatch(/^base64:[A-Za-z0-9+/]{43}=$/)
+    expect(JSON.stringify(input)).not.toContain(secrets.dbPassword)
     expect(await screen.findByRole('heading', { name: 'Creating shop.example.com' })).toBeInTheDocument()
   })
 

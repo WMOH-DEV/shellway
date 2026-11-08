@@ -1,5 +1,6 @@
 import Store from 'electron-store'
-import type { RunRecord } from '../../../src/types/createSite'
+import type { CreateSiteSecrets, RunRecord } from '../../../src/types/createSite'
+import { decrypt, encrypt, generateMasterKey } from '../../utils/encryption'
 import { defaultCommands } from '../../../src/utils/createSite/deploySite'
 import { NOTHING_CREATED } from './CreateSiteRun'
 
@@ -8,15 +9,44 @@ const FINISHED: ReadonlySet<RunRecord['phase']> = new Set(['done', 'removed'])
 
 interface Schema {
   runs: Record<string, RunRecord>
+  masterKey: string
+  secrets: Record<string, string>
 }
 
 function withDefaults(run: RunRecord): RunRecord {
-  const input = { ...run.input, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
+  const input = { ...run.input, database: run.input.database ?? null, env: run.input.env ?? false, ...(run.input.buildSteps ? {} : defaultCommands(run.input)) }
   return { ...run, input, created: { ...NOTHING_CREATED, ...run.created } }
 }
 
 export class RunStore {
-  private readonly store = new Store<Schema>({ name: 'shellway-create-site', defaults: { runs: {} } })
+  private readonly store = new Store<Schema>({ name: 'shellway-create-site', defaults: { runs: {}, masterKey: '', secrets: {} } })
+
+  private masterKey(): string {
+    const existing = this.store.get('masterKey')
+    if (existing) return existing
+    const key = generateMasterKey()
+    this.store.set('masterKey', key)
+    return key
+  }
+
+  secrets(runId: string): CreateSiteSecrets | null {
+    const stored = this.store.get('secrets')[runId]
+    if (!stored) return null
+    try {
+      return JSON.parse(decrypt(stored, this.masterKey())) as CreateSiteSecrets
+    } catch {
+      return null
+    }
+  }
+
+  saveSecrets(runId: string, secrets: CreateSiteSecrets): void {
+    this.store.set('secrets', { ...this.store.get('secrets'), [runId]: encrypt(JSON.stringify(secrets), this.masterKey()) })
+  }
+
+  forgetSecrets(runId: string): void {
+    const { [runId]: _forgotten, ...rest } = this.store.get('secrets')
+    this.store.set('secrets', rest)
+  }
 
   get(id: string): RunRecord | null {
     const run = this.store.get('runs')[id]
@@ -33,5 +63,6 @@ export class RunStore {
     const finished = all.filter((run) => FINISHED.has(run.phase)).slice(0, KEEP_FINISHED_RUNS)
     const kept = [...all.filter((run) => !FINISHED.has(run.phase)), ...finished]
     this.store.set('runs', Object.fromEntries(kept.map((run) => [run.id, run])))
+    if (FINISHED.has(record.phase)) this.forgetSecrets(record.id)
   }
 }

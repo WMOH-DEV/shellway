@@ -9,6 +9,26 @@ export interface PhpTools {
   installed: string[]
   installable: string[]
   missingPackages: Record<string, string[]>
+  drivers: Record<string, string[]>
+}
+
+export type DatabaseEngine = 'mysql' | 'postgresql' | 'sqlite'
+
+export type ServerDatabaseEngine = Exclude<DatabaseEngine, 'sqlite'>
+
+export type SiteDatabase =
+  | { engine: ServerDatabaseEngine; name: string; user: string }
+  | { engine: 'sqlite'; path: string }
+
+export interface CreateSiteSecrets {
+  dbPassword: string | null
+  appKey: string | null
+  envText: string
+}
+
+export interface DatabaseServers {
+  mysql: boolean
+  postgresql: boolean
 }
 
 export interface ServerTools {
@@ -18,6 +38,7 @@ export interface ServerTools {
   pm2: boolean
   pm2Startup: boolean
   docker: boolean
+  databases: DatabaseServers
   apacheModules: string[]
   freeDiskBytes: number
 }
@@ -51,12 +72,14 @@ export interface CreateSiteInput {
   pollMinutes: number
   buildSteps: DeployStep[]
   activateSteps: DeployStep[]
+  database: SiteDatabase | null
+  env: boolean
   dns: DnsInput | null
   https: HttpsInput
   healthPath: string
 }
 
-export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'dns' | 'https' | 'deploys' | 'first-deploy'
+export type PlanActionId = 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 
@@ -104,6 +127,8 @@ export interface CreatedResources {
   folder: { path: string; createdByRun: boolean } | null
   siteFile: { path: string; enabledLink: string | null; sha256: string } | null
   phpPool: { path: string; sha256: string } | null
+  database: SiteDatabase | null
+  envFile: { path: string; sha256: string } | null
   modulesEnabled: string[]
   dnsRecords: CreatedDnsRecord[]
   httpsSiteFile: { path: string; sha256: string } | null

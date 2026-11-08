@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { PageSpinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
-import type { CreateSiteInput, PlanAction, RunRecord } from '@/types/createSite'
+import type { CreateSiteInput, CreateSiteSecrets, PlanAction, RunRecord } from '@/types/createSite'
 import { hasServer } from '@/utils/createSite/wizard'
 import { Callout } from './Callout'
 import { RunScreen } from './RunScreen'
@@ -45,9 +45,9 @@ export function CreateSiteWizard({ connectionId, sessionId, serverName, initialR
   const [plan, setPlan] = useState<PlanAction[] | null>(null)
   const { record } = run
 
-  const start = (input: CreateSiteInput, planned: PlanAction[]) => {
+  const start = (input: CreateSiteInput, secrets: CreateSiteSecrets, planned: PlanAction[]) => {
     setPlan(planned)
-    void run.start(input)
+    void run.start(input, secrets)
   }
 
   if (record) return <RunScreen run={{ ...run, record }} plan={plan} onClose={onClose} />

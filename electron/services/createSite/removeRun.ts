@@ -13,6 +13,8 @@ function withoutResource(created: CreatedResources, step: RemovalStep): CreatedR
     case 'dns-record': return { ...created, dnsRecords: created.dnsRecords.filter((record) => record.recordId !== step.recordId) }
     case 'folder': return { ...created, folder: null }
     case 'php-pool': return { ...created, phpPool: null }
+    case 'env-file': return { ...created, envFile: null }
+    case 'database': return { ...created, database: null }
     case 'site-file':
       if (created.httpsSiteFile?.path === step.path) return { ...created, httpsSiteFile: null }
       return created.siteFile?.path === step.path ? { ...created, siteFile: null } : created
@@ -45,6 +47,8 @@ class RemoveRun {
       case 'certificate':
       case 'site-file':
       case 'php-pool':
+      case 'env-file':
+      case 'database':
       case 'folder': return this.run(step.command, step.script)
     }
   }

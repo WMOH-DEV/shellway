@@ -8,7 +8,7 @@ import type { StepperStep } from './CreateSiteStepper'
 const HINTS: Record<StepperStep, string> = {
   site: 'domain and repository',
   stack: 'what the code is built with',
-  commands: 'what runs on each deploy',
+  commands: 'deploy commands, database, env',
   domain: 'DNS record, certificate',
   review: 'every command, before it runs',
   create: 'runs step by step'

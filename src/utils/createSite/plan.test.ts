@@ -22,9 +22,11 @@ describe('buildPlan for the Laravel mockup on nginx', () => {
       { id: 'folder', title: 'Folder', summary: '/var/www/shop-deploy owned by deploy, and /var/www/shop pointing at its current release', chip: 'new' },
       { id: 'pool', title: 'PHP pool', summary: 'PHP 8.3-FPM runs this site as deploy on its own socket', chip: 'new' },
       { id: 'site', title: 'nginx site', summary: 'shop.conf from the Laravel template · PHP 8.3-fpm', chip: 'new' },
+      { id: 'database', title: 'Database', summary: 'MySQL database shop, user shop', chip: 'new' },
       { id: 'dns', title: 'DNS record', summary: 'A shop → 203.0.113.10 · CNAME www.shop → shop · both proxied', chip: 'new' },
       { id: 'https', title: 'HTTPS', summary: "Let's Encrypt via certbot · staging test first · HTTP → HTTPS redirect", chip: 'ready' },
       { id: 'deploys', title: 'Deploys', summary: 'acme/shop · main · Auto on server every 2 min · Laravel preset, 7 commands', chip: 'needs you' },
+      { id: 'env', title: 'Environment file', summary: '/var/www/shop-deploy/shared/.env · 11 values set by Shellway', chip: 'new' },
       { id: 'first-deploy', title: 'First deploy and check', summary: 'Deploy main, then https://shop.example.com/ must return 200', chip: 'ready' }
     ])
   })
@@ -65,7 +67,7 @@ describe('buildPlan for the Laravel mockup on nginx', () => {
 describe('buildPlan on Apache', () => {
   it('Debian: enables only the missing modules before the site', () => {
     const actions = plan(APACHE_DEBIAN, {}, allTools({ apacheModules: ['headers', 'ssl'] }))
-    expect(actions.map((a) => a.id)).toEqual(['folder', 'pool', 'modules', 'site', 'dns', 'https', 'deploys', 'first-deploy'])
+    expect(actions.map((a) => a.id)).toEqual(['folder', 'pool', 'modules', 'site', 'database', 'dns', 'https', 'deploys', 'env', 'first-deploy'])
     expect(byId(actions, 'modules')).toEqual({
       id: 'modules',
       title: 'Apache modules',
@@ -127,8 +129,11 @@ describe('buildPlan per template and server', () => {
     const input = baseInput({ server, template })
     const actions = buildPlan(input, allTools(), driver)
     const site = byId(actions, 'site')
-    const pool = template === 'laravel' || template === 'php' ? ['pool'] : []
-    expect(actions.map((a) => a.id)).toEqual(['folder', ...pool, 'site', 'dns', 'https', 'deploys', 'first-deploy'])
+    const usesPhp = template === 'laravel' || template === 'php'
+    const pool = usesPhp ? ['pool'] : []
+    const database = usesPhp ? ['database'] : []
+    const env = input.env ? ['env'] : []
+    expect(actions.map((a) => a.id)).toEqual(['folder', ...pool, 'site', ...database, 'dns', 'https', 'deploys', ...env, 'first-deploy'])
     expect(site.title).toBe(name === 'nginx' ? 'nginx site' : 'Apache site')
     expect(site.config).toBe(siteFileText(input))
     expect(site.script).toContain(`if ! ${driver.testCommand}; then`)
@@ -223,7 +228,19 @@ describe('buildPlan refuses unsafe input', () => {
 describe('planMeta', () => {
   it('estimates minutes and reports the sudo requirement', () => {
     expect(planMeta(plan(NGINX))).toEqual({ minutes: 6, needsFullSudo: true })
-    expect(planMeta(plan(APACHE_DEBIAN, {}, allTools({ apacheModules: [] })))).toEqual({ minutes: 6, needsFullSudo: true })
+    expect(planMeta(plan(APACHE_DEBIAN, {}, allTools({ apacheModules: [] })))).toEqual({ minutes: 7, needsFullSudo: true })
+  })
+
+  it('shows the database script with the password hidden, and the env values Shellway sets without secrets', () => {
+    const actions = plan(NGINX)
+    expect(byId(actions, 'database').script).toContain("CREATE USER 'shop'@'localhost' IDENTIFIED BY '••••';")
+    expect(byId(actions, 'env').config).toContain('APP_KEY=••••\nAPP_DEBUG=false')
+    expect(byId(actions, 'env').config).toContain('DB_PASSWORD=••••')
+  })
+
+  it('adds the PHP database driver when the installed version lacks it', () => {
+    const tools = allTools({ php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] }, drivers: { '8.3': ['sqlite3'] } } })
+    expect(byId(plan(NGINX, {}, tools), 'php').summary).toBe('Add php8.3-mysql to PHP 8.3')
   })
 
   it('needs no sudo when nothing runs as root', () => {
@@ -234,7 +251,7 @@ describe('planMeta', () => {
 
 describe('buildPlan PHP and composer steps', () => {
   const php = (installed: string[], installable: string[], missing: string[] = []) =>
-    ({ installed, installable, missingPackages: Object.fromEntries(installed.map((v) => [v, missing])) })
+    ({ installed, installable, missingPackages: Object.fromEntries(installed.map((v) => [v, missing])), drivers: {} })
 
   it('adds nothing when the chosen PHP and composer are already there', () => {
     expect(plan(NGINX).map((a) => a.id)).not.toContain('php')

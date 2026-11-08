@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { EngineFacts, SiteEnv } from '@/utils/server/databases/types'
 import { CreateDatabaseDialog } from './CreateDatabaseDialog'
-import { generatePassword } from './password'
+import { generatePassword } from '@/utils/server/databases/password'
 import { TypedConfirmDialog } from './TypedConfirmDialog'
 
 const PASSWORD = 'Abcdefghijkmnopqrstuvwx2'

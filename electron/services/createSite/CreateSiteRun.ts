@@ -1,17 +1,20 @@
 import { createHash } from 'crypto'
-import type { CreatedDnsRecord, CreatedResources, CreateSiteInput, PlanAction, ResumeMode, RunPhase, RunRecord, RunStep, RunStepStatus, ServerTools } from '../../../src/types/createSite'
+import type { CreatedDnsRecord, CreatedResources, CreateSiteInput, CreateSiteSecrets, PlanAction, ResumeMode, RunPhase, RunRecord, RunStep, RunStepStatus, ServerTools } from '../../../src/types/createSite'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
 import { poolLayout, poolText } from '../../../src/utils/createSite/phpPool'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { ROOT_SHELL, sitePaths } from '../../../src/utils/createSite/siteScripts'
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
 import { siteNames } from '../../../src/utils/createSite/templates/shared'
-import { assertLineage } from '../../../src/utils/createSite/validate'
+import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
+import { createDatabaseScript } from '../../../src/utils/createSite/database'
+import { envFileText, envPathOf } from '../../../src/utils/createSite/env'
+import { redact, usableSecrets } from '../server/StepOutput'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../../../src/utils/ssl/originCa/scripts'
 import type { WebServerDriver } from '../../../src/utils/webServer/driver'
 import { shellEscape } from '../../utils/shellEscape'
 import type { ExecResult } from '../../utils/sshExec'
-import type { CreateSitePorts } from './ports'
+import type { CreateSitePorts, OutputWriter } from './ports'
 
 const ROOT_TIMEOUT_MS = 120_000
 const INSTALL_TIMEOUT_MS = 900_000
@@ -25,7 +28,7 @@ export const dnsComment = (runId: string): string => `${DNS_COMMENT} ${runId}`
 
 const sha256Of = (text: string): string => createHash('sha256').update(text.endsWith('\n') ? text : `${text}\n`).digest('hex')
 
-export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+export const NOTHING_CREATED: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 export function newRunRecord(id: string, sessionId: string, input: CreateSiteInput, plan: PlanAction[], now: number): RunRecord {
   const steps: RunStep[] = plan.map((action) => ({ id: action.id, status: 'pending', startedAt: null, finishedAt: null }))
@@ -38,7 +41,12 @@ export class CreateSiteRun {
   private stopRequested = false
   private tools: ServerTools | null = null
 
-  constructor(private record: RunRecord, private readonly ports: CreateSitePorts, private readonly driver: WebServerDriver) {}
+  private readonly output: OutputWriter
+
+  constructor(private record: RunRecord, private readonly ports: CreateSitePorts, private readonly driver: WebServerDriver, private readonly secrets: CreateSiteSecrets | null) {
+    const hidden = usableSecrets(secrets === null ? [] : [secrets.dbPassword ?? '', secrets.appKey ?? ''])
+    this.output = (chunk) => ports.output(redact(chunk, hidden))
+  }
 
   get current(): RunRecord {
     return this.record
@@ -96,6 +104,8 @@ export class CreateSiteRun {
       case 'pool': return this.createPool(action)
       case 'modules': return this.enableModules(action)
       case 'site': return this.createSite(action)
+      case 'database': return this.createDatabase(action)
+      case 'env': return this.writeEnvFile()
       case 'dns': return action.chip === 'needs you' ? this.checkManualDns() : this.createDnsRecords(action)
       case 'https': return this.addHttps()
       case 'deploys': return this.addDeploySite()
@@ -141,6 +151,29 @@ export class CreateSiteRun {
     const sha256 = await this.checksum(paths.file)
     if (sha256 === null) throw new Error(`${paths.file} is missing after it was written.`)
     this.created({ siteFile: { path: paths.file, enabledLink: paths.enabledLink, sha256 } })
+  }
+
+  private neededSecrets(): CreateSiteSecrets {
+    if (this.secrets === null) throw new Error('The generated password and app key of this run are no longer known. Remove what this run created, then start again.')
+    return this.secrets
+  }
+
+  private async createDatabase(action: PlanAction): Promise<void> {
+    const database = this.input.database
+    if (database === null) return
+    const script = createDatabaseScript(database, this.input.owner, this.neededSecrets().dbPassword)
+    const recordedBefore = this.record.created.database !== null
+    if (!recordedBefore) this.created({ database })
+    const result = await this.rootScript(script, ROOT_TIMEOUT_MS, action.script ?? script)
+    if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ database: null })
+    this.mustSucceed(result, 'Creating the database failed.')
+  }
+
+  private async writeEnvFile(): Promise<void> {
+    const content = envFileText(this.input, this.neededSecrets())
+    const path = envPathOf(this.input.folder)
+    this.created({ envFile: { path, sha256: sha256Of(content) } })
+    await this.ports.deploy.writeEnv(assertSiteName(this.input.siteName), content)
   }
 
   private async checkManualDns(): Promise<void> {
@@ -200,7 +233,7 @@ export class CreateSiteRun {
     if (await this.certificateExists(lineage)) {
       throw new Error(`A certificate named ${lineage} is already on this server. Shellway will not change which names it covers. Use Add HTTPS in the SSL tab, or press Continue from here.`)
     }
-    const result = await this.ports.issue({ blockId, names, ...this.input.https }, this.ports.output)
+    const result = await this.ports.issue({ blockId, names, ...this.input.https }, this.output)
     if (!result.ok || result.lineage === null) throw new Error(result.hint ?? 'Getting the certificate failed. The site file was put back as it was.')
     this.created({ certificate: { lineage: result.lineage, issuedByRun: result.lineage === lineage } })
   }
@@ -262,9 +295,9 @@ export class CreateSiteRun {
     return this.rootScript(action.script, timeoutMs)
   }
 
-  private rootScript(script: string, timeoutMs: number): Promise<ExecResult> {
-    this.say(`$ ${ROOT_SHELL}\n${script.trimEnd().split('\n').map((line) => `  ${line}`).join('\n')}\n`)
-    return this.ports.exec(ROOT_SHELL, { stdin: script, timeoutMs, onOutput: this.ports.output })
+  private rootScript(script: string, timeoutMs: number, display = script): Promise<ExecResult> {
+    this.say(`$ ${ROOT_SHELL}\n${display.trimEnd().split('\n').map((line) => `  ${line}`).join('\n')}\n`)
+    return this.ports.exec(ROOT_SHELL, { stdin: script, timeoutMs, onOutput: this.output })
   }
 
   private mustSucceed(result: ExecResult, fallback: string): void {
@@ -306,6 +339,6 @@ export class CreateSiteRun {
   }
 
   private say(text: string): void {
-    this.ports.output(text)
+    this.output(text)
   }
 }

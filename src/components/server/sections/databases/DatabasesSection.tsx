@@ -17,7 +17,7 @@ import { DatabaseDialogs, type DialogState, type RunAction } from './DatabaseDia
 import { DatabasesTable } from './DatabasesTable'
 import { EngineNotInstalled, type EngineTab } from './EngineNotReady'
 import { openInSqlTab } from './openInSql'
-import { generatePassword } from './password'
+import { generatePassword } from '@/utils/server/databases/password'
 import { RedisPanel } from './RedisPanel'
 import { UsersTable } from './UsersTable'
 import { useWithOsFamily } from '../../useWithOsFamily'

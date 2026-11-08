@@ -1,6 +1,7 @@
 import type { CreateSiteInput, ServerTools, SiteServer } from '@/types/createSite'
 import { apacheDriver } from '../webServer/apache'
 import { defaultCommands } from './deploySite'
+import { writesEnv } from './env'
 import type { WebServerDriver } from '../webServer/driver'
 import { nginxDriver } from '../webServer/nginx'
 
@@ -23,7 +24,7 @@ export const APACHE_RHEL: ServerCase = {
 }
 export const SERVER_CASES: ServerCase[] = [NGINX, APACHE_DEBIAN, APACHE_RHEL]
 
-function commandsOrNone(input: Omit<CreateSiteInput, 'buildSteps' | 'activateSteps'>): Pick<CreateSiteInput, 'buildSteps' | 'activateSteps'> {
+function commandsOrNone(input: Omit<CreateSiteInput, 'buildSteps' | 'activateSteps' | 'database' | 'env'>): Pick<CreateSiteInput, 'buildSteps' | 'activateSteps'> {
   try {
     return defaultCommands(input)
   } catch {
@@ -31,8 +32,16 @@ function commandsOrNone(input: Omit<CreateSiteInput, 'buildSteps' | 'activateSte
   }
 }
 
+function envOrNone(facts: Parameters<typeof writesEnv>[0]): boolean {
+  try {
+    return writesEnv(facts, '')
+  } catch {
+    return false
+  }
+}
+
 export function baseInput(overrides: Partial<CreateSiteInput> = {}): CreateSiteInput {
-  const input: Omit<CreateSiteInput, 'buildSteps' | 'activateSteps'> & Partial<CreateSiteInput> = {
+  const input: Omit<CreateSiteInput, 'buildSteps' | 'activateSteps' | 'database' | 'env'> & Partial<CreateSiteInput> = {
     domain: 'shop.example.com',
     includeWww: true,
     siteName: 'shop',
@@ -51,16 +60,20 @@ export function baseInput(overrides: Partial<CreateSiteInput> = {}): CreateSiteI
     healthPath: '/',
     ...overrides
   }
-  return { ...commandsOrNone(input), ...input }
+  const usesDatabase = input.template === 'laravel' || input.template === 'php'
+  const database = input.database !== undefined ? input.database : usesDatabase ? { engine: 'mysql' as const, name: 'shop', user: 'shop' } : null
+  const stackDefaults = { database, env: envOrNone({ ...input, database }) }
+  return { ...commandsOrNone(input), ...stackDefaults, ...input }
 }
 
 export const allTools = (overrides: Partial<ServerTools> = {}): ServerTools => ({
-  php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] } },
+  php: { installed: ['8.3'], installable: [], missingPackages: { '8.3': [] }, drivers: { '8.3': ['mysql', 'sqlite3'] } },
   composer: true,
   node: '20',
   pm2: true,
   pm2Startup: true,
   docker: true,
+  databases: { mysql: true, postgresql: false },
   apacheModules: ['rewrite', 'proxy_fcgi', 'setenvif', 'proxy', 'proxy_http', 'headers', 'ssl'],
   freeDiskBytes: 40e9,
   ...overrides

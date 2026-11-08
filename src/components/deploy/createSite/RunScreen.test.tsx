@@ -53,6 +53,8 @@ describe('Create site run screen', () => {
         folder: { path: '/var/www/shop', createdByRun: true },
         siteFile: { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SITE_SHA },
         phpPool: null,
+        database: null,
+        envFile: null,
         modulesEnabled: [],
         dnsRecords: [{ zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.example.com', type: 'A' }],
         httpsSiteFile: null,

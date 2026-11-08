@@ -1,7 +1,8 @@
 import type { CreatedDnsRecord, CreatedResources, RunRecord, SiteServer } from '@/types/createSite'
 import type { WebServerDriver } from '../webServer/driver'
+import { databaseLabel, removeDatabaseScript } from './database'
 import { removePoolScript } from './phpPool'
-import { ROOT_SHELL, removeCertificateScript, removeFolderScript, removeSiteScript, sitePaths } from './siteScripts'
+import { ROOT_SHELL, removeCertificateScript, removeEnvFileScript, removeFolderScript, removeSiteScript, sitePaths } from './siteScripts'
 import { assertLineage } from './validate'
 
 export type RemovalStep =
@@ -10,6 +11,8 @@ export type RemovalStep =
   | { kind: 'dns-record'; title: string; zoneId: string; recordId: string; name: string }
   | { kind: 'site-file'; title: string; path: string; command: string; script: string }
   | { kind: 'php-pool'; title: string; path: string; command: string; script: string }
+  | { kind: 'env-file'; title: string; path: string; command: string; script: string }
+  | { kind: 'database'; title: string; command: string; script: string }
   | { kind: 'folder'; title: string; path: string; command: string; script: string }
 
 function deploySiteSteps({ deploySite }: CreatedResources): RemovalStep[] {
@@ -53,6 +56,17 @@ function poolSteps({ phpPool }: CreatedResources, input: RunRecord['input']): Re
   return [{ kind: 'php-pool', title: `PHP pool ${phpPool.path}`, path: phpPool.path, command: ROOT_SHELL, script: removePoolScript(input, phpPool.sha256) }]
 }
 
+function envFileSteps({ envFile }: CreatedResources): RemovalStep[] {
+  if (envFile === null) return []
+  return [{ kind: 'env-file', title: `Env file ${envFile.path}`, path: envFile.path, command: ROOT_SHELL, script: removeEnvFileScript(envFile.path, envFile.sha256) }]
+}
+
+function databaseSteps({ database }: CreatedResources): RemovalStep[] {
+  if (database === null) return []
+  const title = database.engine === 'sqlite' ? `SQLite file ${database.path} and everything in it` : `${databaseLabel(database)}, with every table and row in it`
+  return [{ kind: 'database', title, command: ROOT_SHELL, script: removeDatabaseScript(database) }]
+}
+
 function folderSteps({ folder }: CreatedResources): RemovalStep[] {
   if (folder === null || !folder.createdByRun) return []
   return [{ kind: 'folder', title: `Folder ${folder.path}`, path: folder.path, command: ROOT_SHELL, script: removeFolderScript(folder.path) }]
@@ -67,6 +81,8 @@ export function removalSteps(record: RunRecord, driver: WebServerDriver): Remova
     ...siteFileStep(created.siteFile, server, driver),
     ...poolSteps(created, record.input),
     ...certificateSteps(created),
+    ...envFileSteps(created),
+    ...databaseSteps(created),
     ...folderSteps(created)
   ]
 }

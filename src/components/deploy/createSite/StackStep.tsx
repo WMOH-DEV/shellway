@@ -2,6 +2,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { StepHeading } from '@/components/ssl/https/StepHeading'
 import type { PhpTools, ServerTools } from '@/types/createSite'
+import { defaultDatabase } from '@/utils/createSite/database'
 import { TEMPLATES, usesPhp } from '@/utils/createSite/templates'
 import { toInt } from '../setup/SiteSections'
 import { TemplateCards } from './TemplateCards'
@@ -41,7 +42,7 @@ export function StackStep({ model, tools, serverLabel, serverName }: StackStepPr
   return (
     <div className="flex flex-col gap-5">
       <StepHeading title="Stack" subtitle="What the code is built with. It decides what gets installed, how the web server runs the site and which commands run on each deploy." />
-      <TemplateCards value={model.draft.template} tools={tools} serverLabel={serverLabel} serverName={serverName} onChange={(template) => model.patch({ template, commands: null })} />
+      <TemplateCards value={model.draft.template} tools={tools} serverLabel={serverLabel} serverName={serverName} onChange={(template) => model.patch({ template, commands: null, database: defaultDatabase(template, tools) })} />
       <TemplateSettings model={model} tools={tools} />
     </div>
   )

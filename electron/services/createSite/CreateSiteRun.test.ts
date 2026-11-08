@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CreateSiteInput, PlanActionId, RunRecord } from '../../../src/types/createSite'
+import type { CreateSiteSecrets, CreateSiteInput, PlanActionId, RunRecord } from '../../../src/types/createSite'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { FOLDER_CREATED, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
 import { APACHE_DEBIAN, NGINX, allTools, baseInput, type ServerCase } from '../../../src/utils/createSite/testFixtures'
@@ -35,6 +35,7 @@ function answer(command: string, stdin: string) {
   if (stdin.includes('/etc/letsencrypt/renewal/')) return ok(certificateOnServer ? 'shellway: certificate exists\n' : '')
   if (stdin.includes('sha256sum')) return stdin.includes('-le-ssl') && !httpsDone ? ok('shellway: not there\n') : ok(`${httpsDone ? SHA_AFTER_HTTPS : SHA}  file\n`)
   if (stdin.includes(FOLDER_CREATED)) return failAt === 'folder' ? failed('/var/www/shop already exists. Nothing was changed.') : ok(`${FOLDER_CREATED}\n`)
+  if (stdin.includes('CREATE DATABASE')) return failAt === 'database' ? failed('A database or user named shop already exists. Nothing was changed.') : ok()
   if (stdin.includes('pool.d')) return failAt === 'pool' ? failed('PHP-FPM rejected the new pool. It was removed.') : ok()
   if (stdin.includes('a2enmod')) return failAt === 'modules' ? failed('ERROR: Module x does not exist!') : ok()
   if (stdin.includes('undo_site')) return failAt === 'site' ? failed('nginx rejected the new site. It was removed.') : ok()
@@ -65,6 +66,7 @@ function makePorts(): CreateSitePorts {
       remove: vi.fn(async () => {}),
       keygen: vi.fn(async () => 'ssh-ed25519 AAAAexample shellway'),
       repoError: vi.fn(async () => null),
+      writeEnv: vi.fn(async () => {}),
       deployAndWait: vi.fn(async () => ({ id: 'd1', status: failAt === 'first-deploy' ? 'failed' : 'success', trigger: 'manual', commit: 'abc', started: 1, finished: 2, warnings: 0, note: failAt === 'first-deploy' ? 'health check failed' : '', subject: '' }) as const)
     },
     tools: vi.fn(async () => allTools({ apacheModules: ['proxy', 'proxy_http', 'headers', 'ssl'] })),
@@ -84,8 +86,12 @@ function makePorts(): CreateSitePorts {
 function startRun(c: ServerCase, input: Partial<CreateSiteInput> = {}): CreateSiteRun {
   const full = baseInput({ server: c.server, ...input })
   const plan = buildPlan(full, allTools({ apacheModules: ['proxy', 'proxy_http', 'headers', 'ssl'] }), c.driver)
-  return new CreateSiteRun(newRunRecord('run-1', 'session-1', full, plan, 1_800_000_000_000), ports, c.driver)
+  return new CreateSiteRun(newRunRecord('run-1', 'session-1', full, plan, 1_800_000_000_000), ports, c.driver, SECRETS)
 }
+
+const PASSWORD = 'Pw7kQ2mZx9RtLb4NcV8sHj3D'
+const APP_KEY = `base64:${'A'.repeat(42)}Q=`
+const SECRETS: CreateSiteSecrets = { dbPassword: PASSWORD, appKey: APP_KEY, envText: 'MAIL_MAILER=smtp\n' }
 
 const statuses = (record: RunRecord) => Object.fromEntries(record.steps.map((step) => [step.id, step.status]))
 
@@ -104,11 +110,14 @@ describe('CreateSiteRun', () => {
   it('runs every action once, in order, and records what it created', async () => {
     const record = await startRun(NGINX).run('start')
     expect(record.phase).toBe('done')
-    expect(Object.values(statuses(record))).toEqual(['done', 'done', 'done', 'done', 'done', 'done', 'done'])
+    expect(Object.keys(statuses(record))).toEqual(['folder', 'pool', 'site', 'database', 'dns', 'https', 'deploys', 'env', 'first-deploy'])
+    expect(Object.values(statuses(record)).every((status) => status === 'done')).toBe(true)
     expect(record.created).toEqual({
       folder: { path: '/var/www/shop', createdByRun: true },
       siteFile: { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA_AFTER_HTTPS },
       phpPool: { path: '/etc/php/8.3/fpm/pool.d/shop.conf', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      database: { engine: 'mysql', name: 'shop', user: 'shop' },
+      envFile: { path: '/var/www/shop-deploy/shared/.env', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
       modulesEnabled: [],
       dnsRecords: [
         { zoneId: 'zone-1', recordId: 'rec-1', name: 'shop.example.com', type: 'A' },
@@ -119,16 +128,46 @@ describe('CreateSiteRun', () => {
       deploySite: 'shop'
     })
     expect(record.deployKey).toBe('ssh-ed25519 AAAAexample shellway')
-    expect(ports.issue).toHaveBeenCalledWith({ blockId: 'shop.conf:1', names: ['shop.example.com', 'www.shop.example.com'], email: 'admin@example.com', redirect: true, staging: true }, ports.output)
+    expect(ports.issue).toHaveBeenCalledWith({ blockId: 'shop.conf:1', names: ['shop.example.com', 'www.shop.example.com'], email: 'admin@example.com', redirect: true, staging: true }, expect.any(Function))
     expect(calls.every((call) => call.command === ROOT_SHELL)).toBe(true)
-    for (const call of calls) expect(output).toContain(call.stdin.trimEnd().split('\n').map((line) => `  ${line}`).join('\n'))
+    for (const call of calls.filter((made) => !made.stdin.includes('CREATE USER'))) expect(output).toContain(call.stdin.trimEnd().split('\n').map((line) => `  ${line}`).join('\n'))
+  })
+
+  it('creates the database with the real password but never shows it in the output', async () => {
+    await startRun(NGINX).run('start')
+    const database = calls.find((call) => call.stdin.includes('CREATE USER'))
+    expect(database?.stdin).toContain(`IDENTIFIED BY '${PASSWORD}'`)
+    expect(output).toContain("IDENTIFIED BY '••••'")
+    expect(output).not.toContain(PASSWORD)
+    expect(output).not.toContain(APP_KEY)
+  })
+
+  it('writes the env file with the values Shellway manages on top of the user settings', async () => {
+    await startRun(NGINX).run('start')
+    const [name, content] = vi.mocked(ports.deploy.writeEnv).mock.calls[0]
+    expect(name).toBe('shop')
+    expect(content).toContain('MAIL_MAILER=smtp\n')
+    expect(content).toContain(`APP_KEY=${APP_KEY}\n`)
+    expect(content).toContain('APP_URL=https://shop.example.com\n')
+    expect(content).toContain('DB_HOST=localhost\n')
+    expect(content).toContain(`DB_PASSWORD=${PASSWORD}\n`)
+  })
+
+  it('refuses to create the database when the generated password is no longer known', async () => {
+    const full = baseInput({ server: NGINX.server })
+    const plan = buildPlan(full, allTools({ apacheModules: ['proxy', 'proxy_http', 'headers', 'ssl'] }), NGINX.driver)
+    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, plan, 1), ports, NGINX.driver, null).run('start')
+    expect(record.phase).toBe('failed')
+    expect(statuses(record).database).toBe('failed')
+    expect(record.error).toContain('no longer known')
+    expect(record.created.database).toBeNull()
   })
 
   it('installs PHP and composer first, as root, with time for apt and downloads', async () => {
-    const tools = allTools({ php: { installed: ['8.4'], installable: ['8.5'], missingPackages: { '8.4': [] } }, composer: false })
+    const tools = allTools({ php: { installed: ['8.4'], installable: ['8.5'], missingPackages: { '8.4': [] }, drivers: {} }, composer: false })
     ports.tools = vi.fn(async () => tools)
     const full = baseInput({ server: NGINX.server, phpVersion: '8.5' })
-    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver).run('start')
+    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver, SECRETS).run('start')
     expect(record.phase).toBe('done')
     expect(record.steps.map((step) => step.id).slice(0, 3)).toEqual(['php', 'composer', 'folder'])
     const execCalls = vi.mocked(ports.exec).mock.calls
@@ -138,11 +177,11 @@ describe('CreateSiteRun', () => {
   })
 
   it('stops at the PHP step when apt fails, before anything else is made', async () => {
-    const tools = allTools({ php: { installed: [], installable: ['8.5'], missingPackages: {} } })
+    const tools = allTools({ php: { installed: [], installable: ['8.5'], missingPackages: {}, drivers: {} } })
     ports.tools = vi.fn(async () => tools)
     ports.exec = vi.fn(async () => failed('E: Unable to locate package php8.5-fpm'))
     const full = baseInput({ server: NGINX.server, phpVersion: '8.5' })
-    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver).run('start')
+    const record = await new CreateSiteRun(newRunRecord('run-1', 'session-1', full, buildPlan(full, tools, NGINX.driver), 1), ports, NGINX.driver, SECRETS).run('start')
     expect(record.phase).toBe('failed')
     expect(statuses(record).php).toBe('failed')
     expect(record.error).toBe('E: Unable to locate package php8.5-fpm')
@@ -255,7 +294,7 @@ describe('CreateSiteRun', () => {
     expect(record.created.deploySite).toBe('shop')
   })
 
-  it.each<PlanActionId>(['folder', 'site', 'dns', 'https', 'deploys', 'first-deploy'])('stops at a failing %s step, keeps what was done, and runs nothing after it', async (step) => {
+  it.each<PlanActionId>(['folder', 'pool', 'site', 'database', 'dns', 'https', 'deploys', 'first-deploy'])('stops at a failing %s step, keeps what was done, and runs nothing after it', async (step) => {
     failAt = step
     const record = await startRun(NGINX).run('start')
     expect(record.phase).toBe('failed')
@@ -369,9 +408,12 @@ describe('removeCreated', () => {
     expect(record.created).toMatchObject({ folder: null, siteFile: null, phpPool: null, httpsSiteFile: null, dnsRecords: [], certificate: null, deploySite: null })
     expect(ports.deploy.remove).toHaveBeenCalledWith('shop')
     expect(ports.dns!.remove).toHaveBeenNthCalledWith(1, 'zone-1', 'rec-1')
-    expect(calls.map((call) => call.command)).toEqual([ROOT_SHELL, ROOT_SHELL, ROOT_SHELL, ROOT_SHELL, ROOT_SHELL])
+    expect(calls.map((call) => call.command)).toEqual(Array(7).fill(ROOT_SHELL))
     expect(calls[2].stdin).toContain("rm -f '/etc/php/8.3/fpm/pool.d/shop.conf'")
     expect(calls[3].stdin).toContain("certbot delete --non-interactive --cert-name 'shop.example.com'")
+    expect(calls[4].stdin).toContain("rm -f '/var/www/shop-deploy/shared/.env'")
+    expect(calls[5].stdin).toContain('DROP DATABASE IF EXISTS `shop`;')
+    expect(record.created).toMatchObject({ database: null, envFile: null })
     expect(calls[0].stdin).toContain("a2dissite 'shop-le-ssl'")
   })
 

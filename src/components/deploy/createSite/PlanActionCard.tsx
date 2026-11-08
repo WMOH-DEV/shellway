@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, ChevronDown, ChevronRight, Cloud, Code, Cpu, Folder, LayoutGrid, Lock, Package, Play, RefreshCw, Server, type LucideIcon } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, Cloud, Code, Cpu, Database, FileKey, Folder, LayoutGrid, Lock, Package, Play, RefreshCw, Server, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { PlanAction, PlanActionId, PlanChip } from '@/types/createSite'
 import { cn } from '@/utils/cn'
@@ -19,9 +19,11 @@ const ICONS: Record<PlanActionId, LucideIcon> = {
   pool: Cpu,
   modules: LayoutGrid,
   site: Server,
+  database: Database,
   dns: Cloud,
   https: Lock,
   deploys: Play,
+  env: FileKey,
   'first-deploy': Activity
 }
 

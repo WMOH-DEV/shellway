@@ -6,6 +6,8 @@ import { repoLabel } from '../deploy/siteDetail'
 import { issueCommand, stagingCommand } from '../ssl/https/issueCommands'
 import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
+import { createDatabaseScript, databaseLabel } from './database'
+import { envPathOf, managedEnv, maskedEnvLines } from './env'
 import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPool'
 import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
@@ -29,20 +31,22 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
   folder: 'Folder',
   pool: 'PHP pool',
   modules: 'Apache modules',
+  database: 'Database',
   dns: 'DNS record',
   https: 'HTTPS',
   deploys: 'Deploys',
+  env: 'Environment file',
   'first-deploy': 'First deploy and check'
 }
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, dns: 0.5, https: 1, deploys: 0.25, 'first-deploy': 3 }
+const MINUTES: Record<PlanActionId, number> = { php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
   const version = assertPhpVersion(input.phpVersion)
-  const need = phpNeed(tools.php, version)
+  const need = phpNeed(tools.php, version, input.database?.engine ?? null)
   switch (need.kind) {
     case 'none':
       return []
@@ -173,6 +177,15 @@ function siteAction(input: CreateSiteInput, template: SiteTemplate, driver: WebS
   })
 }
 
+function databaseActions(input: CreateSiteInput): PlanAction[] {
+  const { database } = input
+  if (database === null) return []
+  const note = database.engine === 'sqlite'
+    ? 'Kept in the shared folder, outside the releases, so it survives every deploy. Only the site user can read it.'
+    : `Refuses if the name is taken. The password is generated for this site and written only to its env file. Run as root with the ${database.engine === 'mysql' ? 'mysql' : 'psql'} client.`
+  return [action({ id: 'database', title: TITLES.database, summary: databaseLabel(database), chip: 'new', ...asRoot(createDatabaseScript(database, input.owner, null)), note })]
+}
+
 export function dnsRecords(input: Pick<CreateSiteInput, 'domain' | 'includeWww'>, serverIp: string, proxied: boolean): DnsRecordPlan[] {
   const [domain, www] = siteNames(input)
   const records: DnsRecordPlan[] = [{ type: 'A', name: domain, content: assertIpv4(serverIp), proxied }]
@@ -251,6 +264,19 @@ function deploysAction(input: CreateSiteInput, template: SiteTemplate): PlanActi
   })
 }
 
+function envActions(input: CreateSiteInput): PlanAction[] {
+  if (!input.env) return []
+  const managed = managedEnv(input, null)
+  return [action({
+    id: 'env',
+    title: TITLES.env,
+    summary: `${envPathOf(input.folder)}${managed.length > 0 ? ` · ${pluralize(managed.length, 'value')} set by Shellway` : ''}`,
+    chip: 'new',
+    config: maskedEnvLines(managed),
+    note: 'Your own settings from the environment section are written too. Secrets are hidden here. Only the site user can read the file, and every deploy uses it.'
+  })]
+}
+
 function firstDeployAction(input: CreateSiteInput): PlanAction {
   return action({
     id: 'first-deploy',
@@ -270,9 +296,11 @@ export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: We
     ...poolActions(input, template),
     ...modulesActions(input, template, tools),
     siteAction(input, template, driver),
+    ...databaseActions(input),
     dnsAction(input),
     httpsAction(input, driver),
     deploysAction(input, template),
+    ...envActions(input),
     firstDeployAction(input)
   ]
 }

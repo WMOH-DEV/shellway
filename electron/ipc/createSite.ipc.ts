@@ -43,7 +43,8 @@ function createSiteInput(value: unknown): CreateSiteInput {
   if (typeof value !== 'object' || value === null) throw new Error('Invalid site')
   const input = value as Record<string, unknown>
   for (const field of STRING_FIELDS) if (typeof input[field] !== 'string') throw new Error(`Invalid ${field}`)
-  if (typeof input.includeWww !== 'boolean' || typeof input.appPort !== 'number' || typeof input.pollMinutes !== 'number') throw new Error('Invalid site')
+  if (typeof input.includeWww !== 'boolean' || typeof input.env !== 'boolean' || typeof input.appPort !== 'number' || typeof input.pollMinutes !== 'number') throw new Error('Invalid site')
+  if (!Array.isArray(input.buildSteps) || !Array.isArray(input.activateSteps)) throw new Error('Invalid deploy commands')
   if (typeof input.server !== 'object' || input.server === null || typeof input.https !== 'object' || input.https === null) throw new Error('Invalid site')
   const https = input.https as Record<string, unknown>
   if (typeof https.email !== 'string' || typeof https.redirect !== 'boolean' || typeof https.staging !== 'boolean') throw new Error('Invalid HTTPS settings')
@@ -91,7 +92,7 @@ export function registerCreateSiteIPC(): void {
   })
   handle('create-site:context', (c) => requireService().context(str(c, 'connection')))
   handle('create-site:check-name', (c, domain) => requireService().checkName(str(c, 'connection'), str(domain, 'domain')))
-  handle('create-site:start', (c, s, input) => requireService().start(str(c, 'connection'), str(s, 'session'), createSiteInput(input)))
+  handle('create-site:start', (c, s, input, secrets) => requireService().start(str(c, 'connection'), str(s, 'session'), createSiteInput(input), secrets))
   handle('create-site:resume', (c, runId, mode) => requireService().resume(str(c, 'connection'), str(runId, 'run'), resumeMode(mode)))
   handle('create-site:stop', (runId) => requireService().stop(str(runId, 'run')))
   handle('create-site:remove', (c, runId) => requireService().remove(str(c, 'connection'), str(runId, 'run')))

@@ -13,7 +13,7 @@ const record = (overrides: Partial<RunRecord> = {}): RunRecord => ({
   server: { kind: 'nginx' },
   input: baseInput(),
   steps: [step('folder', 'done', 1_000, 2_000), step('site', 'pending', 2_000), step('dns', 'pending')],
-  created: { folder: null, siteFile: null, phpPool: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null },
+  created: { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null },
   phase: 'running',
   current: 'site',
   error: null,

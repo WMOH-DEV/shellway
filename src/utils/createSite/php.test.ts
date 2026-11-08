@@ -7,7 +7,7 @@ import { installComposerScript, installPhpScript, installableVersions, newestFir
 
 const syntaxOk = (script: string) => expect(spawnSync('sh', ['-n'], { input: script }).status).toBe(0)
 
-const PHP = { installed: ['8.4', '8.3'], installable: ['8.5', '8.2'], missingPackages: { '8.4': [], '8.3': ['php8.3-zip'] } }
+const PHP = { installed: ['8.4', '8.3'], installable: ['8.5', '8.2'], missingPackages: { '8.4': [], '8.3': ['php8.3-zip'] }, drivers: {} }
 
 describe('PHP versions', () => {
   it('sorts by number, not text, and drops anything that is not a version', () => {
@@ -24,6 +24,18 @@ describe('PHP versions', () => {
     expect(phpNeed(PHP, '8.5').kind).toBe('install')
     expect(phpNeed(PHP, '8.6')).toEqual({ kind: 'unavailable' })
     expect(phpNeed(PHP, '')).toEqual({ kind: 'unavailable' })
+  })
+
+  it('adds the database driver the site needs when the version lacks it', () => {
+    const php = { ...PHP, drivers: { '8.4': ['sqlite3'] } }
+    expect(phpNeed(php, '8.4', 'mysql')).toEqual({ kind: 'add', packages: ['php8.4-mysql'] })
+    expect(phpNeed(php, '8.4', 'postgresql')).toEqual({ kind: 'add', packages: ['php8.4-pgsql'] })
+    expect(phpNeed(php, '8.4', 'sqlite')).toEqual({ kind: 'none' })
+    expect(phpNeed(php, '8.4', null)).toEqual({ kind: 'none' })
+  })
+
+  it('does not guess a driver package when the server could not say which drivers it has', () => {
+    expect(phpNeed(PHP, '8.4', 'mysql')).toEqual({ kind: 'none' })
   })
 })
 

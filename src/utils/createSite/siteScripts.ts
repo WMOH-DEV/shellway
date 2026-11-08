@@ -196,6 +196,20 @@ export function removeFolderScript(folder: string): string {
   ].join('\n')
 }
 
+export function removeEnvFileScript(path: string, sha256: string): string {
+  const file = quote(path)
+  return [
+    'set -e',
+    `if [ ! -f ${file} ]; then echo ${quote(`${path} is already gone.`)}; exit 0; fi`,
+    `if [ "$(sha256sum ${file} | cut -d' ' -f1)" != ${quote(assertSha256(sha256))} ]; then`,
+    `  echo ${quote(`${path} changed after Shellway wrote it. It was left in place.`)} >&2`,
+    `  exit ${EXIT_REFUSED}`,
+    'fi',
+    `rm -f ${file}`,
+    ''
+  ].join('\n')
+}
+
 export const WEB_SERVER_CONFIG_DIRS = ['/etc/nginx', '/etc/apache2', '/etc/httpd']
 
 export function removeCertificateScript(lineage: string): string {

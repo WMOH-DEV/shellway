@@ -10,7 +10,7 @@ const A: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-a', name: 'shop.e
 const CNAME: CreatedDnsRecord = { zoneId: 'zone-1', recordId: 'rec-www', name: 'www.shop.example.com', type: 'CNAME' }
 const ORDER: RemovalStep['kind'][] = ['deploy-site', 'dns-record', 'site-file', 'certificate', 'folder']
 
-const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
+const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
 
 const siteFileFor = ({ server }: ServerCase): CreatedResources['siteFile'] => {
   if (server.kind === 'nginx') return { path: '/etc/nginx/sites-available/shop.conf', enabledLink: '/etc/nginx/sites-enabled/shop.conf', sha256: SHA }

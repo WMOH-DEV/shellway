@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { ArrowRight, Rocket } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import type { CloudflareZoneRef, CreateSiteInput, PlanAction } from '@/types/createSite'
+import type { CloudflareZoneRef, CreateSiteInput, CreateSiteSecrets, PlanAction } from '@/types/createSite'
 import { buildPlan, planMeta } from '@/utils/createSite/plan'
 import {
   WIZARD_STEPS,
+  commandsStepProblem,
   dnsInput,
   domainStepProblem,
   driverFor,
   siteStepProblem,
   stackStepProblem,
   toInput,
+  toSecrets,
   type ServerContext,
   type WizardStep
 } from '@/utils/createSite/wizard'
@@ -37,7 +39,7 @@ export interface SetupFlowProps {
   rechecking: boolean
   prefill?: CreateSitePrefill
   onCancel: () => void
-  onStart: (input: CreateSiteInput, plan: PlanAction[]) => void
+  onStart: (input: CreateSiteInput, secrets: CreateSiteSecrets, plan: PlanAction[]) => void
   onRecheck: () => void
 }
 
@@ -68,7 +70,7 @@ function stepProblem(step: FormStep, model: CreateSiteDraftModel, context: Serve
   switch (step) {
     case 'site': return siteStepProblem(model.draft, model.nameCheck, context)
     case 'stack': return stackStepProblem(model.draft, context)
-    case 'commands': return null
+    case 'commands': return commandsStepProblem(model.draft, context.tools)
     case 'domain': return domainStepProblem(model.draft)
   }
 }
@@ -131,6 +133,11 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
   const stepIndex = WIZARD_STEPS.indexOf(step)
   const details = stepDetails(step, { draft: model.draft, server: context.server, dns, planSteps: Array.isArray(plan) ? plan.length : null })
 
+  const startWith = (ready: PlanAction[]) => {
+    const built = input()
+    onStart(built, toSecrets(model.draft, built), ready)
+  }
+
   const back = () => (stepIndex === 0 ? onCancel() : setStep(WIZARD_STEPS[stepIndex - 1]))
   const next = () => setStep(WIZARD_STEPS[stepIndex + 1])
 
@@ -140,7 +147,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
       <div className="flex-1" />
       {startError && <span role="alert" className="max-w-[40%] truncate text-xs text-nd-error-fg" title={startError}>{startError}</span>}
       {isFormStep(step) && <NextActions step={step} problem={stepProblem(step, model, context)} onNext={next} />}
-      {plan !== null && <CreateActions plan={plan} fullSudo={context.fullSudo} starting={starting} rechecking={rechecking} onCreate={(ready) => onStart(input(), ready)} onRecheck={onRecheck} />}
+      {plan !== null && <CreateActions plan={plan} fullSudo={context.fullSudo} starting={starting} rechecking={rechecking} onCreate={(ready) => startWith(ready)} onRecheck={onRecheck} />}
     </>
   )
 
@@ -155,7 +162,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
     <WizardFrame subtitle={model.draft.domain || `folder, ${driver.label}, DNS, HTTPS and deploys, in one go`} onBack={onCancel} aside={aside} footer={footer}>
       {step === 'site' && <SiteStep model={model} tools={context.tools} />}
       {step === 'stack' && <StackStep model={model} tools={context.tools} serverLabel={driver.label} serverName={serverName} />}
-      {step === 'commands' && <CommandsStep model={model} connectionId={connectionId} server={context.server} />}
+      {step === 'commands' && <CommandsStep model={model} connectionId={connectionId} server={context.server} tools={context.tools} />}
       {step === 'domain' && <DomainStep model={model} zone={zone} dns={dns} />}
       {plan !== null && <ReviewStep plan={plan} fullSudo={context.fullSudo} onEdit={setStep} />}
     </WizardFrame>

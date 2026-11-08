@@ -16,6 +16,7 @@ export interface DeployPort {
   save: (config: SiteConfig) => Promise<void>
   remove: (name: string) => Promise<void>
   keygen: (name: string) => Promise<string>
+  writeEnv: (name: string, content: string) => Promise<void>
   repoError: (name: string) => Promise<string | null>
   deployAndWait: (name: string) => Promise<DeployRecord | null>
 }

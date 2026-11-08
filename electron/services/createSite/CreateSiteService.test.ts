@@ -10,13 +10,16 @@ import { CreateSiteService } from './CreateSiteService'
 import type { RunStore } from './RunStore'
 
 const INPUT = baseInput({ dns: { zoneId: 'z1', zoneName: 'example.com', serverIp: '203.0.113.10', proxied: true } })
+const SECRETS = { dbPassword: 'Pw7kQ2mZx9RtLb4NcV8sHj3D', appKey: `base64:${'A'.repeat(42)}Q=`, envText: '' }
 
 function fakeStore(records: RunRecord[]): RunStore {
   const runs = new Map(records.map((record) => [record.id, record]))
   return {
     get: (id: string) => runs.get(id) ?? null,
     forSession: (sessionId: string) => [...runs.values()].filter((run) => run.sessionId === sessionId),
-    save: vi.fn((record: RunRecord) => { runs.set(record.id, record) })
+    save: vi.fn((record: RunRecord) => { runs.set(record.id, record) }),
+    saveSecrets: vi.fn(),
+    secrets: () => null
   } as unknown as RunStore
 }
 
@@ -68,7 +71,7 @@ describe('CreateSiteService', () => {
 
   it('refuses to start when the web server is not the one the wizard saw', async () => {
     const service = makeService(fakeStore([]), { nginx: null, apache: { layout: 'debian' } as ServerFacts['apache'], serving: 'apache' })
-    await expect(service.start('c1', 'session-1', INPUT)).rejects.toThrow('The web server on this server changed')
+    await expect(service.start('c1', 'session-1', INPUT, SECRETS)).rejects.toThrow('The web server on this server changed')
   })
 
   it.each<[string, CreateSiteInput['dns']]>([
@@ -76,10 +79,24 @@ describe('CreateSiteService', () => {
     ['not on the connected account', { zoneId: 'z2', zoneName: 'example.com', serverIp: '203.0.113.10', proxied: true }],
     ['not on the connected account', { zoneId: 'z1', zoneName: 'example.org', serverIp: '203.0.113.10', proxied: true }]
   ])('refuses a zone that does not match the account: %s', async (message, dns) => {
-    await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, dns })).rejects.toThrow(message)
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, dns }, SECRETS)).rejects.toThrow(message)
+  })
+
+  it.each<[string, unknown]>([
+    ['password does not match', { ...SECRETS, dbPassword: null }],
+    ['password is not valid', { ...SECRETS, dbPassword: "x'; DROP USER root; --" }],
+    ['app key is not valid', { ...SECRETS, appKey: 'base64:short' }],
+    ['Invalid secrets', null]
+  ])('refuses secrets that do not fit the site: %s', async (message, secrets) => {
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', INPUT, secrets)).rejects.toThrow(message)
+  })
+
+  it('refuses a database whose names or path were not made from the site name', async () => {
+    const input = { ...INPUT, database: { engine: 'mysql' as const, name: 'mysql', user: 'root' } }
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', input, SECRETS)).rejects.toThrow('Invalid database settings')
   })
 
   it('refuses a domain outside the chosen zone', async () => {
-    await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, domain: 'shop.example.org' })).rejects.toThrow('is not in the example.com zone')
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, domain: 'shop.example.org' }, SECRETS)).rejects.toThrow('is not in the example.com zone')
   })
 })

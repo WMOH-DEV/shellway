@@ -1,10 +1,12 @@
-import type { PhpTools } from '@/types/createSite'
+import type { DatabaseEngine, PhpTools } from '@/types/createSite'
 import { EXIT_REFUSED } from '../ssl/originCa/exitCodes'
 import { assertPhpVersion } from './validate'
 
 export const REQUIRED_PHP_SUFFIXES = ['fpm', 'cli', 'mbstring', 'xml', 'curl', 'zip']
 
-const NEW_PHP_SUFFIXES = [...REQUIRED_PHP_SUFFIXES, 'bcmath', 'intl', 'mysql', 'pgsql', 'sqlite3']
+export const DRIVER_SUFFIXES: Record<DatabaseEngine, string> = { mysql: 'mysql', postgresql: 'pgsql', sqlite: 'sqlite3' }
+
+const NEW_PHP_SUFFIXES = [...REQUIRED_PHP_SUFFIXES, 'bcmath', 'intl', ...Object.values(DRIVER_SUFFIXES)]
 
 const OLDEST_INSTALLABLE = '8.2'
 
@@ -33,9 +35,15 @@ export const newPhpPackages = (version: string): string[] => packagesFor(version
 
 export type PhpNeed = { kind: 'none' } | { kind: 'install'; packages: string[] } | { kind: 'add'; packages: string[] } | { kind: 'unavailable' }
 
-export function phpNeed(php: PhpTools, version: string): PhpNeed {
+function missingDriver(php: PhpTools, version: string, engine: DatabaseEngine | null): string[] {
+  const drivers = php.drivers[version]
+  if (engine === null || drivers === undefined || drivers.includes(DRIVER_SUFFIXES[engine])) return []
+  return packagesFor(version, [DRIVER_SUFFIXES[engine]])
+}
+
+export function phpNeed(php: PhpTools, version: string, engine: DatabaseEngine | null = null): PhpNeed {
   if (php.installed.includes(version)) {
-    const missing = php.missingPackages[version] ?? []
+    const missing = [...(php.missingPackages[version] ?? []), ...missingDriver(php, version, engine)]
     return missing.length === 0 ? { kind: 'none' } : { kind: 'add', packages: missing }
   }
   return php.installable.includes(version) ? { kind: 'install', packages: newPhpPackages(version) } : { kind: 'unavailable' }
