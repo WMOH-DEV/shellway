@@ -8,8 +8,8 @@ import { localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } f
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
 import { siteNames } from '../../../src/utils/createSite/templates/shared'
 import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
-import { createDatabaseScript } from '../../../src/utils/createSite/database'
-import { envFileText, envPathOf } from '../../../src/utils/createSite/env'
+import { DATABASE_CHECKED, createDatabaseScript } from '../../../src/utils/createSite/database'
+import { envFileText, envPathOf, privateEnvFileScript } from '../../../src/utils/createSite/env'
 import { jobFiles } from '../../../src/utils/createSite/laravelJobs'
 import { redact, usableSecrets } from '../server/StepOutput'
 import { EXIT_NGINX_TEST, EXIT_REFUSED, EXIT_RELOAD } from '../../../src/utils/ssl/originCa/scripts'
@@ -121,7 +121,10 @@ export class CreateSiteRun {
 
   private async prepareRepo(): Promise<void> {
     const { newRepo, repoUrl } = this.input
-    if (newRepo === null || this.record.created.repo !== null) return
+    const recorded = this.record.created.repo
+    if (newRepo === null) return
+    if (recorded !== null && recorded.url !== repoUrl) throw this.repoMismatch(recorded.url)
+    if (recorded !== null) return
     const { project } = this.ports
     if (newRepo.kind === 'empty') {
       this.say(`git ls-remote --heads ${repoUrl}\n`)
@@ -139,7 +142,11 @@ export class CreateSiteRun {
     this.say(`GitHub: create ${newRepo.private ? 'private' : 'public'} repository ${label}\n`)
     const created = await project.createGithubRepo(newRepo.name, newRepo.private)
     this.created({ repo: { url: created.sshUrl, createdByRun: true } })
-    if (created.sshUrl !== repoUrl) throw new Error(`GitHub created ${created.sshUrl}, not ${repoUrl}. The saved token belongs to another account. Remove what this run created, then start again.`)
+    if (created.sshUrl !== repoUrl) throw this.repoMismatch(created.sshUrl)
+  }
+
+  private repoMismatch(url: string): Error {
+    return new Error(`GitHub created ${url}, not ${this.input.repoUrl}. The saved token belongs to another account. Remove what this run created, then start again.`)
   }
 
   private get localProject(): string | null {
@@ -254,10 +261,8 @@ export class CreateSiteRun {
     const database = this.input.database
     if (database === null) return
     const script = createDatabaseScript(database, this.input.owner, this.neededSecrets().dbPassword)
-    const recordedBefore = this.record.created.database !== null
-    if (!recordedBefore) this.created({ database })
     const result = await this.rootScript(script, ROOT_TIMEOUT_MS, action.script ?? script)
-    if (result.code === EXIT_REFUSED && !recordedBefore) this.created({ database: null })
+    if (this.record.created.database === null && result.stdout.includes(DATABASE_CHECKED)) this.created({ database })
     this.mustSucceed(result, 'Creating the database failed.')
   }
 
@@ -266,11 +271,25 @@ export class CreateSiteRun {
     return dir === null ? '' : ((await this.ports.project.readFile(dir, '.env.example')) ?? '')
   }
 
+  private assertOwnFolder(what: string): void {
+    if (this.record.created.folder !== null) return
+    throw new Error(`This run did not create ${this.input.folder}, so it will not ${what} there. Remove what this run created and use another site name, or set the site up in the Deploy tab.`)
+  }
+
   private async writeEnvFile(): Promise<void> {
+    this.assertOwnFolder('write the env file')
     const content = envFileText(this.input, this.neededSecrets(), await this.envBase())
     const path = envPathOf(this.input.folder)
+    await this.makeEnvPrivate()
     this.created({ envFile: { path, sha256: sha256Of(content) } })
     await this.ports.deploy.writeEnv(assertSiteName(this.input.siteName), content)
+  }
+
+  private async makeEnvPrivate(): Promise<void> {
+    const script = privateEnvFileScript(this.input.folder)
+    this.say(`$ ${PROJECT_SHELL}\n${script.trimEnd().split('\n').map((line) => `  ${line}`).join('\n')}\n`)
+    const result = await this.ports.exec(PROJECT_SHELL, { stdin: script, timeoutMs: SHORT_TIMEOUT_MS })
+    if (result.code !== 0) throw new Error(lastLine(result.stderr) || 'Could not make the env file readable only by the site user.')
   }
 
   private async createJobs(action: PlanAction): Promise<void> {
@@ -363,6 +382,7 @@ export class CreateSiteRun {
   }
 
   private async addDeploySite(): Promise<void> {
+    this.assertOwnFolder('deploy')
     const config = deploySiteConfig(this.input)
     const { deploy } = this.ports
     if (this.record.created.deploySite !== config.name) {

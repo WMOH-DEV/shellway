@@ -3,7 +3,8 @@ import { setEnvKeys, type EnvEntry } from '../server/databases/env'
 import { DB_PASSWORD, MASK } from '../server/databases/identifiers'
 import { databaseEnv } from './database'
 import { deployRootOf } from './siteScripts'
-import { assertDomain, assertSiteName } from './validate'
+import { quote } from '../server/jobs/shell'
+import { assertDomain, assertFolder, assertSiteName } from './validate'
 
 type EnvFacts = Pick<CreateSiteInput, 'template' | 'siteName' | 'domain' | 'database'>
 
@@ -15,6 +16,11 @@ const SECRET_KEYS: ReadonlySet<string> = new Set(['APP_KEY', 'DB_PASSWORD'])
 export const stackUsesEnv = (template: TemplateId): boolean => ENV_STACKS.has(template)
 
 export const envPathOf = (folder: string): string => `${deployRootOf(folder)}/shared/.env`
+
+export function privateEnvFileScript(folder: string): string {
+  const file = quote(envPathOf(assertFolder(folder)))
+  return ['set -e', `[ -e ${file} ] || (umask 077 && : > ${file})`, `chmod 600 ${file}`, ''].join('\n')
+}
 
 export const isSecretKey = (key: string): boolean => SECRET_KEYS.has(key)
 

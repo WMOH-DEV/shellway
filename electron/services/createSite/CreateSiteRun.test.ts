@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CreateSiteSecrets, CreateSiteInput, PlanActionId, RunRecord } from '../../../src/types/createSite'
+import { DATABASE_CHECKED } from '../../../src/utils/createSite/database'
+import { privateEnvFileScript } from '../../../src/utils/createSite/env'
 import { buildPlan } from '../../../src/utils/createSite/plan'
 import { FOLDER_CREATED, PROJECT_SHELL, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
 import { APACHE_DEBIAN, NGINX, allTools, baseInput, type ServerCase } from '../../../src/utils/createSite/testFixtures'
@@ -36,7 +38,7 @@ function answer(command: string, stdin: string) {
   if (stdin.includes('sha256sum')) return stdin.includes('-le-ssl') && !httpsDone ? ok('shellway: not there\n') : ok(`${httpsDone ? SHA_AFTER_HTTPS : SHA}  file\n`)
   if (stdin.includes(FOLDER_CREATED)) return failAt === 'folder' ? failed('/var/www/shop already exists. Nothing was changed.') : ok(`${FOLDER_CREATED}\n`)
   if (stdin.includes('/etc/cron.d/')) return failAt === 'jobs' ? failed('/etc/cron.d/shellway-shop already exists. Nothing was changed.') : ok()
-  if (stdin.includes('CREATE DATABASE')) return failAt === 'database' ? failed('A database or user named shop already exists. Nothing was changed.') : ok()
+  if (stdin.includes('CREATE DATABASE')) return failAt === 'database' ? failed('A database or user named shop already exists. Nothing was changed.') : ok(`${DATABASE_CHECKED}\n`)
   if (stdin.includes('pool.d')) return failAt === 'pool' ? failed('PHP-FPM rejected the new pool. It was removed.') : ok()
   if (stdin.includes('a2enmod')) return failAt === 'modules' ? failed('ERROR: Module x does not exist!') : ok()
   if (stdin.includes('undo_site')) return failAt === 'site' ? failed('nginx rejected the new site. It was removed.') : ok()
@@ -147,7 +149,7 @@ describe('CreateSiteRun', () => {
     })
     expect(record.deployKey).toBe('ssh-ed25519 AAAAexample shellway')
     expect(ports.issue).toHaveBeenCalledWith({ blockId: 'shop.conf:1', names: ['shop.example.com', 'www.shop.example.com'], email: 'admin@example.com', redirect: true, staging: true }, expect.any(Function))
-    expect(calls.every((call) => call.command === ROOT_SHELL)).toBe(true)
+    expect(calls.filter((call) => call.command !== ROOT_SHELL)).toEqual([{ command: PROJECT_SHELL, stdin: privateEnvFileScript('/var/www/shop') }])
     for (const call of calls.filter((made) => !made.stdin.includes('CREATE USER'))) expect(output).toContain(call.stdin.trimEnd().split('\n').map((line) => `  ${line}`).join('\n'))
   })
 
@@ -169,6 +171,34 @@ describe('CreateSiteRun', () => {
     expect(content).toContain('APP_URL=https://shop.example.com\n')
     expect(content).toContain('DB_HOST=localhost\n')
     expect(content).toContain(`DB_PASSWORD=${PASSWORD}\n`)
+  })
+
+  it('makes the env file readable only by the site user before writing secrets into it', async () => {
+    await startRun(NGINX).run('start')
+    expect(privateEnvFileScript('/var/www/shop')).toBe("set -e\n[ -e '/var/www/shop-deploy/shared/.env' ] || (umask 077 && : > '/var/www/shop-deploy/shared/.env')\nchmod 600 '/var/www/shop-deploy/shared/.env'\n")
+    const privateAt = calls.findIndex((call) => call.command === PROJECT_SHELL)
+    expect(privateAt).toBeGreaterThan(-1)
+    expect(vi.mocked(ports.deploy.writeEnv)).toHaveBeenCalledTimes(1)
+  })
+
+  it('records the database only once the server said its name is free', async () => {
+    failAt = 'database'
+    const record = await startRun(NGINX).run('start')
+    expect(record.created.database).toBeNull()
+    ports.exec = vi.fn(async () => { throw new Error('Connection lost') })
+    const retried = await startRun(NGINX).run('start')
+    expect(retried.created.database).toBeNull()
+  })
+
+  it('will not write the env file or deploy into a folder this run did not create', async () => {
+    failAt = 'folder'
+    const run = startRun(NGINX)
+    await run.run('start')
+    const record = await run.run('continue')
+    expect(record.phase).toBe('failed')
+    expect(record.error).toContain('This run did not create /var/www/shop')
+    expect(ports.deploy.writeEnv).not.toHaveBeenCalled()
+    expect(ports.deploy.save).not.toHaveBeenCalled()
   })
 
   it('refuses to create the database when the generated password is no longer known', async () => {
@@ -475,12 +505,17 @@ describe('CreateSiteRun with a new project', () => {
     expect(record.created.repo).toBeNull()
   })
 
-  it('stops when GitHub made the repository under another account, keeping it in the record', async () => {
+  it('stops when GitHub made the repository under another account, keeping it in the record, and again on Retry', async () => {
     vi.mocked(ports.project.createGithubRepo).mockResolvedValue({ sshUrl: 'git@github.com:other/shop.git', httpsUrl: 'https://github.com/other/shop.git' })
-    const record = await startRun(NGINX, GITHUB_PROJECT).run('start')
+    const run = startRun(NGINX, GITHUB_PROJECT)
+    const record = await run.run('start')
     expect(record.phase).toBe('failed')
     expect(record.error).toContain('another account')
     expect(record.created.repo).toEqual({ url: 'git@github.com:other/shop.git', createdByRun: true })
+    const retried = await run.run('retry')
+    expect(retried.error).toContain('another account')
+    expect(ports.project.createGithubRepo).toHaveBeenCalledTimes(1)
+    expect(ports.project.push).not.toHaveBeenCalled()
   })
 
   it('removes the half-made folder on this PC when the commit fails, and records no local copy', async () => {

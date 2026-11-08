@@ -203,6 +203,7 @@ export class CreateSiteService {
   private async checkAgainstServer(connectionId: string, input: CreateSiteInput): Promise<void> {
     const { facts } = await this.deps.ssl.service(connectionId).readConfig()
     if (!sameServer(serverOf(facts), input.server)) throw new Error('The web server on this server changed. Open Create site again.')
+    if (facts.user !== input.owner) throw new Error(`The site owner must be the user Shellway is logged in as (${facts.user}).`)
     if (input.dns === null || input.dns.zoneId === null) return
     const { zoneId, zoneName } = input.dns
     if (!ZONE_ID.test(zoneId)) throw new Error('Invalid Cloudflare zone')

@@ -3,7 +3,7 @@ import type { DbEngine } from './types'
 export const DB_NAME = /^[A-Za-z0-9_]{1,64}$/
 export const DB_USER = /^[A-Za-z0-9_]{1,32}$/
 export const DB_HOST = /^[A-Za-z0-9.%_:-]{1,255}$/
-export const DB_PASSWORD = /^[A-Za-z0-9]{16,64}$/
+export const DB_PASSWORD = /^[A-Za-z0-9_]{16,64}$/
 export const ENGINES: readonly DbEngine[] = ['mysql', 'postgresql']
 
 export const MASK = '••••'

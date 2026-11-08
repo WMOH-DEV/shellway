@@ -55,6 +55,8 @@ export function siteDatabase(choice: DatabaseChoice, input: Pick<CreateSiteInput
 export const databaseLabel = (database: SiteDatabase): string =>
   database.engine === 'sqlite' ? `SQLite file ${database.path}` : `${engineLabel(database.engine)} database ${database.name}, user ${database.user}`
 
+export const DATABASE_CHECKED = 'shellway: database name is free'
+
 const refuse = (message: string): string[] => [`  echo ${quote(message)} >&2`, `  exit ${EXIT_REFUSED}`]
 
 const EXISTS_QUERY: Record<ServerDatabaseEngine, (name: string, user: string) => string> = {
@@ -68,6 +70,12 @@ function createStatements(engine: ServerDatabaseEngine, name: string, user: stri
   return [dialect.createDatabase(name), dialect.createUser(user, DB_HOST, password), dialect.grantAll(name, user, DB_HOST)]
 }
 
+function dropStatements(engine: ServerDatabaseEngine, name: string, user: string): string[] {
+  return engine === 'mysql'
+    ? [`DROP DATABASE IF EXISTS \`${name}\`;`, `DROP USER IF EXISTS '${user}'@'${DB_HOST}';`]
+    : [`DROP DATABASE IF EXISTS "${name}";`, `DROP ROLE IF EXISTS "${user}";`]
+}
+
 function createServerDatabaseScript(engine: ServerDatabaseEngine, name: string, user: string, password: string): string {
   return [
     'set -e',
@@ -76,7 +84,16 @@ function createServerDatabaseScript(engine: ServerDatabaseEngine, name: string, 
     'if [ "$found" != 0 ]; then',
     ...refuse(`A database or user named ${name === user ? name : `${name} or ${user}`} already exists. Nothing was changed.`),
     'fi',
-    sqlScript(engine, createStatements(engine, name, user, password))
+    `echo ${quote(DATABASE_CHECKED)}`,
+    'if ! {',
+    sqlScript(engine, createStatements(engine, name, user, password)).trimEnd(),
+    '}; then',
+    '  set +e',
+    sqlScript(engine, dropStatements(engine, name, user)).trimEnd(),
+    `  echo ${quote(`The database server refused to create ${name}. What was made was removed again.`)} >&2`,
+    '  exit 1',
+    'fi',
+    ''
   ].join('\n')
 }
 
@@ -87,6 +104,7 @@ function createSqliteScript(path: string, owner: string): string {
     `if [ -e ${file} ] || [ -L ${file} ]; then`,
     ...refuse(`${path} already exists. Nothing was changed.`),
     'fi',
+    `echo ${quote(DATABASE_CHECKED)}`,
     `(umask 077 && : > ${file})`,
     `chown ${quote(`${assertOwner(owner)}:`)} ${file}`,
     ''
@@ -104,11 +122,7 @@ export function removeDatabaseScript(database: SiteDatabase): string {
     const file = quote(database.path)
     return ['set -e', `rm -f ${file} ${quote(`${database.path}-wal`)} ${quote(`${database.path}-shm`)}`, ''].join('\n')
   }
-  const { name, user } = database
-  const statements = database.engine === 'mysql'
-    ? [`DROP DATABASE IF EXISTS \`${name}\`;`, `DROP USER IF EXISTS '${user}'@'${DB_HOST}';`]
-    : [`DROP DATABASE IF EXISTS "${name}";`, `DROP ROLE IF EXISTS "${user}";`]
-  return ['set -e', 'cd /tmp', sqlScript(database.engine, statements)].join('\n')
+  return ['set -e', 'cd /tmp', sqlScript(database.engine, dropStatements(database.engine, database.name, database.user))].join('\n')
 }
 
 export function databaseEnv(database: SiteDatabase | null, password: string): [string, string][] {

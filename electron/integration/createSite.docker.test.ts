@@ -118,6 +118,7 @@ describe.skipIf(!ENABLED)('Create site on a Docker server', () => {
     const env = asRoot('cat /var/www/itlaravel-deploy/shared/.env\n')
     expect(env).toContain('MAIL_MAILER=log\n')
     expect(env).toContain('DB_DATABASE=itlaravel\n')
+    expect(asRoot('stat -c %a /var/www/itlaravel-deploy/shared/.env\n').trim()).toBe('600')
     expect(asRoot('cat /etc/cron.d/shellway-itlaravel\n')).toContain('artisan schedule:run')
     expect(asRoot('systemctl is-active shellway-itlaravel-queue.service\n').trim()).toBe('active')
 

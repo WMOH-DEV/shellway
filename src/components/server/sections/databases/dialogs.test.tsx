@@ -32,9 +32,9 @@ const site: SiteEnv = {
 const input = (placeholder: string) => screen.getByPlaceholderText(placeholder)
 
 describe('generatePassword', () => {
-  it('makes 24 unambiguous letters and digits, different each time', () => {
+  it('makes 24 unambiguous letters and digits with one underscore, different each time', () => {
     const first = generatePassword()
-    expect(first).toMatch(/^[A-HJ-NP-Za-km-z2-9]{24}$/)
+    expect(first).toMatch(/^(?=[^_]*_[^_]*$)[A-HJ-NP-Za-km-z2-9_]{24}$/)
     expect(generatePassword()).not.toBe(first)
   })
 })

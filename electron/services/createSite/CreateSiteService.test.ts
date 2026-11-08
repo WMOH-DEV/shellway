@@ -26,7 +26,7 @@ function fakeStore(records: RunRecord[]): RunStore {
 
 function makeService(store: RunStore, facts: Partial<ServerFacts> = {}) {
   const ssl = {
-    service: () => ({ readConfig: async () => ({ facts: { nginx: '1.24', apache: null, serving: 'nginx', ...facts }, blocks: [] }) }),
+    service: () => ({ readConfig: async () => ({ facts: { nginx: '1.24', apache: null, serving: 'nginx', user: 'deploy', ...facts }, blocks: [] }) }),
     cloudflareStatus: async () => ({ saved: true, error: null, zones: [{ id: 'z1', name: 'example.com' }], permissions: [] }),
     dnsClient: () => null
   } as unknown as SslCoordinator
