@@ -26,6 +26,7 @@ describe('findHint', () => {
     ['pm2 errored', input('pm2', 'admin', []), 'pm2-errored', 'logs'],
     ['start limit', input('systemd', 'acme-api', ['acme-api.service: Start request repeated too quickly.']), 'start-limit', 'control'],
     ['fail2ban without an SSH log file', input('systemd', 'fail2ban', ['fail2ban [52]: ERROR   Failed during configuration: Have not found any log file for sshd jail']), 'fail2ban-no-log', 'route'],
+    ['out of open files', input('systemd', 'systemd-networkd-wait-online', ['systemd-networkd-wait-online[801977]: Could not create manager: Too many open files']), 'open-files', null],
     ['permission denied on a folder', input('systemd', 'acme-api', ['open /srv/acme/storage/app.sock: Permission denied']), 'permission-denied', null]
   ])('%s', (_name, hintInput, id, fixKind) => {
     const hint = findHint(hintInput)

@@ -15,7 +15,13 @@ const byName = (name: string) => units().find((unit) => unit.name === name)
 
 describe('parseSystemd', () => {
   it('keeps useful units, failed ones and installed stopped ones, and drops noise', () => {
-    expect(units().map((unit) => unit.name)).toEqual(['acme-api', 'mysql', 'nginx', 'php8.2-fpm', 'php8.3-fpm', 'redis-server', 'ssh'])
+    expect(units().map((unit) => unit.name)).toEqual(['acme-api', 'mysql', 'nginx', 'php8.2-fpm', 'php8.3-fpm', 'redis-server', 'ssh', 'systemd-networkd-wait-online'])
+  })
+
+  it('reads systemctl show records whose Id line comes after Type, memory and CPU', () => {
+    expect(byName('systemd-networkd-wait-online')).toMatchObject({ active: 'failed', oneshot: true, sinceSeconds: 259201 })
+    expect(byName('nginx')?.oneshot).toBe(false)
+    expect(byName('redis-server')).toMatchObject({ memoryBytes: null, oneshot: false })
   })
 
   it('computes CPU from two samples and memory from MemoryCurrent', () => {

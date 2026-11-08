@@ -38,6 +38,14 @@ describe('buildServiceList', () => {
     expect(php?.verbs).toEqual(['start', 'enable'])
   })
 
+  it('offers Clear for a boot-only unit that failed, and keeps Start in the menu', () => {
+    const facts = { [PROBE.systemd]: ok({ installed: true, units: [unit('systemd-networkd-wait-online', 'failed', 'failed', { oneshot: true }), unit('redis-server', 'failed', 'failed', { oneshot: false })] }) }
+    const [waitOnline, redis] = ['systemd:systemd-networkd-wait-online', 'systemd:redis-server'].map((id) => buildServiceList(facts).find((item) => item.id === id)!)
+    expect(waitOnline.verbs).toEqual(['reset-failed', 'start', 'disable'])
+    expect(primaryVerb(waitOnline)).toBe('reset-failed')
+    expect(primaryVerb(redis)).toBe('start')
+  })
+
   it('filters by kind, failed and search text', () => {
     expect(filterCounts(items)).toEqual({ all: 7, failed: 3, systemd: 3, supervisor: 2, pm2: 1, container: 1 })
     expect(filterServices(items, 'failed', '').map((item) => item.name)).toEqual(['redis-server', 'queue', 'admin'])

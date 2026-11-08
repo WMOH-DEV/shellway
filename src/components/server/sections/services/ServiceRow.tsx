@@ -17,9 +17,11 @@ const STATE_TONE: Record<ServiceState, KitTone> = { running: 'success', starting
 
 const STATE_TEXT: Record<ServiceState, string> = { running: 'text-nd-text-secondary', starting: 'text-nd-info-fg', stopped: 'text-nd-text-muted', failed: 'text-nd-error-fg' }
 
-export const VERB_LABEL: Record<ControlVerb, string> = { start: 'Start', stop: 'Stop', restart: 'Restart', reload: 'Reload', enable: 'Start on boot', disable: 'Do not start on boot' }
+export const VERB_LABEL: Record<ControlVerb, string> = { start: 'Start', stop: 'Stop', restart: 'Restart', reload: 'Reload', enable: 'Start on boot', disable: 'Do not start on boot', 'reset-failed': 'Clear' }
 
-const RUN_VERBS: readonly ControlVerb[] = ['start', 'reload', 'restart', 'stop']
+const CLEAR_TITLE = 'This runs once, at boot. Clear removes the failed mark without running it again.'
+
+const RUN_VERBS: readonly ControlVerb[] = ['reset-failed', 'start', 'reload', 'restart', 'stop']
 
 interface ServiceRowProps {
   item: ServiceItem
@@ -43,7 +45,7 @@ function ActionsCell({ item, onVerb, onLogs }: Pick<ServiceRowProps, 'item' | 'o
   const others = RUN_VERBS.filter((verb) => verb !== primary && item.verbs.includes(verb))
   return (
     <span className="flex items-center justify-end gap-1">
-      <Button size="sm" variant={item.state === 'failed' ? 'primary' : 'secondary'} onClick={() => onVerb(primary)}>{VERB_LABEL[primary]}</Button>
+      <Button size="sm" variant={item.state === 'failed' ? 'primary' : 'secondary'} title={primary === 'reset-failed' ? CLEAR_TITLE : undefined} onClick={() => onVerb(primary)}>{VERB_LABEL[primary]}</Button>
       <Button size="sm" variant="secondary" onClick={onLogs}>Logs</Button>
       {others.length > 0 ? (
         <Dropdown

@@ -9,6 +9,7 @@ acme-api.service           loaded    active   running Acme API
 apt-daily.service          loaded    inactive dead    Daily apt download activities
 ghost.service              not-found inactive dead    ghost.service
 ssh.service                loaded    active   running OpenBSD Secure Shell server
+● systemd-networkd-wait-online.service loaded failed failed Wait for Network to be Configured
 @@files
 nginx.service                  enabled         enabled
 php8.3-fpm.service             enabled         enabled
@@ -21,30 +22,40 @@ systemd-journald.service       static          -
 ssh.service                    enabled         enabled
 @@uptime 2160000.50
 @@sample 1000000000000
-Id=nginx.service
+Type=forking
 MemoryCurrent=39845888
 CPUUsageNSec=1000000000
+Id=nginx.service
 ActiveEnterTimestampMonotonic=60000000
 InactiveEnterTimestampMonotonic=0
 
-Id=redis-server.service
+Type=notify
 MemoryCurrent=[not set]
 CPUUsageNSec=[not set]
+Id=redis-server.service
 ActiveEnterTimestampMonotonic=0
 InactiveEnterTimestampMonotonic=2159880000000
 
-Id=php8.3-fpm.service
+Type=notify
 MemoryCurrent=18446744073709551615
 CPUUsageNSec=5000000000
+Id=php8.3-fpm.service
 ActiveEnterTimestampMonotonic=60000000
 InactiveEnterTimestampMonotonic=0
 
-@@sample 1001000000000
-Id=nginx.service
-CPUUsageNSec=1004000000
-
-Id=redis-server.service
+Type=oneshot
+MemoryCurrent=[not set]
 CPUUsageNSec=[not set]
+Id=systemd-networkd-wait-online.service
+ActiveEnterTimestampMonotonic=0
+InactiveEnterTimestampMonotonic=1900800000000
 
-Id=php8.3-fpm.service
+@@sample 1001000000000
+CPUUsageNSec=1004000000
+Id=nginx.service
+
+CPUUsageNSec=[not set]
+Id=redis-server.service
+
 CPUUsageNSec=5031000000
+Id=php8.3-fpm.service

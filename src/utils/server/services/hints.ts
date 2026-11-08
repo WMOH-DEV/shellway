@@ -100,6 +100,13 @@ const RULES: HintRule[] = [
     }
   },
   {
+    id: 'open-files',
+    match: (input, log) => {
+      if (!/Too many open files/i.test(log)) return null
+      return { text: `The server had run out of open files when ${input.item.name} failed. Another program was most likely holding too many files open at that moment, so look at what ran at that time.`, fix: null }
+    }
+  },
+  {
     id: 'redis-log',
     match: (input, log) => {
       if (!/^redis(-server)?$/.test(input.item.name) || !/Can't open the log file/i.test(log)) return null
