@@ -75,10 +75,44 @@ describe('Create site, step 1', () => {
     const pointing = { ...FREE_NAME, records: [{ type: 'A', name: 'shop.example.com', content: '203.0.113.10' }] }
     const { user } = setup({ 'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: pointing }) })
     await enterDomain(user)
-    await user.click(screen.getByRole('switch', { name: /Also www/ }))
     expect(await screen.findByRole('status')).toHaveTextContent('Already points at this server (A shop.example.com → 203.0.113.10) · kept as it is')
     await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
     expect(continueButton()).toBeEnabled()
+  })
+
+  it('adds www by default only to a bare domain, and keeps what the user chose', async () => {
+    const { user } = setup()
+    const www = () => screen.getByRole('switch', { name: /Also www/ })
+    await enterDomain(user)
+    expect(www()).not.toBeChecked()
+    await user.clear(screen.getByLabelText('Domain'))
+    await enterDomain(user, 'example.com')
+    expect(www()).toBeChecked()
+    await user.click(www())
+    await user.clear(screen.getByLabelText('Domain'))
+    await enterDomain(user, 'shop.com')
+    expect(www()).not.toBeChecked()
+  })
+
+  it('adds www to a bare domain Cloudflare knows, even with a two-part ending', async () => {
+    const zone = { ...FREE_NAME, zone: { id: 'zone-2', name: 'example.co.uk' } }
+    const { user } = setup({ 'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: zone }) })
+    await enterDomain(user, 'example.co.uk')
+    await waitFor(() => expect(screen.getByRole('switch', { name: /Also www/ })).toBeChecked())
+  })
+
+  it('warns that a proxied name two levels under the zone fails at Cloudflare', async () => {
+    const { user } = setup()
+    await enterDomain(user)
+    await user.click(screen.getByRole('switch', { name: /Also www/ }))
+    await user.type(screen.getByLabelText('Repository'), 'git@github.com:acme/shop.git')
+    await waitFor(() => expect(continueButton()).toBeEnabled())
+    await user.click(continueButton())
+    await user.click(continueButton())
+    await user.click(continueButton())
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cloudflare\'s free certificate covers example.com and names one level under it. www.shop.example.com would fail through the proxy.')
+    await user.click(screen.getByRole('switch', { name: /Proxy through Cloudflare/ }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('blocks Next when the name is already served by a site file', async () => {

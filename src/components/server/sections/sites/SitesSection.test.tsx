@@ -1,6 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeRun, NO_RESOURCES } from '@/components/deploy/createSite/testRun'
+import type { RunRecord } from '@/types/createSite'
 import type { ServerRoute } from '@/types/server/core'
 import { makeRecord, makeSummary } from '@/utils/deploy/testSummary'
 import { INVENTORY_PROBE } from '@/utils/server/sites/inventory'
@@ -56,7 +58,7 @@ function installApi() {
         webServerCheck: () => ok(null)
       },
       ssl: { check: sslCheck, lastReport: () => ok(report) },
-      createSite: { runs: () => ok([]) },
+      createSite: { runs: () => ok([]), onUpdate: off },
       server: {
         scan: () => ok({ [INVENTORY_PROBE]: { status: 'ok', data: inventory, at: 1 } }),
         facts: () => ok({}),
@@ -66,6 +68,18 @@ function installApi() {
     }
   })
   return tail
+}
+
+function installRunUpdates() {
+  installApi()
+  let listener: (record: RunRecord) => void = () => {}
+  Object.assign(window.novadeck.createSite, {
+    onUpdate: (callback: (record: RunRecord) => void) => {
+      listener = callback
+      return off()
+    }
+  })
+  return (record: RunRecord) => listener(record)
 }
 
 function renderSection(route: ServerRoute) {
@@ -116,6 +130,20 @@ describe('Sites section', () => {
     await waitFor(() => expect(sslCheck).toHaveBeenCalled())
     const before = sslCheck.mock.calls.length
     await user.click(await screen.findByRole('button', { name: 'Close Create site' }))
+    await waitFor(() => expect(sslCheck.mock.calls.length).toBeGreaterThan(before))
+  })
+
+  it('picks up a Create site run that finishes after the user left the wizard', async () => {
+    const emit = installRunUpdates()
+    renderSection({ section: 'sites', sub: 'site', params: { site: 'app', tab: 'settings' } })
+    expect(await screen.findByRole('button', { name: /Remove from Shellway/ })).toBeInTheDocument()
+    const before = sslCheck.mock.calls.length
+    act(() => emit(makeRun({ sessionId: 's1', phase: 'running', created: { ...NO_RESOURCES, deploySite: 'app' } })))
+    act(() => emit(makeRun({ sessionId: 'other', phase: 'done', created: { ...NO_RESOURCES, deploySite: 'app' } })))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(sslCheck.mock.calls.length).toBe(before)
+    act(() => emit(makeRun({ sessionId: 's1', phase: 'done', machineId: 'm1', created: { ...NO_RESOURCES, deploySite: 'app' } })))
+    expect(await screen.findByRole('button', { name: /Delete site/ })).toBeInTheDocument()
     await waitFor(() => expect(sslCheck.mock.calls.length).toBeGreaterThan(before))
   })
 

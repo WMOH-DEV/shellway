@@ -95,7 +95,7 @@ function Page(props: PageProps) {
 export function SitesSection({ ctx }: { ctx: ServerSectionContext }) {
   const connected = ctx.connectionStatus === 'connected'
   const data = useSitesData(ctx)
-  const createRuns = useCreateRuns(ctx.sessionId, connected)
+  const createRuns = useCreateRuns(ctx.sessionId, connected, data.refreshAll)
   const [shipping, setShipping] = useState<string | null>(null)
   const shipSite = findEntry(data, shipping ?? undefined)?.summary
 

@@ -148,7 +148,7 @@ describe('CreateSiteService', () => {
       ['the wrong typed name', {}, 'shop2', 'Type shop to confirm'],
       ['another connection', { sessionId: 'session-2' }, 'shop', 'different server connection'],
       ['a run from before the server was recorded', { machineId: undefined }, 'shop', 'before Shellway recorded which server'],
-      ['a run whose server had no readable machine ID', { machineId: null }, 'shop', 'could not read the machine ID'],
+      ['a run whose server had no readable machine ID', { machineId: null }, 'shop', "could not read this server's machine ID"],
       ['a different server behind the same connection', { machineId: 'f'.repeat(32) }, 'shop', 'different server than the one this site was made on'],
       ['a login as another user than the site owner', { input: { ...INPUT, owner: 'someone' } }, 'shop', 'belongs to someone, but Shellway is logged in as deploy']
     ])('refuses %s and changes nothing', async (_what, changes, typed, message) => {

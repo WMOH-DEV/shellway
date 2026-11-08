@@ -109,6 +109,13 @@ export const siteNameFromDomain = (domain: string): string => siteNameFromPath(d
 
 export const folderForName = (siteName: string): string => `/var/www/${siteName}`
 
+export const wwwByDefault = (domain: string): boolean => domain.split('.').length === 2
+
+export function beyondEdgeCertificate(names: string[], zoneName: string): string[] {
+  const suffix = `.${zoneName}`
+  return names.filter((name) => name.endsWith(suffix) && name.slice(0, -suffix.length).includes('.'))
+}
+
 function firstUsableTemplate(tools: ServerTools): TemplateId {
   return TEMPLATE_IDS.find((id) => templateAvailability(id, tools).state !== 'blocked') ?? 'blank'
 }

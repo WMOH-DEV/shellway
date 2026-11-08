@@ -22,15 +22,20 @@ const DELETE_LABELS: Partial<Record<RunPhase, string>> = {
 
 export const phaseLabel = (record: RunRecord): string => (record.deleting ? DELETE_LABELS[record.phase] : undefined) ?? PHASE_LABELS[record.phase]
 
-export const NO_MACHINE_ID = 'This site was made before Shellway recorded which server it is on, so it cannot be deleted from here. Remove it in the Deploy and SSL tabs instead.'
+const NO_MACHINE_ID = 'This site was made before Shellway recorded which server it is on, so Delete site is not available for it.'
 
-export const UNREADABLE_MACHINE_ID = 'Shellway could not read the machine ID of this server when it made the site, so it cannot check that it would delete on the same server. Remove it in the Deploy and SSL tabs instead.'
+const UNREADABLE_MACHINE_ID = "Shellway could not read this server's machine ID when it made the site, so it cannot confirm a delete would reach the same server."
+
+function removeByHand(deploySite: string | null): string {
+  const leftBehind = 'Its web server site, certificate and DNS records stay until you remove them by hand.'
+  return deploySite === null ? leftBehind : `Remove from Shellway in the site's Settings stops its deploys. ${leftBehind}`
+}
 
 export const isFinishedSite = (record: RunRecord): boolean => record.phase === 'done' || (record.phase === 'remove-failed' && record.deleting === true)
 
-export function deleteBlockedReason({ machineId }: RunRecord): string | null {
-  if (machineId === undefined) return NO_MACHINE_ID
-  return machineId === null ? UNREADABLE_MACHINE_ID : null
+export function deleteBlockedReason({ machineId, created }: RunRecord): string | null {
+  if (machineId === undefined) return `${NO_MACHINE_ID} ${removeByHand(created.deploySite)}`
+  return machineId === null ? `${UNREADABLE_MACHINE_ID} ${removeByHand(created.deploySite)}` : null
 }
 
 export const canDelete = (record: RunRecord): boolean => isFinishedSite(record) && deleteBlockedReason(record) === null

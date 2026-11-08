@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RunRecord, RunStep } from '@/types/createSite'
-import { isUnfinished, latestUnfinished, progressState, stepPosition, stepSeconds } from './runView'
+import { deleteBlockedReason, isUnfinished, latestUnfinished, progressState, stepPosition, stepSeconds } from './runView'
 import { baseInput } from './testFixtures'
 
 const step = (id: RunStep['id'], status: RunStep['status'], startedAt: number | null = null, finishedAt: number | null = null): RunStep => ({ id, status, startedAt, finishedAt })
@@ -56,5 +56,20 @@ describe('unfinished runs', () => {
     const newer = record({ id: 'run-new', phase: 'stopped', createdAt: 2 })
     expect(latestUnfinished([older, record({ phase: 'done', createdAt: 3 }), newer])?.id).toBe('run-new')
     expect(latestUnfinished([record({ phase: 'done' })])).toBeNull()
+  })
+})
+
+describe('deleteBlockedReason', () => {
+  const created = record().created
+
+  it('allows a delete only when the server was recorded', () => {
+    expect(deleteBlockedReason(record({ machineId: 'm1' }))).toBeNull()
+    expect(deleteBlockedReason(record({ machineId: undefined }))).toMatch(/before Shellway recorded which server/)
+    expect(deleteBlockedReason(record({ machineId: null }))).toMatch(/could not read this server's machine ID/)
+  })
+
+  it('points at Remove from Shellway only when the site has deploys', () => {
+    expect(deleteBlockedReason(record({ machineId: null, created: { ...created, deploySite: 'shop' } }))).toMatch(/Remove from Shellway in the site's Settings stops its deploys/)
+    expect(deleteBlockedReason(record({ machineId: null, created }))).not.toMatch(/Remove from Shellway/)
   })
 })

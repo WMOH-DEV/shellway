@@ -4,6 +4,7 @@ import { buildPlan } from './plan'
 import type { StackSuggestion } from './repoSuggest'
 import { NGINX, allTools, baseInput } from './testFixtures'
 import {
+  beyondEdgeCertificate,
   commandsKey,
   commandsOf,
   commandsStepProblem,
@@ -17,6 +18,7 @@ import {
   stepForAction,
   suggestedDraft,
   toInput,
+  wwwByDefault,
   type CreateSiteDraft,
   type NameCheckState,
   type ServerContext
@@ -65,6 +67,18 @@ describe('siteNameFromDomain', () => {
   it('takes the first label of the domain', () => {
     expect(siteNameFromDomain('shop.example.com')).toBe('shop')
     expect(siteNameFromDomain('Example.com')).toBe('example')
+  })
+})
+
+describe('www and the Cloudflare edge certificate', () => {
+  it('adds www by default only to a bare domain', () => {
+    expect(wwwByDefault('example.com')).toBe(true)
+    expect(wwwByDefault('shop.example.com')).toBe(false)
+  })
+
+  it('finds names more than one level under the zone', () => {
+    const names = ['example.com', 'shop.example.com', 'www.shop.example.com', 'a.b.example.com', 'www.other.org']
+    expect(beyondEdgeCertificate(names, 'example.com')).toEqual(['www.shop.example.com', 'a.b.example.com'])
   })
 })
 

@@ -11,6 +11,7 @@ import {
   projectCheckRequest,
   siteNameFromDomain,
   suggestedDraft,
+  wwwByDefault,
   type CreateSiteDraft,
   type NameCheckState,
   type ProjectCheckState
@@ -28,6 +29,7 @@ export interface CreateSiteDraftModel {
   setEmail: (email: string) => void
   changeDomain: (domain: string) => void
   changeSiteName: (siteName: string) => void
+  changeWww: (includeWww: boolean) => void
   changeFolder: (folder: string) => void
   checkName: () => Promise<void>
   repoRead: RepoRead | null
@@ -61,7 +63,7 @@ export type CreateSitePrefill = Partial<Pick<CreateSiteDraft, 'domain' | 'templa
 function prefilledDraft(tools: ServerTools, prefill: CreateSitePrefill): DraftFields {
   const draft = { ...newDraft(tools), ...prefill }
   const siteName = draft.domain ? siteNameFromDomain(draft.domain) : draft.siteName
-  return { ...draft, siteName, folder: autoFolder(siteName) }
+  return { ...draft, siteName, folder: autoFolder(siteName), includeWww: draft.domain ? wwwByDefault(draft.domain) : draft.includeWww }
 }
 
 export function useCreateSiteDraft(connectionId: string, sessionId: string, tools: ServerTools, prefill: CreateSitePrefill = {}): CreateSiteDraftModel {
@@ -69,6 +71,7 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
   const [email, setEmail] = useState('')
   const [nameEdited, setNameEdited] = useState(false)
   const [folderEdited, setFolderEdited] = useState(false)
+  const wwwEdited = useRef(false)
   const [nameCheck, setNameCheck] = useState<NameCheckState | null>(null)
   const [checking, setChecking] = useState(false)
   const latestCheck = useRef(0)
@@ -85,7 +88,12 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
   const changeDomain = (raw: string) => {
     const domain = raw.trim().toLowerCase()
     const siteName = nameEdited ? fields.siteName : siteNameFromDomain(domain)
-    patch({ domain, siteName, folder: folderEdited ? fields.folder : autoFolder(siteName) })
+    patch({ domain, siteName, folder: folderEdited ? fields.folder : autoFolder(siteName), includeWww: wwwEdited.current ? fields.includeWww : wwwByDefault(domain) })
+  }
+
+  const changeWww = (includeWww: boolean) => {
+    wwwEdited.current = true
+    patch({ includeWww })
   }
 
   const changeSiteName = (siteName: string) => {
@@ -106,6 +114,8 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
     const result = await createSiteApi().checkName(connectionId, domain)
     if (request !== latestCheck.current) return
     setChecking(false)
+    const zone = result.success ? result.data?.zone : null
+    if (zone && !wwwEdited.current) setFields((current) => (current.domain === domain ? { ...current, includeWww: domain === zone.name } : current))
     setNameCheck(result.success && result.data
       ? { domain, result: result.data, error: null }
       : { domain, result: null, error: result.error ?? `Could not check ${domain}` })
@@ -184,6 +194,7 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
     setEmail,
     changeDomain,
     changeSiteName,
+    changeWww,
     changeFolder,
     checkName,
     repoRead,

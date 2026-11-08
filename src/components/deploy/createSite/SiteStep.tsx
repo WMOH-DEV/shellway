@@ -32,7 +32,7 @@ function AddressSection({ model, tools, serverIp }: SiteStepProps) {
         {draft.domain !== '' && <NameStatus site={draft} serverIp={serverIp} check={model.nameCheck} checking={model.checking} onRecheck={() => void model.checkName()} />}
       </div>
       <div className="flex flex-col gap-0.5">
-        <Toggle checked={draft.includeWww} onChange={(includeWww) => model.patch({ includeWww })} label={`Also www.${draft.domain || 'your domain'}`} />
+        <Toggle checked={draft.includeWww} onChange={model.changeWww} label={`Also www.${draft.domain || 'your domain'}`} />
         <span className="pl-[46px] text-xs text-nd-text-muted">Serves the same site and gets the same certificate</span>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">

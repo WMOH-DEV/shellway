@@ -5,6 +5,7 @@ import { Option } from '@/components/ssl/https/IssueOptions'
 import { StepHeading } from '@/components/ssl/https/StepHeading'
 import type { CloudflareZoneRef, DnsInput, DnsRecordPlan } from '@/types/createSite'
 import { dnsRecords } from '@/utils/createSite/plan'
+import { beyondEdgeCertificate } from '@/utils/createSite/wizard'
 import { isValidEmail } from '@/utils/ssl/https/issueCommands'
 import { RecordRows } from './RecordRows'
 import type { CreateSiteDraftModel } from './useCreateSiteDraft'
@@ -28,6 +29,17 @@ function plannedRecords(draft: CreateSiteDraftModel['draft'], dns: DnsInput): Dn
   }
 }
 
+function EdgeWarning({ records, zoneName }: { records: DnsRecordPlan[]; zoneName: string | null }) {
+  if (zoneName === null) return null
+  const names = beyondEdgeCertificate(records.filter((record) => record.proxied).map((record) => record.name), zoneName)
+  if (names.length === 0) return null
+  return (
+    <span role="alert" className="text-[13px] text-nd-warning-fg">
+      Cloudflare's free certificate covers {zoneName} and names one level under it. {names.join(' and ')} would fail through the proxy. Turn off the proxy, or leave {names.length === 1 ? 'that name' : 'those names'} out.
+    </span>
+  )
+}
+
 function DnsBody({ model, zone, dns }: DomainStepProps) {
   const { draft } = model
   if (dns === null) {
@@ -47,6 +59,7 @@ function DnsBody({ model, zone, dns }: DomainStepProps) {
     <>
       <span className="text-[13px] text-nd-text-secondary">Created in Cloudflare zone <span className="font-mono">{dns.zoneName}</span> with your token. Nothing else in the zone changes.</span>
       <RecordRows records={records} />
+      <EdgeWarning records={records} zoneName={dns.zoneName} />
       <Option checked={draft.proxied} onChange={(proxied) => model.patch({ proxied })} disabled={false} label="Proxy through Cloudflare" note="Visitors reach Cloudflare first. Turn off for DNS only." />
     </>
   )
