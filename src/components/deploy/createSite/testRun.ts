@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { mockNovadeck } from '@/test/novadeck'
-import type { CreateSiteContext, CreateSiteOutput, CreatedResources, NameCheck, RunRecord, RunStep } from '@/types/createSite'
+import type { CreateSiteContext, CreateSiteOutput, CreatedResources, NameCheck, RepoFiles, RunRecord, RunStep } from '@/types/createSite'
 import { allTools, baseInput } from '@/utils/createSite/testFixtures'
 
 export const NO_RESOURCES: CreatedResources = { folder: null, siteFile: null, phpPool: null, database: null, envFile: null, jobs: null, modulesEnabled: [], dnsRecords: [], httpsSiteFile: null, certificate: null, deploySite: null }
@@ -52,12 +52,15 @@ export interface FakeBackend {
   emitOutput: (output: CreateSiteOutput) => void
 }
 
+export const LARAVEL_REPO: RepoFiles = { files: ['artisan', 'composer.json'], packageJson: null, composerJson: '{"require":{"php":"^8.2"}}', envExample: null }
+
 export function fakeBackend(overrides: Record<string, unknown> = {}): FakeBackend {
   let onUpdate: (record: RunRecord) => void = () => undefined
   let onOutput: (output: CreateSiteOutput) => void = () => undefined
   const api = {
     'createSite.context': vi.fn().mockResolvedValue({ success: true, data: makeContext() }),
     'createSite.checkName': vi.fn().mockResolvedValue({ success: true, data: FREE_NAME }),
+    'createSite.inspectRepo': vi.fn().mockResolvedValue({ success: true, data: LARAVEL_REPO }),
     'createSite.start': vi.fn().mockResolvedValue({ success: true, data: makeRun({ phase: 'running', steps: [runStep('folder', 'pending', 1_800_000_000_000)], current: 'folder', error: null }) }),
     'createSite.resume': vi.fn().mockResolvedValue({ success: true, data: makeRun({ phase: 'running', error: null }) }),
     'createSite.stop': vi.fn().mockResolvedValue({ success: true }),

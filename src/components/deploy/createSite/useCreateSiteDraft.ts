@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
-import type { ServerTools } from '@/types/createSite'
+import type { ServerTools, TemplateId } from '@/types/createSite'
+import { defaultDatabase } from '@/utils/createSite/database'
+import { suggestStack, type StackSuggestion } from '@/utils/createSite/repoSuggest'
 import { isIssuableName } from '@/utils/ssl/https/issueCommands'
-import { folderForName, newDraft, siteNameFromDomain, type CreateSiteDraft, type NameCheckState } from '@/utils/createSite/wizard'
+import { folderForName, newDraft, siteNameFromDomain, suggestedDraft, type CreateSiteDraft, type NameCheckState } from '@/utils/createSite/wizard'
 import { useRememberedEmail } from '@/components/ssl/https/useIssue'
 import { createSiteApi } from './createSiteApi'
 
@@ -17,7 +19,18 @@ export interface CreateSiteDraftModel {
   changeSiteName: (siteName: string) => void
   changeFolder: (folder: string) => void
   checkName: () => Promise<void>
+  repoRead: RepoRead | null
+  readRepo: () => Promise<void>
+  pickTemplate: (template: TemplateId) => void
+  applySuggestion: (suggestion: StackSuggestion) => void
 }
+
+export type RepoRead =
+  | { key: string; status: 'reading' }
+  | { key: string; status: 'read'; suggestion: StackSuggestion }
+  | { key: string; status: 'failed'; error: string }
+
+const repoKey = ({ repoUrl, branch }: Pick<CreateSiteDraft, 'repoUrl' | 'branch'>): string => `${repoUrl}\n${branch}`
 
 const autoFolder = (siteName: string): string => (siteName === '' ? '' : folderForName(siteName))
 
@@ -37,6 +50,9 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
   const [nameCheck, setNameCheck] = useState<NameCheckState | null>(null)
   const [checking, setChecking] = useState(false)
   const latestCheck = useRef(0)
+  const [repoRead, setRepoRead] = useState<RepoRead | null>(null)
+  const latestRepo = useRef('')
+  const templatePicked = useRef(prefill.template !== undefined)
   useRememberedEmail(sessionId, setEmail)
 
   const patch = (changes: Partial<DraftFields>) => setFields((current) => ({ ...current, ...changes }))
@@ -70,5 +86,28 @@ export function useCreateSiteDraft(connectionId: string, sessionId: string, tool
       : { domain, result: null, error: result.error ?? `Could not check ${domain}` })
   }
 
-  return { draft: { ...fields, email }, nameCheck, checking, patch, setEmail, changeDomain, changeSiteName, changeFolder, checkName }
+  const applySuggestion = (suggestion: StackSuggestion) => setFields((current) => ({ ...current, ...suggestedDraft({ ...current, email }, suggestion, tools) }))
+
+  const readRepo = async () => {
+    const key = repoKey(fields)
+    if (repoRead?.key === key && repoRead.status !== 'failed') return
+    latestRepo.current = key
+    setRepoRead({ key, status: 'reading' })
+    const result = await createSiteApi().inspectRepo(fields.repoUrl, fields.branch)
+    if (latestRepo.current !== key) return
+    if (!result.success || !result.data) {
+      setRepoRead({ key, status: 'failed', error: result.error ?? 'Could not read the repository' })
+      return
+    }
+    const suggestion = suggestStack(result.data)
+    setRepoRead({ key, status: 'read', suggestion })
+    if (!templatePicked.current) applySuggestion(suggestion)
+  }
+
+  const pickTemplate = (template: TemplateId) => {
+    templatePicked.current = true
+    patch({ template, commands: null, database: defaultDatabase(template, tools) })
+  }
+
+  return { draft: { ...fields, email }, nameCheck, checking, patch, setEmail, changeDomain, changeSiteName, changeFolder, checkName, repoRead, readRepo, pickTemplate, applySuggestion }
 }

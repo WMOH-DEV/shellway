@@ -6,6 +6,7 @@ import { generatePassword } from '../server/databases/password'
 import { databaseChoices, defaultDatabase, siteDatabase, type DatabaseChoice } from './database'
 import { generateAppKey, writesEnv } from './env'
 import { ALL_JOBS, NO_JOBS, availableJobs } from './laravelJobs'
+import { phpVersionFor, type StackSuggestion } from './repoSuggest'
 import { isValidEmail } from '../ssl/https/issueCommands'
 import { webServerDriver, type WebServerDriver } from '../webServer'
 import { templateAvailability } from './availability'
@@ -54,6 +55,7 @@ export interface CreateSiteDraft {
   staticBuild: boolean
   outputDir: string
   spa: boolean
+  repoBuildScript: boolean
 }
 
 export interface NameCheckState {
@@ -126,7 +128,8 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     jobs: availableJobs(tools, ALL_JOBS),
     staticBuild: false,
     outputDir: DEFAULT_OUTPUT_DIR,
-    spa: false
+    spa: false,
+    repoBuildScript: false
   }
 }
 
@@ -215,7 +218,21 @@ export const buildOutputOf = (draft: Pick<CreateSiteDraft, 'template' | 'staticB
   isStatic(draft) && draft.staticBuild ? draft.outputDir.trim() : null
 
 export const defaultCommandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands =>
-  defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) })
+  defaultCommands({ ...draft, server, buildOutput: buildOutputOf(draft) }, { buildScript: draft.repoBuildScript })
+
+export function suggestedDraft(draft: CreateSiteDraft, suggestion: StackSuggestion, tools: ServerTools): Partial<CreateSiteDraft> {
+  const template = suggestion.template ?? draft.template
+  const phpVersion = phpVersionFor(tools.php, suggestion.phpMinimum)
+  return {
+    template,
+    commands: null,
+    database: template === draft.template ? draft.database : defaultDatabase(template, tools),
+    repoBuildScript: suggestion.buildScript && tools.node !== null,
+    ...(phpVersion !== null ? { phpVersion } : {}),
+    ...(suggestion.outputDir !== null ? { staticBuild: true, outputDir: suggestion.outputDir } : {}),
+    ...(draft.envText === '' && suggestion.envExample !== null ? { envText: suggestion.envExample } : {})
+  }
+}
 
 export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCommands => draft.commands ?? defaultCommandsOf(draft, server)
 
@@ -231,7 +248,7 @@ const filledSteps = (steps: DeployStep[]): DeployStep[] =>
   steps.map((step) => ({ ...step, command: step.command.trim() })).filter((step) => step.command !== '')
 
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
-  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, staticBuild: _build, outputDir: _output, ...site } = draft
+  const { proxied: _proxied, email, redirect, staging, commands: _commands, database: choice, envText, dbPassword: _password, appKey: _key, staticBuild: _build, outputDir: _output, repoBuildScript: _repoBuild, ...site } = draft
   const { buildSteps, activateSteps } = commandsOf(draft, context.server)
   const database = siteDatabase(choice, draft)
   return {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { ipcMain } from 'electron'
 import { getSSHService } from './ssh.ipc'
-import { requireCoordinator as deployCoordinator } from './deploy.ipc'
+import { requireCoordinator as deployCoordinator, requireLocalGit } from './deploy.ipc'
 import { requireCoordinator as sslCoordinator } from './ssl.ipc'
 import { broadcast } from '../services/WindowManager'
 import { withServerActivity } from './server.ipc'
@@ -103,5 +103,6 @@ export function registerCreateSiteIPC(): void {
   handle('create-site:resume', (c, runId, mode) => requireService().resume(str(c, 'connection'), str(runId, 'run'), resumeMode(mode)))
   handle('create-site:stop', (runId) => requireService().stop(str(runId, 'run')))
   handle('create-site:remove', (c, runId) => requireService().remove(str(c, 'connection'), str(runId, 'run')))
+  handle('create-site:inspect-repo', (url, branch) => requireLocalGit().inspect(str(url, 'repository'), str(branch, 'branch')))
   handle('create-site:runs', (s) => requireService().runs(str(s, 'session')))
 }

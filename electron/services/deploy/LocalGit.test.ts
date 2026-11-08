@@ -45,6 +45,23 @@ describe('LocalGit', () => {
     await expect(local.lsRemote(origin, 'nope')).rejects.toThrow(/nope was not found/)
   })
 
+  it('lists the top-level files and reads the files that tell the stack apart', async () => {
+    writeFileSync(join(work, 'artisan'), '#!/usr/bin/env php')
+    writeFileSync(join(work, 'composer.json'), '{"require":{"php":"^8.2"}}')
+    writeFileSync(join(work, '.env.example'), 'APP_NAME=Laravel\n')
+    writeFileSync(join(work, 'big.txt'), 'x')
+    commit('one')
+    const repo = await local.inspect(origin, 'main')
+    expect(repo.files).toEqual(['.env.example', 'artisan', 'big.txt', 'composer.json', 'f.txt'])
+    expect(repo).toMatchObject({ composerJson: '{"require":{"php":"^8.2"}}', envExample: 'APP_NAME=Laravel\n', packageJson: null })
+  })
+
+  it('skips a stack file too large to read', async () => {
+    writeFileSync(join(work, 'package.json'), `{"x":"${'a'.repeat(70 * 1024)}"}`)
+    commit('one')
+    expect((await local.inspect(origin, 'main')).packageJson).toBeNull()
+  })
+
   it('creates a full bundle when the server has nothing', async () => {
     const head = commit('one')
     expect(await local.fetch(origin, 'main')).toBe(head)

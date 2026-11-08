@@ -14,7 +14,7 @@ const VERSION = /^\d\.\d{1,2}$/
 
 const parts = (version: string): number[] => version.split('.').map(Number)
 
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const [aMajor, aMinor] = parts(a)
   const [bMajor, bMinor] = parts(b)
   return aMajor - bMajor || aMinor - bMinor

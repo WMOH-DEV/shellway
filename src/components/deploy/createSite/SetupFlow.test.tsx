@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { allTools } from '@/utils/createSite/testFixtures'
 import { CreateSiteWizard } from './CreateSiteWizard'
-import { FREE_NAME, fakeBackend, makeContext } from './testRun'
+import { FREE_NAME, LARAVEL_REPO, fakeBackend, makeContext } from './testRun'
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 function setup(overrides: Record<string, unknown> = {}) {
   const backend = fakeBackend(overrides)
@@ -126,6 +132,42 @@ describe('Create site, database and environment', () => {
     const [, , input, secrets] = api['createSite.start'].mock.calls[0]
     expect(input.database).toEqual({ engine: 'sqlite', path: '/var/www/shop-deploy/shared/database.sqlite' })
     expect(secrets.dbPassword).toBeNull()
+  })
+})
+
+describe('Create site, stack from the repository', () => {
+  it('reads the repository on this PC and says why it picked the stack', async () => {
+    const { user, api } = setup()
+    await walkToStack(user)
+    expect(api['createSite.inspectRepo']).toHaveBeenCalledWith('git@github.com:acme/shop.git', 'main')
+    expect(await screen.findByText(/Laravel matches the repository. It has an artisan file./)).toBeInTheDocument()
+  })
+
+  it('switches to the stack the repository shows, with its build output', async () => {
+    const vite = { files: ['package.json', 'index.html'], packageJson: '{"scripts":{"build":"vite build"},"devDependencies":{"vite":"5"}}', composerJson: null, envExample: 'VITE_API=https://api.example.com\n' }
+    const { user } = setup({ 'createSite.inspectRepo': vi.fn().mockResolvedValue({ success: true, data: vite }) })
+    await walkToStack(user)
+    expect(await screen.findByText(/Static site matches the repository/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Build output folder')).toHaveValue('dist')
+  })
+
+  it('never changes a stack the user picked; it offers the suggestion instead', async () => {
+    const reading = deferred<{ success: boolean; data: unknown }>()
+    const { user } = setup({ 'createSite.inspectRepo': vi.fn(() => reading.promise) })
+    await walkToStack(user)
+    await user.click(await screen.findByRole('button', { name: /^Node.js/ }))
+    reading.resolve({ success: true, data: LARAVEL_REPO })
+    expect(await screen.findByText(/The repository looks like Laravel/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Node.js/ })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Use Laravel' }))
+    expect(screen.getByRole('button', { name: /^Laravel/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('lets the user pick the stack when the repository cannot be read from this PC', async () => {
+    const { user } = setup({ 'createSite.inspectRepo': vi.fn().mockResolvedValue({ success: false, error: 'Permission denied (publickey).' }) })
+    await walkToStack(user)
+    expect(await screen.findByText(/Could not read the repository from this PC/)).toBeInTheDocument()
+    expect(continueButton()).toBeEnabled()
   })
 })
 

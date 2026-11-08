@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
+import type { RepoFiles } from '../../../src/types/createSite'
 import type { ShipCommit, ShipFile, ShipFileStatus, ShipPreview } from '../../../src/types/deploy'
 import { isMigrationPath, makeShipPreview, orderFiles, PREVIEW_COMMIT_CAP, PREVIEW_FILE_CAP } from './previewShape'
 import { isValidBranch } from './siteFiles'
@@ -15,6 +16,9 @@ const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: pro
 const REMOTE_PROTOCOLS = ['https', 'ssh', 'git'].flatMap((name) => ['-c', `protocol.${name}.allow=always`])
 const REMOTE_URL = /^(https:\/\/|ssh:\/\/|git:\/\/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)[^\s]+$/
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/
+const ROOT_FILE_CAP = 500
+const READ_FILE_CAP = 64 * 1024
+const READ_FILES = ['package.json', 'composer.json', '.env.example'] as const
 
 export interface BundleResult {
   file: string
@@ -156,6 +160,16 @@ export class LocalGit {
     })
   }
 
+  async inspect(url: string, branch: string): Promise<RepoFiles> {
+    await this.fetch(url, branch)
+    const mirror = this.mirrorPath(url)
+    const ref = `refs/heads/${branch}`
+    const { stdout } = await this.git(['--git-dir', mirror, '-c', 'core.quotepath=off', 'ls-tree', '--name-only', ref], LOCAL_TIMEOUT_MS, 'Could not list the repository files')
+    const files = stdout.split('\n').filter(Boolean).slice(0, ROOT_FILE_CAP)
+    const [packageJson, composerJson, envExample] = await Promise.all(READ_FILES.map((name) => (files.includes(name) ? this.readFile(mirror, `${ref}:${name}`) : null)))
+    return { files, packageJson, composerJson, envExample }
+  }
+
   async isAncestor(url: string, ancestor: string, descendant: string): Promise<boolean> {
     if (!COMMIT_SHA.test(ancestor) || !COMMIT_SHA.test(descendant)) return false
     return this.succeeds(['--git-dir', this.mirrorPath(url), 'merge-base', '--is-ancestor', ancestor, descendant])
@@ -164,6 +178,13 @@ export class LocalGit {
   private async previewTarget(request: PreviewRequest, mirror: string): Promise<string> {
     if (await this.hasCommit(mirror, request.pending)) return request.pending
     return this.fetch(request.url, request.branch)
+  }
+
+  private async readFile(mirror: string, object: string): Promise<string | null> {
+    const size = await this.git(['--git-dir', mirror, 'cat-file', '-s', object], LOCAL_TIMEOUT_MS, 'Could not read a repository file')
+    if (Number(size.stdout.trim()) > READ_FILE_CAP) return null
+    const { stdout } = await this.git(['--git-dir', mirror, 'cat-file', 'blob', object], LOCAL_TIMEOUT_MS, 'Could not read a repository file')
+    return stdout
   }
 
   private async countCommits(mirror: string, range: string): Promise<number> {

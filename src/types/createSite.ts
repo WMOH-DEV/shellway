@@ -31,6 +31,13 @@ export interface LaravelJobs {
   queueWorker: boolean
 }
 
+export interface RepoFiles {
+  files: string[]
+  packageJson: string | null
+  composerJson: string | null
+  envExample: string | null
+}
+
 export interface DatabaseServers {
   mysql: boolean
   postgresql: boolean

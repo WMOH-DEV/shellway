@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CreateSiteContext, NameCheck } from '@/types/createSite'
 import { buildPlan } from './plan'
+import type { StackSuggestion } from './repoSuggest'
 import { NGINX, allTools, baseInput } from './testFixtures'
 import {
   commandsOf,
@@ -11,6 +12,7 @@ import {
   siteStepProblem,
   stackStepProblem,
   stepForAction,
+  suggestedDraft,
   toInput,
   type CreateSiteDraft,
   type NameCheckState,
@@ -169,6 +171,39 @@ describe('toInput', () => {
   it('feeds buildPlan without throwing', () => {
     const input = toInput(draft(), context(), ZONE)
     expect(() => buildPlan(input, allTools(), NGINX.driver)).not.toThrow()
+  })
+})
+
+describe('suggestedDraft', () => {
+  const suggestion = (overrides: Partial<StackSuggestion> = {}): StackSuggestion =>
+    ({ template: 'laravel', reason: '', phpMinimum: null, buildScript: false, outputDir: null, envExample: null, ...overrides })
+
+  it('switches the stack, resets its commands and database, and fills the env from .env.example once', () => {
+    const changes = suggestedDraft(draft({ template: 'node', database: 'none' }), suggestion({ envExample: 'APP_NAME=Shop\n' }), allTools())
+    expect(changes).toMatchObject({ template: 'laravel', commands: null, database: 'mysql', envText: 'APP_NAME=Shop\n' })
+    expect(suggestedDraft(draft({ envText: 'MINE=1' }), suggestion({ envExample: 'APP_NAME=Shop\n' }), allTools())).not.toHaveProperty('envText')
+  })
+
+  it('keeps the chosen database when the stack does not change', () => {
+    expect(suggestedDraft(draft({ database: 'sqlite' }), suggestion(), allTools()).database).toBe('sqlite')
+  })
+
+  it('picks a PHP version new enough for composer.json', () => {
+    const tools = allTools({ php: { installed: ['8.3', '8.1'], installable: [], missingPackages: {}, drivers: {} } })
+    expect(suggestedDraft(draft({ phpVersion: '8.1' }), suggestion({ phpMinimum: '8.2' }), tools).phpVersion).toBe('8.3')
+  })
+
+  it('adds the npm build to Laravel only when the server has Node.js', () => {
+    const withBuild = (tools: ReturnType<typeof allTools>) => {
+      const next = { ...draft(), ...suggestedDraft(draft(), suggestion({ buildScript: true }), tools) }
+      return toInput(next, context({ tools }), ZONE).buildSteps.map((step) => step.command)
+    }
+    expect(withBuild(allTools())).toEqual(expect.arrayContaining(['npm ci', 'npm run build']))
+    expect(withBuild(allTools({ node: null }))).not.toContain('npm ci')
+  })
+
+  it('turns on the npm build for a Vite site', () => {
+    expect(suggestedDraft(draft(), suggestion({ template: 'static', outputDir: 'dist' }), allTools())).toMatchObject({ template: 'static', staticBuild: true, outputDir: 'dist' })
   })
 })
 

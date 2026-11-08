@@ -60,6 +60,11 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown): void {
   })
 }
 
+export function requireLocalGit(): LocalGit {
+  if (!localGit) throw new Error('Deploy service is not ready')
+  return localGit
+}
+
 export function requireCoordinator(): DeployCoordinator {
   if (!coordinator) throw new Error('Deploy service is not ready')
   return coordinator

@@ -35,14 +35,22 @@ export interface DeployCommands {
   activateSteps: DeployStep[]
 }
 
-export function defaultCommands(facts: CommandFacts): DeployCommands {
+export interface RepoHints {
+  buildScript: boolean
+}
+
+function presetBuildSteps(template: SiteTemplate, hints: RepoHints): DeployStep[] {
+  const steps = presetById(template.preset).buildSteps(hints)
+  return usesPhp(template) && hints.buildScript ? [...steps, ...NPM_BUILD] : steps
+}
+
+export function defaultCommands(facts: CommandFacts, hints: RepoHints = { buildScript: false }): DeployCommands {
   const template = TEMPLATES[facts.template]
   const name = assertSiteName(facts.siteName)
-  const preset = presetById(template.preset)
   const pin = stepPin(facts, template, name)
   return {
-    buildSteps: buildsWithNpm(facts) ? NPM_BUILD.map((step) => ({ ...step })) : preset.buildSteps({ buildScript: false }).map(pin),
-    activateSteps: [...preset.activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, facts.folder, facts.appPort) : [])]
+    buildSteps: buildsWithNpm(facts) ? NPM_BUILD.map((step) => ({ ...step })) : presetBuildSteps(template, hints).map(pin),
+    activateSteps: [...presetById(template.preset).activateSteps.map(pin), ...(template.id === 'node' ? pm2ActivateSteps(name, facts.folder, facts.appPort) : [])]
   }
 }
 
