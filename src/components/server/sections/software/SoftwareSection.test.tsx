@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ServerFacts } from '@/types/server/core'
 import { PACKAGES_UBUNTU, PHP_OUTPUT, UPDATES_UBUNTU, USAGE } from '@/utils/server/software/fixtures/outputs'
 import { parsePackages } from '@/utils/server/software/packages'
@@ -57,6 +57,19 @@ describe('SoftwareSection', () => {
     fireEvent.change(screen.getByDisplayValue('256M'), { target: { value: '512M' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0])
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ type: 'software.php-ini', params: { version: '8.3', values: { memory_limit: '512M' } } }))
+  })
+
+  it('offers no MySQL install on a MariaDB server', () => {
+    const original = facts[PACKAGES_PROBE]
+    facts[PACKAGES_PROBE] = ok(parsePackages(PACKAGES_UBUNTU.replace(/^mysql-server/gm, 'mariadb-server')))
+    try {
+      render(<SoftwareSection ctx={ctx('mysql')} />)
+      const row = screen.getByText('MariaDB is installed instead').closest('div.grid') as HTMLElement
+      expect(within(row).getAllByRole('button').map((button) => button.textContent)).toEqual(['MySQL MariaDB is installed instead'])
+      expect(screen.getByText(/Installing MySQL would remove MariaDB/)).toBeInTheDocument()
+    } finally {
+      facts[PACKAGES_PROBE] = original
+    }
   })
 
   it('shows database bindings in the MySQL panel', () => {

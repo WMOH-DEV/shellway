@@ -21,6 +21,7 @@ function rowAction(row: CatalogRow, ctx: ServerSectionContext, state: SoftwareSt
   const { entry } = row
   const open = () => ctx.navigate({ section: 'software', sub: panelOf(row) })
   if (entry.id === 'base') return row.tone === 'success' ? { label: 'OK' } : null
+  if (row.replacedBy) return null
   if (!row.installed) {
     if (entry.id === 'php' || !entry.component) return { label: 'Install', onClick: open }
     return { label: 'Install', onClick: () => state.run('software.install', { component: entry.component }) }

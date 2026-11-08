@@ -31,6 +31,10 @@ export const CATALOG: CatalogEntry[] = [
 
 export const catalogEntry = (id: string): CatalogEntry | undefined => CATALOG.find((entry) => entry.id === id)
 
+const RIVALS: Record<string, string> = { mysql: 'mariadb', mariadb: 'mysql' }
+
+export const rivalEntry = (id: string): CatalogEntry | undefined => (RIVALS[id] ? catalogEntry(RIVALS[id]) : undefined)
+
 export const catalogPackageNames = (): string[] => [...new Set(CATALOG.flatMap((entry) => entry.packages))]
 
 export const catalogGlobs = (): string[] => CATALOG.flatMap((entry) => (entry.glob ? [entry.glob] : []))
