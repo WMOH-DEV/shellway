@@ -161,3 +161,9 @@ export const ufwProbe: ProbeDefinition<UfwFacts> = {
   script,
   parse: parseUfw
 }
+
+export function filterRuleGroups(groups: UfwRuleGroup[], query: string): UfwRuleGroup[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return groups
+  return groups.filter((group) => [group.to, group.from, group.action, group.comment].some((field) => field.toLowerCase().includes(needle)))
+}

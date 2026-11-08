@@ -7,7 +7,10 @@ import { DEFAULT_JAIL, type JailSettings } from '@/utils/server/security/fail2ba
 import { assertIp, ipMatches } from '@/utils/server/security/validate'
 import { Chip, Label, Notice, ProbeState, SectionCard } from '../../kit'
 import { FormModal, errorText } from './FormModal'
+import { ShowAllToggle } from './ShowAllToggle'
 import type { SecurityActions } from './types'
+
+const IGNORED_SHOWN = 12
 
 const minutes = (seconds: number | null, fallback: number): number => Math.round((seconds ?? fallback) / 60)
 
@@ -29,6 +32,7 @@ function YourIp({ ip, jail, actions }: { ip: string; jail: Fail2banJail; actions
 
 function IgnoreList({ jail, actions }: { jail: Fail2banJail; actions: SecurityActions }) {
   const [adding, setAdding] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const submit = () => {
@@ -49,13 +53,14 @@ function IgnoreList({ jail, actions }: { jail: Fail2banJail; actions: SecurityAc
         <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>Add</Button>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {jail.ignoreIp.map((entry) => (
+        {(expanded ? jail.ignoreIp : jail.ignoreIp.slice(0, IGNORED_SHOWN)).map((entry) => (
           <span key={entry} className="inline-flex items-center gap-1 rounded-md bg-nd-surface-raised px-2 py-0.5 font-mono text-xs text-nd-text-secondary">
             {entry}
             <button type="button" aria-label={`Remove ${entry} from the ignore list`} className="text-nd-text-muted hover:text-nd-text-primary" onClick={() => actions.launch('security.fail2ban.ignore', { ip: entry, op: 'remove' })}>×</button>
           </span>
         ))}
       </div>
+      <ShowAllToggle total={jail.ignoreIp.length} limit={IGNORED_SHOWN} expanded={expanded} noun="addresses" onToggle={() => setExpanded(!expanded)} />
       <FormModal open={adding} title="Never ban an address" submitLabel="Review" error={error} onClose={() => setAdding(false)} onSubmit={submit}>
         <Input label="IP address or network" className="font-mono" placeholder="203.0.113.10 or 10.0.0.0/8" value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
       </FormModal>
@@ -131,7 +136,7 @@ export function Fail2banCard({ result, actions }: { result: ProbeResult<Fail2ban
   const aside = f2b?.installed ? (
     <div className="flex items-center gap-2">
       <Chip dense dot tone={f2b.running ? 'success' : 'warning'}>{f2b.running ? 'running' : 'stopped'}</Chip>
-      {f2b.jails.length > 0 && <Chip dense mono>jail: {f2b.jails.join(', ')}</Chip>}
+      {f2b.jails.length > 0 && <span title={f2b.jails.join(', ')}><Chip dense mono>{f2b.jails.length === 1 ? `jail: ${f2b.jails[0]}` : `${f2b.jails.length} jails`}</Chip></span>}
     </div>
   ) : undefined
   return (
