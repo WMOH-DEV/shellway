@@ -188,7 +188,7 @@ function splitByZone(hosts: string[], zones: CloudflareZone[]): { inZone: Map<Cl
 function edgeFromRecords(zone: string, sslMode: SslMode | null, host: string, found: ApiRecord[], serverAddresses: string[]): EdgeInfo {
   const wanted = host.toLowerCase()
   const records = found.filter((r) => ROUTING_RECORD_TYPES.has(r.type) && r.name.toLowerCase() === wanted)
-  if (records.length === 0) return { ...unknownEdge('no DNS record found'), zone, sslMode }
+  if (records.length === 0) return { ...unknownEdge('no DNS record found'), zone, sslMode, noRecord: true }
   const ours = new Set(serverAddresses.map((a) => a.toLowerCase()))
   const isAddress = (r: ApiRecord) => ADDRESS_RECORD_TYPES.has(r.type)
   const elsewhere = ours.size > 0 ? records.find((r) => isAddress(r) && !ours.has(r.content.toLowerCase())) : undefined
@@ -222,9 +222,19 @@ function deniedAs(message: string, err: unknown): Error {
   return isDenied(err) ? new Error(message) : (err as Error)
 }
 
+const NO_EXACT_RECORD = 'no DNS record of this exact name on Cloudflare, but the name still resolves'
+
 function dnsFailure(err: unknown): string {
   if (isDenied(err)) return 'the token cannot read DNS records (it needs Zone → DNS → Read)'
   return (err as Error).message
+}
+
+async function confirmMissing(zoned: Record<string, EdgeInfo>, serverAddresses: string[]): Promise<Record<string, EdgeInfo>> {
+  const missing = Object.keys(zoned).filter((host) => zoned[host].noRecord)
+  if (missing.length === 0) return zoned
+  const looked = await edgesWithoutZone(missing, serverAddresses, ZONE_NOT_VISIBLE_REASON)
+  const confirmed = (host: string): EdgeInfo => (looked[host]?.noRecord ? zoned[host] : { ...zoned[host], noRecord: false, unknownReason: NO_EXACT_RECORD })
+  return { ...zoned, ...Object.fromEntries(missing.map((host) => [host, confirmed(host)])) }
 }
 
 export class CloudflareClient {
@@ -242,7 +252,7 @@ export class CloudflareClient {
     const { inZone, outside } = splitByZone(hosts, zones)
     const zoned = await this.zonedEdges(inZone, serverAddresses)
     const unzoned = await edgesWithoutZone(outside, serverAddresses, ZONE_NOT_VISIBLE_REASON)
-    return { ...zoned, ...unzoned }
+    return { ...(await confirmMissing(zoned, serverAddresses)), ...unzoned }
   }
 
   async createOriginCert(csr: string, hostnames: string[], keyType: OriginKeyType, years: OriginValidityYears): Promise<OriginCertificate> {

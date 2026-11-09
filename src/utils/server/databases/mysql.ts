@@ -1,8 +1,8 @@
 import type { ProbeDefinition } from '@/types/server/core'
-import { emptyEngine, MYSQL_PROBE } from './facts'
+import { emptyEngine, flavorLabel, MYSQL_PROBE } from './facts'
 import { isSystemDatabase } from './identifiers'
 import { hasSection, sectionLines, splitSections, tabFields, toInt, type OutputSection } from './sections'
-import type { DbDatabase, DbUser, EngineFacts } from './types'
+import type { DbDatabase, DbFlavor, DbUser, EngineFacts, SignInFix } from './types'
 
 export const MYSQL_CLIENT = 'mysql --batch --skip-column-names'
 
@@ -10,8 +10,10 @@ const USERS_FILTER = "User NOT LIKE 'mysql.%'"
 
 const SCRIPT = `command -v mysql >/dev/null 2>&1 || { echo @@missing; exit 0; }
 cd /tmp
+echo @@client
+mysql --version 2>/dev/null | head -n 1
 q() { ${MYSQL_CLIENT} -e "$1"; }
-if ! v=$(q 'SELECT VERSION()' 2>&1); then echo @@failed; printf '%s\\n' "$v" | head -n 3; exit 0; fi
+if ! v=$(q 'SELECT VERSION()' 2>&1); then echo @@failed; printf '%s\\n' "$v" | grep -v 'Deprecated program name' | head -n 3; exit 0; fi
 echo @@version
 printf '%s\\n' "$v"
 echo @@listen
@@ -28,13 +30,44 @@ done
 
 const SOCKET_PLUGINS = ['auth_socket', 'unix_socket']
 
-function failure(lines: string[]): EngineFacts {
+interface Client {
+  flavor: DbFlavor
+  version: string
+}
+
+function parseClient(line: string): Client {
+  if (!/mariadb/i.test(line)) return { flavor: 'mysql', version: '' }
+  return { flavor: 'mariadb', version: /(\d+\.\d+\.\d+)-MariaDB/i.exec(line)?.[1] ?? '' }
+}
+
+const MY_CNF: SignInFix = {
+  name: '/root/.my.cnf',
+  label: 'Create /root/.my.cnf so only root can read it: sudo install -m 600 /dev/null /root/.my.cnf. Then put this in it, with the database root password in place of your-root-password. Nothing in the database changes.',
+  code: '[client]\nuser=root\npassword="your-root-password"'
+}
+
+const MARIADB_SOCKET: SignInFix = {
+  name: 'the ALTER USER command',
+  label: 'Or let root also sign in through the socket. Open sudo mysql -p (it asks for the root password), then run this with root\'s current password. Apps that use that password keep working.',
+  code: "ALTER USER root@localhost IDENTIFIED VIA unix_socket OR mysql_native_password USING PASSWORD('your-root-password');"
+}
+
+function atLeast(version: string, major: number, minor: number): boolean {
+  const [a, b] = version.split('.').map(Number)
+  return a > major || (a === major && b >= minor)
+}
+
+const signInFixes = ({ flavor, version }: Client): SignInFix[] => (flavor === 'mariadb' && atLeast(version, 10, 4) ? [MY_CNF, MARIADB_SOCKET] : [MY_CNF])
+
+function failure(lines: string[], client: Client): EngineFacts {
+  const name = flavorLabel(client.flavor)
   const text = lines.join(' ')
-  if (/can't connect|no such file|connection refused/i.test(text)) return emptyEngine('mysql', 'stopped', 'MySQL is installed but not running.')
+  const facts = (status: 'stopped' | 'no-access', reason: string): EngineFacts => ({ ...emptyEngine('mysql', status, reason), flavor: client.flavor })
+  if (/can't connect|no such file|connection refused/i.test(text)) return facts('stopped', `${name} is installed but not running.`)
   if (/access denied/i.test(text)) {
-    return emptyEngine('mysql', 'no-access', 'root cannot sign in to MySQL through the local socket. Shellway needs socket login for root (auth_socket on MySQL, unix_socket on MariaDB).')
+    return { ...facts('no-access', `root cannot sign in to ${name} without a password. Shellway runs mysql as root and never types a password, so root needs another way in.`), signInFixes: signInFixes(client) }
   }
-  return emptyEngine('mysql', 'no-access', text || 'MySQL did not answer.')
+  return facts('no-access', text || `${name} did not answer.`)
 }
 
 function parseDatabase(line: string): DbDatabase {
@@ -111,8 +144,8 @@ function parseUser(line: string, sections: OutputSection[]): DbUser {
 export function parseMysql(stdout: string): EngineFacts {
   const sections = splitSections(stdout)
   if (hasSection(sections, 'missing')) return emptyEngine('mysql', 'missing', 'MySQL is not installed.')
-  if (hasSection(sections, 'failed')) return failure(sectionLines(sections, 'failed'))
-  const version = sectionLines(sections, 'version')[0] ?? ''
+  if (hasSection(sections, 'failed')) return failure(sectionLines(sections, 'failed'), parseClient(sectionLines(sections, 'client')[0] ?? ''))
+  const version = sectionLines(sections, 'version').at(-1) ?? ''
   return {
     engine: 'mysql',
     status: 'ok',

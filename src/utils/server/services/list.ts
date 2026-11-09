@@ -3,7 +3,7 @@ import { formatDuration } from './format'
 import { PROBE } from './probes'
 import type { Container, ContainersData, Pm2App, Pm2Data, ServiceKind, ServiceState, SupervisorData, SupervisorProgram, SystemdData, SystemdUnit } from './types'
 
-export type ControlVerb = 'start' | 'stop' | 'restart' | 'reload' | 'enable' | 'disable'
+export type ControlVerb = 'start' | 'stop' | 'restart' | 'reload' | 'enable' | 'disable' | 'reset-failed'
 
 export interface ServiceItem {
   id: string
@@ -47,9 +47,13 @@ function runningVerbs(reloadable: boolean): ControlVerb[] {
   return reloadable ? ['reload', 'restart', 'stop'] : ['restart', 'stop']
 }
 
+function stoppedVerbs(state: ServiceState, runsOnce: boolean): ControlVerb[] {
+  return state === 'failed' && runsOnce ? ['reset-failed', 'start'] : ['start']
+}
+
 function systemdItem(unit: SystemdUnit): ServiceItem {
   const state = systemdState(unit)
-  const verbs = state === 'running' ? runningVerbs(RELOADABLE.test(unit.name)) : ['start' as const]
+  const verbs = state === 'running' ? runningVerbs(RELOADABLE.test(unit.name)) : stoppedVerbs(state, unit.runsOnce === true)
   const bootVerbs: ControlVerb[] = unit.enabled === null ? [] : [unit.enabled ? 'disable' : 'enable']
   return {
     id: serviceId('systemd', unit.name),
@@ -183,6 +187,7 @@ export function filterCounts(items: ServiceItem[]): Record<ServiceFilter, number
 }
 
 export function primaryVerb(item: ServiceItem): ControlVerb {
+  if (item.verbs.includes('reset-failed')) return 'reset-failed'
   if (item.state !== 'running') return 'start'
   return item.verbs.includes('reload') && /^(nginx|apache2|httpd|caddy)$/.test(item.name) ? 'reload' : 'restart'
 }

@@ -10,7 +10,7 @@ echo "@@uptime $(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
 units=$(systemctl list-units --type=service --state=running,failed --plain --no-legend --no-pager 2>/dev/null | awk '{ print ($1 == "●" ? $2 : $1) }')
 [ -n "$units" ] || exit 0
 echo "@@sample $(date +%s%N)"
-systemctl show -p Id,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic $units 2>/dev/null
+systemctl show -p Id,Type,TriggeredBy,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic $units 2>/dev/null
 sleep 1
 echo "@@sample $(date +%s%N)"
 systemctl show -p Id,CPUUsageNSec $units 2>/dev/null
@@ -56,18 +56,17 @@ type ShowRecord = Record<string, string>
 
 function parseShowRecords(lines: string[]): Map<string, ShowRecord> {
   const records = new Map<string, ShowRecord>()
-  let current: ShowRecord | null = null
+  let current: ShowRecord = {}
+  const finish = () => {
+    if (current.Id) records.set(stripService(current.Id), current)
+    current = {}
+  }
   for (const line of lines) {
     const index = line.indexOf('=')
-    if (index < 0) continue
-    const key = line.slice(0, index)
-    const value = line.slice(index + 1).trim()
-    if (key === 'Id') {
-      current = {}
-      records.set(stripService(value), current)
-    }
-    if (current) current[key] = value
+    if (line.trim() === '') finish()
+    else if (index > 0) current[line.slice(0, index)] = line.slice(index + 1).trim()
   }
+  finish()
   return records
 }
 
@@ -107,9 +106,11 @@ function sinceSeconds(unit: SystemdUnit, record: ShowRecord | undefined, uptime:
   return Math.max(0, Math.round(uptime - monotonicUs / 1e6))
 }
 
+const runsOnce = (unit: SystemdUnit, record: ShowRecord | undefined): boolean => record?.Type === 'oneshot' && !record.TriggeredBy && !ALLOW.test(unit.name)
+
 function withUsage(unit: SystemdUnit, sampled: Sample[], uptime: number | null): SystemdUnit {
   const record = sampled[0]?.records.get(unit.name)
-  return { ...unit, cpuPercent: unit.sub === 'running' ? cpuPercent(unit.name, sampled) : null, memoryBytes: unit.sub === 'running' ? memoryBytes(record) : null, sinceSeconds: sinceSeconds(unit, record, uptime) }
+  return { ...unit, cpuPercent: unit.sub === 'running' ? cpuPercent(unit.name, sampled) : null, memoryBytes: unit.sub === 'running' ? memoryBytes(record) : null, sinceSeconds: sinceSeconds(unit, record, uptime), runsOnce: runsOnce(unit, record) }
 }
 
 function installedButNotLoaded(states: Map<string, boolean | null>, loaded: Set<string>): SystemdUnit[] {

@@ -257,8 +257,17 @@ describe('CloudflareClient.edges', () => {
       '/zones/z1/settings/ssl': ok({ value: 'full' }),
       [RECORD_URL('app.example.com')]: ok([record('TXT', 'app.example.com', 'v=spf1', false), record('A', 'www.example.com', '203.0.113.10', true)])
     }
+    vi.mocked(edgesWithoutZone).mockResolvedValueOnce({}).mockResolvedValueOnce({ 'app.example.com': { state: 'unknown', zone: null, recordType: null, recordContent: null, sslMode: null, unknownReason: 'no DNS address found for this name', noRecord: true } })
     const { edges } = await edgesFor(routes, ['app.example.com'])
-    expect(edges['app.example.com']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS record found', zone: 'example.com', sslMode: 'full' })
+    expect(edgesWithoutZone).toHaveBeenLastCalledWith(['app.example.com'], SERVER, ZONE_NOT_VISIBLE_REASON)
+    expect(edges['app.example.com']).toMatchObject({ state: 'unknown', unknownReason: 'no DNS record found', zone: 'example.com', sslMode: 'full', noRecord: true })
+  })
+
+  it('does not call a name missing when only a wildcard or another DNS provider answers for it', async () => {
+    const routes = { '/zones/z1/settings/ssl': ok({ value: 'full' }), [RECORD_URL('app.example.com')]: ok([]) }
+    vi.mocked(edgesWithoutZone).mockResolvedValueOnce({}).mockResolvedValueOnce({ 'app.example.com': { state: 'not-on-cloudflare', zone: null, recordType: 'A', recordContent: '203.0.113.10', sslMode: null, unknownReason: null } })
+    const { edges } = await edgesFor(routes, ['app.example.com'])
+    expect(edges['app.example.com']).toMatchObject({ state: 'unknown', zone: 'example.com', noRecord: false, unknownReason: 'no DNS record of this exact name on Cloudflare, but the name still resolves' })
   })
 
   it('matches a host to the longest zone suffix', async () => {

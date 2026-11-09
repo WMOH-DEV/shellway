@@ -3,7 +3,7 @@ import type { CertKind, CheckedSide, EdgeInfo, OriginCert, Verdict } from '../..
 export const WARNING_DAYS = 14
 const DAY_SECONDS = 86_400
 
-export const VERDICT_ORDER: readonly Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok']
+export const VERDICT_ORDER: readonly Verdict[] = ['broken', 'will-break', 'expiring', 'not-encrypted', 'unchecked', 'ok', 'no-dns']
 
 export const KIND_LABELS: Record<CertKind, string> = {
   letsencrypt: "Let's Encrypt",
@@ -86,6 +86,7 @@ export function verdictFor(input: VerdictInput): VerdictResult {
   if (broken) return { verdict: 'broken', reason: broken, uncheckedSide: null }
   const expiry = expiryVerdict(input)
   if (expiry) return expiry
+  if (edge.noRecord) return { verdict: 'no-dns', reason: 'No DNS record, so visitors cannot reach this name', uncheckedSide: null }
   if (origin?.kind === 'none') return { verdict: 'not-encrypted', reason: 'No HTTPS certificate on the server', uncheckedSide: null }
   if (edge.state === 'proxied' && (edge.sslMode === 'flexible' || edge.sslMode === 'off')) {
     return { verdict: 'not-encrypted', reason: 'Cloudflare reaches the server over plain HTTP', uncheckedSide: null }

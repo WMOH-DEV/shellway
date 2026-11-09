@@ -12,6 +12,7 @@ export interface SystemdUnit {
   cpuPercent: number | null
   memoryBytes: number | null
   sinceSeconds: number | null
+  runsOnce?: boolean
 }
 
 export type ToolData<T> = { installed: false } | ({ installed: true } & T)

@@ -4,7 +4,7 @@ import { aptInstallScript, aptRemoveScript, assertPackageName } from '../../apt'
 import { installRecipe, type ComponentId } from '../../install'
 import { asOsFamilyOverride, withOsFamily } from '../../setup/overrides'
 import type { OsFamilyOverride } from '../../settings/prefs'
-import { CATALOG, catalogEntry, ownsPackage } from '../catalog'
+import { CATALOG, catalogEntry, ownsPackage, rivalEntry } from '../catalog'
 import { installedPackage } from '../packages'
 import { phpVersion, sitesUsing } from '../php'
 import { blockedPlan, LONG_APT, okData, rootCommand, softwarePlan, unsupportedOsMessage } from '../planKit'
@@ -56,13 +56,11 @@ function alreadyInstalled(params: ComponentParams, facts: ServerFacts): boolean 
   return packages !== null && installedNames(entryFor(params.component), packages).length > 0
 }
 
-const DATABASE_RIVAL: Partial<Record<ComponentId, ComponentId>> = { mysql: 'mariadb', mariadb: 'mysql' }
-
 function rivalBlock(params: ComponentParams, facts: ServerFacts): string | null {
-  const rival = DATABASE_RIVAL[params.component]
+  const rival = rivalEntry(params.component)
   const packages = okData<PackagesFacts>(facts, PACKAGES_PROBE)
-  if (!rival || !packages || installedNames(entryFor(rival), packages).length === 0) return null
-  return `${entryFor(rival).name} is already installed, and installing ${describe(params)} would remove it. Remove ${entryFor(rival).name} first if you want to switch.`
+  if (!rival || !packages || installedNames(rival, packages).length === 0) return null
+  return `${rival.name} is already installed, and installing ${describe(params)} would remove it. Remove ${rival.name} first if you want to switch.`
 }
 
 export const installAction: ActionDefinition<InstallParams> = {

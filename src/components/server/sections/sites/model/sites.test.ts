@@ -57,6 +57,12 @@ describe('joinSites', () => {
     expect(siteRowAction(docsEntry, 'live')).toBe('add-https')
   })
 
+  it('keeps a working site green when only an alias has no DNS record', () => {
+    const [appEntry] = join.sites
+    const withAlias = { ...appEntry, hosts: [makeHost({ name: 'app.example.com', blockId: 'app:9' }), makeHost({ name: 'www.app.example.com', blockId: 'app:9', verdict: 'no-dns' })] }
+    expect(httpsView(withAlias, NOW).tone).toBe('success')
+  })
+
   it('reads PHP version and web server from the site file', () => {
     const inventory = makeInventory({ vhosts: [{ path: '/etc/nginx/sites-enabled/app.conf', realPath: '/etc/nginx/sites-available/app.conf', sha256: 'a'.repeat(64), content: 'fastcgi_pass unix:/run/php/php8.3-fpm.sock;' }] })
     expect(siteRuntime(join.sites[0], inventory)).toBe('PHP 8.3 · nginx')

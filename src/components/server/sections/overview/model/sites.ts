@@ -51,6 +51,7 @@ function httpsLabel(host: HostnameStatus, now: number): string {
   if (host.verdict === 'broken') return 'broken'
   if (host.verdict === 'not-encrypted') return 'not encrypted'
   if (host.verdict === 'unchecked') return 'unchecked'
+  if (host.verdict === 'no-dns') return 'not in DNS'
   if (host.origin?.kind === 'cloudflare-origin' && host.verdict === 'ok') return 'Origin CA'
   if (host.origin?.notAfter) return `${daysLeft(host.origin.notAfter, now)} d`
   return 'ok'

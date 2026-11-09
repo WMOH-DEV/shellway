@@ -8,7 +8,7 @@ import { BACKUPS_PROBE, backupFacts, engineFacts, flavorLabel, MYSQL_PROBE, POST
 import type { BackupFacts, BackupFile, DbEngine, EngineFacts, RedisFacts, SiteEnv } from '@/utils/server/databases/types'
 import type { ComponentId } from '@/utils/server/install/types'
 import { useActionLauncher } from '../../action'
-import { Notice, PageHeader, ProbeState, SectionPage, Segmented, type SegmentOption } from '@/components/server/kit'
+import { CodeBox, Notice, PageHeader, ProbeState, SectionPage, Segmented, type SegmentOption } from '@/components/server/kit'
 import { serverApi } from '../../serverApi'
 import { useServerFacts } from '../../useServerFacts'
 import type { ServerSectionContext } from '../types'
@@ -51,7 +51,19 @@ const routeTab = (engine: string | undefined): EngineTab | null => TABS.find((ta
 function EngineBody({ data, children }: { data: EngineFacts; children: React.ReactNode }) {
   if (data.status === 'ok') return <>{children}</>
   const title = data.status === 'stopped' ? `${flavorLabel(data.flavor)} is not running` : `Shellway cannot sign in to ${flavorLabel(data.flavor)}`
-  return <Notice tone="warning" title={title}>{data.reason}</Notice>
+  return (
+    <Notice tone="warning" title={title}>
+      <div className="flex flex-col gap-2">
+        <p>{data.reason}</p>
+        {data.signInFixes?.map((fix) => (
+          <div key={fix.name} className="flex flex-col gap-1.5">
+            <p>{fix.label}</p>
+            <CodeBox text={fix.code} label={fix.name} />
+          </div>
+        ))}
+      </div>
+    </Notice>
+  )
 }
 
 export function DatabasesSection({ ctx }: { ctx: ServerSectionContext }) {
@@ -170,8 +182,8 @@ function EngineContent({ data, backups, files, sites, downloading, backupsRef, t
   return (
     <>
       {exposed.length > 0 && (
-        <Notice tone="warning" title="MySQL listens on every network address">
-          {exposed.join(', ')}. If apps only run on this server, set bind-address = 127.0.0.1 in the MySQL config, or block the port in the firewall.
+        <Notice tone="warning" title={`${flavorLabel(data.flavor)} listens on every network address`}>
+          {exposed.join(', ')}. If apps only run on this server, set bind-address = 127.0.0.1 in the {flavorLabel(data.flavor)} config, or block the port in the firewall.
         </Notice>
       )}
       <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-start gap-4">

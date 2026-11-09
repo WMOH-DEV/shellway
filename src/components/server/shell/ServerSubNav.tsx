@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Tooltip } from '@/components/ui/Tooltip'
 import type { AttentionItem, AttentionLevel, ServerSection } from '@/types/server/core'
@@ -72,9 +73,24 @@ export interface ServerSubNavProps {
   attention: readonly AttentionItem[]
   collapsed: boolean
   onSelect(section: ServerSection): void
+  onToggleCollapsed(): void
 }
 
-export function ServerSubNav({ connectionId, active, name, status, section, attention, collapsed, onSelect }: ServerSubNavProps) {
+function CollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle(): void }) {
+  const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+  const Icon = collapsed ? PanelLeftOpen : PanelLeftClose
+  return (
+    <div className={cn('mt-1 flex border-t border-nd-border pt-2', collapsed ? 'justify-center' : 'justify-end')}>
+      <Tooltip content={label} side="right">
+        <button type="button" aria-label={label} onClick={onToggle} className="rounded-[7px] p-2 text-nd-text-muted transition-colors hover:bg-nd-surface hover:text-nd-text-primary">
+          <Icon size={16} />
+        </button>
+      </Tooltip>
+    </div>
+  )
+}
+
+export function ServerSubNav({ connectionId, active, name, status, section, attention, collapsed, onSelect, onToggleCollapsed }: ServerSubNavProps) {
   const badges = useMemo(() => badgesFor(attention), [attention])
   const renderLink = (module: SectionModule) => (
     <NavLink
@@ -102,6 +118,7 @@ export function ServerSubNav({ connectionId, active, name, status, section, atte
       {MAIN_SECTIONS.map(renderLink)}
       <div className="flex-1" />
       {BOTTOM_SECTIONS.map(renderLink)}
+      <CollapseToggle collapsed={collapsed} onToggle={onToggleCollapsed} />
     </nav>
   )
 }

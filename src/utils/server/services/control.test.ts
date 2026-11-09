@@ -44,6 +44,13 @@ describe('planControl', () => {
     expect(plan.blocked).toBeNull()
   })
 
+  it('clears the failed state of a system service', () => {
+    const plan = planControl(validateControl({ kind: 'systemd', name: 'systemd-networkd-wait-online', verb: 'reset-failed' }), FACTS)
+    expect(plan.title).toBe('Clear the failed state of systemd-networkd-wait-online')
+    expect(plan.steps[0]).toMatchObject({ root: true, display: "systemctl reset-failed 'systemd-networkd-wait-online.service'" })
+    expect(() => validateControl({ kind: 'supervisor', name: 'queue', verb: 'reset-failed' })).toThrow()
+  })
+
   it('blocks stopping SSH', () => {
     expect(planControl({ kind: 'systemd', name: 'ssh', verb: 'stop', user: null }, {}).blocked?.kind).toBe('precondition')
     expect(planControl({ kind: 'systemd', name: 'ssh', verb: 'restart', user: null }, {}).blocked).toBeNull()

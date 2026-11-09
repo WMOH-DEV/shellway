@@ -14,7 +14,7 @@ export interface ControlParams {
 }
 
 const VERBS: Record<ServiceKind, readonly ControlVerb[]> = {
-  systemd: ['start', 'stop', 'restart', 'reload', 'enable', 'disable'],
+  systemd: ['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'reset-failed'],
   supervisor: ['start', 'stop', 'restart'],
   pm2: ['start', 'stop', 'restart'],
   container: ['start', 'stop', 'restart']
@@ -29,7 +29,7 @@ const NAMES: Record<ServiceKind, RegExp> = {
 
 const USER = /^[a-z_][a-z0-9_-]{0,31}$/
 
-const VERB_LABEL: Record<ControlVerb, string> = { start: 'Start', stop: 'Stop', restart: 'Restart', reload: 'Reload', enable: 'Start on boot:', disable: 'Do not start on boot:' }
+const VERB_LABEL: Record<ControlVerb, string> = { start: 'Start', stop: 'Stop', restart: 'Restart', reload: 'Reload', enable: 'Start on boot:', disable: 'Do not start on boot:', 'reset-failed': 'Clear the failed state of' }
 
 const SSH_UNITS = new Set(['ssh', 'sshd'])
 

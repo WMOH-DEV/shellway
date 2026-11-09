@@ -124,6 +124,14 @@ const RULES: HintRule[] = [
     }
   },
   {
+    id: 'open-files',
+    match: (input, log) => {
+      if (/Too many open files in system/i.test(log)) return { text: `The whole server had run out of open files when ${input.item.name} failed. Another program was most likely holding too many files open at that moment.`, fix: null }
+      if (!/Too many open files/i.test(log)) return null
+      return { text: `${input.item.name} hit its own limit of open files or file watchers when it failed. If it keeps happening, raise its LimitNOFILE or the server's fs.inotify.max_user_instances.`, fix: null }
+    }
+  },
+  {
     id: 'permission-denied',
     match: (input, log) => {
       if (!/Permission denied/i.test(log)) return null

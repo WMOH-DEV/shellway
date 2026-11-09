@@ -30,6 +30,15 @@ describe('catalogRows', () => {
     expect(rows.base).toMatchObject({ detail: 'missing unzip, htop', tone: 'warning' })
   })
 
+  it('says MariaDB is installed instead of MySQL rather than offering MySQL', () => {
+    const packages = parsePackages(PACKAGES_UBUNTU.replace(/^mysql-server/gm, 'mariadb-server'))
+    const byId = Object.fromEntries(catalogRows({ packages, php: null, usage: null }).map((row) => [row.entry.id, row]))
+    expect(byId.mysql).toMatchObject({ installed: false, detail: 'MariaDB is installed instead', replacedBy: 'MariaDB' })
+    expect(byId.mariadb).toMatchObject({ installed: true })
+    expect(rows.mariadb).toMatchObject({ installed: false, detail: 'MySQL is installed instead', replacedBy: 'MySQL' })
+    expect(rows.postgresql.replacedBy).toBeUndefined()
+  })
+
   it('shows nvm installs', () => {
     const row = catalogRows({ packages: parsePackages(PACKAGES_NVM), php: null, usage: null }).find((item) => item.entry.id === 'node')
     expect(row).toMatchObject({ installed: true, version: '20.18.0', detail: 'via nvm' })

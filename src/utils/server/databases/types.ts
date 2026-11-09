@@ -20,10 +20,17 @@ export interface DbUser {
   superuser: boolean
 }
 
+export interface SignInFix {
+  name: string
+  label: string
+  code: string
+}
+
 export interface EngineFacts {
   engine: DbEngine
   status: EngineStatus
   reason: string
+  signInFixes?: SignInFix[]
   flavor: DbFlavor
   version: string
   listen: string[]

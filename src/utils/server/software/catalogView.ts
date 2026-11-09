@@ -1,4 +1,4 @@
-import { BASE_TOOLS, CATALOG, ownsPackage } from './catalog'
+import { BASE_TOOLS, CATALOG, ownsPackage, rivalEntry } from './catalog'
 import { installedPackage } from './packages'
 import { upstreamVersion } from './sections'
 import type { CatalogEntry, InstalledPackage, PackagesFacts, PhpFacts, ServiceState, UsageFacts } from './types'
@@ -13,6 +13,7 @@ export interface CatalogRow {
   tone: RowTone
   update: string | null
   updatePackages: string[]
+  replacedBy?: string
 }
 
 export interface CatalogInputs {
@@ -42,9 +43,15 @@ function updateLabel(item: InstalledPackage): string {
   return next === upstreamVersion(item.version) ? 'update available' : `${next} available`
 }
 
+function notInstalledRow(entry: CatalogEntry, packages: PackagesFacts): CatalogRow {
+  const rival = rivalEntry(entry.id)
+  if (!rival || ownedPackages(rival, packages).length === 0) return { entry, ...NOT_INSTALLED }
+  return { entry, ...NOT_INSTALLED, detail: `${rival.name} is installed instead`, replacedBy: rival.name }
+}
+
 function packageRow(entry: CatalogEntry, inputs: CatalogInputs): CatalogRow {
   const owned = ownedPackages(entry, inputs.packages)
-  if (owned.length === 0) return { entry, ...NOT_INSTALLED }
+  if (owned.length === 0) return notInstalledRow(entry, inputs.packages)
   const state = entry.service ? inputs.packages.services[entry.service] ?? 'unknown' : null
   const notes = [state ? SERVICE_TEXT[state] : 'installed', usageNote(entry, inputs)].filter(Boolean)
   const upgradable = owned.filter((item) => item.candidate)

@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { Lock } from 'lucide-react'
+import { Lock, Search } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { ProbeResult } from '@/types/server/core'
-import { groupUfwRules, type UfwAction, type UfwFacts, type UfwPolicy, type UfwRuleGroup } from '@/utils/server/security/ufw'
+import { filterRuleGroups, groupUfwRules, type UfwAction, type UfwFacts, type UfwPolicy, type UfwRuleGroup } from '@/utils/server/security/ufw'
 import { Chip, Notice, ProbeState, SectionCard, type KitTone } from '../../kit'
 import { AddRuleModal } from './AddRuleModal'
+import { ShowAllToggle } from './ShowAllToggle'
 import type { SecurityActions } from './types'
 
 const ACTION_TONE: Record<UfwAction, KitTone> = { allow: 'success', limit: 'warning', deny: 'error', reject: 'error' }
@@ -14,6 +16,8 @@ const POLICIES = [
   { value: 'reject', label: 'Reject incoming' },
   { value: 'allow', label: 'Allow incoming' }
 ]
+
+const RULES_SHOWN = 8
 
 const readable = (value: string): string => (value === 'Anywhere' ? 'anywhere' : value)
 
@@ -55,6 +59,28 @@ function DockerNotice({ ufw }: { ufw: UfwFacts }) {
   )
 }
 
+function RuleList({ groups, actions }: { groups: UfwRuleGroup[]; actions: SecurityActions }) {
+  const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const searchable = groups.length > RULES_SHOWN
+  const search = searchable ? query.trim() : ''
+  const matches = filterRuleGroups(groups, search)
+  const visible = search || expanded ? matches : matches.slice(0, RULES_SHOWN)
+  return (
+    <div className="flex flex-col gap-1.5">
+      {searchable && (
+        <Input aria-label="Search firewall rules" placeholder={`Search ${groups.length} rules by port, address or note`} icon={<Search size={14} />} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === 'Escape' && setQuery('')} />
+      )}
+      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_80px_minmax(0,1.6fr)_96px] gap-3 px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-dim">
+        <span>Port</span><span>From</span><span>Action</span><span>Note</span><span />
+      </div>
+      {visible.map((group) => <RuleRow key={group.key} group={group} actions={actions} />)}
+      {matches.length === 0 && <p className="px-3 text-[13px] text-nd-text-muted">No rule matches {search}.</p>}
+      {!search && <ShowAllToggle total={matches.length} limit={RULES_SHOWN} expanded={expanded} noun="rules" onToggle={() => setExpanded(!expanded)} />}
+    </div>
+  )
+}
+
 function FirewallBody({ ufw, actions }: { ufw: UfwFacts; actions: SecurityActions }) {
   if (!ufw.installed) {
     return (
@@ -72,14 +98,7 @@ function FirewallBody({ ufw, actions }: { ufw: UfwFacts; actions: SecurityAction
           Shellway allows SSH port {ufw.sshPort ?? 22} first, then turns ufw on.
         </Notice>
       )}
-      {groups.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_80px_minmax(0,1.6fr)_96px] gap-3 px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-nd-text-dim">
-            <span>Port</span><span>From</span><span>Action</span><span>Note</span><span />
-          </div>
-          {groups.map((group) => <RuleRow key={group.key} group={group} actions={actions} />)}
-        </div>
-      )}
+      {groups.length > 0 && <RuleList groups={groups} actions={actions} />}
       {ufw.active && groups.length === 0 && <p className="text-[13px] text-nd-text-muted">No rules yet.</p>}
       <DockerNotice ufw={ufw} />
     </>

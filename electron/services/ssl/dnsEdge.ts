@@ -32,6 +32,8 @@ export const CLOUDFLARE_RANGES = [
 
 const MISSING_NAME_CODES = new Set(['ENOTFOUND', 'ENODATA'])
 const NO_ADDRESS = 'no DNS address found for this name'
+const DNS_CONTROL_HOST = 'api.cloudflare.com'
+const DNS_UNREACHABLE = 'DNS lookup failed (this computer could not reach DNS)'
 
 function cloudflareList(): BlockList {
   const list = new BlockList()
@@ -72,7 +74,7 @@ function resolvedEdge(state: 'elsewhere' | 'not-on-cloudflare', address: string)
 }
 
 function edgeFor(addresses: string[], serverAddresses: string[], reasonWhenOnCloudflare: string): EdgeInfo {
-  if (addresses.length === 0) return unknownEdge(NO_ADDRESS)
+  if (addresses.length === 0) return { ...unknownEdge(NO_ADDRESS), noRecord: true }
   if (addresses.some(isCloudflareAddress)) return unknownEdge(reasonWhenOnCloudflare)
   const ours = new Set(serverAddresses.map((a) => a.toLowerCase()))
   if (ours.size > 0 && !addresses.some((a) => ours.has(a.toLowerCase()))) return resolvedEdge('elsewhere', addresses[0])
@@ -83,7 +85,8 @@ async function lookupEdge(host: string, serverAddresses: string[], reasonWhenOnC
   try {
     return edgeFor(await resolve(host), serverAddresses, reasonWhenOnCloudflare)
   } catch (err) {
-    return unknownEdge(lookupFailure(err))
+    const reason = lookupFailure(err)
+    return reason === NO_ADDRESS ? { ...unknownEdge(reason), noRecord: true } : unknownEdge(reason)
   }
 }
 
@@ -94,5 +97,14 @@ export async function edgesWithoutZone(
   resolve: AddressResolver = resolveAddresses
 ): Promise<Record<string, EdgeInfo>> {
   const entries = await Promise.all(hosts.map(async (host) => [host, await lookupEdge(host, serverAddresses, reasonWhenOnCloudflare, resolve)] as const))
-  return Object.fromEntries(entries)
+  if (!entries.some(([, edge]) => edge.noRecord) || (await dnsReachable(resolve))) return Object.fromEntries(entries)
+  return Object.fromEntries(entries.map(([host, edge]) => [host, edge.noRecord ? unknownEdge(DNS_UNREACHABLE) : edge]))
+}
+
+async function dnsReachable(resolve: AddressResolver): Promise<boolean> {
+  try {
+    return (await resolve(DNS_CONTROL_HOST)).length > 0
+  } catch {
+    return false
+  }
 }

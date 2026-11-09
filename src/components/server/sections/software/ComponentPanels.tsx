@@ -27,6 +27,14 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
 
 export const rowFor = (entry: CatalogEntry, packages: PackagesFacts, state: SoftwareState): CatalogRow => catalogRow(entry, { packages, php: state.phpData, usage: state.usageData })
 
+export function ReplacedCard({ entry, replacedBy }: { entry: CatalogEntry; replacedBy: string }) {
+  return (
+    <SectionCard title={entry.name}>
+      <p className="text-[13px] text-nd-text-muted">{replacedBy} is installed instead. Installing {entry.name} would remove {replacedBy}, so Shellway does not offer it.</p>
+    </SectionCard>
+  )
+}
+
 export function InstallCard({ entry, run, extra }: { entry: CatalogEntry; run: SoftwareState['run']; extra?: Record<string, string> }) {
   const install = entry.component ? <Button size="sm" variant="primary" onClick={() => run('software.install', { component: entry.component, ...extra })}>Install</Button> : null
   return (
@@ -112,6 +120,7 @@ function Bindings({ addresses }: { addresses: string[] }) {
 
 export function DatabasePanel({ entry, packages, ctx, state }: PanelProps) {
   const row = rowFor(entry, packages, state)
+  if (row.replacedBy) return <ReplacedCard entry={entry} replacedBy={row.replacedBy} />
   if (!row.installed) return <InstallCard entry={entry} run={state.run} />
   const addresses = bindingsFor(packages, DATABASE_PORTS[entry.id])
   const exposed = addresses.some(isPublicBinding)
