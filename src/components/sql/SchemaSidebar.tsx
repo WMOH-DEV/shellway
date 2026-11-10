@@ -168,6 +168,7 @@ interface TableRowProps {
   isMultiSelected: boolean;
   multiSelectedCount: number;
   onSelect: (name: string, e?: React.MouseEvent | React.KeyboardEvent) => void;
+  onKeepOpen: (name: string) => void;
   onContextMenuSelect: (id: string) => void;
 }
 
@@ -177,6 +178,7 @@ const TableRow = memo(function TableRow({
   isMultiSelected,
   multiSelectedCount,
   onSelect,
+  onKeepOpen,
   onContextMenuSelect,
 }: TableRowProps) {
   const handleClick = useCallback(
@@ -218,7 +220,9 @@ const TableRow = memo(function TableRow({
       <div
         role="button"
         tabIndex={0}
+        data-table-name={table.name}
         onClick={handleClick}
+        onDoubleClick={() => onKeepOpen(table.name)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") onSelect(table.name, e);
         }}
@@ -317,7 +321,8 @@ export type TableContextAction =
   | { type: "drop-table"; table: string }
   | { type: "truncate-table"; table: string }
   | { type: "view-structure"; table: string }
-  | { type: "open-new-tab"; table: string };
+  | { type: "open-new-tab"; table: string }
+  | { type: "keep-open"; table: string };
 
 /** Context menu action type for database actions */
 export type DatabaseContextAction =
@@ -499,6 +504,31 @@ export function SchemaSidebar({
     },
     [setSelectedTable, setMultiSelected, orderedTableNames],
   );
+
+  const handleKeepOpen = useCallback(
+    (name: string) => onTableAction?.({ type: "keep-open", table: name }),
+    [onTableAction],
+  );
+
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleReveal = (e: Event) => {
+      const detail = (e as CustomEvent<{ connectionId: string; table: string }>).detail;
+      if (detail?.connectionId !== connectionId) return;
+      setSearchQuery("");
+      setDebouncedSearch("");
+      requestAnimationFrame(() => {
+        const row = listRef.current?.querySelector<HTMLElement>(
+          `[data-table-name="${CSS.escape(detail.table)}"]`,
+        );
+        row?.scrollIntoView({ block: "center" });
+        row?.focus();
+      });
+    };
+    window.addEventListener("sql:reveal-table", handleReveal);
+    return () => window.removeEventListener("sql:reveal-table", handleReveal);
+  }, [connectionId]);
 
   // ── Context menu handlers ──
 
@@ -810,7 +840,7 @@ export function SchemaSidebar({
       </div>
 
       {/* Table list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div ref={listRef} className="flex-1 overflow-y-auto py-1">
         {fetchError && tables.length === 0 ? (
           <div className="px-3 py-6 text-center space-y-2">
             <AlertCircle size={20} className="mx-auto text-nd-error" />
@@ -845,6 +875,7 @@ export function SchemaSidebar({
                     isMultiSelected={multiSelected.has(table.name)}
                     multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
+                    onKeepOpen={handleKeepOpen}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}
@@ -865,6 +896,7 @@ export function SchemaSidebar({
                     isMultiSelected={multiSelected.has(table.name)}
                     multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
+                    onKeepOpen={handleKeepOpen}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}
