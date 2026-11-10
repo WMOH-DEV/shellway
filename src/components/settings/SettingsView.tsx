@@ -29,6 +29,7 @@ import { Tabs, type TabItem } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
 import { FontPicker } from '@/components/settings/FontPicker'
 import { KeybindingsSection } from '@/components/settings/KeybindingsSection'
+import { SqlTabsSettings } from '@/components/settings/SqlTabsSettings'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
 import { useUpdateStore } from '@/stores/updateStore'
@@ -492,20 +493,27 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
           )}
 
           {activeSection === 'sql' && (
-            <SettingsSection title="Table Filters">
-              <Select
-                label="Default Filter Match"
-                value={settings.sqlDefaultFilterMatch}
-                onChange={(e) => update('sqlDefaultFilterMatch', e.target.value as FilterMatch)}
-                options={[
-                  { value: 'all', label: 'All filters must match (AND)' },
-                  { value: 'any', label: 'Any filter can match (OR)' }
-                ]}
+            <div className="flex flex-col gap-6">
+              <SqlTabsSettings
+                settings={settings}
+                update={update}
+                onOpenShortcuts={() => setActiveSection('shortcuts')}
               />
-              <p className="text-2xs text-nd-text-muted">
-                Used for tables where you haven't picked All or Any yourself.
-              </p>
-            </SettingsSection>
+              <SettingsSection title="Table Filters">
+                <Select
+                  label="Default Filter Match"
+                  value={settings.sqlDefaultFilterMatch}
+                  onChange={(e) => update('sqlDefaultFilterMatch', e.target.value as FilterMatch)}
+                  options={[
+                    { value: 'all', label: 'All filters must match (AND)' },
+                    { value: 'any', label: 'Any filter can match (OR)' }
+                  ]}
+                />
+                <p className="text-2xs text-nd-text-muted">
+                  Used for tables where you haven't picked All or Any yourself.
+                </p>
+              </SettingsSection>
+            </div>
           )}
 
           {activeSection === 'connection' && (
