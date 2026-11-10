@@ -139,7 +139,7 @@ interface SQLStoreState {
   promoteTab: (connectionId: string, id: string) => void
   setTabPinned: (connectionId: string, id: string, pinned: boolean) => void
   moveTab: (connectionId: string, id: string, toIndex: number) => void
-  reopenClosedTab: (connectionId: string) => void
+  reopenClosedTab: (connectionId: string, closedIndex?: number) => void
   sortTabsByName: (connectionId: string) => void
   restoreTabs: (connectionId: string, saved: RestoredTabs) => void
 
@@ -397,9 +397,9 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
       applyTabs(conn, (state) => moveTab(state, id, toIndex))
     )),
 
-  reopenClosedTab: (connectionId) =>
+  reopenClosedTab: (connectionId, closedIndex = 0) =>
     set((s) => updateConn(s.connections, connectionId, (conn) =>
-      withLimit(conn, reopenClosed(tabsStateOf(conn), Date.now()))
+      withLimit(conn, reopenClosed(tabsStateOf(conn), Date.now(), closedIndex))
     )),
 
   sortTabsByName: (connectionId) =>
@@ -598,7 +598,7 @@ export function useSQLConnection(connectionId: string) {
       promoteTab: (id: string) => s.promoteTab(connectionId, id),
       setTabPinned: (id: string, pinned: boolean) => s.setTabPinned(connectionId, id, pinned),
       moveTab: (id: string, toIndex: number) => s.moveTab(connectionId, id, toIndex),
-      reopenClosedTab: () => s.reopenClosedTab(connectionId),
+      reopenClosedTab: (closedIndex?: number) => s.reopenClosedTab(connectionId, closedIndex),
       sortTabsByName: () => s.sortTabsByName(connectionId),
       restoreTabs: (saved: RestoredTabs) => s.restoreTabs(connectionId, saved),
 

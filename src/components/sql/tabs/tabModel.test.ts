@@ -190,6 +190,13 @@ describe('reopenClosed', () => {
     expect(s.closed).toHaveLength(0)
   })
 
+  it('reopens a chosen entry from the stack', () => {
+    const s0 = closeTabs(closeTabs(state([table('a'), table('b'), table('c')], 'a'), ['b'], 1), ['c'], 2)
+    const s = reopenClosed(s0, 3, 1)
+    expect(ids(s)).toEqual(['a', 'b'])
+    expect(s.closed.map((c) => c.tab.id)).toEqual(['c'])
+  })
+
   it('does nothing with an empty stack', () => {
     const s0 = state([table('a')])
     expect(reopenClosed(s0, 1)).toBe(s0)

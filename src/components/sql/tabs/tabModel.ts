@@ -124,10 +124,10 @@ export function closeTabs(s: TabsState, ids: string[], now: number): TabsState {
   }
 }
 
-export function reopenClosed(s: TabsState, now: number): TabsState {
-  const [entry, ...rest] = s.closed
+export function reopenClosed(s: TabsState, now: number, closedIndex = 0): TabsState {
+  const entry = s.closed[closedIndex]
   if (!entry) return s
-  const popped = { ...s, closed: rest }
+  const popped = { ...s, closed: s.closed.filter((_, i) => i !== closedIndex) }
 
   const duplicate = s.tabs.find((t) => t.id === entry.tab.id || sameTarget(t, entry.tab))
   if (duplicate) return activateTab(popped, duplicate.id, now)

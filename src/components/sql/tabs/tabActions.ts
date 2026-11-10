@@ -6,7 +6,7 @@ export interface TabActions {
   pin(id: string, pinned: boolean): void
   duplicate(id: string): void
   move(id: string, toIndex: number): void
-  reopenClosed(): void
+  reopenClosed(closedIndex?: number): void
   sortByName(): void
   revealInSidebar(id: string): void
   copyName(id: string): void

@@ -20,6 +20,10 @@ export function clearSqlTabSnapshot(tabId: string): void {
   }, true)
 }
 
+export function useSqlTabSnapshots(): Record<string, SqlTabSnapshot> {
+  return useSnapshotStore()
+}
+
 export function useSqlTabSnapshot(tabId: string | null | undefined): SqlTabSnapshot | undefined {
   return useSnapshotStore((all) => (tabId ? all[tabId] : undefined))
 }
