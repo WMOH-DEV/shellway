@@ -337,6 +337,27 @@ export interface SQLTab {
    *  table would overwrite the others' filters. The first tab leaves this unset
    *  and keeps the plain table-keyed storage. */
   filterScope?: string;
+  pinned?: boolean;
+  preview?: boolean;
+  createdAt?: number;
+  lastActiveAt?: number;
+  viewMode?: "data" | "structure";
+  viewState?: SQLTabViewState;
+}
+
+export type SQLTabKind = "table" | "query" | "structure";
+
+export interface SQLTabViewState {
+  sortKeys?: SortKey[];
+  page?: number;
+  firstRow?: number;
+  sql?: string;
+}
+
+export interface ClosedSQLTab {
+  tab: SQLTab;
+  index: number;
+  closedAt: number;
 }
 
 // ── Running Queries ──
