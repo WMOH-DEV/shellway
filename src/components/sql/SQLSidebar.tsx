@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/utils/cn'
 import {
   SchemaSidebar,
@@ -27,6 +27,7 @@ interface SQLSidebarProps {
   multiSelectedTables?: Set<string>
   onMultiSelectChange?: (tables: Set<string>) => void
   onOpenQuery: (sql: string, name?: string) => void
+  openTabs?: ReactNode
 }
 
 function tabStorageKey(scopeId: string): string {
@@ -43,7 +44,8 @@ export function SQLSidebar({
   onDatabaseAction,
   multiSelectedTables,
   onMultiSelectChange,
-  onOpenQuery
+  onOpenQuery,
+  openTabs
 }: SQLSidebarProps) {
   const [tab, setTab] = useState<SidebarTab>('items')
 
@@ -100,6 +102,8 @@ export function SQLSidebar({
           </button>
         ))}
       </div>
+
+      {openTabs}
 
       <div className={cn('flex-1 min-h-0', tab !== 'items' && 'hidden')}>
         <SchemaSidebar

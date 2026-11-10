@@ -7,6 +7,8 @@ import { openEmptyWindow } from '@/utils/windowHandoff'
  * Global keyboard shortcuts for quick-launch actions.
  * Keybindings are read from the keybinding store (customizable via Settings → Shortcuts).
  */
+export const CLOSE_REQUEST_EVENT = 'app:close-request'
+
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -127,5 +129,13 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    return window.novadeck.window.onCloseRequest?.(() => {
+      const request = new CustomEvent(CLOSE_REQUEST_EVENT, { cancelable: true })
+      window.dispatchEvent(request)
+      if (!request.defaultPrevented) void window.novadeck.window.close()
+    })
   }, [])
 }

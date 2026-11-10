@@ -31,13 +31,21 @@ import { ImportCSVDialog } from './ImportCSVDialog'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { TableDeleteDialog, type TableDeleteMode } from './TableDeleteDialog'
 import { HealingDialog } from './HealingDialog'
-import { SQLTabBar } from './SQLTabBar'
+import { TabStrip, CurrentTabHeader } from './tabs/TabStrip'
+import { TabsMenu } from './tabs/TabsMenu'
+import { VerticalTabList } from './tabs/VerticalTabList'
+import { RecentTabsSwitcher } from './tabs/RecentTabsSwitcher'
+import { useTabShortcuts } from './tabs/useTabShortcuts'
+import { mruTabs } from './tabs/tabModel'
+import type { TabActions } from './tabs/tabActions'
+import { useSqlTabSettings } from '@/stores/sqlTabSettingsStore'
+import { clearSqlTabSnapshot } from '@/stores/sqlTabSnapshotStore'
 import { SQLStatusBar } from './SQLStatusBar'
 import { QueryMonitor } from './QueryMonitor'
 import { SafeModeMenu } from './SafeModeMenu'
 import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
-import type { SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
+import type { ClosedSQLTab, SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -233,6 +241,15 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     removeTab,
     removeTabs,
     setActiveTab,
+    openPreviewTab,
+    promoteTab,
+    setTabPinned,
+    moveTab,
+    reopenClosedTab,
+    sortTabsByName,
+    restoreTabs,
+    mru,
+    closedTabs,
     setSelectedTable,
     addHistoryEntry,
     runningQueries,
@@ -269,7 +286,15 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [isStandalone, connectionId, connectionStatus])
 
   // ── SQL keyboard shortcuts (only active when SQL sub-tab is visible + connected) ──
-  useSQLShortcuts(connectionId, sqlSessionId, connectionStatus === 'connected' && isSQLSubTabActive, sessionId)
+  const shortcutsActive = connectionStatus === 'connected' && isSQLSubTabActive
+  useSQLShortcuts(connectionId, sqlSessionId, shortcutsActive, sessionId)
+
+  const tabSettings = useSqlTabSettings()
+  const tabSettingsRef = useRef(tabSettings)
+  tabSettingsRef.current = tabSettings
+  const [tabsMenuOpen, setTabsMenuOpen] = useState(false)
+  const [tabsMenuAnchor, setTabsMenuAnchor] = useState<DOMRect | null>(null)
+  const tabStripRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     pruneLegacyDrafts()
@@ -412,12 +437,12 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     try {
       localStorage.setItem(
         `sql-tabs:${connectionId}`,
-        JSON.stringify({ tabs, activeTabId, selectedTable })
+        JSON.stringify({ tabs, activeTabId, selectedTable, mru, closedTabs })
       )
     } catch {
       // Ignore storage errors (e.g. private browsing with full storage)
     }
-  }, [connectionStatus, tabs, activeTabId, selectedTable, connectionId])
+  }, [connectionStatus, tabs, activeTabId, selectedTable, mru, closedTabs, connectionId])
 
   // ── Restore saved tabs on connect if no tabs are already open ──
   useEffect(() => {
@@ -426,13 +451,24 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     if (connectionStatus !== 'connected' || prev === 'connected') return
     // Imperative read — avoids tabs being a reactive dependency here
     if (getSQLConnectionState(connectionId).tabs.length > 0) return
+    if (!tabSettingsRef.current.sqlReopenTabsOnConnect) return
     try {
       const raw = localStorage.getItem(`sql-tabs:${connectionId}`)
       if (!raw) return
-      const saved = JSON.parse(raw) as { tabs: SQLTab[]; activeTabId: string | null; selectedTable: string | null }
+      const saved = JSON.parse(raw) as {
+        tabs: SQLTab[]
+        activeTabId: string | null
+        selectedTable: string | null
+        mru?: string[]
+        closedTabs?: ClosedSQLTab[]
+      }
       if (!Array.isArray(saved?.tabs) || saved.tabs.length === 0) return
-      saved.tabs.forEach(t => addTab(t))
-      if (saved.activeTabId) setActiveTab(saved.activeTabId)
+      restoreTabs({
+        tabs: saved.tabs,
+        activeTabId: saved.activeTabId,
+        mru: Array.isArray(saved.mru) ? saved.mru : undefined,
+        closedTabs: Array.isArray(saved.closedTabs) ? saved.closedTabs : undefined
+      })
       // Only restore selectedTable if the active tab IS the data tab for that table.
       // Otherwise the selectedTable effect would override activeTabId with the data tab,
       // discarding the user's actual last-active tab (e.g. a query editor).
@@ -443,7 +479,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     } catch {
       // Ignore parse errors
     }
-  }, [connectionStatus, connectionId, addTab, setActiveTab, setSelectedTable])
+  }, [connectionStatus, connectionId, restoreTabs, setSelectedTable])
 
   const handleRetry = useCallback(() => {
     setConnectionStatus('disconnected')
@@ -642,7 +678,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     if (existingTab) {
       setActiveTab(existingTab.id)
     } else {
-      // Create a new data tab
       const newTab: SQLTab = {
         id: crypto.randomUUID(),
         type: 'data',
@@ -650,7 +685,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         table: selectedTable,
         database: currentDatabase || undefined,
       }
-      addTab(newTab)
+      if (tabSettingsRef.current.sqlPreviewTabs) openPreviewTab(newTab)
+      else addTab(newTab)
     }
   }, [selectedTable]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -958,9 +994,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       label: `Query ${queryCount}`,
       query: savedContent || undefined,
       savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
+      database: currentDatabase || undefined,
     }
     addTab(newTab)
-  }, [tabs, addTab, sessionId])
+  }, [tabs, addTab, sessionId, currentDatabase])
 
   const handleOpenSavedQuery = useCallback(
     (sql: string, name?: string) => {
@@ -971,9 +1008,10 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         label: name || `Query ${queryCount}`,
         query: sql,
         savedQueryIndex: -1,
+        database: currentDatabase || undefined,
       })
     },
-    [tabs, addTab]
+    [tabs, addTab, currentDatabase]
   )
 
   /**
@@ -1125,6 +1163,119 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [sqlSessionId, connectionConfig, connectionId]
   )
 
+  const handleKeepTableOpen = useCallback(
+    (tableName: string) => {
+      const state = getSQLConnectionState(connectionId)
+      const existing = state.tabs.find(
+        (t) => t.type === 'data' && t.table === tableName && t.database === currentDatabase && !t.filterScope
+      )
+      if (existing) {
+        promoteTab(existing.id)
+        setActiveTab(existing.id)
+        return
+      }
+      addTab({
+        id: crypto.randomUUID(),
+        type: 'data',
+        label: tableName,
+        table: tableName,
+        database: currentDatabase || undefined,
+      })
+    },
+    [connectionId, currentDatabase, promoteTab, setActiveTab, addTab]
+  )
+
+  const switchToTabDatabase = useCallback(
+    async (tab: SQLTab): Promise<boolean> => {
+      if (!tab.database || tab.database === getSQLConnectionState(connectionId).currentDatabase) return true
+      await handleDatabaseSelected(tab.database)
+      return getSQLConnectionState(connectionId).currentDatabase === tab.database
+    },
+    [connectionId, handleDatabaseSelected]
+  )
+
+  const findTab = useCallback(
+    (id: string) => getSQLConnectionState(connectionId).tabs.find((t) => t.id === id),
+    [connectionId]
+  )
+
+  const activateTab = useCallback(
+    async (id: string): Promise<SQLTab | undefined> => {
+      const tab = findTab(id)
+      if (!tab || !(await switchToTabDatabase(tab))) return undefined
+      handleTabSelect(id)
+      return tab
+    },
+    [findTab, switchToTabDatabase, handleTabSelect]
+  )
+
+  const duplicateTab = useCallback(
+    async (id: string) => {
+      const tab = await activateTab(id)
+      if (!tab) return
+      if (tab.type === 'data' && tab.table) {
+        handleOpenInNewTab(tab.table)
+        return
+      }
+      addTab({
+        id: crypto.randomUUID(),
+        type: 'query',
+        label: `${tab.label} copy`,
+        query: tab.viewState?.sql ?? tab.query,
+        savedQueryIndex: -1,
+        database: tab.database,
+      })
+    },
+    [activateTab, handleOpenInNewTab, addTab]
+  )
+
+  const revealTabInSidebar = useCallback(
+    async (id: string) => {
+      const tab = await activateTab(id)
+      if (!tab?.table) return
+      setShowSidebar(true)
+      window.dispatchEvent(new CustomEvent('sql:sidebar-tab', { detail: 'items' }))
+      window.dispatchEvent(new CustomEvent('sql:reveal-table', { detail: { connectionId, table: tab.table } }))
+    },
+    [activateTab, connectionId]
+  )
+
+  const tabActions = useMemo<TabActions>(
+    () => ({
+      activate: (id) => void activateTab(id),
+      close: (id) => {
+        handleTabClose(id)
+        clearSqlTabSnapshot(id)
+      },
+      closeMany: (ids) => {
+        handleCloseTabs(ids)
+        ids.forEach(clearSqlTabSnapshot)
+      },
+      promote: promoteTab,
+      pin: setTabPinned,
+      duplicate: (id) => void duplicateTab(id),
+      move: moveTab,
+      reopenClosed: reopenClosedTab,
+      sortByName: sortTabsByName,
+      revealInSidebar: (id) => void revealTabInSidebar(id),
+      copyName: (id) => {
+        const tab = findTab(id)
+        if (tab) void navigator.clipboard.writeText(tab.table ?? tab.label)
+      },
+    }),
+    [activateTab, handleTabClose, handleCloseTabs, promoteTab, setTabPinned, duplicateTab, moveTab, reopenClosedTab, sortTabsByName, revealTabInSidebar, findTab]
+  )
+
+  const openTabsMenu = useCallback(() => {
+    const button = tabStripRef.current?.querySelector('[aria-label="Show all tabs"]')
+    setTabsMenuAnchor(button?.getBoundingClientRect() ?? null)
+    setTabsMenuOpen(true)
+  }, [])
+
+  const closeTabsMenu = useCallback(() => setTabsMenuOpen(false), [])
+
+  useTabShortcuts({ enabled: shortcutsActive, connectionId, actions: tabActions, onOpenMenu: openTabsMenu })
+
   const handleTableAction = useCallback(
     (action: TableContextAction) => {
       switch (action.type) {
@@ -1155,6 +1306,9 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         case 'open-new-tab':
           handleOpenInNewTab(action.table)
           break
+        case 'keep-open':
+          handleKeepTableOpen(action.table)
+          break
         case 'truncate-table':
           setTableDeleteDialog({ mode: 'truncate', table: action.table })
           break
@@ -1163,7 +1317,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           break
       }
     },
-    [handleOpenStructure, handleOpenInNewTab]
+    [handleOpenStructure, handleOpenInNewTab, handleKeepTableOpen]
   )
 
   const handleDatabaseAction = useCallback(
@@ -1217,27 +1371,21 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     return connectionConfig?.useSSHTunnel === true
   }, [connectionConfig])
 
-  // ── Visible tabs ──
-  // Data/structure tabs are scoped to the database they opened against, so
-  // switching databases hides tabs for the other database (they come back
-  // when you switch back). Query tabs are global and always visible.
-  const visibleTabs = useMemo(() => {
-    return tabs.filter((t) => {
-      if (t.type === 'query') return true
-      if (!t.database) return true // legacy tab without DB scope — keep visible
-      return t.database === currentDatabase
-    })
-  }, [tabs, currentDatabase])
+  const contentTabs = useMemo(
+    () => tabs.filter((t) => t.type === 'query' || !t.database || t.database === currentDatabase),
+    [tabs, currentDatabase]
+  )
 
-  // If the active tab got hidden by a DB switch, pick the first visible one.
   useEffect(() => {
     if (!activeTabId) return
-    if (visibleTabs.some((t) => t.id === activeTabId)) return
-    const next = visibleTabs[0]
+    if (contentTabs.some((t) => t.id === activeTabId)) return
+    const state = getSQLConnectionState(connectionId)
+    const visible = new Set(contentTabs.map((t) => t.id))
+    const next = mruTabs({ tabs: state.tabs, activeTabId: state.activeTabId, mru: state.mru, closed: state.closedTabs })
+      .find((t) => visible.has(t.id))
     setActiveTab(next ? next.id : null)
-    if (next?.table) setSelectedTable(next.table)
-    else setSelectedTable(null)
-  }, [visibleTabs, activeTabId, setActiveTab, setSelectedTable])
+    setSelectedTable(next?.table ?? null)
+  }, [contentTabs, activeTabId, connectionId, setActiveTab, setSelectedTable])
 
   // ── Tab content renderer ──
   // Track which tabs have been visited — mount on first visit, keep alive after
@@ -1501,22 +1649,34 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   // ── Connected state ──
   const mainContent = (
     <div className="flex flex-col h-full">
-      {/* SQL Tab Bar */}
-      <SQLTabBar
-        tabs={visibleTabs}
-        activeTabId={activeTabId}
-        onSelect={handleTabSelect}
-        onClose={handleTabClose}
-        onCloseTabs={handleCloseTabs}
-        onNewQuery={handleNewQuery}
+      <div ref={tabStripRef}>
+        {tabSettings.sqlTabLayout === 'vertical' ? (
+          <CurrentTabHeader connectionId={connectionId} onOpenMenu={openTabsMenu} />
+        ) : (
+          <TabStrip
+            connectionId={connectionId}
+            actions={tabActions}
+            layout={tabSettings.sqlTabLayout}
+            onNewQuery={handleNewQuery}
+            onOpenMenu={openTabsMenu}
+          />
+        )}
+      </div>
+      <TabsMenu
+        connectionId={connectionId}
+        actions={tabActions}
+        open={tabsMenuOpen}
+        onClose={closeTabsMenu}
+        anchorRect={tabsMenuAnchor}
       />
+      <RecentTabsSwitcher connectionId={connectionId} enabled={shortcutsActive} onCommit={tabActions.activate} />
 
       {/* Tab content area — keep all visited tabs mounted, hide inactive via CSS */}
       <div className="flex-1 overflow-hidden relative">
         {(!sqlSessionId || !connectionConfig) ? (
           <EmptyPanel />
         ) : (
-          visibleTabs.map((tab) => {
+          contentTabs.map((tab) => {
             if (!mountedTabIds.has(tab.id)) return null
             const isActive = tab.id === activeTabId
             const dbType = connectionConfig.type
@@ -1537,14 +1697,18 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
                       dbType={dbType}
                       filterScope={tab.filterScope}
                       safeMode={safeMode}
+                      initialViewState={tab.viewState}
+                      initialViewMode={tab.viewMode}
                     />
                   ) : tab.type === 'query' ? (
                     <LazyQueryEditor
                       connectionId={connectionId}
                       sqlSessionId={sqlSessionId}
                       dbType={dbType}
-                      initialQuery={tab.query}
+                      initialQuery={tab.viewState?.sql ?? tab.query}
                       savedQueryIndex={tab.savedQueryIndex}
+                      tabId={tab.id}
+                      savedText={tab.query}
                       safeMode={safeMode}
                       scopeId={sessionId}
                     />
@@ -1676,6 +1840,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
             multiSelectedTables={multiSelectedTables}
             onMultiSelectChange={setMultiSelectedTables}
             onOpenQuery={handleOpenSavedQuery}
+            openTabs={
+              tabSettings.sqlTabLayout === 'vertical' ? (
+                <VerticalTabList connectionId={connectionId} actions={tabActions} />
+              ) : null
+            }
           />
           {/* Sidebar resize handle */}
           <div

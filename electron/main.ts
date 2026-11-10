@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   powerMonitor,
+  type MenuItemConstructorOptions,
 } from "electron";
 import { join, basename, extname } from "path";
 import { readFile, writeFile } from "fs/promises";
@@ -137,6 +138,23 @@ ipcMain.handle("window:maximize", (event) => {
     win?.maximize();
   }
 });
+
+function buildAppMenu(): Menu {
+  const isMac = process.platform === "darwin";
+  const closeItem: MenuItemConstructorOptions = {
+    label: "Close",
+    accelerator: "CmdOrCtrl+W",
+    click: () => BrowserWindow.getFocusedWindow()?.webContents.send("window:close-request"),
+  };
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: "appMenu" } as MenuItemConstructorOptions] : []),
+    { label: "File", submenu: [closeItem] },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    isMac ? { role: "windowMenu" } : { label: "Window", submenu: [{ role: "minimize" }] },
+  ];
+  return Menu.buildFromTemplate(template);
+}
 
 ipcMain.handle("window:close", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -379,6 +397,7 @@ function destroyTray(): void {
 // ──── App lifecycle ────
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.shellway.app");
+  Menu.setApplicationMenu(buildAppMenu());
 
   // Register IPC handlers
   registerSessionIPC();

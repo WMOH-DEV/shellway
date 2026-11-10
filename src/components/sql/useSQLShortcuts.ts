@@ -53,19 +53,6 @@ export function useSQLShortcuts(
     store.addTab(connectionIdRef.current, newTab)
   }, [])
 
-  // ── Close active tab ──
-  const closeActiveTab = useCallback(() => {
-    const conn = getSQLConnectionState(connectionIdRef.current)
-    const store = useSQLStore.getState()
-    if (!conn.activeTabId) return
-    // Clear selectedTable if closing its tab — allows re-opening via sidebar click
-    const closingTab = conn.tabs.find((t) => t.id === conn.activeTabId)
-    if (closingTab?.table && closingTab.table === conn.selectedTable) {
-      store.setSelectedTable(connectionIdRef.current, null)
-    }
-    store.removeTab(connectionIdRef.current, conn.activeTabId)
-  }, [])
-
   // ── Apply staged changes ──
   const applyChanges = useCallback(() => {
     if (!sqlSessionRef.current) return
@@ -170,13 +157,6 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Close current SQL tab (default CmdOrCtrl+Shift+W) ──
-      if (matchesBinding(e, 'sql:closeTab')) {
-        e.preventDefault()
-        closeActiveTab()
-        return
-      }
-
       // ── Insert new row (default CmdOrCtrl+Shift+I) ──
       if (matchesBinding(e, 'sql:insertRow')) {
         e.preventDefault()
@@ -227,5 +207,5 @@ export function useSQLShortcuts(
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [addQueryTab, closeActiveTab, applyChanges, undoLastChange, toggleViewMode])
+  }, [addQueryTab, applyChanges, undoLastChange, toggleViewMode])
 }
