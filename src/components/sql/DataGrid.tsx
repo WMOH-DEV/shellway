@@ -177,6 +177,7 @@ interface DataGridProps {
    * by DataTabView where pagination means client-side sort would be wrong.
    */
   clientSideSort?: boolean;
+  onFirstVisibleRowChange?: (index: number) => void;
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -207,6 +208,8 @@ export interface DataGridHandle {
   selectRow: (rowIndex: number) => void;
   /** Get the first selected row's data (without __rowIndex), or null */
   getSelectedRowData: () => Record<string, unknown> | null;
+  getFirstVisibleRow: () => number;
+  scrollToRow: (index: number) => void;
 }
 
 // ── Context menu state (cell right-click) ──
@@ -495,6 +498,7 @@ export const DataGrid = React.memo(
       tableName,
       dbType = "mysql",
       clientSideSort,
+      onFirstVisibleRowChange,
     },
     ref,
   ) {
@@ -1809,6 +1813,12 @@ export const DataGrid = React.memo(
           const { __rowIndex, ...clean } = rows[0] as Record<string, unknown>;
           return clean;
         },
+        getFirstVisibleRow: () =>
+          gridRef.current?.api?.getFirstDisplayedRowIndex() ?? 0,
+        scrollToRow: (index: number) => {
+          const api = gridRef.current?.api;
+          if (api && index >= 0) api.ensureIndexVisible(index, "top");
+        },
       }),
       [handleToggleColumn, handleShowAllColumns, handleScrollToLastRow],
     );
@@ -1871,6 +1881,9 @@ export const DataGrid = React.memo(
           onCellContextMenu={onCellContextMenu}
           onCellDoubleClicked={onCellDoubleClicked}
           onGridReady={onGridReady}
+          onBodyScrollEnd={(event) =>
+            onFirstVisibleRowChange?.(event.api.getFirstDisplayedRowIndex())
+          }
           onColumnResized={onColumnResized}
           onColumnMoved={onColumnMoved}
           onColumnVisible={onColumnVisible}
