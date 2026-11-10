@@ -40,6 +40,14 @@ export interface AppSettings {
 
   // SQL
   sqlDefaultFilterMatch: 'all' | 'any'
+  sqlTabLayout: 'single' | 'wrap' | 'vertical'
+  sqlPreviewTabs: boolean
+  sqlTabLimit: number
+  sqlNewTabPosition: 'next' | 'end'
+  sqlShowDatabaseName: boolean
+  sqlColorByKind: boolean
+  sqlReopenTabsOnConnect: boolean
+  sqlCloseOnMiddleClick: boolean
 
   classicServerTabs: boolean
   serverNotifications: ServerNotifications
@@ -109,6 +117,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+  sqlTabLayout: 'single',
+  sqlPreviewTabs: true,
+  sqlTabLimit: 15,
+  sqlNewTabPosition: 'next',
+  sqlShowDatabaseName: true,
+  sqlColorByKind: true,
+  sqlReopenTabsOnConnect: true,
+  sqlCloseOnMiddleClick: true,
 
   classicServerTabs: false,
   serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },

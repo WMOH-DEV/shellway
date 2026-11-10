@@ -14,8 +14,23 @@ import type {
   QueryHistoryEntry,
   QueryError,
   TransferProgress,
-  RunningQuery
+  RunningQuery,
+  ClosedSQLTab
 } from '@/types/sql'
+import {
+  activateTab,
+  closeTabs,
+  enforceLimit,
+  insertTab,
+  moveTab,
+  openPreview,
+  promoteTab,
+  reopenClosed,
+  setPinned,
+  sortByName,
+  type TabsState
+} from '@/components/sql/tabs/tabModel'
+import { getSqlTabSettings } from './sqlTabSettingsStore'
 
 // ── Sort state for data grid ──
 
@@ -45,6 +60,9 @@ export interface SQLConnectionSlice {
   // ── Tabs ──
   tabs: SQLTab[]
   activeTabId: string | null
+  mru: string[]
+  closedTabs: ClosedSQLTab[]
+  tabsOverLimit: boolean
 
   // ── Data Grid ──
   queryResult: QueryResult | null
@@ -74,6 +92,13 @@ export interface SQLConnectionSlice {
 }
 
 // ── Store shape ──
+
+export interface RestoredTabs {
+  tabs: SQLTab[]
+  activeTabId: string | null
+  mru?: string[]
+  closedTabs?: ClosedSQLTab[]
+}
 
 export interface PendingDatabase {
   engine: 'mysql' | 'postgres'
@@ -110,6 +135,13 @@ interface SQLStoreState {
   removeTabs: (connectionId: string, ids: string[]) => void
   setActiveTab: (connectionId: string, id: string | null) => void
   updateTab: (connectionId: string, id: string, updates: Partial<SQLTab>) => void
+  openPreviewTab: (connectionId: string, tab: SQLTab) => void
+  promoteTab: (connectionId: string, id: string) => void
+  setTabPinned: (connectionId: string, id: string, pinned: boolean) => void
+  moveTab: (connectionId: string, id: string, toIndex: number) => void
+  reopenClosedTab: (connectionId: string) => void
+  sortTabsByName: (connectionId: string) => void
+  restoreTabs: (connectionId: string, saved: RestoredTabs) => void
 
   // ── Data Grid actions ──
   setQueryResult: (connectionId: string, result: QueryResult | null) => void
@@ -180,6 +212,9 @@ const INITIAL_CONNECTION_STATE: SQLConnectionSlice = {
 
   tabs: [],
   activeTabId: null,
+  mru: [],
+  closedTabs: [],
+  tabsOverLimit: false,
 
   queryResult: null,
   isQueryLoading: false,
@@ -221,6 +256,40 @@ function updateConn(
       [connectionId]: { ...conn, ...updater(conn) }
     }
   }
+}
+
+// ── Tab helpers ──
+
+function tabsStateOf(conn: SQLConnectionSlice): TabsState {
+  return { tabs: conn.tabs, activeTabId: conn.activeTabId, mru: conn.mru, closed: conn.closedTabs }
+}
+
+function hasStagedChanges(conn: SQLConnectionSlice, tab: SQLTab): boolean {
+  return (
+    tab.type === 'data' &&
+    conn.stagedChanges.some((c) => c.tabId === tab.id || (!c.tabId && c.table === tab.table))
+  )
+}
+
+function toSlice(state: TabsState): Partial<SQLConnectionSlice> {
+  return { tabs: state.tabs, activeTabId: state.activeTabId, mru: state.mru, closedTabs: state.closed }
+}
+
+function withLimit(conn: SQLConnectionSlice, state: TabsState): Partial<SQLConnectionSlice> {
+  const { state: limited, overLimit } = enforceLimit(
+    state,
+    getSqlTabSettings().sqlTabLimit,
+    (tab) => hasStagedChanges(conn, tab),
+    Date.now()
+  )
+  return { ...toSlice(limited), tabsOverLimit: overLimit }
+}
+
+function applyTabs(
+  conn: SQLConnectionSlice,
+  change: (state: TabsState) => TabsState
+): Partial<SQLConnectionSlice> {
+  return toSlice(change(tabsStateOf(conn)))
 }
 
 // ── Store ──
@@ -281,57 +350,68 @@ export const useSQLStore = create<SQLStoreState>((set) => ({
   // ── Tab actions ──
 
   addTab: (connectionId, tab) =>
-    set((s) => updateConn(s.connections, connectionId, (conn) => ({
-      tabs: [...conn.tabs, tab],
-      activeTabId: tab.id
-    }))),
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      withLimit(conn, insertTab(tabsStateOf(conn), tab, getSqlTabSettings().sqlNewTabPosition, Date.now()))
+    )),
+
+  openPreviewTab: (connectionId, tab) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      withLimit(
+        conn,
+        openPreview(tabsStateOf(conn), tab, getSqlTabSettings().sqlNewTabPosition, Date.now(), (t) =>
+          hasStagedChanges(conn, t)
+        )
+      )
+    )),
 
   removeTab: (connectionId, id) =>
-    set((s) => updateConn(s.connections, connectionId, (conn) => {
-      const idx = conn.tabs.findIndex((t) => t.id === id)
-      const newTabs = conn.tabs.filter((t) => t.id !== id)
-      let newActiveId = conn.activeTabId
-
-      if (conn.activeTabId === id) {
-        if (newTabs.length === 0) {
-          newActiveId = null
-        } else if (idx >= newTabs.length) {
-          newActiveId = newTabs[newTabs.length - 1].id
-        } else {
-          newActiveId = newTabs[idx].id
-        }
-      }
-
-      return { tabs: newTabs, activeTabId: newActiveId }
-    })),
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      withLimit(conn, closeTabs(tabsStateOf(conn), [id], Date.now()))
+    )),
 
   removeTabs: (connectionId, ids) =>
-    set((s) => updateConn(s.connections, connectionId, (conn) => {
-      const idsToRemove = new Set(ids)
-      const newTabs = conn.tabs.filter((t) => !idsToRemove.has(t.id))
-      let newActiveId = conn.activeTabId
-
-      // If the active tab was removed, pick the nearest remaining tab
-      if (newActiveId && idsToRemove.has(newActiveId)) {
-        if (newTabs.length === 0) {
-          newActiveId = null
-        } else {
-          // Try to select the tab that was at the same position
-          const oldIdx = conn.tabs.findIndex((t) => t.id === newActiveId)
-          const clampedIdx = Math.min(oldIdx, newTabs.length - 1)
-          newActiveId = newTabs[Math.max(0, clampedIdx)].id
-        }
-      }
-
-      return { tabs: newTabs, activeTabId: newActiveId }
-    })),
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      withLimit(conn, closeTabs(tabsStateOf(conn), ids, Date.now()))
+    )),
 
   setActiveTab: (connectionId, id) =>
-    set((s) => updateConn(s.connections, connectionId, () => ({ activeTabId: id }))),
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      id ? applyTabs(conn, (state) => activateTab(state, id, Date.now())) : { activeTabId: null }
+    )),
 
   updateTab: (connectionId, id, updates) =>
     set((s) => updateConn(s.connections, connectionId, (conn) => ({
       tabs: conn.tabs.map((t) => (t.id === id ? { ...t, ...updates } : t))
+    }))),
+
+  promoteTab: (connectionId, id) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => applyTabs(conn, (state) => promoteTab(state, id)))),
+
+  setTabPinned: (connectionId, id, pinned) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      applyTabs(conn, (state) => setPinned(state, id, pinned))
+    )),
+
+  moveTab: (connectionId, id, toIndex) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      applyTabs(conn, (state) => moveTab(state, id, toIndex))
+    )),
+
+  reopenClosedTab: (connectionId) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) =>
+      withLimit(conn, reopenClosed(tabsStateOf(conn), Date.now()))
+    )),
+
+  sortTabsByName: (connectionId) =>
+    set((s) => updateConn(s.connections, connectionId, (conn) => applyTabs(conn, sortByName))),
+
+  restoreTabs: (connectionId, saved) =>
+    set((s) => updateConn(s.connections, connectionId, () => ({
+      tabs: saved.tabs,
+      activeTabId: saved.activeTabId,
+      mru: saved.mru ?? (saved.activeTabId ? [saved.activeTabId] : []),
+      closedTabs: saved.closedTabs ?? [],
+      tabsOverLimit: false
     }))),
 
   // ── Data Grid actions ──
@@ -514,6 +594,13 @@ export function useSQLConnection(connectionId: string) {
       removeTabs: (ids: string[]) => s.removeTabs(connectionId, ids),
       setActiveTab: (id: string | null) => s.setActiveTab(connectionId, id),
       updateTab: (id: string, updates: Partial<SQLTab>) => s.updateTab(connectionId, id, updates),
+      openPreviewTab: (tab: SQLTab) => s.openPreviewTab(connectionId, tab),
+      promoteTab: (id: string) => s.promoteTab(connectionId, id),
+      setTabPinned: (id: string, pinned: boolean) => s.setTabPinned(connectionId, id, pinned),
+      moveTab: (id: string, toIndex: number) => s.moveTab(connectionId, id, toIndex),
+      reopenClosedTab: () => s.reopenClosedTab(connectionId),
+      sortTabsByName: () => s.sortTabsByName(connectionId),
+      restoreTabs: (saved: RestoredTabs) => s.restoreTabs(connectionId, saved),
 
       setQueryResult: (result: QueryResult | null) => s.setQueryResult(connectionId, result),
       setIsQueryLoading: (loading: boolean) => s.setIsQueryLoading(connectionId, loading),

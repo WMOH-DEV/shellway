@@ -5,6 +5,10 @@ import type { FilterMatch } from './sql'
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system'
 
+export type SqlTabLayout = 'single' | 'wrap' | 'vertical'
+
+export type SqlNewTabPosition = 'next' | 'end'
+
 /** Terminal cursor style */
 export type CursorStyle = 'block' | 'underline' | 'bar'
 
@@ -63,6 +67,14 @@ export interface AppSettings {
   sftpAutocompleteMode: SFTPAutocompleteMode  // 'content' = fetch dir listings, 'history' = visited paths only
 
   sqlDefaultFilterMatch: FilterMatch
+  sqlTabLayout: SqlTabLayout
+  sqlPreviewTabs: boolean
+  sqlTabLimit: number
+  sqlNewTabPosition: SqlNewTabPosition
+  sqlShowDatabaseName: boolean
+  sqlColorByKind: boolean
+  sqlReopenTabsOnConnect: boolean
+  sqlCloseOnMiddleClick: boolean
 
   classicServerTabs: boolean
   serverNotifications: ServerNotifications
@@ -131,6 +143,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+  sqlTabLayout: 'single',
+  sqlPreviewTabs: true,
+  sqlTabLimit: 15,
+  sqlNewTabPosition: 'next',
+  sqlShowDatabaseName: true,
+  sqlColorByKind: true,
+  sqlReopenTabsOnConnect: true,
+  sqlCloseOnMiddleClick: true,
 
   classicServerTabs: false,
   serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },
