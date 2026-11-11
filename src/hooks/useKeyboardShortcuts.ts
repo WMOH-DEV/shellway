@@ -10,6 +10,10 @@ import { openEmptyWindow } from '@/utils/windowHandoff'
  */
 export const CLOSE_REQUEST_EVENT = 'app:close-request'
 
+function isTerminalCtrlKey(e: KeyboardEvent): boolean {
+  return e.ctrlKey && !e.metaKey && e.target instanceof Element && e.target.closest('.xterm') !== null
+}
+
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -134,7 +138,7 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     function handleSearchKey(e: KeyboardEvent) {
-      if (!matchesBinding(e, 'global:search')) return
+      if (!matchesBinding(e, 'global:search') || isTerminalCtrlKey(e)) return
       e.preventDefault()
       e.stopPropagation()
       if (e.repeat) return

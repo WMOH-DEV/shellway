@@ -5,7 +5,14 @@ import { useKeyboardShortcuts } from './useKeyboardShortcuts'
 
 function Harness() {
   useKeyboardShortcuts()
-  return <textarea data-testid="field" />
+  return (
+    <>
+      <textarea data-testid="field" />
+      <div className="xterm">
+        <textarea data-testid="terminal" />
+      </div>
+    </>
+  )
 }
 
 function pressSearchKey(target: Element | Window) {
@@ -48,5 +55,19 @@ describe('useKeyboardShortcuts search binding', () => {
     fireEvent.keyDown(window, { key: 'k', metaKey: isMac, ctrlKey: !isMac, repeat: true })
 
     expect(useUIStore.getState().searchOpen).toBe(false)
+  })
+
+  it('leaves physical Ctrl+K to the terminal shell', () => {
+    const { getByTestId } = render(<Harness />)
+    if (navigator.platform.includes('Mac')) return
+    fireEvent.keyDown(getByTestId('terminal'), { key: 'k', ctrlKey: true })
+    expect(useUIStore.getState().searchOpen).toBe(false)
+  })
+
+  it('still opens with Cmd+K from the terminal on macOS', () => {
+    const { getByTestId } = render(<Harness />)
+    if (!navigator.platform.includes('Mac')) return
+    fireEvent.keyDown(getByTestId('terminal'), { key: 'k', metaKey: true })
+    expect(useUIStore.getState().searchOpen).toBe(true)
   })
 })
