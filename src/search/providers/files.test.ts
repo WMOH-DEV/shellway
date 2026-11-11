@@ -16,6 +16,7 @@ import { useSearchCacheStore } from '../cacheClient'
 import { useSearchIntentStore } from '../intentStore'
 import { createFilesProvider } from './files'
 import { createRemoteFilesProvider } from './remoteFiles'
+import { useRemoteSearchStatus } from './remoteStatus'
 import { collect, EMPTY_CONTEXT, makeQuery, makeSession, makeTab, resetSearchState, stubBrowser } from './testHelpers'
 
 function seedPaths(paths: string[]): void {
@@ -156,12 +157,24 @@ describe('remote files provider', () => {
     await pending
   })
 
-  it('skips targets without an absolute root', async () => {
+  it('searches the home folder when no folder is known and says so', async () => {
     useSFTPPathStore.setState({ paths: {} })
     useSessionStore.setState({ sessions: [makeSession({ defaultDirectory: undefined })] })
     const { pending } = await runSearch('order')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(findFiles).toHaveBeenCalledTimes(1)
+    expect(findFiles.mock.calls[0][0].root).toBeUndefined()
+    expect(useRemoteSearchStatus.getState().searchedHome).toBe(true)
+    emit({ searchId: 'search-1', kind: 'done', truncated: false, timedOut: false })
     expect(await pending).toEqual([])
-    expect(findFiles).not.toHaveBeenCalled()
+  })
+
+  it('does not report a home search when a folder is known', async () => {
+    const { pending } = await runSearch('order')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(useRemoteSearchStatus.getState().searchedHome).toBe(false)
+    emit({ searchId: 'search-1', kind: 'done', truncated: false, timedOut: false })
+    await pending
   })
 
   it('cancels the remote search when aborted', async () => {

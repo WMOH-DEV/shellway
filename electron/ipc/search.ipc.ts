@@ -83,7 +83,7 @@ function fileRequest(value: unknown): FileNameSearchRequest {
   const raw = record(value)
   return {
     connectionId: text(raw.connectionId, 'connection'),
-    root: text(raw.root, 'root'),
+    root: raw.root === undefined ? undefined : text(raw.root, 'root'),
     text: text(raw.text, 'text'),
     excludes: textList(raw.excludes, 'exclude')
   }

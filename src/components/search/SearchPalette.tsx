@@ -17,6 +17,7 @@ import { buildListItems, buildSections, sectionRows, stepGroup, wrapIndex } from
 
 const CHIPS: { scope: ScopeId; label: string }[] = [
   { scope: 'all', label: 'All' },
+  { scope: 'servers', label: 'Servers' },
   { scope: 'tables', label: 'Tables' },
   { scope: 'queries', label: 'Queries' },
   { scope: 'files', label: 'Files' },
@@ -57,7 +58,7 @@ export function SearchPalette() {
 function PaletteDialog() {
   const closeSearch = useUIStore((s) => s.closeSearch)
   const search = useSearch(true)
-  const { input, setInput, chipScope, setChipScope, serverFilter, setServerFilter, grouped, scopeCounts, elapsedMs, loading, remoteCommand, parsed, actionsFor } = search
+  const { input, setInput, chipScope, setChipScope, serverFilter, setServerFilter, grouped, scopeCounts, elapsedMs, loading, remoteCommand, searchedHomeOn, parsed, actionsFor } = search
   const disabledScopes = useSearchSettingsStore((s) => s.disabledScopes)
   const activeTab = useConnectionStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -115,9 +116,16 @@ function PaletteDialog() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (isTextMode || e.nativeEvent.isComposing) return
+    const isScoped = parsed.scope !== 'all'
     if (e.key === 'Escape') {
       e.preventDefault()
-      closeSearch()
+      if (isScoped) setChipScope('all')
+      else closeSearch()
+      return
+    }
+    if (e.key === 'Backspace' && input === '' && isScoped) {
+      e.preventDefault()
+      setChipScope('all')
       return
     }
     const hasModifier = e.metaKey || e.ctrlKey
@@ -172,7 +180,12 @@ function PaletteDialog() {
         )}
       >
         {isTextMode ? (
-          <TextSearchView initialText={parsed.text} onTextChange={(text) => setInput(`?${text}`)} onClose={closeSearch} />
+          <TextSearchView
+            initialText={parsed.text}
+            onTextChange={(text) => setInput(`?${text}`)}
+            onClose={closeSearch}
+            onBack={() => setInput(parsed.text)}
+          />
         ) : (
           <>
             <div className="flex items-center gap-3 border-b border-nd-border px-4 py-3.5">
@@ -257,7 +270,17 @@ function PaletteDialog() {
                         <span className="text-xs">Start with a prefix to narrow it down.</span>
                       </>
                     ) : (
-                      !loading && !needsConnection && <span>{`No results for "${parsed.text}"`}</span>
+                      !loading &&
+                      !needsConnection && (
+                        <>
+                          <span>{`No results for "${parsed.text}"`}</span>
+                          {searchedHomeOn && (
+                            <span className="max-w-[360px] text-xs">
+                              {`Searched the home folder on ${searchedHomeOn}. Open a folder in SFTP or pick a site to search there.`}
+                            </span>
+                          )}
+                        </>
+                      )
                     )}
                   </div>
                 )}

@@ -43,12 +43,16 @@ function escapeGlob(text: string): string {
   return text.replace(GLOB_META, '\\$&')
 }
 
-function wrapped(root: string, seconds: number, inner: string): string {
-  return `cd ${shellEscape(root)} && exec timeout -k 2 ${seconds} sh -c ${shellEscape(inner)}`
+const HOME_DIR = '"$HOME"'
+
+function wrapped(root: string | null, seconds: number, inner: string): string {
+  const run = `exec timeout -k 2 ${seconds} sh -c ${shellEscape(inner)}`
+  return root === null ? run : `cd ${shellEscape(root)} && ${run}`
 }
 
 export function buildFileNameCommand(req: FileNameSearchRequest): { script: string; display: string } {
-  const root = validateRemotePath(req.root, 'root')
+  const root = req.root === undefined ? null : validateRemotePath(req.root, 'root')
+  const searchDir = root === null ? HOME_DIR : '.'
   const text = validateText(req.text)
   const excludes = validateGlobs(req.excludes, 'exclude')
   const pattern = shellEscape(`*${escapeGlob(text)}*`)
@@ -57,12 +61,12 @@ export function buildFileNameCommand(req: FileNameSearchRequest): { script: stri
   const fdArgs = [
     `--type f --hidden --color never --max-depth ${FILE_LIMITS.maxDepth} --ignore-case --glob ${pattern}`,
     ...excludes.map((glob) => `--exclude ${shellEscape(glob)}`),
-    '.'
+    searchDir
   ].join(' ')
   const prune = excludes.length
     ? `\\( ${excludes.map((glob) => `-name ${shellEscape(glob)}`).join(' -o ')} \\) -prune -o `
     : ''
-  const findArgs = `. -maxdepth ${FILE_LIMITS.maxDepth} ${prune}-type f -iname ${pattern} -print`
+  const findArgs = `${searchDir} -maxdepth ${FILE_LIMITS.maxDepth} ${prune}-type f -iname ${pattern} -print`
 
   const inner = [
     'if command -v fd >/dev/null 2>&1; then FD=fd; elif command -v fdfind >/dev/null 2>&1; then FD=fdfind; else FD=; fi',
@@ -71,7 +75,7 @@ export function buildFileNameCommand(req: FileNameSearchRequest): { script: stri
 
   return {
     script: wrapped(root, FILE_LIMITS.timeoutSeconds, inner),
-    display: `fd -i -g ${shellEscape(`*${text}*`)} in ${root}`
+    display: `fd -i -g ${shellEscape(`*${text}*`)} in ${root ?? '~'}`
   }
 }
 

@@ -112,6 +112,15 @@ describe('RemoteSearchService', () => {
     ])
   })
 
+  it('keeps the full paths of a home folder search', async () => {
+    const { service, runs, events } = setup()
+    expect(service.findFiles(fileReq({ root: undefined })).command).toBe("fd -i -g '*Order*' in ~")
+    runs[0].out('/home/deploy/app/Order.php\n')
+    runs[0].close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(events[0]).toEqual({ searchId: 's1', kind: 'files', paths: ['/home/deploy/app/Order.php'] })
+  })
+
   it('flushes a last line that has no trailing newline', async () => {
     const { service, runs, events } = setup()
     service.findFiles(fileReq())

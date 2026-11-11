@@ -15,7 +15,7 @@ const MAX_TARGETS = 3
 
 interface Target {
   tab: ConnectionTab
-  root: string
+  root: string | null
 }
 
 function isAbsolute(path: string | undefined): path is string {
@@ -35,12 +35,7 @@ function pickTargets(query: SearchQuery): Target[] {
   const { activeTabId, activeSite, connectedTabIds } = query.context
   const connected = openTabs().filter((tab) => tab.type !== 'database' && connectedTabIds.includes(tab.id))
   const candidates = query.serverFilter === 'current' ? connected.filter((tab) => tab.id === activeTabId) : connected
-  const targets: Target[] = []
-  for (const tab of candidates.slice(0, MAX_TARGETS)) {
-    const root = rootFor(tab, activeSite)
-    if (root) targets.push({ tab, root })
-  }
-  return targets
+  return candidates.slice(0, MAX_TARGETS).map((tab) => ({ tab, root: rootFor(tab, activeSite) }))
 }
 
 async function* searchTarget(target: Target, query: SearchQuery, signal: AbortSignal): AsyncGenerator<SearchResult[]> {
@@ -51,11 +46,11 @@ async function* searchTarget(target: Target, query: SearchQuery, signal: AbortSi
   let finished = false
   try {
     const started = await api
-      .findFiles({ connectionId: target.tab.id, root: target.root, text: query.text, excludes: getSearchSettings().excludeGlobs })
+      .findFiles({ connectionId: target.tab.id, root: target.root ?? undefined, text: query.text, excludes: getSearchSettings().excludeGlobs })
       .catch(() => null)
     if (!started) return
     searchId = started.searchId
-    setRemoteSearchStatus({ command: started.command, server: target.tab.sessionName })
+    setRemoteSearchStatus({ command: started.command, server: target.tab.sessionName, searchedHome: target.root === null })
     for (;;) {
       const event = await events.pull(signal)
       if (!event) return

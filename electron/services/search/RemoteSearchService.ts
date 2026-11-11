@@ -118,7 +118,7 @@ export class RemoteSearchService {
   findFiles(req: FileNameSearchRequest): RemoteSearchStarted {
     const { script, display } = buildFileNameCommand(req)
     const exec = this.requireExec(req.connectionId)
-    const root = req.root
+    const root = req.root ?? '/'
     const run = this.startRun<string>(req.connectionId, FILE_LIMITS.maxResults, (id, paths) =>
       this.deps.send({ searchId: id, kind: 'files', paths })
     )

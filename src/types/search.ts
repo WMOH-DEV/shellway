@@ -49,7 +49,7 @@ export type SearchCachePatch =
 
 export interface FileNameSearchRequest {
   connectionId: string
-  root: string
+  root?: string
   text: string
   excludes: string[]
 }

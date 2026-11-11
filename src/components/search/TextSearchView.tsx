@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Dropdown } from '@/components/ui/Dropdown'
 import { useConnectionStore } from '@/stores/connectionStore'
@@ -24,6 +24,7 @@ export interface TextSearchViewProps {
   initialText: string
   onTextChange: (text: string) => void
   onClose: () => void
+  onBack: () => void
 }
 
 type RunStatus = 'idle' | 'running' | 'done'
@@ -111,7 +112,7 @@ function Highlighted({ match }: { match: TextMatch }) {
   )
 }
 
-export function TextSearchView({ initialText, onTextChange, onClose }: TextSearchViewProps) {
+export function TextSearchView({ initialText, onTextChange, onClose, onBack }: TextSearchViewProps) {
   const allTabs = useConnectionStore((s) => s.tabs)
   const activeTabId = useConnectionStore((s) => s.activeTabId)
   const sessions = useSessionStore((s) => s.sessions)
@@ -148,6 +149,7 @@ export function TextSearchView({ initialText, onTextChange, onClose }: TextSearc
   const [preview, setPreview] = useState<PreviewState | null>(null)
 
   const runRef = useRef<RunHandle | null>(null)
+  const textInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const defaultRoot = useMemo(() => {
@@ -332,10 +334,16 @@ export function TextSearchView({ initialText, onTextChange, onClose }: TextSearc
     setSelectedKey(hits[next].key)
   }
 
+  const goBack = () => {
+    cancelRun()
+    onBack()
+  }
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
+    const isEmptyTextBackspace = event.key === 'Backspace' && event.target === textInputRef.current && text === ''
+    if (event.key === 'Escape' || isEmptyTextBackspace) {
       event.preventDefault()
-      onClose()
+      goBack()
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -375,8 +383,19 @@ export function TextSearchView({ initialText, onTextChange, onClose }: TextSearc
   return (
     <div role="search" aria-label="Search text in files" onKeyDown={handleKeyDown} className="flex flex-col">
       <div className="flex items-center gap-3 border-b border-nd-border px-4 py-3.5">
-        <span className="rounded border border-nd-accent/60 px-2 py-0.5 font-mono text-[13px] text-nd-accent">?</span>
+        <button
+          type="button"
+          aria-label="Back to all results"
+          onClick={goBack}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-nd-accent/60 px-2 py-0.5 text-xs text-nd-accent transition-colors hover:bg-nd-accent/10"
+        >
+          <ArrowLeft size={12} />
+          <span className="font-mono text-[13px]">?</span>
+          <span>Text in files</span>
+          <X size={12} />
+        </button>
         <input
+          ref={textInputRef}
           autoFocus
           aria-label="Text to find"
           value={text}
@@ -558,15 +577,20 @@ export function TextSearchView({ initialText, onTextChange, onClose }: TextSearc
       </div>
 
       <div className="flex items-center gap-4 border-t border-nd-border bg-nd-bg-secondary px-4 py-2.5 text-xs text-nd-text-muted">
-        <span>
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={`Runs rg on the server (falls back to grep -rn), read-only, stops at ${MAX_MATCHES_LABEL} matches or ${TIMEOUT_SECONDS} s`}
+        >
           Runs <span className="font-mono">rg</span> on the server (falls back to <span className="font-mono">grep -rn</span>),
           read-only, stops at {MAX_MATCHES_LABEL} matches or {TIMEOUT_SECONDS} s
         </span>
-        <div className="flex-1" />
-        <span>
+        <span className="shrink-0">
+          <Kbd>⌫</Kbd> on empty field or <Kbd>esc</Kbd>: back to all results
+        </span>
+        <span className="shrink-0">
           <Kbd>↵</Kbd> open at line
         </span>
-        <span>
+        <span className="shrink-0">
           <Kbd>⌘↵</Kbd> open in SFTP
         </span>
       </div>

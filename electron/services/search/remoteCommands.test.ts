@@ -59,6 +59,16 @@ describe('buildFileNameCommand', () => {
     expect(buildFileNameCommand(fileReq()).display).toBe("fd -i -g '*Order*' in /var/www/shop")
   })
 
+  it('searches the home folder with full paths when no root is given', () => {
+    const { script, display } = buildFileNameCommand(fileReq({ root: undefined }))
+    expect(script.startsWith('exec timeout -k 2 8 sh -c ')).toBe(true)
+    expect(script).not.toContain('cd ')
+    expect(script).toContain('find "$HOME" ')
+    expect(script).toContain(`--max-depth ${FILE_LIMITS.maxDepth}`)
+    expect(script).toMatch(/--glob '\\''\*Order\*'\\'' "\$HOME"/)
+    expect(display).toBe("fd -i -g '*Order*' in ~")
+  })
+
   it.each([
     ['relative root', { root: 'var/www' }],
     ['empty root', { root: '' }],

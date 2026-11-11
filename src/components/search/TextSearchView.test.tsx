@@ -30,6 +30,7 @@ interface Harness {
   cancel: ReturnType<typeof vi.fn>
   preview: ReturnType<typeof vi.fn>
   onClose: ReturnType<typeof vi.fn>
+  onBack: ReturnType<typeof vi.fn>
   onTextChange: ReturnType<typeof vi.fn>
   unmount: () => void
 }
@@ -54,8 +55,11 @@ function setup(status: ConnectionTab['status'] = 'connected', initialText = ''):
   useConnectionStore.setState({ tabs: [makeTab(status)], activeTabId: 'conn-1' })
   useSessionStore.setState({ sessions: [{ id: 'sess-1', name: 'Main', defaultDirectory: ROOT } as Session] })
   const onClose = vi.fn()
+  const onBack = vi.fn()
   const onTextChange = vi.fn()
-  const { unmount } = render(<TextSearchView initialText={initialText} onTextChange={onTextChange} onClose={onClose} />)
+  const { unmount } = render(
+    <TextSearchView initialText={initialText} onTextChange={onTextChange} onClose={onClose} onBack={onBack} />
+  )
   return {
     unmount,
     emit: (event) => act(() => handler(event)),
@@ -63,6 +67,7 @@ function setup(status: ConnectionTab['status'] = 'connected', initialText = ''):
     cancel,
     preview,
     onClose,
+    onBack,
     onTextChange
   }
 }
@@ -229,10 +234,33 @@ describe('TextSearchView', () => {
     expect(harness.findText).toHaveBeenCalledTimes(1)
   })
 
-  it('closes on Escape', async () => {
+  it('goes back to all results on Escape and stops the running search', async () => {
     const harness = setup()
+    await startedSearch(harness)
     await userEvent.type(screen.getByLabelText('Text to find'), '{Escape}')
-    expect(harness.onClose).toHaveBeenCalledTimes(1)
+    expect(harness.onBack).toHaveBeenCalledTimes(1)
+    expect(harness.onClose).not.toHaveBeenCalled()
+    expect(harness.cancel).toHaveBeenCalledWith('s1')
+  })
+
+  it('goes back to all results from the mode chip', async () => {
+    const harness = setup()
+    await userEvent.click(screen.getByRole('button', { name: 'Back to all results' }))
+    expect(harness.onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('goes back on Backspace only when the field is empty', async () => {
+    const harness = setup('connected', 'ab')
+    const field = screen.getByLabelText('Text to find')
+    await userEvent.type(field, '{Backspace}{Backspace}')
+    expect(harness.onBack).not.toHaveBeenCalled()
+    await userEvent.type(field, '{Backspace}')
+    expect(harness.onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells how to get back in the footer', () => {
+    setup()
+    expect(screen.getByText(/on empty field or/)).toHaveTextContent('⌫ on empty field or esc: back to all results')
   })
 
   it('starts from the initial text', async () => {

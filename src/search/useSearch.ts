@@ -65,6 +65,7 @@ export interface UseSearchResult {
   elapsedMs: number | null
   loading: boolean
   remoteCommand: string | null
+  searchedHomeOn: string | null
   parsed: ParsedInput
   actionsFor: (result: SearchResult) => SearchAction[]
 }
@@ -184,6 +185,7 @@ export function useSearch(open: boolean): UseSearchResult {
     elapsedMs: snapshot.elapsedMs,
     loading: snapshot.loading,
     remoteCommand: remoteRunning && remoteStatus.command ? `${remoteStatus.command} on ${remoteStatus.server ?? 'server'}` : null,
+    searchedHomeOn: remoteStatus.searchedHome ? remoteStatus.server : null,
     parsed,
     actionsFor
   }

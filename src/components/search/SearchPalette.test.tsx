@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useUIStore } from '@/stores/uiStore'
 import type { SearchAction, SearchProvider, SearchResult } from '@/search/types'
+import { setRemoteSearchStatus } from '@/search/providers/remoteStatus'
 
 const runs = {
   open: vi.fn(),
@@ -45,13 +46,37 @@ function localProvider(id: SearchProvider['id'], scopes: SearchProvider['scopes'
   }
 }
 
+function homeFilesProvider(): SearchProvider {
+  return {
+    id: 'files',
+    kind: 'remote',
+    scopes: ['files'],
+    async *search() {
+      setRemoteSearchStatus({ command: "fd -i -g '*zz*' in ~", server: 'Shop server', searchedHome: true })
+      yield []
+    },
+    actions: () => []
+  }
+}
+
 vi.mock('@/search/providers', () => ({
-  createProviders: () => [localProvider('tables', ['tables'], tableResults), localProvider('queries', ['queries'], queryResults)],
+  createProviders: () => [
+    localProvider('tables', ['tables'], tableResults),
+    localProvider('queries', ['queries'], queryResults),
+    homeFilesProvider()
+  ],
   enabledProviders: (providers: SearchProvider[]) => providers
 }))
 
 vi.mock('./TextSearchView', () => ({
-  TextSearchView: ({ initialText }: { initialText: string }) => <div data-testid="text-view">{initialText}</div>
+  TextSearchView: ({ initialText, onBack }: { initialText: string; onBack: () => void }) => (
+    <div data-testid="text-view">
+      {initialText}
+      <button type="button" onClick={onBack}>
+        back
+      </button>
+    </div>
+  )
 }))
 
 import { SearchPalette } from './SearchPalette'
@@ -200,6 +225,51 @@ describe('SearchPalette', () => {
 
     expect(view).toBeInTheDocument()
     expect(useUIStore.getState().searchOpen).toBe(true)
+  })
+
+  it('lights up the Servers chip for the @ prefix', () => {
+    render(<SearchPalette />)
+    fireEvent.change(input(), { target: { value: '@shop' } })
+    expect(screen.getByRole('button', { name: /^Servers/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('goes back to all results on escape in a prefix mode and keeps the text', () => {
+    render(<SearchPalette />)
+    fireEvent.change(input(), { target: { value: '#orders' } })
+    fireEvent.keyDown(input(), { key: 'Escape' })
+    expect(useUIStore.getState().searchOpen).toBe(true)
+    expect(input().value).toBe('orders')
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('goes back to all results on escape after a chip was picked', () => {
+    render(<SearchPalette />)
+    fireEvent.click(screen.getByRole('button', { name: /^Tables/ }))
+    fireEvent.keyDown(input(), { key: 'Escape' })
+    expect(useUIStore.getState().searchOpen).toBe(true)
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('goes back to all results on backspace in an empty field after a chip was picked', () => {
+    render(<SearchPalette />)
+    fireEvent.click(screen.getByRole('button', { name: /^Tables/ }))
+    fireEvent.keyDown(input(), { key: 'Backspace' })
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('returns from text in files to all results with the same text', async () => {
+    render(<SearchPalette />)
+    fireEvent.change(input(), { target: { value: '?OrderRefunded' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'back' }))
+    expect(screen.queryByTestId('text-view')).toBeNull()
+    expect(input().value).toBe('OrderRefunded')
+    expect(useUIStore.getState().searchOpen).toBe(true)
+  })
+
+  it('explains a file search that found nothing in the home folder', async () => {
+    render(<SearchPalette />)
+    fireEvent.change(input(), { target: { value: '/zz' } })
+    expect(await screen.findByText(/Searched the home folder on Shop server/)).toBeInTheDocument()
   })
 
   it('shows a no results message', async () => {
