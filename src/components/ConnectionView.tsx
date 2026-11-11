@@ -28,6 +28,7 @@ import { useSslCritical } from '@/hooks/useSslCritical'
 import { useHttpsIntentStore } from '@/stores/httpsIntentStore'
 import { TabActiveContext } from '@/components/tabActive'
 import { useServerNavStore } from '@/stores/serverNavStore'
+import { showSubTab, subTabForIntent, useSearchIntentStore } from '@/search/intentStore'
 import { useServerAttention, worstLevel } from '@/components/server/useServerAttention'
 import { useClassicTabs } from '@/components/server/shell/classicTabsStore'
 import { isClassicSubTab, normalizeSubTab, normalizeSubTabList } from '@/utils/server/legacyTabs'
@@ -143,6 +144,13 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
       updateTab(tab.id, { activeSubTab: subTab })
     }
   }, [tab.id, tab.runningSubTabs, showClassic, updateTab])
+
+  const hasSearchIntent = useSearchIntentStore((s) => (s.pending[tab.sessionId]?.length ?? 0) > 0)
+  useEffect(() => {
+    if (soloSubTab || tab.status !== 'connected' || !hasSearchIntent) return
+    const [first] = useSearchIntentStore.getState().pending[tab.sessionId] ?? []
+    if (first) showSubTab(tab.id, subTabForIntent(first.kind))
+  }, [soloSubTab, tab.id, tab.sessionId, tab.status, hasSearchIntent])
 
   const httpsRequested = useHttpsIntentStore(s => s.pending[tab.id] !== undefined)
   useEffect(() => {

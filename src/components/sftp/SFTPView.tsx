@@ -8,7 +8,9 @@ import { PermissionsDialog } from './PermissionsDialog'
 import { FilePreview } from './FilePreview'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
+import { SFTP_INTENTS, useSearchIntentStore, type SearchIntent } from '@/search/intentStore'
 import type { FileEntry, PanelType } from '@/types/sftp'
+import { baseName, splitRevealTarget } from './revealTarget'
 
 /** Tracked temp file → remote path mapping for auto-upload */
 interface WatchedFile {
@@ -54,6 +56,7 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
   // File preview state
   const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
   const [previewEditable, setPreviewEditable] = useState(false)
+  const [previewLine, setPreviewLine] = useState<number | undefined>(undefined)
 
   // "Set as Default App" prompt state
   const [defaultAppPrompt, setDefaultAppPrompt] = useState<{
@@ -242,6 +245,39 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
     }
   }, [contextMenu, getPanelHandle])
 
+  const openFileFromSearch = useCallback(
+    async (path: string, line?: number) => {
+      const stat = await window.novadeck.sftp.stat(connectionId, path).catch(() => null)
+      if (!stat?.success || !stat.data) {
+        toast.error('Cannot open file', stat?.error || path)
+        return
+      }
+      setPreviewLine(line)
+      setPreviewEditable(true)
+      setPreviewEntry({ ...stat.data, name: stat.data.name || baseName(path), path })
+    },
+    [connectionId]
+  )
+
+  const handleSearchIntent = useCallback(
+    (intent: SearchIntent) => {
+      if (intent.kind === 'sftp-reveal') {
+        const { directory, file } = splitRevealTarget(intent.path)
+        remotePanelRef.current?.navigate(directory)
+        if (file) remotePanelRef.current?.select(file)
+      } else if (intent.kind === 'sftp-open') {
+        void openFileFromSearch(intent.path, intent.line)
+      }
+    },
+    [openFileFromSearch]
+  )
+
+  const pendingIntents = useSearchIntentStore((s) => s.pending[sessionId])
+  useEffect(() => {
+    if (!sftpReady || !pendingIntents?.some((i) => SFTP_INTENTS.includes(i.kind))) return
+    useSearchIntentStore.getState().take(sessionId, SFTP_INTENTS).forEach(handleSearchIntent)
+  }, [sftpReady, pendingIntents, sessionId, handleSearchIntent])
+
   if (!sftpReady) {
     return (
       <div className="h-full w-full flex items-center justify-center">
@@ -336,12 +372,16 @@ export function SFTPView({ connectionId, sessionId, connectionStatus }: SFTPView
       {/* File preview modal */}
       <FilePreview
         open={!!previewEntry}
-        onClose={() => setPreviewEntry(null)}
+        onClose={() => {
+          setPreviewEntry(null)
+          setPreviewLine(undefined)
+        }}
         connectionId={connectionId}
         filePath={previewEntry?.path || ''}
         fileName={previewEntry?.name || ''}
         fileSize={previewEntry?.size || 0}
         editable={previewEditable}
+        line={previewLine}
         onSave={() => remotePanelRef.current?.refresh()}
       />
 

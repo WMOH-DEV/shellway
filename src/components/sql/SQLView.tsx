@@ -47,6 +47,8 @@ import { QueryMonitor } from './QueryMonitor'
 import { SafeModeMenu } from './SafeModeMenu'
 import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
+import { useSqlSearchIntents } from './useSqlSearchIntents'
+import { SearchField } from '@/components/search/SearchField'
 import type { ClosedSQLTab, SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
@@ -1441,6 +1443,31 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     setShowDatabasePicker(true)
   }, [sqlSessionId])
 
+  const openTableFromSearch = useCallback(
+    (table: string, newTab: boolean) => {
+      const existing = tabs.find((t) => t.type === 'data' && t.table === table && t.database === currentDatabase)
+      if (newTab || (!existing && selectedTable === table)) handleOpenInNewTab(table)
+      else {
+        if (existing) setActiveTab(existing.id)
+        setSelectedTable(table)
+      }
+    },
+    [tabs, currentDatabase, selectedTable, handleOpenInNewTab, setActiveTab, setSelectedTable]
+  )
+
+  useSqlSearchIntents({
+    sessionId,
+    connectionId,
+    ready: connectionStatus === 'connected' && !!sqlSessionId && !!connectionConfig,
+    currentDatabase,
+    switchDatabase: handleDatabaseSelected,
+    openTable: openTableFromSearch,
+    openQuery: handleOpenSavedQuery,
+    newQuery: handleNewQuery,
+    refresh: handleRefreshAllTables,
+    databaseAction: handleDatabaseAction
+  })
+
   const handleStatusBarSave = useCallback(() => {
     if (!sqlSessionId) return
     window.dispatchEvent(
@@ -1809,6 +1836,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           onClick={handleDisconnect}
           className="hover:!text-nd-error-fg"
         />
+        <SearchField className="ml-1.5" />
       </div>
 
       {/* ── Main content: sidebar + (tab bar + content) ── */}

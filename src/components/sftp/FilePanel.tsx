@@ -33,6 +33,7 @@ import { reportTransfer, reportTransfers, type NamedTransferResult } from './tra
 export interface FilePanelHandle {
   refresh: () => void
   navigate: (path: string) => void
+  select: (path: string) => void
   startRename: (path: string) => void
   getCurrentPath: () => string
   requestDelete: (entries: FileEntry[]) => void
@@ -82,6 +83,7 @@ export function FilePanel({
   const [history, setHistory] = useState<string[]>([savedPath || '/'])
   const [historyIndex, setHistoryIndex] = useState(0)
   const initializedRef = useRef(false)
+  const operationChainRef = useRef<Promise<unknown>>(Promise.resolve())
 
   // Rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
@@ -206,9 +208,10 @@ export function FilePanel({
   /** Navigate to a path, adding to history */
   const navigateTo = useCallback(
     (path: string) => {
-      loadDirectory(path)
+      const loaded = loadDirectory(path)
       setHistory((prev) => [...prev.slice(0, historyIndex + 1), path])
       setHistoryIndex((prev) => prev + 1)
+      return loaded
     },
     [loadDirectory, historyIndex]
   )
@@ -249,14 +252,14 @@ export function FilePanel({
         }
 
         const home = await window.novadeck.sftp.localHomedir()
-        navigateTo(home)
+        await navigateTo(home)
       } else {
         // Try to resolve home directory
         const result = await window.novadeck.sftp.realpath(connectionId, '.')
-        navigateTo(result.success && result.data ? result.data : '/')
+        await navigateTo(result.success && result.data ? result.data : '/')
       }
     }
-    init()
+    operationChainRef.current = init().catch(() => undefined)
   }, [connectionId, type]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Go back in history */
@@ -480,7 +483,12 @@ export function FilePanel({
   useEffect(() => {
     onReady?.({
       refresh: () => loadDirectory(currentPath),
-      navigate: (path: string) => navigateTo(path),
+      navigate: (path: string) => {
+        operationChainRef.current = operationChainRef.current.then(() => navigateTo(path)).catch(() => undefined)
+      },
+      select: (path: string) => {
+        operationChainRef.current = operationChainRef.current.then(() => setSelectedPaths(new Set([path])))
+      },
       startRename: (path: string) => {
         const entry = entries.find((e) => e.path === path)
         if (entry) {

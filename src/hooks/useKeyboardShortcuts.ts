@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { matchesBinding } from '@/stores/keybindingStore'
+import { useUIStore } from '@/stores/uiStore'
 import { openEmptyWindow } from '@/utils/windowHandoff'
 
 /**
@@ -129,6 +130,21 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    function handleSearchKey(e: KeyboardEvent) {
+      if (!matchesBinding(e, 'global:search')) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.repeat) return
+      const { searchOpen, openSearch, closeSearch } = useUIStore.getState()
+      if (searchOpen) closeSearch()
+      else openSearch()
+    }
+
+    window.addEventListener('keydown', handleSearchKey, true)
+    return () => window.removeEventListener('keydown', handleSearchKey, true)
   }, [])
 
   useEffect(() => {
