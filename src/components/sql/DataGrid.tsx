@@ -1291,7 +1291,7 @@ export const DataGrid = React.memo(
           },
         });
         items.push({
-          label: "Copy Row as JSON",
+          label: multiSelected ? "Copy Rows as JSON" : "Copy Row as JSON",
           icon: <FileJson size={13} />,
           action: () => {
             if (multiSelected) {
