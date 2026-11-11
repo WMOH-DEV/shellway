@@ -12,7 +12,6 @@ interface TabStripItemProps {
   tab: SQLTab
   tabs: SQLTab[]
   isActive: boolean
-  showDatabase: boolean
   colorByKind: boolean
   closeOnMiddleClick: boolean
   tabIndex: number
@@ -29,7 +28,6 @@ export const TabStripItem = memo(function TabStripItem({
   tab,
   tabs,
   isActive,
-  showDatabase,
   colorByKind,
   closeOnMiddleClick,
   tabIndex,
@@ -108,7 +106,6 @@ export const TabStripItem = memo(function TabStripItem({
           {tabTitle(tab)}
         </span>
 
-        {showDatabase && tab.database && <span className="text-2xs text-nd-text-muted">{tab.database}</span>}
 
         {tab.isDirty && <span aria-label="Unsaved" className="w-1.5 h-1.5 rounded-full bg-nd-warning shrink-0" />}
 

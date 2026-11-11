@@ -49,6 +49,7 @@ export function useSQLShortcuts(
       label: `Query ${queryCount}`,
       query: savedContent || undefined,
       savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
+      database: conn.currentDatabase || undefined,
     }
     store.addTab(connectionIdRef.current, newTab)
   }, [])

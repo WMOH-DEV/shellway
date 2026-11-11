@@ -372,7 +372,7 @@ export const DataTabView = React.memo(function DataTabView({
   const initialViewStateRef = useRef(initialViewState);
   const viewStateRef = useRef<SQLTabViewState>(withoutSql(initialViewState));
   const viewStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingScrollRowRef = useRef(initialViewState?.firstRow ?? 0);
+  const pendingRestoreRef = useRef(true);
 
   const promoteThisTab = useCallback(
     () => useSQLStore.getState().promoteTab(connectionId, tabId),
@@ -390,6 +390,11 @@ export const DataTabView = React.memo(function DataTabView({
       }, VIEW_STATE_SAVE_DELAY_MS);
     },
     [connectionId, tabId],
+  );
+
+  const saveFirstVisibleRow = useCallback(
+    (index: number) => saveViewState({ firstRow: index }),
+    [saveViewState],
   );
 
   useEffect(
@@ -1988,10 +1993,13 @@ export const DataTabView = React.memo(function DataTabView({
   }, []);
 
   useEffect(() => {
-    if (!result || pendingScrollRowRef.current <= 0) return;
-    const row = pendingScrollRowRef.current;
-    pendingScrollRowRef.current = 0;
-    requestAnimationFrame(() => dataGridRef.current?.scrollToRow(row));
+    if (!result || !pendingRestoreRef.current) return;
+    pendingRestoreRef.current = false;
+    const { firstRow = 0, sortKeys: restoredSort = [] } = initialViewStateRef.current ?? {};
+    requestAnimationFrame(() => {
+      dataGridRef.current?.showSort(restoredSort);
+      if (firstRow > 0) dataGridRef.current?.scrollToRow(firstRow);
+    });
   }, [result]);
 
   useEffect(() => {
@@ -2173,9 +2181,7 @@ export const DataTabView = React.memo(function DataTabView({
           onSetCellValue={handleSetCellValue}
           tableName={buildFullTableName(table, schema, dbType)}
           dbType={dbType}
-          onFirstVisibleRowChange={(index) =>
-            saveViewState({ firstRow: index })
-          }
+          onFirstVisibleRowChange={saveFirstVisibleRow}
         />
       </div>
 

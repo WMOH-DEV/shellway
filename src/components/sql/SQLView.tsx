@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense, memo } from 'react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
+import { Tooltip } from '@/components/ui/Tooltip'
 import {
   Database,
   Plug,
@@ -36,7 +37,8 @@ import { TabsMenu } from './tabs/TabsMenu'
 import { VerticalTabList } from './tabs/VerticalTabList'
 import { RecentTabsSwitcher } from './tabs/RecentTabsSwitcher'
 import { useTabShortcuts } from './tabs/useTabShortcuts'
-import { mruTabs } from './tabs/tabModel'
+import { isTabInDatabase, mruTabs } from './tabs/tabModel'
+import { getDatabaseTabs } from './tabs/useDatabaseTabs'
 import type { TabActions } from './tabs/tabActions'
 import { useSqlTabSettings } from '@/stores/sqlTabSettingsStore'
 import { clearSqlTabSnapshot } from '@/stores/sqlTabSnapshotStore'
@@ -436,13 +438,13 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     if (connectionStatus !== 'connected' || tabs.length === 0) return
     try {
       localStorage.setItem(
-        `sql-tabs:${connectionId}`,
+        `sql-tabs:${sessionId}`,
         JSON.stringify({ tabs, activeTabId, selectedTable, mru, closedTabs })
       )
     } catch {
       // Ignore storage errors (e.g. private browsing with full storage)
     }
-  }, [connectionStatus, tabs, activeTabId, selectedTable, mru, closedTabs, connectionId])
+  }, [connectionStatus, tabs, activeTabId, selectedTable, mru, closedTabs, sessionId])
 
   // ── Restore saved tabs on connect if no tabs are already open ──
   useEffect(() => {
@@ -453,7 +455,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     if (getSQLConnectionState(connectionId).tabs.length > 0) return
     if (!tabSettingsRef.current.sqlReopenTabsOnConnect) return
     try {
-      const raw = localStorage.getItem(`sql-tabs:${connectionId}`)
+      const raw = localStorage.getItem(`sql-tabs:${sessionId}`)
       if (!raw) return
       const saved = JSON.parse(raw) as {
         tabs: SQLTab[]
@@ -473,13 +475,14 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       // Otherwise the selectedTable effect would override activeTabId with the data tab,
       // discarding the user's actual last-active tab (e.g. a query editor).
       const activeRestoredTab = saved.tabs.find((t: SQLTab) => t.id === saved.activeTabId)
-      if (saved.selectedTable && activeRestoredTab?.type === 'data' && activeRestoredTab?.table === saved.selectedTable) {
+      const isRestoredTabVisible = !!activeRestoredTab && isTabInDatabase(activeRestoredTab, getSQLConnectionState(connectionId).currentDatabase)
+      if (saved.selectedTable && isRestoredTabVisible && activeRestoredTab?.type === 'data' && activeRestoredTab?.table === saved.selectedTable) {
         setSelectedTable(saved.selectedTable)
       }
     } catch {
       // Ignore parse errors
     }
-  }, [connectionStatus, connectionId, restoreTabs, setSelectedTable])
+  }, [connectionStatus, connectionId, sessionId, restoreTabs, setSelectedTable])
 
   const handleRetry = useCallback(() => {
     setConnectionStatus('disconnected')
@@ -944,7 +947,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       const closingTab = state.tabs.find((t) => t.id === id)
       if (closingTab?.table && closingTab.table === state.selectedTable) {
         const othersRemain = state.tabs.some(
-          (t) => t.id !== id && t.table === closingTab.table
+          (t) => t.id !== id && t.table === closingTab.table && isTabInDatabase(t, state.currentDatabase)
         )
         if (!othersRemain) setSelectedTable(null)
       }
@@ -961,7 +964,7 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
       const closingTabs = connState.tabs.filter((t) => ids.includes(t.id))
       if (closingTabs.some((t) => t.table && t.table === connState.selectedTable)) {
         const othersRemain = connState.tabs.some(
-          (t) => !ids.includes(t.id) && t.table === connState.selectedTable
+          (t) => !ids.includes(t.id) && t.table === connState.selectedTable && isTabInDatabase(t, connState.currentDatabase)
         )
         if (!othersRemain) setSelectedTable(null)
       }
@@ -1185,33 +1188,23 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     [connectionId, currentDatabase, promoteTab, setActiveTab, addTab]
   )
 
-  const switchToTabDatabase = useCallback(
-    async (tab: SQLTab): Promise<boolean> => {
-      if (!tab.database || tab.database === getSQLConnectionState(connectionId).currentDatabase) return true
-      await handleDatabaseSelected(tab.database)
-      return getSQLConnectionState(connectionId).currentDatabase === tab.database
-    },
-    [connectionId, handleDatabaseSelected]
-  )
-
   const findTab = useCallback(
     (id: string) => getSQLConnectionState(connectionId).tabs.find((t) => t.id === id),
     [connectionId]
   )
 
   const activateTab = useCallback(
-    async (id: string): Promise<SQLTab | undefined> => {
+    (id: string): SQLTab | undefined => {
       const tab = findTab(id)
-      if (!tab || !(await switchToTabDatabase(tab))) return undefined
-      handleTabSelect(id)
+      if (tab) handleTabSelect(id)
       return tab
     },
-    [findTab, switchToTabDatabase, handleTabSelect]
+    [findTab, handleTabSelect]
   )
 
   const duplicateTab = useCallback(
-    async (id: string) => {
-      const tab = await activateTab(id)
+    (id: string) => {
+      const tab = activateTab(id)
       if (!tab) return
       if (tab.type === 'data' && tab.table) {
         handleOpenInNewTab(tab.table)
@@ -1230,8 +1223,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   )
 
   const revealTabInSidebar = useCallback(
-    async (id: string) => {
-      const tab = await activateTab(id)
+    (id: string) => {
+      const tab = activateTab(id)
       if (!tab?.table) return
       setShowSidebar(true)
       window.dispatchEvent(new CustomEvent('sql:sidebar-tab', { detail: 'items' }))
@@ -1243,27 +1236,27 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   const tabActions = useMemo<TabActions>(
     () => ({
       activate: (id) => void activateTab(id),
-      close: (id) => {
-        handleTabClose(id)
-        clearSqlTabSnapshot(id)
-      },
-      closeMany: (ids) => {
-        handleCloseTabs(ids)
-        ids.forEach(clearSqlTabSnapshot)
-      },
+      close: handleTabClose,
+      closeMany: handleCloseTabs,
       promote: promoteTab,
       pin: setTabPinned,
-      duplicate: (id) => void duplicateTab(id),
-      move: moveTab,
-      reopenClosed: reopenClosedTab,
+      duplicate: duplicateTab,
+      move: (id, visibleIndex) => {
+        const target = getDatabaseTabs(connectionId).tabs[visibleIndex]
+        if (target) moveTab(id, getSQLConnectionState(connectionId).tabs.indexOf(target))
+      },
+      reopenClosed: (visibleIndex = 0) => {
+        const entry = getDatabaseTabs(connectionId).closed[visibleIndex]
+        if (entry) reopenClosedTab(getSQLConnectionState(connectionId).closedTabs.indexOf(entry))
+      },
       sortByName: sortTabsByName,
-      revealInSidebar: (id) => void revealTabInSidebar(id),
+      revealInSidebar: revealTabInSidebar,
       copyName: (id) => {
         const tab = findTab(id)
         if (tab) void navigator.clipboard.writeText(tab.table ?? tab.label)
       },
     }),
-    [activateTab, handleTabClose, handleCloseTabs, promoteTab, setTabPinned, duplicateTab, moveTab, reopenClosedTab, sortTabsByName, revealTabInSidebar, findTab]
+    [connectionId, activateTab, handleTabClose, handleCloseTabs, promoteTab, setTabPinned, duplicateTab, moveTab, reopenClosedTab, sortTabsByName, revealTabInSidebar, findTab]
   )
 
   const openTabsMenu = useCallback(() => {
@@ -1340,9 +1333,12 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
         case 'create-database':
           setShowCreateDatabaseDialog(true)
           break
+        case 'create-table':
+          handleOpenSavedQuery(createTableTemplate(connectionConfig?.type), 'Create table')
+          break
       }
     },
-    [openExportDialog]
+    [openExportDialog, handleOpenSavedQuery, connectionConfig?.type]
   )
 
   /** Fetch columns for a table — used by ImportCSVDialog for column mapping */
@@ -1372,20 +1368,19 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [connectionConfig])
 
   const contentTabs = useMemo(
-    () => tabs.filter((t) => t.type === 'query' || !t.database || t.database === currentDatabase),
+    () => tabs.filter((t) => t.type === 'query' || isTabInDatabase(t, currentDatabase)),
     [tabs, currentDatabase]
   )
 
+  const isActiveTabVisible = tabs.some((t) => t.id === activeTabId && isTabInDatabase(t, currentDatabase))
+
   useEffect(() => {
-    if (!activeTabId) return
-    if (contentTabs.some((t) => t.id === activeTabId)) return
-    const state = getSQLConnectionState(connectionId)
-    const visible = new Set(contentTabs.map((t) => t.id))
-    const next = mruTabs({ tabs: state.tabs, activeTabId: state.activeTabId, mru: state.mru, closed: state.closedTabs })
-      .find((t) => visible.has(t.id))
-    setActiveTab(next ? next.id : null)
+    if (isActiveTabVisible) return
+    const next = mruTabs(getDatabaseTabs(connectionId))[0]
+    if (!next && !activeTabId) return
+    setActiveTab(next?.id ?? null)
     setSelectedTable(next?.table ?? null)
-  }, [contentTabs, activeTabId, connectionId, setActiveTab, setSelectedTable])
+  }, [isActiveTabVisible, activeTabId, currentDatabase, connectionId, setActiveTab, setSelectedTable])
 
   // ── Tab content renderer ──
   // Track which tabs have been visited — mount on first visit, keep alive after
@@ -1402,11 +1397,11 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   // Clean up mounted tab IDs when tabs are removed
   useEffect(() => {
     const tabIds = new Set(tabs.map((t) => t.id))
-    setMountedTabIds((prev) => {
-      const next = new Set([...prev].filter((id) => tabIds.has(id)))
-      return next.size === prev.size ? prev : next
-    })
-  }, [tabs])
+    const removed = [...mountedTabIds].filter((id) => !tabIds.has(id))
+    if (removed.length === 0) return
+    removed.forEach(clearSqlTabSnapshot)
+    setMountedTabIds((prev) => new Set([...prev].filter((id) => tabIds.has(id))))
+  }, [tabs, mountedTabIds])
 
   // ── Save / Discard dispatchers (status bar → DataTabView via events) ──
   // ── Refresh data in the active data tab only ──
@@ -1656,7 +1651,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           <TabStrip
             connectionId={connectionId}
             actions={tabActions}
-            layout={tabSettings.sqlTabLayout}
             onNewQuery={handleNewQuery}
             onOpenMenu={openTabsMenu}
           />
@@ -1772,12 +1766,12 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           title="New query tab (Ctrl+Shift+N)"
           onClick={handleNewQuery}
         />
+        <ToolbarSep />
         <ToolbarButton
           icon={<Database size={13} />}
           title="Switch database"
           onClick={handleSwitchDatabase}
         />
-        <ToolbarSep />
         <ToolbarButton
           icon={<Download size={13} />}
           title={multiSelectedTables.size > 0 ? `Export ${multiSelectedTables.size} selected tables` : 'Export database'}
@@ -1809,7 +1803,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           active={showQueryLog}
           onClick={() => setShowQueryLog((v) => !v)}
         />
-        <ToolbarSep />
         <ToolbarButton
           icon={<Unplug size={13} />}
           title="Disconnect"
@@ -2011,6 +2004,11 @@ export { SQLView }
 
 // ── Toolbar primitives ──
 
+function createTableTemplate(dbType: string | undefined): string {
+  const idColumn = dbType === 'postgres' ? 'id SERIAL PRIMARY KEY' : 'id INT AUTO_INCREMENT PRIMARY KEY'
+  return `CREATE TABLE new_table (\n  ${idColumn},\n  name VARCHAR(255) NOT NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n`
+}
+
 function ToolbarButton({
   icon,
   title,
@@ -2025,19 +2023,22 @@ function ToolbarButton({
   className?: string
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={cn(
-        'flex items-center justify-center w-7 h-7 rounded-sm transition-colors',
-        active
-          ? 'text-nd-accent bg-nd-accent/10'
-          : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover',
-        className
-      )}
-    >
-      {icon}
-    </button>
+    <Tooltip content={title} side="bottom">
+      <button
+        onClick={onClick}
+        aria-label={title}
+        aria-pressed={active}
+        className={cn(
+          'flex items-center justify-center w-7 h-7 rounded-sm transition-colors',
+          active
+            ? 'text-nd-accent bg-nd-accent/10'
+            : 'text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover',
+          className
+        )}
+      >
+        {icon}
+      </button>
+    </Tooltip>
   )
 }
 

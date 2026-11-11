@@ -258,8 +258,6 @@ function updateConn(
   }
 }
 
-// ── Tab helpers ──
-
 function tabsStateOf(conn: SQLConnectionSlice): TabsState {
   return { tabs: conn.tabs, activeTabId: conn.activeTabId, mru: conn.mru, closed: conn.closedTabs }
 }

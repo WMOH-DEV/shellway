@@ -25,10 +25,6 @@ export function tabTitle(tab: SQLTab): string {
   return tab.type === 'data' && tabKind(tab) === 'structure' ? `${tab.label} · structure` : tab.label
 }
 
-export function showDatabaseLabel(tabs: SQLTab[]): boolean {
-  return new Set(tabs.map((t) => t.database).filter(Boolean)).size > 1
-}
-
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR

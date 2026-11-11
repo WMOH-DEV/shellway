@@ -1,8 +1,8 @@
 import type { SQLTab } from '@/types/sql'
-import { getSQLConnectionState } from '@/stores/sqlStore'
 import { useSqlTabSnapshot } from '@/stores/sqlTabSnapshotStore'
 import { kindBarClass, kindLabel, relativeTime, tabTitle } from './tabPresentation'
 import { mruTabs, tabKind } from './tabModel'
+import { getDatabaseTabs } from './useDatabaseTabs'
 import { useRecentSwitcher } from './useRecentSwitcher'
 
 interface RecentTabsSwitcherProps {
@@ -95,10 +95,7 @@ export function RecentTabsSwitcher({ connectionId, enabled, onCommit }: RecentTa
   const switcher = useRecentSwitcher({
     enabled,
     onCommit,
-    getRows: () => {
-      const s = getSQLConnectionState(connectionId)
-      return mruTabs({ tabs: s.tabs, activeTabId: s.activeTabId, mru: s.mru, closed: s.closedTabs })
-    }
+    getRows: () => mruTabs(getDatabaseTabs(connectionId))
   })
 
   if (!switcher.open) return null

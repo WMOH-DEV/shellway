@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEven
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { ContextMenu } from '@/components/ui/ContextMenu'
 import { VirtualList } from '@/components/ui/VirtualList'
-import { useSQLConnection } from '@/stores/sqlStore'
 import { useSqlTabSettings } from '@/stores/sqlTabSettingsStore'
 import type { SQLTab } from '@/types/sql'
 import { cn } from '@/utils/cn'
 import type { TabActions } from './tabActions'
+import { useDatabaseTabs } from './useDatabaseTabs'
 import { buildTabContextMenu, runTabContextAction } from './tabContextMenu'
 import { tabKind } from './tabModel'
 import { kindBarClass, tabTitle } from './tabPresentation'
@@ -177,7 +177,7 @@ interface VerticalTabListProps {
 }
 
 export function VerticalTabList({ connectionId, actions }: VerticalTabListProps) {
-  const { tabs, activeTabId } = useSQLConnection(connectionId)
+  const { tabs, activeTabId } = useDatabaseTabs(connectionId)
   const { sqlColorByKind } = useSqlTabSettings()
   const [groupMode, setGroupMode] = useState<GroupMode>(readGroupMode)
   const [filter, setFilter] = useState('')

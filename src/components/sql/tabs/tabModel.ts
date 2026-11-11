@@ -38,6 +38,7 @@ function insertionIndex(s: TabsState, position: NewTabPosition): number {
   const firstUnpinned = pinnedCount(s.tabs)
   if (position === 'end') return s.tabs.length
   const activeIndex = s.tabs.findIndex((t) => t.id === s.activeTabId)
+  if (activeIndex < 0) return s.tabs.length
   return Math.max(firstUnpinned, activeIndex + 1)
 }
 
@@ -79,7 +80,7 @@ export function openPreview(
   if (existing) return activateTab(s, existing.id, now)
 
   const preview: SQLTab = { ...tab, preview: true, pinned: false, createdAt: tab.createdAt ?? now }
-  const current = s.tabs.find((t) => t.preview)
+  const current = s.tabs.find((t) => t.preview && t.database === tab.database)
   if (!current) return insertTab(s, preview, position, now)
   if (!isReplaceablePreview(current, isProtected)) {
     return insertTab(promoteTab(s, current.id), preview, position, now)
@@ -194,4 +195,19 @@ export function mruTabs(s: TabsState): SQLTab[] {
   const recent = s.mru.map((id) => byId.get(id)).filter((t): t is SQLTab => !!t)
   const seen = new Set(recent.map((t) => t.id))
   return [...recent, ...s.tabs.filter((t) => !seen.has(t.id))]
+}
+
+export function isTabInDatabase(tab: SQLTab, database: string): boolean {
+  return !tab.database || tab.database === database
+}
+
+export function tabsInDatabase(s: TabsState, database: string): TabsState {
+  const tabs = s.tabs.filter((t) => isTabInDatabase(t, database))
+  const visibleIds = new Set(tabs.map((t) => t.id))
+  return {
+    tabs,
+    activeTabId: s.activeTabId && visibleIds.has(s.activeTabId) ? s.activeTabId : null,
+    mru: s.mru.filter((id) => visibleIds.has(id)),
+    closed: s.closed.filter((entry) => isTabInDatabase(entry.tab, database))
+  }
 }

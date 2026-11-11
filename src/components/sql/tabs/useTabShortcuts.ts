@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { getSQLConnectionState } from '@/stores/sqlStore'
 import { getBinding, matchesBinding } from '@/stores/keybindingStore'
 import { CLOSE_REQUEST_EVENT } from '@/hooks/useKeyboardShortcuts'
 import type { SQLTab } from '@/types/sql'
 import type { TabActions } from './tabActions'
+import { getDatabaseTabs } from './useDatabaseTabs'
 
 const MENU_CLOSE_COMBO = 'CmdOrCtrl+W'
 const NUMBERED_TABS = 8
@@ -16,7 +16,7 @@ interface TabShortcutOptions {
 }
 
 function tabsAndActive(connectionId: string): { tabs: SQLTab[]; active: SQLTab | undefined } {
-  const { tabs, activeTabId } = getSQLConnectionState(connectionId)
+  const { tabs, activeTabId } = getDatabaseTabs(connectionId)
   return { tabs, active: tabs.find((t) => t.id === activeTabId) }
 }
 

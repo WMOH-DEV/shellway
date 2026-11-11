@@ -17,6 +17,7 @@ const orders = make({ id: 'orders', database: 'shop_db' })
 const payments = make({ id: 'payments', database: 'shop_db' })
 const users = make({ id: 'users', database: 'auth_db' })
 const report = make({ id: 'report', type: 'query', label: 'Query 1' })
+const closedSessions: ClosedSQLTab = { tab: make({ id: 'sessions', database: 'auth_db' }), index: 0, closedAt: Date.now() }
 const closedCoupons: ClosedSQLTab = { tab: make({ id: 'coupons', database: 'shop_db' }), index: 0, closedAt: Date.now() }
 
 function createActions(): TabActions {
@@ -50,11 +51,12 @@ describe('TabsMenu', () => {
     originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 400 })
     useSQLStore.getState().removeConnection(CONNECTION)
+    useSQLStore.getState().setCurrentDatabase(CONNECTION, 'shop_db')
     useSQLStore.getState().restoreTabs(CONNECTION, {
       tabs: [orders, payments, users, report],
       activeTabId: 'payments',
       mru: ['payments', 'report', 'orders', 'users'],
-      closedTabs: [closedCoupons]
+      closedTabs: [closedSessions, closedCoupons]
     })
   })
 
@@ -68,15 +70,15 @@ describe('TabsMenu', () => {
     expect(screen.queryByText('Go to tab')).toBeNull()
   })
 
-  it('lists open tabs in most recently used order', () => {
+  it('lists the current database tabs in most recently used order', () => {
     renderMenu()
-    expect(optionNames()).toEqual(['payments', 'Query 1', 'orders', 'users'])
+    expect(optionNames()).toEqual(['payments', 'Query 1', 'orders'])
   })
 
   it('filters rows as the user types', () => {
     renderMenu()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'auth' } })
-    expect(optionNames()).toEqual(['users'])
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pay' } })
+    expect(optionNames()).toEqual(['payments'])
   })
 
   it('shows an empty message when nothing matches', () => {
@@ -120,8 +122,9 @@ describe('TabsMenu', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('reopens a recently closed tab', () => {
+  it('reopens a recently closed tab of the current database', () => {
     const { actions, onClose } = renderMenu()
+    expect(screen.queryByRole('button', { name: /sessions/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /coupons/ }))
     expect(actions.reopenClosed).toHaveBeenCalledWith(0)
     expect(onClose).toHaveBeenCalled()
@@ -130,6 +133,6 @@ describe('TabsMenu', () => {
   it('closes every unpinned tab except the active one with Close others', () => {
     const { actions } = renderMenu()
     fireEvent.click(screen.getByRole('button', { name: 'Close others' }))
-    expect(actions.closeMany).toHaveBeenCalledWith(['orders', 'users', 'report'])
+    expect(actions.closeMany).toHaveBeenCalledWith(['orders', 'report'])
   })
 })

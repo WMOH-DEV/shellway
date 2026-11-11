@@ -1,7 +1,6 @@
 import { useId, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import { VirtualList } from '@/components/ui/VirtualList'
-import { useSQLConnection } from '@/stores/sqlStore'
 import { useSqlTabSnapshots } from '@/stores/sqlTabSnapshotStore'
 import { getBinding } from '@/stores/keybindingStore'
 import { formatCombo } from '@/utils/keybindings'
@@ -11,6 +10,7 @@ import { mruTabs, tabKind } from './tabModel'
 import { kindBarClass, kindLabel, relativeTime, tabTitle } from './tabPresentation'
 import { scopeCounts, searchTabs, type TabScope } from './tabSearch'
 import type { TabActions } from './tabActions'
+import { useDatabaseTabs } from './useDatabaseTabs'
 
 interface TabsMenuProps {
   connectionId: string
@@ -31,7 +31,7 @@ const SCOPES: { scope: TabScope; label: string }[] = [
 ]
 
 const SECTION_LABEL = 'text-[11px] font-semibold uppercase tracking-wider text-nd-text-dim'
-const FOOTER_BUTTON = 'h-7 px-2 rounded-md border border-nd-border hover:bg-nd-surface-hover'
+const FOOTER_BUTTON = 'h-7 px-2 rounded-md border border-nd-border whitespace-nowrap hover:bg-nd-surface-hover'
 
 function panelPosition(anchorRect: DOMRect | null | undefined): { className: string; style: CSSProperties } {
   if (!anchorRect) return { className: 'left-1/2 -translate-x-1/2', style: { top: 64 } }
@@ -93,7 +93,8 @@ function TabRow({ tab, optionId, isHighlighted, filterSummary, onHover, onActiva
 }
 
 function TabsMenuPanel({ connectionId, actions, onClose, anchorRect }: Omit<TabsMenuProps, 'open'>) {
-  const { tabs, activeTabId, mru, closedTabs } = useSQLConnection(connectionId)
+  const tabsState = useDatabaseTabs(connectionId)
+  const { tabs, activeTabId, closed: closedTabs } = tabsState
   const snapshots = useSqlTabSnapshots()
   const listboxId = useId()
   const [query, setQuery] = useState('')
@@ -106,8 +107,8 @@ function TabsMenuPanel({ connectionId, actions, onClose, anchorRect }: Omit<Tabs
     [snapshots]
   )
   const results = useMemo(
-    () => searchTabs(mruTabs({ tabs, activeTabId, mru, closed: closedTabs }), query, scope, filterTextById),
-    [tabs, activeTabId, mru, closedTabs, query, scope, filterTextById]
+    () => searchTabs(mruTabs(tabsState), query, scope, filterTextById),
+    [tabsState, query, scope, filterTextById]
   )
 
   const highlightedIndex = Math.min(highlight, Math.max(0, results.length - 1))
@@ -267,7 +268,7 @@ function TabsMenuPanel({ connectionId, actions, onClose, anchorRect }: Omit<Tabs
           <button type="button" className={FOOTER_BUTTON} onClick={() => actions.sortByName()}>
             Sort A–Z
           </button>
-          <span className="ml-auto whitespace-pre text-nd-text-muted">↑↓ move  ↵ open  ⌫ close</span>
+          <span className="ml-auto whitespace-pre text-nd-text-muted">↑↓ move  ↵ open</span>
         </div>
       </div>
     </>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, Lock, LockOpen } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { SAFE_MODE_OPTIONS } from './SafeModeGate'
 import type { SafeMode } from '@/types/sql'
 
@@ -39,22 +40,27 @@ export function SafeModeMenu({ mode, onChange }: SafeModeMenuProps) {
 
   const active = SAFE_MODE_OPTIONS.find((option) => option.value === mode)
   const guarded = mode !== 'silent'
+  const safeModeLabel = active ? `${active.label} — ${active.description}` : 'Safe mode'
 
   return (
     <div ref={wrapperRef} className="relative">
-      <button
-        onClick={() => setOpen((value) => !value)}
-        title={active ? `${active.label} — ${active.description}` : 'Safe mode'}
-        className={cn(
-          'flex items-center justify-center h-6 w-7 rounded transition-colors',
-          open && 'bg-nd-surface',
-          guarded
-            ? 'text-nd-warning-fg hover:text-nd-warning-fg'
-            : 'text-nd-text-muted hover:text-nd-text-primary'
-        )}
-      >
-        {guarded ? <Lock size={13} /> : <LockOpen size={13} />}
-      </button>
+      <Tooltip content={safeModeLabel} side="bottom">
+        <button
+          onClick={() => setOpen((value) => !value)}
+          aria-label={safeModeLabel}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={cn(
+            'flex items-center justify-center h-6 w-7 rounded transition-colors',
+            open && 'bg-nd-surface',
+            guarded
+              ? 'text-nd-warning-fg hover:text-nd-warning-fg'
+              : 'text-nd-text-muted hover:text-nd-text-primary'
+          )}
+        >
+          {guarded ? <Lock size={13} /> : <LockOpen size={13} />}
+        </button>
+      </Tooltip>
 
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 w-[26rem] max-w-[calc(100vw-1rem)] rounded-md border border-nd-border bg-nd-bg-secondary shadow-xl py-1">

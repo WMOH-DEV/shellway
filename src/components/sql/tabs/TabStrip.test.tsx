@@ -28,6 +28,7 @@ function makeActions(): TabActions {
 }
 
 function seed(tabs: SQLTab[], activeTabId: string | null = tabs[0]?.id ?? null): void {
+  useSQLStore.getState().setCurrentDatabase('c1', 'shop_db')
   useSQLStore.getState().restoreTabs('c1', { tabs, activeTabId })
 }
 
@@ -36,7 +37,6 @@ function renderStrip(actions = makeActions(), handlers: { onOpenMenu?: () => voi
     <TabStrip
       connectionId="c1"
       actions={actions}
-      layout="single"
       onNewQuery={vi.fn()}
       onOpenMenu={handlers.onOpenMenu ?? vi.fn()}
     />
@@ -52,7 +52,6 @@ beforeEach(() => {
   useSQLStore.getState().removeConnection('c1')
   useSqlTabSettingsStore.setState({
     sqlColorByKind: true,
-    sqlShowDatabaseName: true,
     sqlCloseOnMiddleClick: true,
     sqlTabLimit: 15
   })
@@ -84,28 +83,12 @@ describe('TabStrip rendering', () => {
     expect(within(tabElement('orders')).getByLabelText('Close tab')).toBeInTheDocument()
   })
 
-  it('shows database names only when tabs span two databases', () => {
+  it('shows only the tabs of the current database', () => {
     seed([makeTab({ id: 't1' }), makeTab({ id: 't2', label: 'users', table: 'users', database: 'auth_db' })])
     renderStrip()
 
-    expect(screen.getByText('shop_db')).toBeInTheDocument()
-    expect(screen.getByText('auth_db')).toBeInTheDocument()
-  })
-
-  it('hides database names when the setting is off or only one database is open', () => {
-    seed([makeTab({ id: 't1' }), makeTab({ id: 't2', label: 'users', table: 'users', database: 'auth_db' })])
-    useSqlTabSettingsStore.setState({ sqlShowDatabaseName: false })
-    renderStrip()
-
-    expect(screen.queryByText('shop_db')).toBeNull()
-    expect(screen.queryByText('auth_db')).toBeNull()
-  })
-
-  it('hides database names when all tabs share one database', () => {
-    seed([makeTab({ id: 't1' }), makeTab({ id: 't2', label: 'users', table: 'users' })])
-    renderStrip()
-
-    expect(screen.queryByText('shop_db')).toBeNull()
+    expect(screen.getAllByRole('tab')).toHaveLength(1)
+    expect(screen.queryByText('users')).toBeNull()
   })
 
   it('renders kind bars only when colour by kind is on', () => {

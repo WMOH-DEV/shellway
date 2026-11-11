@@ -14,6 +14,7 @@ import {
   setPinned,
   sortByName,
   tabKind,
+  tabsInDatabase,
   type TabsState
 } from './tabModel'
 
@@ -53,6 +54,11 @@ describe('insertTab', () => {
     expect(s.mru[0]).toBe('c')
     expect(s.tabs[1].createdAt).toBe(5)
     expect(s.tabs[1].lastActiveAt).toBe(5)
+  })
+
+  it('opens at the end when no tab is active', () => {
+    const s = insertTab(state([table('a'), table('b')], null), table('c'), 'next', 5)
+    expect(ids(s)).toEqual(['a', 'b', 'c'])
   })
 
   it('opens at the end when asked', () => {
@@ -106,6 +112,14 @@ describe('openPreview', () => {
     const s0 = state([table('old', { preview: true, isDirty: true })], 'old')
     const s = openPreview(s0, table('new'), 'end', 9, never)
     expect(ids(s)).toEqual(['old', 'new'])
+  })
+})
+
+describe('openPreview across databases', () => {
+  it('keeps the preview tab of another database', () => {
+    const s0 = state([table('users', { preview: true, database: 'auth_db' })])
+    const s1 = openPreview(s0, table('orders'), 'end', 1, () => false)
+    expect(s1.tabs.map((t) => t.id)).toEqual(['users', 'orders'])
   })
 })
 
@@ -295,5 +309,32 @@ describe('mruTabs', () => {
   it('lists tabs most recent first, then never-activated ones in order', () => {
     const s0 = { ...state([table('a'), table('b'), table('c')], 'b'), mru: ['b', 'a'] }
     expect(mruTabs(s0).map((t) => t.id)).toEqual(['b', 'a', 'c'])
+  })
+})
+
+describe('tabsInDatabase', () => {
+  const other = table('o', { database: 'auth_db' })
+  const query = { id: 'q', type: 'query' as const, label: 'Query 1', database: 'auth_db' }
+  const legacy = table('l', { database: undefined })
+
+  it('keeps only tabs of the database plus tabs without one', () => {
+    const s0 = { ...state([table('a'), other, query, legacy], 'a'), mru: ['o', 'a', 'q'] }
+    const view = tabsInDatabase(s0, 'shop_db')
+    expect(view.tabs.map((t) => t.id)).toEqual(['a', 'l'])
+    expect(view.mru).toEqual(['a'])
+    expect(view.activeTabId).toBe('a')
+  })
+
+  it('drops the active tab and closed entries from another database', () => {
+    const s0 = {
+      ...state([table('a'), other], 'o'),
+      closed: [
+        { tab: other, index: 1, closedAt: 2 },
+        { tab: table('b'), index: 1, closedAt: 1 }
+      ]
+    }
+    const view = tabsInDatabase(s0, 'shop_db')
+    expect(view.activeTabId).toBeNull()
+    expect(view.closed.map((e) => e.tab.id)).toEqual(['b'])
   })
 })

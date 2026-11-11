@@ -40,11 +40,10 @@ export interface AppSettings {
 
   // SQL
   sqlDefaultFilterMatch: 'all' | 'any'
-  sqlTabLayout: 'single' | 'wrap' | 'vertical'
+  sqlTabLayout: 'single' | 'vertical'
   sqlPreviewTabs: boolean
   sqlTabLimit: number
   sqlNewTabPosition: 'next' | 'end'
-  sqlShowDatabaseName: boolean
   sqlColorByKind: boolean
   sqlReopenTabsOnConnect: boolean
   sqlCloseOnMiddleClick: boolean
@@ -121,7 +120,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   sqlPreviewTabs: true,
   sqlTabLimit: 15,
   sqlNewTabPosition: 'next',
-  sqlShowDatabaseName: true,
   sqlColorByKind: true,
   sqlReopenTabsOnConnect: true,
   sqlCloseOnMiddleClick: true,

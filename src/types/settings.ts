@@ -5,7 +5,7 @@ import type { FilterMatch } from './sql'
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system'
 
-export type SqlTabLayout = 'single' | 'wrap' | 'vertical'
+export type SqlTabLayout = 'single' | 'vertical'
 
 export type SqlNewTabPosition = 'next' | 'end'
 
@@ -71,7 +71,6 @@ export interface AppSettings {
   sqlPreviewTabs: boolean
   sqlTabLimit: number
   sqlNewTabPosition: SqlNewTabPosition
-  sqlShowDatabaseName: boolean
   sqlColorByKind: boolean
   sqlReopenTabsOnConnect: boolean
   sqlCloseOnMiddleClick: boolean
@@ -147,7 +146,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sqlPreviewTabs: true,
   sqlTabLimit: 15,
   sqlNewTabPosition: 'next',
-  sqlShowDatabaseName: true,
   sqlColorByKind: true,
   sqlReopenTabsOnConnect: true,
   sqlCloseOnMiddleClick: true,

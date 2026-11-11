@@ -16,8 +16,9 @@ const tabs: SQLTab[] = [
   tab('products'),
   tab('invoices', { preview: true }),
   tab('revenue', { type: 'query', table: undefined }),
-  tab('users', { database: 'auth_db' }),
-  tab('sessions', { database: 'auth_db' })
+  tab('users', { database: undefined }),
+  tab('sessions', { database: undefined }),
+  tab('logins', { database: 'auth_db' })
 ]
 
 function createActions(): TabActions {
@@ -53,6 +54,7 @@ function createMemoryStorage(): Storage {
 function seed(): void {
   const store = useSQLStore.getState()
   store.removeConnection(CONNECTION_ID)
+  store.setCurrentDatabase(CONNECTION_ID, 'shop_db')
   store.restoreTabs(CONNECTION_ID, { tabs, activeTabId: 'orders' })
 }
 
@@ -75,7 +77,9 @@ describe('VerticalTabList', () => {
     render(<VerticalTabList connectionId={CONNECTION_ID} actions={createActions()} />)
     expect(screen.getByRole('button', { name: /^Pinned/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^shop_db/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^auth_db/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^No database/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^auth_db/ })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /logins/ })).toBeNull()
     expect(screen.getByText('6')).toBeInTheDocument()
   })
 
@@ -117,7 +121,7 @@ describe('VerticalTabList', () => {
     const actions = createActions()
     render(<VerticalTabList connectionId={CONNECTION_ID} actions={actions} />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Close tab' })[0])
-    expect(actions.close).toHaveBeenCalledWith('users')
+    expect(actions.close).toHaveBeenCalledWith('products')
     expect(actions.activate).not.toHaveBeenCalled()
   })
 
@@ -126,6 +130,6 @@ describe('VerticalTabList', () => {
     const pinned = screen.getByRole('tab', { name: /orders/ })
     pinned.focus()
     fireEvent.keyDown(pinned, { key: 'ArrowDown' })
-    expect(screen.getByRole('tab', { name: /users/ })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: /products/ })).toHaveFocus()
   })
 })

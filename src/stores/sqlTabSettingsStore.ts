@@ -7,7 +7,6 @@ export type SqlTabSettings = Pick<
   | 'sqlPreviewTabs'
   | 'sqlTabLimit'
   | 'sqlNewTabPosition'
-  | 'sqlShowDatabaseName'
   | 'sqlColorByKind'
   | 'sqlReopenTabsOnConnect'
   | 'sqlCloseOnMiddleClick'
@@ -18,7 +17,6 @@ const SETTING_KEYS: (keyof SqlTabSettings)[] = [
   'sqlPreviewTabs',
   'sqlTabLimit',
   'sqlNewTabPosition',
-  'sqlShowDatabaseName',
   'sqlColorByKind',
   'sqlReopenTabsOnConnect',
   'sqlCloseOnMiddleClick'
@@ -30,6 +28,7 @@ function pickTabSettings(settings: Partial<AppSettings> | null | undefined): Sql
     const value = settings?.[key]
     picked[key] = typeof value === typeof DEFAULT_SETTINGS[key] ? value : DEFAULT_SETTINGS[key]
   }
+  if (picked.sqlTabLayout !== 'vertical') picked.sqlTabLayout = 'single'
   return picked as SqlTabSettings
 }
 

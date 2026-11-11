@@ -148,7 +148,7 @@ function buildAppMenu(): Menu {
   };
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: "appMenu" } as MenuItemConstructorOptions] : []),
-    { label: "File", submenu: [closeItem] },
+    { label: "File", submenu: isMac ? [closeItem] : [closeItem, { type: "separator" }, { role: "quit" }] },
     { role: "editMenu" },
     { role: "viewMenu" },
     isMac ? { role: "windowMenu" } : { label: "Window", submenu: [{ role: "minimize" }] },

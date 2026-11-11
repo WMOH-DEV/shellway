@@ -48,20 +48,6 @@ const LAYOUT_CARDS: LayoutCard[] = [
     ]
   },
   {
-    value: 'wrap',
-    title: 'Wrap to rows',
-    description: 'Every tab visible, up to 3 rows, then it scrolls.',
-    direction: 'row',
-    bars: [
-      { width: '30%', tone: 'accent' },
-      { width: '30%', tone: 'neutral' },
-      { width: '30%', tone: 'neutral' },
-      { width: '30%', tone: 'neutral' },
-      { width: '30%', tone: 'success' },
-      { width: '30%', tone: 'neutral' }
-    ]
-  },
-  {
     value: 'vertical',
     title: 'Vertical list',
     description: 'Open tabs in the sidebar, grouped. Best for many tabs.',
@@ -120,8 +106,8 @@ function LayoutPreview({ direction, bars }: Pick<LayoutCard, 'direction' | 'bars
   return (
     <div
       className={cn(
-        'h-14 rounded-md bg-nd-bg-sunken p-2 flex gap-1',
-        isRow ? 'flex-row flex-wrap' : 'flex-col'
+        'w-full h-14 rounded-md bg-nd-bg-sunken p-2 flex gap-1 overflow-hidden',
+        isRow ? 'flex-row' : 'flex-col'
       )}
     >
       {bars.map((bar, index) => (
@@ -143,7 +129,7 @@ function LayoutPicker({
   onChange: (layout: SqlTabLayout) => void
 }) {
   return (
-    <div role="radiogroup" aria-label="Tab layout" className="grid grid-cols-3 gap-2">
+    <div role="radiogroup" aria-label="Tab layout" className="grid grid-cols-2 gap-2">
       {LAYOUT_CARDS.map((card) => {
         const isSelected = card.value === value
         return (
@@ -260,11 +246,6 @@ export function SqlTabsSettings({ settings, update, onOpenShortcuts }: SqlTabsSe
               />
             </div>
           </OptionRow>
-          {renderToggle(
-            'Show database name on tabs',
-            'sqlShowDatabaseName',
-            'Only when tabs from more than one database are open.'
-          )}
           {renderToggle(
             'Colour by kind',
             'sqlColorByKind',

@@ -92,7 +92,7 @@ export function Dropdown({
                   )}
                 >
                   {item.icon && <span className="shrink-0 w-4 text-nd-text-muted">{item.icon}</span>}
-                  <span className="flex-1">{item.label}</span>
+                  <span className="flex-1 whitespace-nowrap">{item.label}</span>
                   {item.shortcut && (
                     <span className="text-2xs text-nd-text-muted">{item.shortcut}</span>
                   )}

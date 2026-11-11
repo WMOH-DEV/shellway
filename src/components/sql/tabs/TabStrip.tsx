@@ -9,23 +9,21 @@ import { formatCombo } from '@/utils/keybindings'
 import type { SQLTab } from '@/types/sql'
 import type { TabActions } from './tabActions'
 import { tabKind } from './tabModel'
-import { kindBarClass, kindLabel, showDatabaseLabel, tabTitle } from './tabPresentation'
+import { kindBarClass, kindLabel, tabTitle } from './tabPresentation'
 import { TabStripItem } from './TabStripItem'
+import { useDatabaseTabs } from './useDatabaseTabs'
 
 const SCROLL_STEP = 200
 
 const TAB_COUNT_BUTTON_CLASS =
   'shrink-0 flex items-center gap-1 text-xs px-2 py-1.5 rounded text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface transition-colors'
 
-function useOverflow(containerRef: RefObject<HTMLDivElement | null>, enabled: boolean, tabs: SQLTab[]): boolean {
+function useOverflow(containerRef: RefObject<HTMLDivElement | null>, tabs: SQLTab[]): boolean {
   const [overflows, setOverflows] = useState(false)
 
   useEffect(() => {
     const container = containerRef.current
-    if (!enabled || !container) {
-      setOverflows(false)
-      return
-    }
+    if (!container) return
     const measure = (): void => setOverflows(container.scrollWidth > container.clientWidth)
     measure()
     container.addEventListener('scroll', measure)
@@ -35,7 +33,7 @@ function useOverflow(containerRef: RefObject<HTMLDivElement | null>, enabled: bo
       container.removeEventListener('scroll', measure)
       observer.disconnect()
     }
-  }, [containerRef, enabled, tabs])
+  }, [containerRef, tabs])
 
   return overflows
 }
@@ -101,19 +99,17 @@ function TabCountButton({ count, onOpenMenu }: TabCountButtonProps) {
 interface TabStripProps {
   connectionId: string
   actions: TabActions
-  layout: 'single' | 'wrap'
   onNewQuery: () => void
   onOpenMenu: () => void
 }
 
-export function TabStrip({ connectionId, actions, layout, onNewQuery, onOpenMenu }: TabStripProps) {
-  const { tabs, activeTabId, tabsOverLimit } = useSQLConnection(connectionId)
+export function TabStrip({ connectionId, actions, onNewQuery, onOpenMenu }: TabStripProps) {
+  const { tabsOverLimit } = useSQLConnection(connectionId)
+  const { tabs, activeTabId } = useDatabaseTabs(connectionId)
   const settings = useSqlTabSettings()
   const containerRef = useRef<HTMLDivElement>(null)
   const { elements, registerRef, handleKeyDown } = useTabKeyboard(tabs, actions)
-  const isSingle = layout === 'single'
-  const overflows = useOverflow(containerRef, isSingle, tabs)
-  const showDatabase = settings.sqlShowDatabaseName && showDatabaseLabel(tabs)
+  const overflows = useOverflow(containerRef, tabs)
   const focusableId = tabs.some((t) => t.id === activeTabId) ? activeTabId : tabs[0]?.id
 
   useEffect(() => {
@@ -125,7 +121,7 @@ export function TabStrip({ connectionId, actions, layout, onNewQuery, onOpenMenu
 
   return (
     <div className="flex items-center border-b border-nd-border bg-nd-bg-secondary min-h-[32px]">
-      {isSingle && overflows && (
+      {overflows && (
         <button
           onClick={() => scrollBy(-SCROLL_STEP)}
           aria-label="Scroll tabs left"
@@ -140,12 +136,7 @@ export function TabStrip({ connectionId, actions, layout, onNewQuery, onOpenMenu
         role="tablist"
         aria-orientation="horizontal"
         aria-label="SQL tabs"
-        className={cn(
-          'flex',
-          isSingle
-            ? 'items-center overflow-x-auto scrollbar-none flex-1'
-            : 'flex-wrap flex-1 max-h-[96px] overflow-y-auto'
-        )}
+        className="flex items-center overflow-x-auto scrollbar-none flex-1"
       >
         {tabs.map((tab) => (
           <TabStripItem
@@ -153,7 +144,6 @@ export function TabStrip({ connectionId, actions, layout, onNewQuery, onOpenMenu
             tab={tab}
             tabs={tabs}
             isActive={tab.id === activeTabId}
-            showDatabase={showDatabase}
             colorByKind={settings.sqlColorByKind}
             closeOnMiddleClick={settings.sqlCloseOnMiddleClick}
             tabIndex={tab.id === focusableId ? 0 : -1}
@@ -164,7 +154,7 @@ export function TabStrip({ connectionId, actions, layout, onNewQuery, onOpenMenu
         ))}
       </div>
 
-      {isSingle && overflows && (
+      {overflows && (
         <button
           onClick={() => scrollBy(SCROLL_STEP)}
           aria-label="Scroll tabs right"
@@ -202,7 +192,7 @@ interface CurrentTabHeaderProps {
 }
 
 export function CurrentTabHeader({ connectionId, onOpenMenu }: CurrentTabHeaderProps) {
-  const { tabs, activeTabId } = useSQLConnection(connectionId)
+  const { tabs, activeTabId } = useDatabaseTabs(connectionId)
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const snapshot = useSqlTabSnapshot(activeTab?.id)
   if (!activeTab) return null
