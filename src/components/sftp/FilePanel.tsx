@@ -22,6 +22,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { Spinner } from '@/components/ui/Spinner'
 import { STAR } from '@/components/ui/decorativeColors'
 import { toast } from '@/components/ui/Toast'
+import { captureListing } from '@/search/capture'
 import { useSFTPPathStore } from '@/stores/sftpPathStore'
 import { useBookmarkStore } from '@/stores/bookmarkStore'
 import { useSessionStore } from '@/stores/sessionStore'
@@ -193,6 +194,7 @@ export function FilePanel({
           setSelectedPaths(new Set())
           // Persist path for tab-switch / reconnect restoration (keyed by sessionId)
           savePath(sessionId, type, path)
+          if (type === 'remote') captureListing(sessionId, path, result.data as FileEntry[])
         } else {
           toast.error('Failed to load directory', result.error || 'Unknown error')
         }
