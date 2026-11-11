@@ -82,7 +82,7 @@ export const TabStripItem = memo(function TabStripItem({
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
         className={cn(
-          'group relative flex items-center gap-1.5 shrink-0',
+          'group relative flex items-center gap-1.5 shrink-0 cursor-pointer',
           'px-3 py-1.5 text-xs font-medium transition-colors',
           'border-r border-nd-border',
           isActive
