@@ -99,6 +99,8 @@ function currentCollection(): Collection<TableEntry> {
   return memoIndex('tables', [cached, ...liveDeps], () => buildCollection(buildEntries(), INDEXED_FIELDS))
 }
 
+const COLUMN_WEIGHT = 0.75
+
 function contextHint(entry: TableEntry, query: SearchQuery): number {
   if (entry.scopeId !== query.context.activeSessionId) return 0
   return entry.database === query.context.activeDatabase ? 1 : 0.5
@@ -118,7 +120,7 @@ function toResult(entry: TableEntry, query: SearchQuery): SearchResult {
     icon: isColumn ? 'column' : 'table',
     hint: connected ? undefined : 'disconnected',
     keywords: isColumn ? entry.path : undefined,
-    scoreHints: { context: contextHint(entry, query), disconnected: !connected },
+    scoreHints: { context: contextHint(entry, query), disconnected: !connected, weight: isColumn ? COLUMN_WEIGHT : 1 },
     payload: { scopeId: entry.scopeId, database: entry.database, table: entry.table, column: entry.column }
   }
 }

@@ -9,7 +9,6 @@ import { PREFIX_LABELS } from '@/search/queryParser'
 import { useSearchSettingsStore } from '@/search/searchSettings'
 import type { ScopeId, ScoredResult, SearchAction, SearchPrefix, ServerFilter } from '@/search/types'
 import { useSearch } from '@/search/useSearch'
-import { formatCombo } from '@/utils/keybindings'
 import { cn } from '@/utils/cn'
 import { SearchPreview } from './SearchPreview'
 import { LIST_ID, optionId, SearchResultList } from './SearchResultList'
@@ -278,19 +277,15 @@ function PaletteDialog() {
               <SearchPreview result={active} actions={actions} onRun={(action) => active && runAction(active, action)} />
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 border-t border-nd-border bg-nd-bg-sunken px-4 py-2.5 text-xs text-nd-text-muted">
+            <div className="flex items-center gap-4 border-t border-nd-border bg-nd-bg-sunken px-4 py-2.5 text-xs text-nd-text-muted">
               {PREFIXES.map((prefix) => (
-                <button key={prefix} type="button" onClick={() => insertPrefix(prefix)} className="flex items-center gap-1 hover:text-nd-text-primary">
+                <button key={prefix} type="button" onClick={() => insertPrefix(prefix)} className="flex shrink-0 items-center gap-1 hover:text-nd-text-primary">
                   <kbd className={kbdClass}>{prefix}</kbd> {PREFIX_LABELS[prefix]}
                 </button>
               ))}
-              <div className="flex-1" />
-              {remoteCommand && <span className="truncate">Runs {remoteCommand}, read-only</span>}
-              <span><kbd className={kbdClass}>↑↓</kbd> move</span>
-              <span><kbd className={kbdClass}>tab</kbd> next group</span>
-              <span><kbd className={kbdClass}>↵</kbd> open</span>
-              <span><kbd className={kbdClass}>{formatCombo('CmdOrCtrl+Enter')}</kbd> new tab</span>
-              <span><kbd className={kbdClass}>esc</kbd> close</span>
+              <span className="min-w-0 flex-1 truncate text-right">{remoteCommand && `Runs ${remoteCommand}, read-only`}</span>
+              <span className="shrink-0"><kbd className={kbdClass}>↑↓</kbd> move</span>
+              <span className="shrink-0"><kbd className={kbdClass}>tab</kbd> next group</span>
             </div>
           </>
         )}

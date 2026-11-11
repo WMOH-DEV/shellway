@@ -493,6 +493,7 @@ export function TextSearchView({ initialText, onTextChange, onClose }: TextSearc
                   key={hit.key}
                   role="option"
                   aria-selected={hit.key === activeKey}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setSelectedKey(hit.key)}
                   onDoubleClick={() => {
                     setSelectedKey(hit.key)

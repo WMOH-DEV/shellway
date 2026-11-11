@@ -53,6 +53,7 @@ export interface ScoreHints {
   frequency?: number
   context?: number
   disconnected?: boolean
+  weight?: number
 }
 
 export interface SearchResult {

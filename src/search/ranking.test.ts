@@ -55,6 +55,12 @@ describe('scoreResult', () => {
     expect(boosted).toBeCloseTo(base + 0.25 + 0.15 + 0.2 + 0.3)
   })
 
+  it('applies a per-result weight so columns rank below tables', () => {
+    const table = scoreResult(result('t', 'customers'), 'cust')
+    const column = scoreResult(result('c', 'customer_id', 'tables', { scoreHints: { weight: 0.75 } }), 'cust')
+    expect(table).toBeGreaterThan(column)
+  })
+
   it('penalises disconnected servers', () => {
     const connected = scoreResult(result('a', 'orders'), 'orders')
     const disconnected = scoreResult(result('a', 'orders', 'tables', { scoreHints: { disconnected: true } }), 'orders')

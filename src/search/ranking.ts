@@ -89,7 +89,7 @@ export function scoreResult(result: SearchResult, queryText: string, usage: Usag
   const recency = Math.max(hints.recency ?? 0, usage.recency(result.id))
   const frequency = Math.max(hints.frequency ?? 0, usage.frequency(result.id))
   return (
-    match * TYPE_WEIGHTS[result.providerId] +
+    match * TYPE_WEIGHTS[result.providerId] * (hints.weight ?? 1) +
     WEIGHTS.recency * recency +
     WEIGHTS.frequency * frequency +
     WEIGHTS.context * (hints.context ?? 0) +
