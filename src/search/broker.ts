@@ -1,6 +1,7 @@
 import type { ProviderId, ScopeId, SearchProvider, SearchQuery, SearchResult } from './types'
 
 export interface ProviderUpdate {
+  key: string
   providerId: ProviderId
   results: SearchResult[]
   done: boolean
@@ -14,6 +15,10 @@ export interface BrokerBudgets {
 }
 
 export const DEFAULT_BUDGETS: BrokerBudgets = { localMs: 300, remoteMs: 20_000 }
+
+export function providerKey(provider: SearchProvider): string {
+  return `${provider.id}:${provider.kind}`
+}
 
 export function providerInScope(provider: SearchProvider, scope: ScopeId): boolean {
   if (scope === 'all') return provider.kind === 'local'
@@ -48,8 +53,9 @@ async function runProvider(
     controller.abort()
   }, budgetMs)
   const results: SearchResult[] = []
-  const emit = (update: Omit<ProviderUpdate, 'providerId' | 'results'>) => {
-    if (!signal.aborted) onUpdate({ providerId: provider.id, results: [...results], ...update })
+  const key = providerKey(provider)
+  const emit = (update: Omit<ProviderUpdate, 'key' | 'providerId' | 'results'>) => {
+    if (!signal.aborted) onUpdate({ key, providerId: provider.id, results: [...results], ...update })
   }
 
   const iterator = provider.search(query, controller.signal)[Symbol.asyncIterator]()

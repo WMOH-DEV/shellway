@@ -34,6 +34,13 @@ interface UIState {
   // ── Modals / panels ──
   settingsOpen: boolean;
   toggleSettings: () => void;
+  settingsSection: string | null;
+  openSettings: (section: string) => void;
+
+  searchOpen: boolean;
+  searchInitial: string;
+  openSearch: (initial?: string) => void;
+  closeSearch: () => void;
   aboutOpen: boolean;
   toggleAbout: () => void;
 
@@ -141,6 +148,13 @@ export const useUIStore = create<UIState>((set) => ({
   // ── Modals ──
   settingsOpen: false,
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+  settingsSection: null,
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section }),
+
+  searchOpen: false,
+  searchInitial: '',
+  openSearch: (initial = '') => set({ searchOpen: true, searchInitial: initial }),
+  closeSearch: () => set({ searchOpen: false }),
   aboutOpen: false,
   toggleAbout: () => set((s) => ({ aboutOpen: !s.aboutOpen })),
 
