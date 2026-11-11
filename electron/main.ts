@@ -57,6 +57,7 @@ import { registerDeployIPC } from "./ipc/deploy.ipc";
 import { registerSslIPC } from "./ipc/ssl.ipc";
 import { registerCreateSiteIPC } from "./ipc/createSite.ipc";
 import { registerServerIPC } from "./ipc/server.ipc";
+import { registerSearchIPC, flushSearchCache } from "./ipc/search.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
 import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
@@ -419,6 +420,7 @@ app.whenReady().then(() => {
   registerSslIPC();
   registerCreateSiteIPC();
   registerServerIPC();
+  registerSearchIPC();
   registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)
@@ -434,6 +436,7 @@ app.whenReady().then(() => {
   // Ensure isQuitting is set for all quit paths (Cmd+Q, taskbar close, etc.)
   app.on("before-quit", () => {
     isQuitting = true;
+    flushSearchCache();
   });
 
   // ──── Apply settings on startup ────

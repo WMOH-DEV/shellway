@@ -24,6 +24,7 @@
     "electron/**/*.ts",
     "electron.vite.config.ts",
     "src/types/**/*.ts",
+    "src/search/cachePatch.ts",
     "src/utils/deploy/githubRepo.ts",
     "src/utils/deploy/presets.ts",
     "src/utils/deploy/siteDetail.ts",
