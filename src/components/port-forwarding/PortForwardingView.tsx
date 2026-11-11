@@ -1,278 +1,194 @@
-import { useState, useCallback } from 'react'
-import { Plus, Play, Square, Trash2, ExternalLink, Globe, ArrowRightLeft, Shield } from 'lucide-react'
-import { cn } from '@/utils/cn'
+import { useMemo, useState } from 'react'
+import { ArrowRightLeft, Play, Plus, Square, Trash2 } from 'lucide-react'
+import { v4 as uuid } from 'uuid'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
-import { Badge } from '@/components/ui/Badge'
-import { Toggle } from '@/components/ui/Toggle'
 import { toast } from '@/components/ui/Toast'
 import type { PortForwardRule } from '@/types/session'
-import { v4 as uuid } from 'uuid'
+import { reachableAddress, ruleFromForm, ruleTitle, type RuleForm } from './portForwardRules'
+import { RuleFormModal } from './RuleFormModal'
+import { RuleRow } from './RuleRow'
+import { usePortForwards, type StartFailure } from './usePortForwards'
 
 interface PortForwardingViewProps {
   connectionId: string
+  sessionId: string
+  connected: boolean
 }
 
-/**
- * Port Forwarding management — local, remote, and dynamic forwarding.
- */
-export function PortForwardingView({ connectionId }: PortForwardingViewProps) {
-  const [rules, setRules] = useState<PortForwardRule[]>([])
-  const [activeRules, setActiveRules] = useState<Set<string>>(new Set())
-  const [showForm, setShowForm] = useState(false)
-  const [editingRule, setEditingRule] = useState<PortForwardRule | null>(null)
-
-  // Form state
-  const [formType, setFormType] = useState<'local' | 'remote' | 'dynamic'>('local')
-  const [formName, setFormName] = useState('')
-  const [formSourceHost, setFormSourceHost] = useState('127.0.0.1')
-  const [formSourcePort, setFormSourcePort] = useState('')
-  const [formDestHost, setFormDestHost] = useState('')
-  const [formDestPort, setFormDestPort] = useState('')
-  const [formAutoStart, setFormAutoStart] = useState(false)
-
-  const resetForm = () => {
-    setFormType('local')
-    setFormName('')
-    setFormSourceHost('127.0.0.1')
-    setFormSourcePort('')
-    setFormDestHost('')
-    setFormDestPort('')
-    setFormAutoStart(false)
-    setEditingRule(null)
+function reportFailures(failures: StartFailure[]): void {
+  if (failures.length === 0) return
+  const [first] = failures
+  if (failures.length === 1) {
+    toast.error(`Couldn't start "${ruleTitle(first.rule)}"`, first.error)
+    return
   }
+  toast.error(`${failures.length} rules couldn't start`, `${ruleTitle(first.rule)}: ${first.error}`)
+}
 
-  const handleSave = useCallback(() => {
-    const rule: PortForwardRule = {
-      id: editingRule?.id || uuid(),
-      type: formType,
-      name: formName || undefined,
-      sourceHost: formSourceHost,
-      sourcePort: parseInt(formSourcePort) || 0,
-      destinationHost: formType !== 'dynamic' ? formDestHost : undefined,
-      destinationPort: formType !== 'dynamic' ? parseInt(formDestPort) || 0 : undefined,
-      autoStart: formAutoStart,
-      enabled: true
-    }
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
-    if (editingRule) {
-      setRules((prev) => prev.map((r) => (r.id === editingRule.id ? rule : r)))
-    } else {
-      setRules((prev) => [...prev, rule])
-    }
+export function PortForwardingView({ connectionId, sessionId, connected }: PortForwardingViewProps) {
+  const { rules, entries, start, stop, saveRule, deleteRules } = usePortForwards(connectionId, sessionId, connected)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<PortForwardRule | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PortForwardRule[] | null>(null)
 
-    resetForm()
-    setShowForm(false)
-    toast.success(editingRule ? 'Rule updated' : 'Rule created')
-  }, [editingRule, formType, formName, formSourceHost, formSourcePort, formDestHost, formDestPort, formAutoStart])
+  const selected = useMemo(() => rules.filter((rule) => selectedIds.has(rule.id)), [rules, selectedIds])
+  const isRunning = (rule: PortForwardRule) => entries.get(rule.id)?.status === 'active'
+  const stopped = rules.filter((rule) => !isRunning(rule))
+  const running = rules.filter(isRunning)
 
-  const toggleRule = useCallback((id: string) => {
-    setActiveRules((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-        toast.info('Forwarding stopped')
-      } else {
-        next.add(id)
-        toast.success('Forwarding started')
-      }
+  const startRules = async (targets: PortForwardRule[]) => reportFailures(await start(targets.filter((rule) => !isRunning(rule))))
+  const stopRules = (targets: PortForwardRule[]) => stop(targets.map((rule) => rule.id))
+
+  const toggleSelected = (id: string, on: boolean) =>
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (on) next.add(id)
+      else next.delete(id)
       return next
     })
-  }, [])
 
-  const deleteRule = useCallback((id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id))
-    setActiveRules((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-  }, [])
-
-  const typeIcons = {
-    local: <ArrowRightLeft size={14} className="text-nd-accent" />,
-    remote: <ArrowRightLeft size={14} className="text-nd-success rotate-180" />,
-    dynamic: <Globe size={14} className="text-nd-warning" />
+  const openForm = (rule: PortForwardRule | null) => {
+    setEditing(rule)
+    setFormOpen(true)
   }
 
-  const typeLabels = {
-    local: 'Local',
-    remote: 'Remote',
-    dynamic: 'Dynamic (SOCKS)'
+  const handleSave = async (form: RuleForm) => {
+    const rule = ruleFromForm(form, editing?.id ?? uuid())
+    setFormOpen(false)
+    reportFailures(await saveRule(rule))
+    toast.success(editing ? 'Rule saved' : 'Rule created')
   }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const ids = pendingDelete.map((rule) => rule.id)
+    setPendingDelete(null)
+    await deleteRules(ids)
+    setSelectedIds((current) => new Set([...current].filter((id) => !ids.includes(id))))
+  }
+
+  const copyAddress = async (rule: PortForwardRule) => {
+    await navigator.clipboard.writeText(reachableAddress(rule))
+    toast.success('Address copied', reachableAddress(rule))
+  }
+
+  const allSelected = rules.length > 0 && selected.length === rules.length
 
   return (
-    <div className="flex flex-col h-full p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex h-full flex-col overflow-y-auto p-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-nd-text-primary">Port Forwarding</h2>
-          <p className="text-xs text-nd-text-muted mt-0.5">
-            Manage SSH tunnels and port forwarding rules
-          </p>
+          <p className="mt-0.5 text-xs text-nd-text-muted">Manage SSH tunnels and port forwarding rules</p>
         </div>
-        <Button variant="primary" size="sm" onClick={() => { resetForm(); setShowForm(true) }}>
-          <Plus size={14} />
-          New Rule
-        </Button>
+        <div className="flex items-center gap-2">
+          {rules.length > 0 && (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => void startRules(stopped)} disabled={!connected || stopped.length === 0}>
+                <Play size={13} />
+                Start all
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void stopRules(running)} disabled={running.length === 0}>
+                <Square size={13} />
+                Stop all
+              </Button>
+            </>
+          )}
+          <Button variant="primary" size="sm" onClick={() => openForm(null)}>
+            <Plus size={14} />
+            New rule
+          </Button>
+        </div>
       </div>
 
-      {/* Rule list */}
+      {!connected && rules.length > 0 && (
+        <p className="mb-3 text-xs text-nd-text-muted">Connect to this server to start tunnels.</p>
+      )}
+
       {rules.length === 0 ? (
-        <div className="flex flex-col items-center justify-center flex-1 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-nd-surface flex items-center justify-center mb-4">
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-nd-surface">
             <ArrowRightLeft size={24} className="text-nd-text-muted" />
           </div>
           <p className="text-sm font-medium text-nd-text-secondary">No forwarding rules</p>
-          <p className="text-2xs text-nd-text-muted mt-1">
-            Create a port forwarding rule to tunnel traffic through SSH
-          </p>
+          <p className="mt-1 text-2xs text-nd-text-muted">Create a port forwarding rule to tunnel traffic through SSH</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {rules.map((rule) => {
-            const isActive = activeRules.has(rule.id)
-            return (
-              <div
-                key={rule.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-nd-border bg-nd-bg-secondary"
-              >
-                {/* Status indicator */}
-                <span
-                  className={cn(
-                    'w-2.5 h-2.5 rounded-full shrink-0',
-                    isActive ? 'bg-nd-success' : 'bg-nd-text-muted'
-                  )}
-                />
-
-                {/* Type icon */}
-                {typeIcons[rule.type]}
-
-                {/* Rule info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-nd-text-primary">
-                      {rule.name || `${typeLabels[rule.type]} Forward`}
-                    </span>
-                    <Badge variant={isActive ? 'success' : 'default'}>
-                      {isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </div>
-                  <p className="text-2xs text-nd-text-muted font-mono mt-0.5">
-                    {rule.type === 'dynamic'
-                      ? `${rule.sourceHost}:${rule.sourcePort} → SOCKS Proxy`
-                      : `${rule.sourceHost}:${rule.sourcePort} → ${rule.destinationHost}:${rule.destinationPort}`}
-                  </p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
-                  {rule.type === 'local' && isActive && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => {
-                        // Open in browser
-                      }}
-                      title="Open in browser"
-                    >
-                      <ExternalLink size={13} />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => toggleRule(rule.id)}
-                  >
-                    {isActive ? <Square size={13} /> : <Play size={13} />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => deleteRule(rule.id)}
-                  >
-                    <Trash2 size={13} />
-                  </Button>
-                </div>
+        <>
+          <div className="mb-2 flex h-7 items-center gap-3 px-3 text-xs text-nd-text-muted">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-nd-accent"
+                checked={allSelected}
+                onChange={(event) => setSelectedIds(event.target.checked ? new Set(rules.map((rule) => rule.id)) : new Set())}
+              />
+              {selected.length > 0 ? `${selected.length} selected` : 'Select all'}
+            </label>
+            {selected.length > 0 && (
+              <div className="ml-auto flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => void startRules(selected)} disabled={!connected}>
+                  <Play size={13} />
+                  Start
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void stopRules(selected)}>
+                  <Square size={13} />
+                  Stop
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setPendingDelete(selected)}>
+                  <Trash2 size={13} />
+                  Delete
+                </Button>
               </div>
-            )
-          })}
-        </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            {rules.map((rule) => (
+              <RuleRow
+                key={rule.id}
+                rule={rule}
+                entry={entries.get(rule.id)}
+                connected={connected}
+                selected={selectedIds.has(rule.id)}
+                onSelect={(on) => toggleSelected(rule.id, on)}
+                onStart={() => void startRules([rule])}
+                onStop={() => void stopRules([rule])}
+                onEdit={() => openForm(rule)}
+                onDelete={() => setPendingDelete([rule])}
+                onCopy={() => void copyAddress(rule)}
+                onOpen={() => window.open(`http://${reachableAddress(rule)}`)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Rule Form Modal */}
+      <RuleFormModal
+        open={formOpen}
+        rule={editing}
+        otherRules={rules.filter((rule) => rule.id !== editing?.id)}
+        onClose={() => setFormOpen(false)}
+        onSave={(form) => void handleSave(form)}
+      />
+
       <Modal
-        open={showForm}
-        onClose={() => setShowForm(false)}
-        title={editingRule ? 'Edit Rule' : 'New Forwarding Rule'}
-        maxWidth="max-w-md"
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title={pendingDelete?.length === 1 ? `Delete "${ruleTitle(pendingDelete[0])}"?` : `Delete ${plural(pendingDelete?.length ?? 0, 'rule')}?`}
+        maxWidth="max-w-sm"
       >
-        <div className="flex flex-col gap-3">
-          <Select
-            label="Type"
-            value={formType}
-            onChange={(e) => setFormType(e.target.value as any)}
-            options={[
-              { value: 'local', label: 'Local Forwarding (L)' },
-              { value: 'remote', label: 'Remote Forwarding (R)' },
-              { value: 'dynamic', label: 'Dynamic / SOCKS Proxy (D)' }
-            ]}
-          />
-          <Input
-            label="Name (optional)"
-            placeholder="e.g., Database tunnel"
-            value={formName}
-            onChange={(e) => setFormName(e.target.value)}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Source Host"
-              value={formSourceHost}
-              onChange={(e) => setFormSourceHost(e.target.value)}
-            />
-            <Input
-              label="Source Port"
-              type="number"
-              placeholder="8080"
-              value={formSourcePort}
-              onChange={(e) => setFormSourcePort(e.target.value)}
-            />
-          </div>
-          {formType !== 'dynamic' && (
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Destination Host"
-                placeholder="localhost"
-                value={formDestHost}
-                onChange={(e) => setFormDestHost(e.target.value)}
-              />
-              <Input
-                label="Destination Port"
-                type="number"
-                placeholder="3306"
-                value={formDestPort}
-                onChange={(e) => setFormDestPort(e.target.value)}
-              />
-            </div>
-          )}
-          <Toggle
-            checked={formAutoStart}
-            onChange={setFormAutoStart}
-            label="Auto-start on connect"
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSave} disabled={!formSourcePort}>
-              {editingRule ? 'Update' : 'Create'}
-            </Button>
-          </div>
+        <p className="text-sm text-nd-text-secondary">Running tunnels stop right away. This can't be undone.</p>
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="ghost" onClick={() => setPendingDelete(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={() => void confirmDelete()}>
+            Delete
+          </Button>
         </div>
       </Modal>
     </div>

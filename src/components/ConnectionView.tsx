@@ -485,7 +485,7 @@ export function ConnectionView({ tab, soloSubTab }: ConnectionViewProps) {
 
           {/* Port Forwarding — conditionally rendered when running */}
           {activeSubTab === 'port-forwarding' && runningSubTabs.has('port-forwarding') && isHere('port-forwarding') && (
-            <PortForwardingView connectionId={tab.id} />
+            <PortForwardingView connectionId={tab.id} sessionId={tab.sessionId} connected={tab.status === 'connected'} />
           )}
 
           {/* Monitor — conditional render when running (unmounts to stop SSH polling) */}

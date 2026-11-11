@@ -12,6 +12,7 @@ import { notifyDeployConnectionClosed, notifyDeployConnectionReady } from './dep
 import { notifySslConnectionClosed, notifySslConnectionReady } from './ssl.ipc'
 import { forgetCreateSiteSession, rememberCreateSiteSession } from './createSite.ipc'
 import { notifyServerConnectionClosed, notifyServerConnectionReady } from './server.ipc'
+import { getPortForwardService, startSavedForwards } from './portforward.ipc'
 import { sshResource } from '../../src/types/windowResources'
 
 const sshService = new SSHService()
@@ -172,6 +173,8 @@ export function registerSSHIPC(): void {
           )
         }
 
+        getPortForwardService().removeAll(connectionId)
+
         // Create the connection first (without connecting) so we can attach
         // event listeners BEFORE the connect attempt. This prevents unhandled
         // EventEmitter errors if connect fails and ssh2 emits follow-up events.
@@ -188,6 +191,8 @@ export function registerSSHIPC(): void {
           }
         }
 
+        let forwardsStarted = false
+
         // Forward status changes to renderer
         conn.on('status', (status) => {
           broadcast('ssh:status-change', connectionId, status)
@@ -197,6 +202,8 @@ export function registerSSHIPC(): void {
             notifySslConnectionReady(connectionId, savedSessionId, config.host || connectionId, config.host ?? '')
             rememberCreateSiteSession(connectionId, savedSessionId)
             notifyServerConnectionReady(connectionId, savedSessionId)
+            if (!forwardsStarted) void startSavedForwards(conn, savedSessionId)
+            forwardsStarted = true
           }
 
           // Notify on unexpected disconnect
@@ -281,6 +288,7 @@ export function registerSSHIPC(): void {
   ipcMain.handle('ssh:disconnectAll', () => {
     cleanupAllSFTP()
     getMonitorService().stopAll()
+    getPortForwardService().stopAll()
     sshService.disconnectAll()
   })
 
@@ -315,6 +323,7 @@ export function disconnectConnection(connectionId: string): void {
   getHealthService().stopMonitoring(connectionId)
   getMonitorService().removeMonitoring(connectionId)
   cleanupSFTP(connectionId)
+  getPortForwardService().removeAll(connectionId)
   sshService.disconnect(connectionId)
 }
 

@@ -1,48 +1,39 @@
 import { ipcMain } from 'electron'
 import { PortForwardService } from '../services/PortForwardService'
+import { broadcast } from '../services/WindowManager'
+import type { PortForwardStartResult } from '../../src/types/portForward'
+import { parseForwardSpec } from '../services/portForwardSpec'
+import type { SSHConnection } from '../services/SSHService'
 import { getSSHService } from './ssh.ipc'
+import { getSessionStore } from './session.ipc'
 
-const portForwardService = new PortForwardService()
+const portForwardService = new PortForwardService((connectionId) => broadcast('portforward:changed', connectionId))
 
-/**
- * Register port forwarding IPC handlers.
- *
- * Channels:
- *   portforward:add    → PortForwardEntry
- *   portforward:remove → boolean
- *   portforward:list   → PortForwardEntry[]
- */
-export function registerPortForwardIPC(): void {
-  ipcMain.handle(
-    'portforward:add',
-    async (
-      _event,
-      connectionId: string,
-      rule: {
-        id: string
-        type: 'local' | 'remote' | 'dynamic'
-        name?: string
-        sourceHost: string
-        sourcePort: number
-        destinationHost?: string
-        destinationPort?: number
-      }
-    ) => {
-      const sshService = getSSHService()
-      const conn = sshService.get(connectionId)
-      if (!conn || conn.status !== 'connected') {
-        return { success: false, error: 'Not connected' }
-      }
-
-      try {
-        const entry = await portForwardService.add(conn, rule)
-        return { success: entry.status === 'active', data: entry, error: entry.error }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        return { success: false, error: message }
-      }
+export async function startSavedForwards(conn: SSHConnection, savedSessionId: string | undefined): Promise<void> {
+  if (!savedSessionId) return
+  const rules = getSessionStore().getById(savedSessionId)?.portForwardings ?? []
+  const specs = rules.filter((rule) => rule.autoStart).flatMap((rule) => {
+    try {
+      return [parseForwardSpec(rule)]
+    } catch {
+      return []
     }
-  )
+  })
+  await Promise.all(specs.map((spec) => portForwardService.add(conn, spec)))
+}
+
+export function registerPortForwardIPC(): void {
+  ipcMain.handle('portforward:add', async (_event, connectionId: string, raw: unknown): Promise<PortForwardStartResult> => {
+    const conn = getSSHService().get(connectionId)
+    if (!conn || conn.status !== 'connected') return { success: false, error: 'Not connected' }
+
+    try {
+      const entry = await portForwardService.add(conn, parseForwardSpec(raw))
+      return { success: entry.status === 'active', data: entry, error: entry.error }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+    }
+  })
 
   ipcMain.handle('portforward:remove', (_event, connectionId: string, ruleId: string) => {
     return portForwardService.remove(connectionId, ruleId)
@@ -53,7 +44,6 @@ export function registerPortForwardIPC(): void {
   })
 }
 
-/** Get the port forward service singleton */
 export function getPortForwardService(): PortForwardService {
   return portForwardService
 }
