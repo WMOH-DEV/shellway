@@ -75,6 +75,9 @@ export interface AppSettings {
   sqlReopenTabsOnConnect: boolean
   sqlCloseOnMiddleClick: boolean
 
+  searchDisabledScopes: string[]
+  searchExcludeGlobs: string
+
   classicServerTabs: boolean
   serverNotifications: ServerNotifications
 
@@ -149,6 +152,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sqlColorByKind: true,
   sqlReopenTabsOnConnect: true,
   sqlCloseOnMiddleClick: true,
+
+  searchDisabledScopes: [],
+  searchExcludeGlobs: 'vendor, node_modules, storage, .git',
 
   classicServerTabs: false,
   serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },

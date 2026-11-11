@@ -39,6 +39,7 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'global:splitRight',      label: 'Split Right',            scope: 'global',   defaultCombo: 'Ctrl+\\' },
   { id: 'global:splitDown',       label: 'Split Down',             scope: 'global',   defaultCombo: 'CmdOrCtrl+Shift+\\' },
   { id: 'global:closePane',       label: 'Close Pane',             scope: 'global',   defaultCombo: 'Alt+Shift+W' },
+  { id: 'global:search',          label: 'Search Everything',      scope: 'global',   defaultCombo: 'CmdOrCtrl+K' },
 
   // ── Terminal ──
   { id: 'terminal:search',          label: 'Search in Terminal',    scope: 'terminal', defaultCombo: 'Ctrl+F' },
