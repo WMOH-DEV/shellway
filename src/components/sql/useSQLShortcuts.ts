@@ -3,6 +3,7 @@ import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
 import { matchesBinding } from '@/stores/keybindingStore'
 import { getSavedQueries } from '@/utils/savedQueries'
 import type { SQLTab } from '@/types/sql'
+import { isSearchOpen } from '@/stores/uiStore'
 
 /**
  * SQL-specific keyboard shortcuts — only active when the SQL sub-tab is
@@ -49,21 +50,9 @@ export function useSQLShortcuts(
       label: `Query ${queryCount}`,
       query: savedContent || undefined,
       savedQueryIndex: assignIndex >= 0 ? assignIndex : -1,
+      database: conn.currentDatabase || undefined,
     }
     store.addTab(connectionIdRef.current, newTab)
-  }, [])
-
-  // ── Close active tab ──
-  const closeActiveTab = useCallback(() => {
-    const conn = getSQLConnectionState(connectionIdRef.current)
-    const store = useSQLStore.getState()
-    if (!conn.activeTabId) return
-    // Clear selectedTable if closing its tab — allows re-opening via sidebar click
-    const closingTab = conn.tabs.find((t) => t.id === conn.activeTabId)
-    if (closingTab?.table && closingTab.table === conn.selectedTable) {
-      store.setSelectedTable(connectionIdRef.current, null)
-    }
-    store.removeTab(connectionIdRef.current, conn.activeTabId)
   }, [])
 
   // ── Apply staged changes ──
@@ -113,7 +102,7 @@ export function useSQLShortcuts(
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Only process when SQL panel is actively visible + connected
-      if (!isActiveRef.current || !sqlSessionRef.current) return
+      if (!isActiveRef.current || !sqlSessionRef.current || isSearchOpen()) return
 
       // ── Escape: Cancel cell edit / close overlays (hardcoded — universal) ──
       if (e.key === 'Escape') {
@@ -170,13 +159,6 @@ export function useSQLShortcuts(
         return
       }
 
-      // ── Close current SQL tab (default CmdOrCtrl+Shift+W) ──
-      if (matchesBinding(e, 'sql:closeTab')) {
-        e.preventDefault()
-        closeActiveTab()
-        return
-      }
-
       // ── Insert new row (default CmdOrCtrl+Shift+I) ──
       if (matchesBinding(e, 'sql:insertRow')) {
         e.preventDefault()
@@ -227,5 +209,5 @@ export function useSQLShortcuts(
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [addQueryTab, closeActiveTab, applyChanges, undoLastChange, toggleViewMode])
+  }, [addQueryTab, applyChanges, undoLastChange, toggleViewMode])
 }

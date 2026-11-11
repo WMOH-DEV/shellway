@@ -1,15 +1,23 @@
 import { useEffect } from 'react'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { matchesBinding } from '@/stores/keybindingStore'
+import { isSearchOpen, useUIStore } from '@/stores/uiStore'
 import { openEmptyWindow } from '@/utils/windowHandoff'
 
 /**
  * Global keyboard shortcuts for quick-launch actions.
  * Keybindings are read from the keybinding store (customizable via Settings → Shortcuts).
  */
+export const CLOSE_REQUEST_EVENT = 'app:close-request'
+
+function isTerminalCtrlKey(e: KeyboardEvent): boolean {
+  return e.ctrlKey && !e.metaKey && e.target instanceof Element && e.target.closest('.xterm') !== null
+}
+
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (isSearchOpen()) return
       if (matchesBinding(e, 'global:newWindow')) {
         e.preventDefault()
         openEmptyWindow()
@@ -127,5 +135,32 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    function handleSearchKey(e: KeyboardEvent) {
+      if (!matchesBinding(e, 'global:search') || isTerminalCtrlKey(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.repeat) return
+      const { searchOpen, openSearch, closeSearch } = useUIStore.getState()
+      if (searchOpen) closeSearch()
+      else openSearch()
+    }
+
+    window.addEventListener('keydown', handleSearchKey, true)
+    return () => window.removeEventListener('keydown', handleSearchKey, true)
+  }, [])
+
+  useEffect(() => {
+    return window.novadeck.window.onCloseRequest?.(() => {
+      if (isSearchOpen()) {
+        useUIStore.getState().closeSearch()
+        return
+      }
+      const request = new CustomEvent(CLOSE_REQUEST_EVENT, { cancelable: true })
+      window.dispatchEvent(request)
+      if (!request.defaultPrevented) void window.novadeck.window.close()
+    })
   }, [])
 }

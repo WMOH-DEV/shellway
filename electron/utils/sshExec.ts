@@ -15,11 +15,13 @@ export interface ExecOptions {
   onOutput?: (chunk: string) => void
   onStderr?: (chunk: string) => void
   maxOutputBytes?: number
+  signal?: AbortSignal
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
 export class ExecTimeoutError extends Error {}
+export class ExecAbortedError extends Error {}
 
 function feedStdin(stream: any, stdin: ExecOptions['stdin']): void {
   if (stdin === undefined || typeof stdin === 'string' || Buffer.isBuffer(stdin)) {
@@ -71,12 +73,13 @@ export class TailBuffer {
 export function sshExec(
   conn: SSHConnection,
   command: string,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput, onStderr = onOutput, maxOutputBytes = Infinity }: ExecOptions = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, stdin, onOutput, onStderr = onOutput, maxOutputBytes = Infinity, signal }: ExecOptions = {}
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     if (conn.status !== 'connected') {
       return reject(new Error('SSH connection is not active'))
     }
+    if (signal?.aborted) return reject(new ExecAbortedError('aborted'))
 
     conn._client.exec(command, (err: Error | undefined, stream: any) => {
       if (err) return reject(err)
@@ -89,7 +92,18 @@ export function sshExec(
         if (settled) return
         settled = true
         clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
         fn()
+      }
+
+      const onAbort = () => {
+        settle(() => {
+          try {
+            stream.signal('TERM')
+          } catch {}
+          stream.destroy()
+          reject(new ExecAbortedError('aborted'))
+        })
       }
 
       const timer = setTimeout(() => {
@@ -114,7 +128,10 @@ export function sshExec(
         }))
       })
 
-      feedStdin(stream, stdin)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) return onAbort()
+      // ssh2 drops signal requests once stdin is ended, so a cancellable command without input keeps it open
+      if (!signal || stdin !== undefined) feedStdin(stream, stdin)
     })
   })
 }

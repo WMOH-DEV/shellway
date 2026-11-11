@@ -22,6 +22,12 @@ import { FilterBar } from "@/components/sql/FilterBar";
 import { buildWhereClause } from "@/utils/sqlFilterBuilder";
 import { useSQLConnection, useSQLStore } from "@/stores/sqlStore";
 import { useSafeModeGate } from "./SafeModeGate";
+import { setSqlTabSnapshot } from "@/stores/sqlTabSnapshotStore";
+import {
+  filterSummary,
+  sampleRows,
+  sortSummary,
+} from "@/components/sql/tabs/dataTabSummary";
 import {
   SQL_EXPR_PREFIX,
   resolveSQLExpr,
@@ -39,6 +45,7 @@ import type {
   SchemaForeignKey,
   SafeMode,
   FilterMatch,
+  SQLTabViewState,
 } from "@/types/sql";
 
 // Lazy-load StructureTabView — only needed when user toggles to structure mode
@@ -58,6 +65,15 @@ interface DataTabViewProps {
    *  several tabs. Unset on the first tab, which keeps the table-keyed storage. */
   filterScope?: string;
   safeMode?: SafeMode;
+  initialViewState?: SQLTabViewState;
+  initialViewMode?: "data" | "structure";
+}
+
+const VIEW_STATE_SAVE_DELAY_MS = 500;
+
+function withoutSql(viewState: SQLTabViewState | undefined): SQLTabViewState {
+  const { sql: _sql, ...rest } = viewState ?? {};
+  return rest;
 }
 
 // ── Helpers ──
@@ -265,6 +281,8 @@ export const DataTabView = React.memo(function DataTabView({
   dbType,
   filterScope,
   safeMode,
+  initialViewState,
+  initialViewMode,
 }: DataTabViewProps) {
   // Store — staged changes + connection info for inline editing
   const {
@@ -340,12 +358,59 @@ export const DataTabView = React.memo(function DataTabView({
   const [isCountLoading, setIsCountLoading] = useState(false);
 
   // View mode: 'data' (grid) or 'structure' (table structure editor)
-  const [viewMode, setViewMode] = useState<TableViewMode>("data");
+  const [viewMode, setViewMode] = useState<TableViewMode>(
+    initialViewMode ?? "data",
+  );
   // Track if structure view has been visited — mount on first visit, keep alive after
-  const [structureMounted, setStructureMounted] = useState(false);
+  const [structureMounted, setStructureMounted] = useState(
+    initialViewMode === "structure",
+  );
 
   // Ref for DataGrid imperative handle (column visibility controls)
   const dataGridRef = useRef<DataGridHandle>(null);
+
+  const initialViewStateRef = useRef(initialViewState);
+  const viewStateRef = useRef<SQLTabViewState>(withoutSql(initialViewState));
+  const viewStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRestoreRef = useRef(true);
+
+  const promoteThisTab = useCallback(
+    () => useSQLStore.getState().promoteTab(connectionId, tabId),
+    [connectionId, tabId],
+  );
+
+  const saveViewState = useCallback(
+    (patch: Partial<SQLTabViewState>) => {
+      viewStateRef.current = { ...viewStateRef.current, ...patch };
+      if (viewStateTimerRef.current) clearTimeout(viewStateTimerRef.current);
+      viewStateTimerRef.current = setTimeout(() => {
+        useSQLStore.getState().updateTab(connectionId, tabId, {
+          viewState: { ...viewStateRef.current },
+        });
+      }, VIEW_STATE_SAVE_DELAY_MS);
+    },
+    [connectionId, tabId],
+  );
+
+  const saveFirstVisibleRow = useCallback(
+    (index: number) => saveViewState({ firstRow: index }),
+    [saveViewState],
+  );
+
+  useEffect(
+    () => () => {
+      if (viewStateTimerRef.current) clearTimeout(viewStateTimerRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (stagedChanges.some(isOwnChange)) promoteThisTab();
+  }, [stagedChanges, isOwnChange, promoteThisTab]);
+
+  useEffect(() => {
+    useSQLStore.getState().updateTab(connectionId, tabId, { viewMode });
+  }, [connectionId, tabId, viewMode]);
 
   // Refs for cancellation, debouncing, and race condition prevention
   const abortRef = useRef<AbortController | null>(null);
@@ -682,8 +747,10 @@ export const DataTabView = React.memo(function DataTabView({
       }
     }
 
-    setPagination(defaultPagination());
-    setSortKeys([]);
+    const restoredSort = initialViewStateRef.current?.sortKeys ?? [];
+    const restoredPage = initialViewStateRef.current?.page ?? 1;
+    setPagination({ ...defaultPagination(), page: restoredPage });
+    setSortKeys(restoredSort);
     setFilters(savedFilters);
     filtersRef.current = savedFilters;
     setResult(null);
@@ -701,8 +768,9 @@ export const DataTabView = React.memo(function DataTabView({
     // duplicate queries on the shared MySQL connection.
     const initTimer = setTimeout(() => {
       executeQuery({
-        page: 1,
+        page: restoredPage,
         pageSize: DEFAULT_PAGE_SIZE,
+        sortKeys: restoredSort,
         currentFilters: savedFilters,
       });
 
@@ -789,6 +857,7 @@ export const DataTabView = React.memo(function DataTabView({
   const handlePageChange = useCallback(
     (page: number) => {
       discardPendingChanges();
+      saveViewState({ page, firstRow: 0 });
       setPagination((prev) => ({ ...prev, page }));
       executeQuery({
         page,
@@ -803,6 +872,7 @@ export const DataTabView = React.memo(function DataTabView({
       sortKeys,
       filters,
       discardPendingChanges,
+      saveViewState,
     ],
   );
 
@@ -837,7 +907,9 @@ export const DataTabView = React.memo(function DataTabView({
 
   const handleSort = useCallback(
     (nextSortKeys: SortKey[]) => {
+      promoteThisTab();
       discardPendingChanges();
+      saveViewState({ sortKeys: nextSortKeys, page: 1, firstRow: 0 });
       setSortKeys(nextSortKeys);
       executeQuery({
         page: 1,
@@ -846,7 +918,14 @@ export const DataTabView = React.memo(function DataTabView({
         currentFilters: filters,
       });
     },
-    [executeQuery, pagination.pageSize, filters, discardPendingChanges],
+    [
+      executeQuery,
+      pagination.pageSize,
+      filters,
+      discardPendingChanges,
+      promoteThisTab,
+      saveViewState,
+    ],
   );
 
   // Track filter ID that needs auto-focus (set when adding filter from column header right-click)
@@ -909,7 +988,9 @@ export const DataTabView = React.memo(function DataTabView({
       // Execute immediately — the user explicitly clicked "Apply" / "Apply All"
       // or pressed Enter, so there is no reason to delay.
       // Reads filtersRef to avoid stale closures.
+      promoteThisTab();
       discardPendingChanges();
+      saveViewState({ page: 1, firstRow: 0 });
       setPagination((prev) => ({ ...prev, page: 1 }));
 
       let filtersToApply: TableFilter[];
@@ -949,6 +1030,8 @@ export const DataTabView = React.memo(function DataTabView({
       sortKeys,
       discardPendingChanges,
       filtersKey,
+      promoteThisTab,
+      saveViewState,
     ],
   );
 
@@ -1909,6 +1992,36 @@ export const DataTabView = React.memo(function DataTabView({
     if (mode === "structure") setStructureMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!result || !pendingRestoreRef.current) return;
+    pendingRestoreRef.current = false;
+    const { firstRow = 0, sortKeys: restoredSort = [] } = initialViewStateRef.current ?? {};
+    requestAnimationFrame(() => {
+      dataGridRef.current?.showSort(restoredSort);
+      if (firstRow > 0) dataGridRef.current?.scrollToRow(firstRow);
+    });
+  }, [result]);
+
+  useEffect(() => {
+    if (!result) return;
+    setSqlTabSnapshot(tabId, {
+      totalRows: pagination.totalRows,
+      filterSummary: filterSummary(filters),
+      sortSummary: sortSummary(sortKeys),
+      sampleRows: sampleRows(
+        result.rows,
+        result.fields.map((f) => f.name),
+      ),
+    });
+  }, [
+    tabId,
+    result,
+    pagination.totalRows,
+    pagination.isEstimatedCount,
+    filters,
+    sortKeys,
+  ]);
+
   // Memoize columns for FilterBar
   const filterColumns = useMemo(() => columns, [columns]);
 
@@ -2068,6 +2181,7 @@ export const DataTabView = React.memo(function DataTabView({
           onSetCellValue={handleSetCellValue}
           tableName={buildFullTableName(table, schema, dbType)}
           dbType={dbType}
+          onFirstVisibleRowChange={saveFirstVisibleRow}
         />
       </div>
 

@@ -5,6 +5,10 @@ import type { FilterMatch } from './sql'
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system'
 
+export type SqlTabLayout = 'single' | 'vertical'
+
+export type SqlNewTabPosition = 'next' | 'end'
+
 /** Terminal cursor style */
 export type CursorStyle = 'block' | 'underline' | 'bar'
 
@@ -63,6 +67,16 @@ export interface AppSettings {
   sftpAutocompleteMode: SFTPAutocompleteMode  // 'content' = fetch dir listings, 'history' = visited paths only
 
   sqlDefaultFilterMatch: FilterMatch
+  sqlTabLayout: SqlTabLayout
+  sqlPreviewTabs: boolean
+  sqlTabLimit: number
+  sqlNewTabPosition: SqlNewTabPosition
+  sqlColorByKind: boolean
+  sqlReopenTabsOnConnect: boolean
+  sqlCloseOnMiddleClick: boolean
+
+  searchDisabledScopes: string[]
+  searchExcludeGlobs: string
 
   classicServerTabs: boolean
   serverNotifications: ServerNotifications
@@ -131,6 +145,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+  sqlTabLayout: 'single',
+  sqlPreviewTabs: true,
+  sqlTabLimit: 15,
+  sqlNewTabPosition: 'next',
+  sqlColorByKind: true,
+  sqlReopenTabsOnConnect: true,
+  sqlCloseOnMiddleClick: true,
+
+  searchDisabledScopes: [],
+  searchExcludeGlobs: 'vendor, node_modules, storage, .git',
 
   classicServerTabs: false,
   serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },

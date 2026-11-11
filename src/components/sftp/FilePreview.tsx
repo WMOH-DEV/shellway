@@ -122,6 +122,7 @@ interface FilePreviewProps {
   editable?: boolean
   /** Called after a successful save — use to refresh the file list */
   onSave?: () => void
+  line?: number
 }
 
 function getExtension(name: string): string {
@@ -346,6 +347,7 @@ export function FilePreview({
   fileSize,
   editable = false,
   onSave,
+  line,
 }: FilePreviewProps) {
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState(0) // 0-100 percent
@@ -373,6 +375,8 @@ export function FilePreview({
   const handleSaveRef = useRef<() => void>(() => {})
   /** Ref-based saving guard — prevents double-fire from rapid Cmd+S via the ref indirection */
   const savingRef = useRef(false)
+  const lineRef = useRef(line)
+  const lineAppliedRef = useRef(false)
 
   // MutationObserver ref — strips native tooltips from find widget buttons
   const tooltipObserverRef = useRef<MutationObserver | null>(null)
@@ -610,6 +614,33 @@ export function FilePreview({
     handleClose()
   }, [handleClose])
 
+  const revealTargetLine = useCallback((editor: MonacoEditor.editor.IStandaloneCodeEditor) => {
+    const target = lineRef.current
+    const model = editor.getModel()
+    if (!target || !model) return
+    const lineNumber = Math.min(target, model.getLineCount())
+    editor.setSelection({
+      startLineNumber: lineNumber,
+      startColumn: 1,
+      endLineNumber: lineNumber,
+      endColumn: model.getLineMaxColumn(lineNumber),
+    })
+    editor.revealLineInCenter(lineNumber)
+    editor.focus()
+  }, [])
+
+  useEffect(() => {
+    lineRef.current = line
+    lineAppliedRef.current = false
+  }, [line, open])
+
+  useEffect(() => {
+    const editor = monacoEditorRef.current
+    if (!open || !line || content === null || isPartial || lineAppliedRef.current || !editor) return
+    lineAppliedRef.current = true
+    revealTargetLine(editor)
+  }, [open, line, content, isPartial, revealTargetLine])
+
   // Monaco editor mount
   const handleEditorMount: OnMount = useCallback(
     (editor, monacoInstance) => {
@@ -617,6 +648,7 @@ export function FilePreview({
 
       // Store editor ref for save operations
       monacoEditorRef.current = editor
+      revealTargetLine(editor)
 
       // Initialize editorContentRef with current content so save works
       // even before the user makes any edits
@@ -682,7 +714,7 @@ export function FilePreview({
     },
     // handleSave is NOT in deps — we use handleSaveRef to avoid stale closures
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editable]
+    [editable, revealTargetLine]
   )
 
   // Monaco editor options

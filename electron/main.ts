@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   powerMonitor,
+  type MenuItemConstructorOptions,
 } from "electron";
 import { join, basename, extname } from "path";
 import { readFile, writeFile } from "fs/promises";
@@ -56,6 +57,7 @@ import { registerDeployIPC } from "./ipc/deploy.ipc";
 import { registerSslIPC } from "./ipc/ssl.ipc";
 import { registerCreateSiteIPC } from "./ipc/createSite.ipc";
 import { registerServerIPC } from "./ipc/server.ipc";
+import { registerSearchIPC, flushSearchCache } from "./ipc/search.ipc";
 import { getSettingsStore } from "./ipc/settings.ipc";
 import { getSSHService } from "./ipc/ssh.ipc";
 import { getSQLService } from "./ipc/sql.ipc";
@@ -137,6 +139,23 @@ ipcMain.handle("window:maximize", (event) => {
     win?.maximize();
   }
 });
+
+function buildAppMenu(): Menu {
+  const isMac = process.platform === "darwin";
+  const closeItem: MenuItemConstructorOptions = {
+    label: "Close",
+    accelerator: "CmdOrCtrl+W",
+    click: () => BrowserWindow.getFocusedWindow()?.webContents.send("window:close-request"),
+  };
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: "appMenu" } as MenuItemConstructorOptions] : []),
+    { label: "File", submenu: isMac ? [closeItem] : [closeItem, { type: "separator" }, { role: "quit" }] },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    isMac ? { role: "windowMenu" } : { label: "Window", submenu: [{ role: "minimize" }] },
+  ];
+  return Menu.buildFromTemplate(template);
+}
 
 ipcMain.handle("window:close", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -379,6 +398,7 @@ function destroyTray(): void {
 // ──── App lifecycle ────
 app.whenReady().then(() => {
   electronApp.setAppUserModelId("com.shellway.app");
+  Menu.setApplicationMenu(buildAppMenu());
 
   // Register IPC handlers
   registerSessionIPC();
@@ -400,6 +420,7 @@ app.whenReady().then(() => {
   registerSslIPC();
   registerCreateSiteIPC();
   registerServerIPC();
+  registerSearchIPC();
   registerWindowIPC();
 
   // Initialize notification service (after settings IPC is registered)
@@ -415,6 +436,7 @@ app.whenReady().then(() => {
   // Ensure isQuitting is set for all quit paths (Cmd+Q, taskbar close, etc.)
   app.on("before-quit", () => {
     isQuitting = true;
+    flushSearchCache();
   });
 
   // ──── Apply settings on startup ────

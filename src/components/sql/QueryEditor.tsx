@@ -34,7 +34,8 @@ import { Splitter } from "@/components/ui/Splitter";
 import { DataGrid } from "@/components/sql/DataGrid";
 import { MONACO_THEME, syncMonacoTheme } from "@/components/ui/tokenThemes";
 import { registerSQLCompletionProvider } from "@/components/sql/sqlAutocomplete";
-import { useSQLConnection } from "@/stores/sqlStore";
+import { useSQLConnection, useSQLStore } from "@/stores/sqlStore";
+import { VIEW_STATE_SQL_CAP } from "@/components/sql/tabs/tabModel";
 import { saveQueryAtIndex, appendSavedQuery } from "@/utils/savedQueries";
 import { splitSQLStatements } from "@/utils/splitSQL";
 import { useSafeModeGate } from "./SafeModeGate";
@@ -53,6 +54,8 @@ interface QueryEditorProps {
   savedQueryIndex?: number;
   safeMode?: SafeMode;
   scopeId: string;
+  tabId?: string;
+  savedText?: string;
 }
 
 // ── Monaco editor options ──
@@ -222,6 +225,8 @@ export const QueryEditor = React.memo(function QueryEditor({
   sqlSessionId,
   dbType,
   initialQuery,
+  tabId,
+  savedText,
   savedQueryIndex,
   safeMode,
   scopeId,
@@ -298,10 +303,34 @@ export const QueryEditor = React.memo(function QueryEditor({
   // Track the saved-query index for this tab (may be assigned on mount or created later)
   const savedIndexRef = useRef(savedQueryIndex ?? -1);
 
+  const savedTextRef = useRef(savedText ?? "");
+
+  const syncTabText = useCallback(
+    (value: string) => {
+      if (!tabId) return;
+      const store = useSQLStore.getState();
+      const tab = store.connections[connectionId]?.tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      store.updateTab(connectionId, tabId, {
+        isDirty: value.trim() !== "" && value !== savedTextRef.current,
+        viewState: { ...tab.viewState, sql: value.slice(0, VIEW_STATE_SQL_CAP) },
+      });
+    },
+    [connectionId, tabId],
+  );
+
+  const handleQuerySaved = useCallback(() => {
+    const text = editorRef.current?.getValue() ?? "";
+    savedTextRef.current = text;
+    if (tabId) useSQLStore.getState().updateTab(connectionId, tabId, { query: text, isDirty: false });
+    window.dispatchEvent(new CustomEvent("sql:queries-changed"));
+  }, [connectionId, tabId]);
+
   // Debounced store sync — avoid updating store on every keystroke
   const debouncedSetQuery = useDebouncedCallback(
     (value: string) => {
       setCurrentQuery(value);
+      syncTabText(value);
       // Persist to saved-queries stack in localStorage
       const trimmed = value.trim();
       if (trimmed) {
@@ -980,7 +1009,7 @@ export const QueryEditor = React.memo(function QueryEditor({
         scopeId={scopeId}
         sql={saveQuerySql ?? ""}
         onClose={() => setSaveQuerySql(null)}
-        onSaved={() => window.dispatchEvent(new CustomEvent("sql:queries-changed"))}
+        onSaved={handleQuerySaved}
       />
     </div>
   );

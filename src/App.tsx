@@ -9,6 +9,9 @@ import { FeatureWindowShell } from '@/components/layout/FeatureWindowShell'
 import { ConnectionView, subTabLabel } from '@/components/ConnectionView'
 import { DatabaseView } from '@/components/DatabaseView'
 import { featureWindowSubTab } from '@/utils/windowHandoff'
+import { startSearchCapture } from '@/search/capture'
+import { loadSearchCache } from '@/search/cacheClient'
+import { loadSearchSettings } from '@/search/searchSettings'
 import type { ConnectionTab } from '@/types/session'
 import { ToastContainer } from '@/components/ui/Toast'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
@@ -84,6 +87,13 @@ export default function App() {
       console.warn('Failed to load keybindings on startup:', err)
     })
   }, [setTheme])
+
+  useEffect(() => {
+    if (featureWindowSubTab()) return
+    loadSearchSettings()
+    void loadSearchCache()
+    return startSearchCapture()
+  }, [])
 
   // ── Host Key Verification state ──
   const [hostKeyVerify, setHostKeyVerify] = useState<HostKeyVerifyRequest | null>(null)

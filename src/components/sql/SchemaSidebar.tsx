@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   RefreshCw,
   Search,
@@ -23,6 +24,9 @@ import {
   RotateCcw,
   Plus,
   Columns3,
+  MoreHorizontal,
+  RefreshCcw,
+  TableProperties,
 } from "lucide-react";
 import { useSQLConnection } from "@/stores/sqlStore";
 import type { SchemaTable } from "@/types/sql";
@@ -160,6 +164,23 @@ function buildDatabaseContextMenuItems(hasSSH: boolean): ContextMenuItem[] {
   ];
 }
 
+function buildDatabaseMenuItems(hasSSH: boolean, selectedCount: number): ContextMenuItem[] {
+  return [
+    {
+      id: "db:export",
+      label: selectedCount > 0 ? `Export ${selectedCount} selected…` : "Export…",
+      icon: <Download size={14} />,
+    },
+    { id: "db:import-sql", label: "Import…", icon: <Upload size={14} /> },
+    { id: "db:backup", label: "Backup…", icon: <HardDrive size={14} />, disabled: !hasSSH },
+    { id: "db:restore", label: "Restore…", icon: <RotateCcw size={14} />, disabled: !hasSSH },
+    { id: "sep", label: "", separator: true },
+    { id: "db:create-table", label: "Create table", icon: <TableProperties size={14} /> },
+    { id: "db:refresh", label: "Refresh schema", icon: <RefreshCcw size={14} /> },
+    { id: "db:copy-name", label: "Copy database name", icon: <Copy size={14} /> },
+  ];
+}
+
 // ── Memoized table row ──
 
 interface TableRowProps {
@@ -168,6 +189,7 @@ interface TableRowProps {
   isMultiSelected: boolean;
   multiSelectedCount: number;
   onSelect: (name: string, e?: React.MouseEvent | React.KeyboardEvent) => void;
+  onKeepOpen: (name: string) => void;
   onContextMenuSelect: (id: string) => void;
 }
 
@@ -177,6 +199,7 @@ const TableRow = memo(function TableRow({
   isMultiSelected,
   multiSelectedCount,
   onSelect,
+  onKeepOpen,
   onContextMenuSelect,
 }: TableRowProps) {
   const handleClick = useCallback(
@@ -218,7 +241,9 @@ const TableRow = memo(function TableRow({
       <div
         role="button"
         tabIndex={0}
+        data-table-name={table.name}
         onClick={handleClick}
+        onDoubleClick={() => onKeepOpen(table.name)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") onSelect(table.name, e);
         }}
@@ -317,7 +342,8 @@ export type TableContextAction =
   | { type: "drop-table"; table: string }
   | { type: "truncate-table"; table: string }
   | { type: "view-structure"; table: string }
-  | { type: "open-new-tab"; table: string };
+  | { type: "open-new-tab"; table: string }
+  | { type: "keep-open"; table: string };
 
 /** Context menu action type for database actions */
 export type DatabaseContextAction =
@@ -325,7 +351,8 @@ export type DatabaseContextAction =
   | { type: "import-sql" }
   | { type: "backup" }
   | { type: "restore" }
-  | { type: "create-database" };
+  | { type: "create-database" }
+  | { type: "create-table" };
 
 interface SchemaSidebarProps {
   connectionId: string;
@@ -500,6 +527,31 @@ export function SchemaSidebar({
     [setSelectedTable, setMultiSelected, orderedTableNames],
   );
 
+  const handleKeepOpen = useCallback(
+    (name: string) => onTableAction?.({ type: "keep-open", table: name }),
+    [onTableAction],
+  );
+
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleReveal = (e: Event) => {
+      const detail = (e as CustomEvent<{ connectionId: string; table: string }>).detail;
+      if (detail?.connectionId !== connectionId) return;
+      setSearchQuery("");
+      setDebouncedSearch("");
+      requestAnimationFrame(() => {
+        const row = listRef.current?.querySelector<HTMLElement>(
+          `[data-table-name="${CSS.escape(detail.table)}"]`,
+        );
+        row?.scrollIntoView({ block: "center" });
+        row?.focus();
+      });
+    };
+    window.addEventListener("sql:reveal-table", handleReveal);
+    return () => window.removeEventListener("sql:reveal-table", handleReveal);
+  }, [connectionId]);
+
   // ── Context menu handlers ──
 
   const handleTableContextMenuSelect = useCallback(
@@ -668,6 +720,30 @@ export function SchemaSidebar({
     fetchTables();
   }, [fetchTables]);
 
+  const databaseMenuItems = useMemo(
+    () => buildDatabaseMenuItems(hasSSHConnection, multiSelected.size),
+    [hasSSHConnection, multiSelected.size],
+  );
+
+  const handleDatabaseMenuSelect = useCallback(
+    (id: string) => {
+      switch (id) {
+        case "db:create-table":
+          onDatabaseAction?.({ type: "create-table" });
+          break;
+        case "db:refresh":
+          handleRefresh();
+          break;
+        case "db:copy-name":
+          navigator.clipboard.writeText(currentDatabase).catch(() => {});
+          break;
+        default:
+          handleDatabaseContextMenuSelect(id);
+      }
+    },
+    [onDatabaseAction, handleRefresh, currentDatabase, handleDatabaseContextMenuSelect],
+  );
+
   // External consumers (e.g. after DROP TABLE) can request a schema refresh via event.
   useEffect(() => {
     const handler = (e: Event) => {
@@ -730,12 +806,29 @@ export function SchemaSidebar({
             disabled={schemaLoading}
             className="shrink-0 !h-7 !w-7"
             title="Refresh schema"
+            aria-label="Refresh schema"
           >
             <RefreshCw
               size={13}
               className={cn(schemaLoading && "animate-spin")}
             />
           </Button>
+          <Dropdown
+            align="right"
+            items={databaseMenuItems}
+            onSelect={handleDatabaseMenuSelect}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 !h-7 !w-7"
+                title="Database actions"
+                aria-label="Database actions"
+              >
+                <MoreHorizontal size={14} />
+              </Button>
+            }
+          />
         </div>
       </ContextMenu>
 
@@ -750,67 +843,8 @@ export function SchemaSidebar({
         />
       </div>
 
-      {/* Database actions toolbar */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-nd-border">
-        <button
-          onClick={() => onDatabaseAction?.({ type: "export-database" })}
-          title={
-            multiSelected.size > 0
-              ? `Export ${multiSelected.size} selected tables`
-              : "Export Database"
-          }
-          className={cn(
-            "flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors",
-            multiSelected.size > 0
-              ? "text-nd-accent hover:text-nd-accent hover:bg-nd-accent/10"
-              : "text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover",
-          )}
-        >
-          <Download size={12} />
-          <span>
-            Export{multiSelected.size > 0 ? ` (${multiSelected.size})` : ""}
-          </span>
-        </button>
-        <button
-          onClick={() => onDatabaseAction?.({ type: "import-sql" })}
-          title="Import SQL"
-          className="flex items-center gap-1 px-1.5 py-1 rounded text-2xs text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover transition-colors"
-        >
-          <Upload size={12} />
-          <span>Import</span>
-        </button>
-        <button
-          onClick={() => onDatabaseAction?.({ type: "backup" })}
-          title="Backup via SSH"
-          disabled={!hasSSHConnection}
-          className={cn(
-            "flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors",
-            hasSSHConnection
-              ? "text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover"
-              : "text-nd-text-muted/40 cursor-not-allowed",
-          )}
-        >
-          <HardDrive size={12} />
-          <span>Backup</span>
-        </button>
-        <button
-          onClick={() => onDatabaseAction?.({ type: "restore" })}
-          title="Restore via SSH"
-          disabled={!hasSSHConnection}
-          className={cn(
-            "flex items-center gap-1 px-1.5 py-1 rounded text-2xs transition-colors",
-            hasSSHConnection
-              ? "text-nd-text-muted hover:text-nd-text-primary hover:bg-nd-surface-hover"
-              : "text-nd-text-muted/40 cursor-not-allowed",
-          )}
-        >
-          <RotateCcw size={12} />
-          <span>Restore</span>
-        </button>
-      </div>
-
       {/* Table list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div ref={listRef} className="flex-1 overflow-y-auto py-1">
         {fetchError && tables.length === 0 ? (
           <div className="px-3 py-6 text-center space-y-2">
             <AlertCircle size={20} className="mx-auto text-nd-error" />
@@ -845,6 +879,7 @@ export function SchemaSidebar({
                     isMultiSelected={multiSelected.has(table.name)}
                     multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
+                    onKeepOpen={handleKeepOpen}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}
@@ -865,6 +900,7 @@ export function SchemaSidebar({
                     isMultiSelected={multiSelected.has(table.name)}
                     multiSelectedCount={multiSelected.size}
                     onSelect={handleSelectTable}
+                    onKeepOpen={handleKeepOpen}
                     onContextMenuSelect={handleTableContextMenuSelect}
                   />
                 ))}

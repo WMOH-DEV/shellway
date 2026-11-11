@@ -4,6 +4,8 @@ import { cn } from '@/utils/cn'
 import { openEmptyWindow } from '@/utils/windowHandoff'
 import { formatCombo } from '@/utils/keybindings'
 import { getBinding } from '@/stores/keybindingStore'
+import { useConnectionStore } from '@/stores/connectionStore'
+import { SearchButton } from '@/components/search/SearchField'
 
 /**
  * Custom frameless title bar component.
@@ -23,6 +25,7 @@ export function TitleBar({ title }: { title?: string }) {
   }, [])
 
   const isMac = platform === 'darwin'
+  const isSqlActive = useConnectionStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.activeSubTab === 'sql')
 
   return (
     <div
@@ -56,7 +59,13 @@ export function TitleBar({ title }: { title?: string }) {
         </span>
       </div>
 
-      <div className="flex-1 min-w-0 px-3 text-center truncate text-xs text-nd-text-secondary">{title}</div>
+      {title ? (
+        <div className="flex-1 min-w-0 px-3 text-center truncate text-xs text-nd-text-secondary">{title}</div>
+      ) : (
+        <div className="flex-1" />
+      )}
+
+      {!title && !isSqlActive && <SearchButton className="no-drag mr-1.5" />}
 
       {!title && (
         <button

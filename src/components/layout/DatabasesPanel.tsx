@@ -5,6 +5,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { getSQLConnectionState, useSQLStore } from "@/stores/sqlStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { applySearchCachePatch } from "@/search/cacheClient";
 
 /** Minimal shape returned by SQLConfigStore for standalone DB configs */
 interface SavedDBConfig {
@@ -142,13 +143,14 @@ export function DatabasesPanel({
       e.stopPropagation();
       window.novadeck.sql
         .configDelete(sessionId)
-        .then(() =>
+        .then(() => {
+          applySearchCachePatch({ kind: "forget", scopeId: sessionId });
           setSavedDBs((prev) => {
             const updated = prev.filter((d) => d.sessionId !== sessionId);
             try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(updated)); } catch {}
             return updated;
-          }),
-        )
+          });
+        })
         .catch(() => {});
     },
     [],

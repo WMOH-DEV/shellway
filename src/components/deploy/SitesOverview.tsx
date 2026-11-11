@@ -10,7 +10,7 @@ import { SiteList } from './SiteList'
 import type { SiteActions } from './SiteRow'
 import { UnfinishedRunNotice } from './createSite/UnfinishedRunNotice'
 
-export const SEARCH_COMBO = 'CmdOrCtrl+K'
+export const SEARCH_COMBO = 'CmdOrCtrl+F'
 
 const FILTERS: { id: SiteFilter; label: string }[] = [
   { id: 'all', label: 'All' },

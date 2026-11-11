@@ -177,6 +177,7 @@ interface DataGridProps {
    * by DataTabView where pagination means client-side sort would be wrong.
    */
   clientSideSort?: boolean;
+  onFirstVisibleRowChange?: (index: number) => void;
 }
 
 /** Imperative handle exposed by DataGrid via ref */
@@ -207,6 +208,9 @@ export interface DataGridHandle {
   selectRow: (rowIndex: number) => void;
   /** Get the first selected row's data (without __rowIndex), or null */
   getSelectedRowData: () => Record<string, unknown> | null;
+  getFirstVisibleRow: () => number;
+  scrollToRow: (index: number) => void;
+  showSort: (keys: SortKey[]) => void;
 }
 
 // ── Context menu state (cell right-click) ──
@@ -337,6 +341,10 @@ const BOOLEAN_TYPES = new Set([
   "bit",
   "bit(1)",
 ]);
+
+function sameSortKeys(a: SortKey[], b: SortKey[]): boolean {
+  return a.length === b.length && a.every((k, i) => k.column === b[i].column && k.direction === b[i].direction);
+}
 
 function isBooleanType(type: string): boolean {
   return BOOLEAN_TYPES.has(type.toLowerCase());
@@ -495,10 +503,12 @@ export const DataGrid = React.memo(
       tableName,
       dbType = "mysql",
       clientSideSort,
+      onFirstVisibleRowChange,
     },
     ref,
   ) {
     const gridRef = useRef<AgGridReact>(null);
+    const shownSortRef = useRef<SortKey[] | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
       null,
@@ -1197,6 +1207,9 @@ export const DataGrid = React.memo(
           direction: c.sort as "asc" | "desc",
         }));
 
+      const shownSort = shownSortRef.current;
+      shownSortRef.current = null;
+      if (shownSort && sameSortKeys(shownSort, keys)) return;
       onSort(keys);
     }, [onSort, clientSideSort]);
 
@@ -1809,6 +1822,21 @@ export const DataGrid = React.memo(
           const { __rowIndex, ...clean } = rows[0] as Record<string, unknown>;
           return clean;
         },
+        getFirstVisibleRow: () =>
+          gridRef.current?.api?.getFirstDisplayedRowIndex() ?? 0,
+        scrollToRow: (index: number) => {
+          const api = gridRef.current?.api;
+          if (api && index >= 0) api.ensureIndexVisible(index, "top");
+        },
+        showSort: (keys: SortKey[]) => {
+          const api = gridRef.current?.api;
+          if (!api || keys.length === 0) return;
+          shownSortRef.current = keys;
+          api.applyColumnState({
+            state: keys.map((k, i) => ({ colId: k.column, sort: k.direction, sortIndex: i })),
+            defaultState: { sort: null },
+          });
+        },
       }),
       [handleToggleColumn, handleShowAllColumns, handleScrollToLastRow],
     );
@@ -1871,6 +1899,9 @@ export const DataGrid = React.memo(
           onCellContextMenu={onCellContextMenu}
           onCellDoubleClicked={onCellDoubleClicked}
           onGridReady={onGridReady}
+          onBodyScrollEnd={(event) =>
+            onFirstVisibleRowChange?.(event.api.getFirstDisplayedRowIndex())
+          }
           onColumnResized={onColumnResized}
           onColumnMoved={onColumnMoved}
           onColumnVisible={onColumnVisible}

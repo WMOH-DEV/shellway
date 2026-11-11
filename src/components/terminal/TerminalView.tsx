@@ -9,6 +9,8 @@ import { cn } from '@/utils/cn'
 import { TERMINAL_THEMES } from '@/data/terminalThemes'
 import { findSnippetByShortcut } from '@/stores/snippetStore'
 import { matchesBinding } from '@/stores/keybindingStore'
+import { useConnectionStore } from '@/stores/connectionStore'
+import { TERMINAL_INTENTS, useSearchIntentStore } from '@/search/intentStore'
 import type { ResolvedTerminalSettings } from '@/utils/resolveSettings'
 
 interface TerminalViewProps {
@@ -378,6 +380,19 @@ export function TerminalView({
     }
     openShell()
   }, [connectionStatus, connectionId, shellId, isReady, attachExisting])
+
+  const sessionId = useConnectionStore((s) => s.tabs.find((t) => t.id === connectionId)?.sessionId)
+  const pendingIntents = useSearchIntentStore((s) => (sessionId ? s.pending[sessionId] : undefined))
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!sessionId || !terminal || !isReady || !isActive) return
+    if (!pendingIntents?.some((i) => TERMINAL_INTENTS.includes(i.kind))) return
+    for (const intent of useSearchIntentStore.getState().take(sessionId, TERMINAL_INTENTS)) {
+      if (intent.kind === 'terminal-insert') window.novadeck.terminal.write(shellId, intent.text)
+    }
+    terminal.focus()
+  }, [sessionId, shellId, pendingIntents, isReady, isActive])
 
   // Re-fit when becoming active — wait for the container to be visible before fitting
   useEffect(() => {

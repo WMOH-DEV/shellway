@@ -168,3 +168,19 @@ function formatKeyName(key: string): string {
   }
   return map[key.toLowerCase()] ?? key
 }
+
+const SPECIAL_KEYS: Record<string, string> = { plus: '+', space: ' ' }
+
+export function comboToKeyboardEventInit(combo: string, isMac: boolean): KeyboardEventInit {
+  const { modifiers, key } = parseCombo(combo)
+  const hasCmdOrCtrl = modifiers.has('cmdorctrl')
+  return {
+    key: SPECIAL_KEYS[key] ?? key,
+    metaKey: isMac && hasCmdOrCtrl,
+    ctrlKey: modifiers.has('ctrl') || (!isMac && hasCmdOrCtrl),
+    shiftKey: modifiers.has('shift'),
+    altKey: modifiers.has('alt'),
+    bubbles: true,
+    cancelable: true
+  }
+}

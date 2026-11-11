@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
+import { SearchPalette } from '@/components/search/SearchPalette'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -238,6 +239,8 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Status bar */}
       <StatusBar />
+
+      <SearchPalette />
     </div>
   )
 }

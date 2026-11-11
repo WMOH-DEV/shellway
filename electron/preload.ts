@@ -4,6 +4,7 @@ import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
 import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, Leftover, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
 import { serverApi } from "./preload/server";
+import { searchApi } from "./preload/search";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
 
 /** Outcome of a local filesystem mutation. */
@@ -45,6 +46,13 @@ const api = {
       ipcRenderer.on("window:maximized-change", handler);
       return () =>
         ipcRenderer.removeListener("window:maximized-change", handler);
+    },
+    onCloseRequest: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on("window:close-request", handler);
+      return () => {
+        ipcRenderer.removeListener("window:close-request", handler);
+      };
     },
     open: (handoff?: unknown, resources?: string[], feature?: FeatureWindowRef, shellIds?: string[]) =>
       ipcRenderer.invoke("window:open", handoff, resources, feature, shellIds) as Promise<void>,
@@ -1291,6 +1299,8 @@ const api = {
   },
 
   server: serverApi,
+
+  search: searchApi,
 
   // ── Host Key Management ──
   hostkey: {

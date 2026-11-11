@@ -40,6 +40,15 @@ export interface AppSettings {
 
   // SQL
   sqlDefaultFilterMatch: 'all' | 'any'
+  sqlTabLayout: 'single' | 'vertical'
+  sqlPreviewTabs: boolean
+  sqlTabLimit: number
+  sqlNewTabPosition: 'next' | 'end'
+  sqlColorByKind: boolean
+  sqlReopenTabsOnConnect: boolean
+  sqlCloseOnMiddleClick: boolean
+  searchDisabledScopes: string[]
+  searchExcludeGlobs: string
 
   classicServerTabs: boolean
   serverNotifications: ServerNotifications
@@ -109,6 +118,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   sftpAutocompleteMode: 'content',
 
   sqlDefaultFilterMatch: 'any',
+  sqlTabLayout: 'single',
+  sqlPreviewTabs: true,
+  sqlTabLimit: 15,
+  sqlNewTabPosition: 'next',
+  sqlColorByKind: true,
+  sqlReopenTabsOnConnect: true,
+  sqlCloseOnMiddleClick: true,
+  searchDisabledScopes: [],
+  searchExcludeGlobs: 'vendor, node_modules, storage, .git',
 
   classicServerTabs: false,
   serverNotifications: { kind: 'off', url: '', events: ['deploy-failed', 'certificate-risk', 'service-down', 'reboot-required'] },
