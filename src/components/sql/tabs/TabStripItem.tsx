@@ -1,23 +1,28 @@
-import { memo, useCallback, useMemo, type KeyboardEvent, type MouseEvent } from 'react'
-import { Pin, X } from 'lucide-react'
+import { memo, useCallback, useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { Code2, Columns3, Pin, Table2, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { ContextMenu } from '@/components/ui/ContextMenu'
-import type { SQLTab } from '@/types/sql'
+import type { SQLTab, SQLTabKind } from '@/types/sql'
 import type { TabActions } from './tabActions'
 import { buildTabContextMenu, runTabContextAction } from './tabContextMenu'
 import { tabKind } from './tabModel'
-import { kindBarClass, tabTitle } from './tabPresentation'
+import { tabTitle } from './tabPresentation'
 
 interface TabStripItemProps {
   tab: SQLTab
   tabs: SQLTab[]
   isActive: boolean
-  colorByKind: boolean
   closeOnMiddleClick: boolean
   tabIndex: number
   actions: TabActions
   onKeyDown: (e: KeyboardEvent, tab: SQLTab) => void
   registerRef: (id: string, el: HTMLElement | null) => void
+}
+
+const KIND_ICONS: Record<SQLTabKind, ReactNode> = {
+  table: <Table2 size={13} />,
+  query: <Code2 size={13} />,
+  structure: <Columns3 size={13} />
 }
 
 function tooltipFor(tab: SQLTab): string {
@@ -28,7 +33,6 @@ export const TabStripItem = memo(function TabStripItem({
   tab,
   tabs,
   isActive,
-  colorByKind,
   closeOnMiddleClick,
   tabIndex,
   actions,
@@ -86,15 +90,7 @@ export const TabStripItem = memo(function TabStripItem({
             : 'bg-nd-bg-secondary text-nd-text-muted hover:text-nd-text-secondary hover:bg-nd-surface'
         )}
       >
-        {colorByKind && (
-          <span
-            aria-hidden
-            data-kind-bar
-            className={cn('absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r', kindBarClass(tabKind(tab)))}
-          />
-        )}
-
-        {tab.pinned && <Pin size={11} className="text-nd-text-muted" />}
+        {tab.pinned ? <Pin size={11} className="text-nd-text-muted" /> : KIND_ICONS[tabKind(tab)]}
 
         <span
           className={cn(
@@ -105,7 +101,6 @@ export const TabStripItem = memo(function TabStripItem({
         >
           {tabTitle(tab)}
         </span>
-
 
         {tab.isDirty && <span aria-label="Unsaved" className="w-1.5 h-1.5 rounded-full bg-nd-warning shrink-0" />}
 

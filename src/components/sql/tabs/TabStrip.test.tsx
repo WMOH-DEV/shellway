@@ -91,15 +91,11 @@ describe('TabStrip rendering', () => {
     expect(screen.queryByText('users')).toBeNull()
   })
 
-  it('renders kind bars only when colour by kind is on', () => {
+  it('shows a type icon instead of a coloured bar', () => {
     seed([makeTab({ id: 't1' })])
-    const { unmount } = renderStrip()
-    expect(document.querySelectorAll('[data-kind-bar]')).toHaveLength(1)
-    unmount()
-
-    useSqlTabSettingsStore.setState({ sqlColorByKind: false })
     renderStrip()
     expect(document.querySelectorAll('[data-kind-bar]')).toHaveLength(0)
+    expect(tabElement('orders').querySelector('svg')).not.toBeNull()
   })
 })
 

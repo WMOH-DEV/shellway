@@ -144,7 +144,6 @@ export function TabStrip({ connectionId, actions, onNewQuery, onOpenMenu }: TabS
             tab={tab}
             tabs={tabs}
             isActive={tab.id === activeTabId}
-            colorByKind={settings.sqlColorByKind}
             closeOnMiddleClick={settings.sqlCloseOnMiddleClick}
             tabIndex={tab.id === focusableId ? 0 : -1}
             actions={actions}
