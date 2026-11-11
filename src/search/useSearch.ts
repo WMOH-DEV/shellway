@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { providerInScope, providerKey, runSearch } from './broker'
 import { getUsageLookup } from './cacheClient'
 import { getSearchContext } from './context'
 import { createProviders, enabledProviders } from './providers'
+import { useRemoteSearchStatus } from './providers/remoteStatus'
 import { parseInput, type ParsedInput } from './queryParser'
 import { groupResults, rankResults, type GroupedResults } from './ranking'
 import { useSearchSettingsStore } from './searchSettings'
@@ -89,22 +89,13 @@ function countByScope(results: SearchResult[]): Record<ScopeId, number> {
   return counts
 }
 
-function remoteServerLabel(filter: ServerFilter): string {
-  const { tabs, activeTabId } = useConnectionStore.getState()
-  if (filter === 'all') return 'connected servers'
-  return tabs.find((t) => t.id === activeTabId)?.sessionName ?? 'this server'
-}
-
-function describeRemote(text: string, filter: ServerFilter): string {
-  return `fd -i -g '*${text}*' on ${remoteServerLabel(filter)}`
-}
-
 export function useSearch(open: boolean): UseSearchResult {
   const [input, setInput] = useState(() => useUIStore.getState().searchInitial)
   const [chipScope, setChipScopeState] = useState<ScopeId>('all')
   const [serverFilter, setServerFilter] = useState<ServerFilter>('current')
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY_SNAPSHOT)
-  const [remoteCommand, setRemoteCommand] = useState<string | null>(null)
+  const [remoteRunning, setRemoteRunning] = useState(false)
+  const remoteStatus = useRemoteSearchStatus()
   const allCountsRef = useRef<{ text: string; counts: Record<ScopeId, number> } | null>(null)
 
   const disabledScopes = useSearchSettingsStore((s) => s.disabledScopes)
@@ -129,7 +120,7 @@ export function useSearch(open: boolean): UseSearchResult {
   useEffect(() => {
     if (!open || parsed.prefix === '?') {
       setSnapshot(EMPTY_SNAPSHOT)
-      setRemoteCommand(null)
+      setRemoteRunning(false)
       return
     }
     const controller = new AbortController()
@@ -161,7 +152,7 @@ export function useSearch(open: boolean): UseSearchResult {
       const scopeCounts = isAll ? scoped : { ...known, [query.scope]: scoped.all }
       if (elapsedMs === null && localKeys.every((k) => doneKeys.has(k))) elapsedMs = Math.round(performance.now() - startedAt)
       const remoteRunning = remoteKeys.some((k) => !doneKeys.has(k))
-      setRemoteCommand(remoteRunning && query.text.length >= MIN_REMOTE_TEXT ? describeRemote(query.text, serverFilter) : null)
+      setRemoteRunning(remoteRunning && query.text.length >= MIN_REMOTE_TEXT)
       setSnapshot({ grouped, scopeCounts, elapsedMs, loading })
     }
 
@@ -191,7 +182,7 @@ export function useSearch(open: boolean): UseSearchResult {
     scopeCounts: snapshot.scopeCounts,
     elapsedMs: snapshot.elapsedMs,
     loading: snapshot.loading,
-    remoteCommand,
+    remoteCommand: remoteRunning && remoteStatus.command ? `${remoteStatus.command} on ${remoteStatus.server ?? 'server'}` : null,
     parsed,
     actionsFor
   }
