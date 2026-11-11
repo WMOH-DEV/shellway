@@ -6,9 +6,15 @@ import { ExecAbortedError, sshExec } from './sshExec'
 function fakeStream() {
   const stream: any = new EventEmitter()
   stream.stderr = new EventEmitter()
-  stream.end = vi.fn()
+  stream.writable = true
+  stream.delivered = []
+  stream.end = vi.fn(() => {
+    stream.writable = false
+  })
   stream.destroy = vi.fn()
-  stream.signal = vi.fn()
+  stream.signal = vi.fn((name: string) => {
+    if (stream.writable) stream.delivered.push(name)
+  })
   return stream
 }
 
@@ -38,7 +44,7 @@ describe('sshExec abort signal', () => {
     stream.emit('data', Buffer.from('partial'))
     controller.abort()
     await expect(pending).rejects.toBeInstanceOf(ExecAbortedError)
-    expect(stream.signal).toHaveBeenCalledWith('TERM')
+    expect(stream.delivered).toEqual(['TERM'])
     expect(stream.destroy).toHaveBeenCalledTimes(1)
   })
 
@@ -73,8 +79,17 @@ describe('sshExec abort signal', () => {
   it('behaves as before without a signal', async () => {
     const { conn, stream } = fakeConnection()
     const pending = sshExec(conn, 'ls')
+    expect(stream.end).toHaveBeenCalledTimes(1)
     stream.emit('data', Buffer.from('ok'))
     stream.emit('close', 0)
     await expect(pending).resolves.toMatchObject({ stdout: 'ok', code: 0 })
+  })
+
+  it('still sends given stdin to a cancellable command', async () => {
+    const { conn, stream } = fakeConnection()
+    const pending = sshExec(conn, 'cat', { stdin: 'hello', signal: new AbortController().signal })
+    expect(stream.end).toHaveBeenCalledWith('hello')
+    stream.emit('close', 0)
+    await expect(pending).resolves.toMatchObject({ code: 0 })
   })
 })

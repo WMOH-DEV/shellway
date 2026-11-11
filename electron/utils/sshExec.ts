@@ -130,7 +130,8 @@ export function sshExec(
 
       signal?.addEventListener('abort', onAbort, { once: true })
       if (signal?.aborted) return onAbort()
-      feedStdin(stream, stdin)
+      // ssh2 drops signal requests once stdin is ended, so a cancellable command without input keeps it open
+      if (!signal || stdin !== undefined) feedStdin(stream, stdin)
     })
   })
 }
