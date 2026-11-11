@@ -48,7 +48,6 @@ import { SafeModeMenu } from './SafeModeMenu'
 import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
 import { useSqlSearchIntents } from './useSqlSearchIntents'
-import { SearchField } from '@/components/search/SearchField'
 import type { ClosedSQLTab, SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
 
 // ── Lazy-loaded heavy sub-components ──
@@ -1836,7 +1835,6 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
           onClick={handleDisconnect}
           className="hover:!text-nd-error-fg"
         />
-        <SearchField className="ml-1.5" />
       </div>
 
       {/* ── Main content: sidebar + (tab bar + content) ── */}

@@ -4,7 +4,6 @@ import { cn } from '@/utils/cn'
 import { openEmptyWindow } from '@/utils/windowHandoff'
 import { formatCombo } from '@/utils/keybindings'
 import { getBinding } from '@/stores/keybindingStore'
-import { useConnectionStore } from '@/stores/connectionStore'
 import { SearchButton } from '@/components/search/SearchField'
 
 /**
@@ -25,7 +24,6 @@ export function TitleBar({ title }: { title?: string }) {
   }, [])
 
   const isMac = platform === 'darwin'
-  const isSqlActive = useConnectionStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.activeSubTab === 'sql')
 
   return (
     <div
@@ -65,7 +63,7 @@ export function TitleBar({ title }: { title?: string }) {
         <div className="flex-1" />
       )}
 
-      {!title && !isSqlActive && <SearchButton className="no-drag mr-1.5" />}
+      {!title && <SearchButton className="no-drag mr-1.5" />}
 
       {!title && (
         <button
