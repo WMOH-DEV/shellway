@@ -44,7 +44,7 @@ function escapeGlob(text: string): string {
 }
 
 function wrapped(root: string, seconds: number, inner: string): string {
-  return `cd ${shellEscape(root)} && timeout -k 2 ${seconds} sh -c ${shellEscape(inner)}`
+  return `cd ${shellEscape(root)} && exec timeout -k 2 ${seconds} sh -c ${shellEscape(inner)}`
 }
 
 export function buildFileNameCommand(req: FileNameSearchRequest): { script: string; display: string } {

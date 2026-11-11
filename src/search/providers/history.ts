@@ -10,7 +10,7 @@ const HISTORY_LIMIT = 200
 const TITLE_MAX = 120
 const KEYWORDS_MAX = 400
 const EMPTY_QUERY_LIMIT = 5
-const CREDENTIAL_STATEMENT = /IDENTIFIED\s+(WITH\s+\S+\s+)?BY|PASSWORD\s*(\(|=|FOR\b)/i
+const CREDENTIAL_STATEMENT = /IDENTIFIED\s+(WITH\s+\S+\s+)?BY|\bPASSWORD\s*(\(|=|FOR\b|')/i
 
 interface HistoryEntry {
   id: string

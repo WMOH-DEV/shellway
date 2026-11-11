@@ -4,7 +4,7 @@ import { providerInScope, providerKey, runSearch } from './broker'
 import { getUsageLookup } from './cacheClient'
 import { getSearchContext } from './context'
 import { createProviders, enabledProviders } from './providers'
-import { useRemoteSearchStatus } from './providers/remoteStatus'
+import { clearRemoteSearchStatus, useRemoteSearchStatus } from './providers/remoteStatus'
 import { parseInput, type ParsedInput } from './queryParser'
 import { groupResults, rankResults, type GroupedResults } from './ranking'
 import { useSearchSettingsStore } from './searchSettings'
@@ -124,6 +124,7 @@ export function useSearch(open: boolean): UseSearchResult {
       return
     }
     const controller = new AbortController()
+    clearRemoteSearchStatus()
     const startedAt = performance.now()
     const byKey = new Map<string, SearchResult[]>()
     const doneKeys = new Set<string>()

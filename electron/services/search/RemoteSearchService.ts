@@ -168,7 +168,7 @@ export class RemoteSearchService {
     const exec = this.requireExec(connectionId)
     const first = Math.max(1, line - context)
     const script =
-      `timeout ${PREVIEW_TIMEOUT_SECONDS} sed -n '${first},${line + context}p' -- ${shellEscape(path)}` +
+      `timeout ${PREVIEW_TIMEOUT_SECONDS} sed -n '${first},${line + context}p;${line + context}q' -- ${shellEscape(path)}` +
       ` | cut -c1-${PREVIEW_MAX_COLUMNS}`
     const result = await exec(script, { timeoutMs: (PREVIEW_TIMEOUT_SECONDS + 5) * 1000, onStderr: () => undefined })
     const lines = result.stdout.split('\n').map((text) => text.replace(/\r$/, ''))

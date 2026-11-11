@@ -47,6 +47,7 @@ function toResult(entry: SessionEntry, now: number): SearchResult {
     subtitle: entry.group ? `${subtitle} · ${entry.group}` : subtitle,
     icon: 'server',
     hint: hintFor(entry.id),
+    keywords: `${entry.host} ${entry.username} ${entry.group}`,
     scoreHints: { recency: recencyFromTimestamp(entry.lastConnected, now) },
     payload: { sessionId: entry.id, host: entry.host }
   }

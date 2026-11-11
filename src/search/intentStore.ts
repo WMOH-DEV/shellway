@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
+import { useSessionStore } from '@/stores/sessionStore'
+import { toast } from '@/components/ui/Toast'
 import type { ConnectionTab } from '@/types/session'
 
 export type SqlIntentAction = 'export' | 'import' | 'backup' | 'restore' | 'refresh' | 'create-table' | 'new-query'
@@ -17,6 +19,8 @@ export type IntentKind = SearchIntent['kind']
 
 type SubTab = ConnectionTab['activeSubTab']
 
+export const INTENT_TTL_MS = 60_000
+
 export const SQL_INTENTS: IntentKind[] = ['open-table', 'open-sql', 'sql-action']
 export const SFTP_INTENTS: IntentKind[] = ['sftp-reveal', 'sftp-open']
 export const TERMINAL_INTENTS: IntentKind[] = ['terminal-insert']
@@ -31,12 +35,20 @@ interface IntentState {
   pending: Record<string, SearchIntent[]>
   push(sessionId: string, intent: SearchIntent): void
   take(sessionId: string, kinds: IntentKind[]): SearchIntent[]
+  drop(sessionId: string, intent: SearchIntent): void
 }
 
 export const useSearchIntentStore = create<IntentState>((set, get) => ({
   pending: {},
-  push: (sessionId, intent) =>
-    set((s) => ({ pending: { ...s.pending, [sessionId]: [...(s.pending[sessionId] ?? []), intent] } })),
+  push: (sessionId, intent) => {
+    set((s) => ({ pending: { ...s.pending, [sessionId]: [...(s.pending[sessionId] ?? []), intent] } }))
+    setTimeout(() => get().drop(sessionId, intent), INTENT_TTL_MS)
+  },
+  drop: (sessionId, intent) => {
+    const all = get().pending[sessionId]
+    if (!all?.includes(intent)) return
+    set((s) => ({ pending: { ...s.pending, [sessionId]: all.filter((i) => i !== intent) } }))
+  },
   take: (sessionId, kinds) => {
     const all = get().pending[sessionId] ?? []
     const taken = all.filter((i) => kinds.includes(i.kind))
@@ -62,12 +74,22 @@ export function showSubTab(tabId: string, subTab: SubTab): void {
 }
 
 export function sendIntent(sessionId: string, intent: SearchIntent): void {
-  useSearchIntentStore.getState().push(sessionId, intent)
   const tab = tabForSession(sessionId)
+  const subTab = subTabForIntent(intent.kind)
   if (!tab) {
+    if (!useSessionStore.getState().sessions.some((s) => s.id === sessionId)) {
+      toast.info('Not connected', 'Open this connection first, then try again.')
+      return
+    }
+    useSearchIntentStore.getState().push(sessionId, intent)
     useUIStore.getState().requestConnectSession(sessionId)
     return
   }
-  if (tab.status === 'connected') showSubTab(tab.id, subTabForIntent(intent.kind))
+  if (tab.detachedSubTabs?.includes(subTab)) {
+    showSubTab(tab.id, subTab)
+    return
+  }
+  useSearchIntentStore.getState().push(sessionId, intent)
+  if (tab.status === 'connected') showSubTab(tab.id, subTab)
   else useConnectionStore.getState().setActiveTab(tab.id)
 }

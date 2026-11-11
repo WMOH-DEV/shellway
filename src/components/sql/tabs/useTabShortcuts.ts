@@ -4,6 +4,7 @@ import { CLOSE_REQUEST_EVENT } from '@/hooks/useKeyboardShortcuts'
 import type { SQLTab } from '@/types/sql'
 import type { TabActions } from './tabActions'
 import { getDatabaseTabs } from './useDatabaseTabs'
+import { isSearchOpen } from '@/stores/uiStore'
 
 const MENU_CLOSE_COMBO = 'CmdOrCtrl+W'
 const NUMBERED_TABS = 8
@@ -59,7 +60,7 @@ export function useTabShortcuts(options: TabShortcutOptions): void {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!optionsRef.current.enabled) return
+      if (!optionsRef.current.enabled || isSearchOpen()) return
       if (!runShortcut(e, optionsRef.current)) return
       e.preventDefault()
       e.stopPropagation()
@@ -67,7 +68,7 @@ export function useTabShortcuts(options: TabShortcutOptions): void {
 
     const handleCloseRequest = (e: Event) => {
       const { enabled, connectionId, actions } = optionsRef.current
-      if (!enabled || getBinding('sql:closeTab') !== MENU_CLOSE_COMBO) return
+      if (!enabled || isSearchOpen() || getBinding('sql:closeTab') !== MENU_CLOSE_COMBO) return
       e.preventDefault()
       const { active } = tabsAndActive(connectionId)
       if (active) actions.close(active.id)

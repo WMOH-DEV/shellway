@@ -3,6 +3,7 @@ import { getSQLConnectionState, useSQLStore } from '@/stores/sqlStore'
 import { matchesBinding } from '@/stores/keybindingStore'
 import { getSavedQueries } from '@/utils/savedQueries'
 import type { SQLTab } from '@/types/sql'
+import { isSearchOpen } from '@/stores/uiStore'
 
 /**
  * SQL-specific keyboard shortcuts — only active when the SQL sub-tab is
@@ -101,7 +102,7 @@ export function useSQLShortcuts(
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Only process when SQL panel is actively visible + connected
-      if (!isActiveRef.current || !sqlSessionRef.current) return
+      if (!isActiveRef.current || !sqlSessionRef.current || isSearchOpen()) return
 
       // ── Escape: Cancel cell edit / close overlays (hardcoded — universal) ──
       if (e.key === 'Escape') {

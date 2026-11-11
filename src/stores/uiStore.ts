@@ -199,3 +199,7 @@ export const useUIStore = create<UIState>((set) => ({
     set({ connectSessionId: sessionId, selectedSessionId: null }),
   clearConnectSessionRequest: () => set({ connectSessionId: null }),
 }));
+
+export function isSearchOpen(): boolean {
+  return useUIStore.getState().searchOpen;
+}

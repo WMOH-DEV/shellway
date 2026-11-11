@@ -91,7 +91,7 @@ describe('sites and services providers', () => {
     expect(serverRouteOf('t1')).toEqual({ section: 'sites', params: { site: 'shop.example.com' } })
     expect(useConnectionStore.getState().tabs[0].activeSubTab).toBe('server')
     actions.find((a) => a.role === 'secondary')!.run()
-    expect(useSearchIntentStore.getState().pending.s1).toEqual([{ kind: 'sftp-reveal', path: '/var/www/shop' }])
+    expect(useSearchIntentStore.getState().pending.s1).toEqual([{ kind: 'sftp-reveal', path: '/var/www/shop/' }])
     actions.find((a) => a.role === 'copy')!.run()
     expect(writeText).toHaveBeenCalledWith('shop.example.com')
   })

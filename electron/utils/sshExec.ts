@@ -98,6 +98,9 @@ export function sshExec(
 
       const onAbort = () => {
         settle(() => {
+          try {
+            stream.signal('TERM')
+          } catch {}
           stream.destroy()
           reject(new ExecAbortedError('aborted'))
         })

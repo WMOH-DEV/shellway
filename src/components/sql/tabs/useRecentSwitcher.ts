@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SQLTab } from '@/types/sql'
 import { getBinding } from '@/stores/keybindingStore'
 import { matchesKeyCombo } from '@/utils/keybindings'
+import { isSearchOpen } from '@/stores/uiStore'
 
 export const SWITCHER_ROWS = 7
 const MAX_DIGIT_JUMP = 6
@@ -174,7 +175,7 @@ export function useRecentSwitcher(options: Options): RecentSwitcher {
       const combo = getBinding(RECENT_TABS_ACTION)
       const current = sessionRef.current
       if (current) handleOpenKeyDown(e, current, combo)
-      else handleClosedKeyDown(e, combo)
+      else if (!isSearchOpen()) handleClosedKeyDown(e, combo)
     }
     const onKeyUp = (e: KeyboardEvent): void => {
       const current = sessionRef.current

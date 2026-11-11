@@ -46,9 +46,12 @@ describe('privacy', () => {
       entries: [
         { id: 'h1', query: `CREATE USER x IDENTIFIED BY '${SECRET}'`, database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false },
         { id: 'h2', query: `SET PASSWORD = '${SECRET}'`, database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false },
+        { id: 'h4', query: `ALTER USER app WITH PASSWORD '${SECRET}'`, database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false },
+        { id: 'h5', query: `CREATE ROLE app LOGIN PASSWORD '${SECRET}'`, database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false },
+        { id: 'h6', query: `CREATE SERVER s OPTIONS (user 'a', password '${SECRET}')`, database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false },
         { id: 'h3', query: 'SELECT * FROM orders', database: 'shop', source: 'user', executedAt: 1, executionTimeMs: 1, isFavorite: false }
       ],
-      total: 3
+      total: 6
     })
     stubBrowser({ sql: { queriesList, historyList }, search: { cacheApply, findFiles: vi.fn(), cancel: vi.fn(), onEvent: vi.fn() } })
     resetSearchState()

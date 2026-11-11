@@ -52,7 +52,12 @@ describe('applyPatch', () => {
   it('forgets a deleted session', () => {
     let s = applyPatch(emptySnapshot(), { kind: 'paths', scopeId: 's1', paths: ['/a'] }, NOW)
     s = applyPatch(s, { kind: 'tables', scopeId: 's1', database: 'db', tables: [{ name: 't', type: 'table', columns: [] }] }, NOW)
+    s = applyPatch(s, { kind: 'usage', resultId: 'file:s1:/var/www/shop/.env.example', queryText: 'env' }, NOW)
+    s = applyPatch(s, { kind: 'usage', resultId: 'session:s1', queryText: 'shop' }, NOW)
+    s = applyPatch(s, { kind: 'usage', resultId: 'file:s2:/srv/app.php', queryText: 'app' }, NOW)
     s = applyPatch(s, { kind: 'forget', scopeId: 's1' }, NOW)
+    expect(Object.keys(s.usage)).toEqual(['file:s2:/srv/app.php'])
+    expect(JSON.stringify(s.learned)).not.toContain(':s1:')
     expect(s.paths.s1).toBeUndefined()
     expect(s.tables.s1).toBeUndefined()
   })

@@ -299,13 +299,13 @@ describe('RemoteSearchService', () => {
         { line: 11, text: 'b' },
         { line: 12, text: 'c' }
       ])
-      expect(exec.mock.calls[0][0]).toBe("timeout 5 sed -n '10,14p' -- '/var/www/shop/app/Orders.php' | cut -c1-400")
+      expect(exec.mock.calls[0][0]).toBe("timeout 5 sed -n '10,14p;14q' -- '/var/www/shop/app/Orders.php' | cut -c1-400")
     })
 
     it('never asks for lines before 1', async () => {
       const { service, exec } = previewRun('x\n')
       await service.preview('c1', '/a.php', 2, 5)
-      expect(exec.mock.calls[0][0]).toContain("sed -n '1,7p'")
+      expect(exec.mock.calls[0][0]).toContain("sed -n '1,7p;7q'")
     })
 
     it('escapes the path', async () => {

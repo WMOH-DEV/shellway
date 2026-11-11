@@ -15,17 +15,26 @@ const GREP_LINE = /^(.+?):(\d+):(.*)$/s
 
 export function createLineSplitter(): { push(chunk: string): string[]; flush(): string[] } {
   let pending = ''
+  let skipping = false
   return {
     push(chunk) {
       pending += chunk
       const lines = pending.split('\n')
       pending = lines.pop() ?? ''
-      if (pending.length > MAX_PENDING_CHARS) pending = ''
+      if (skipping && lines.length > 0) {
+        lines.shift()
+        skipping = false
+      }
+      if (pending.length > MAX_PENDING_CHARS) {
+        pending = ''
+        skipping = true
+      }
       return lines.map(stripCarriageReturn)
     },
     flush() {
-      const rest = stripCarriageReturn(pending)
+      const rest = skipping ? '' : stripCarriageReturn(pending)
       pending = ''
+      skipping = false
       return rest ? [rest] : []
     }
   }
@@ -51,10 +60,26 @@ function clampRanges(ranges: Range[]): Range[] {
   return ranges.filter(([start]) => start < max).map(([start, end]): Range => [start, Math.min(end, max)])
 }
 
-function byteRangesToIndices(text: string, byteRanges: Array<{ start: number; end: number }>): Range[] {
-  const bytes = Buffer.from(text, 'utf8')
-  const indexAt = (offset: number) => bytes.subarray(0, offset).toString('utf8').length
-  return byteRanges.map(({ start, end }): Range => [indexAt(start), indexAt(end)])
+const MAX_RANGES = 50
+
+function byteRangesToIndices(shown: string, byteRanges: Array<{ start: number; end: number }>): Range[] {
+  const indexByByte = new Map<number, number>()
+  let bytes = 0
+  let index = 0
+  for (const char of shown) {
+    indexByByte.set(bytes, index)
+    bytes += Buffer.byteLength(char, 'utf8')
+    index += char.length
+  }
+  indexByByte.set(bytes, index)
+  const nearest = (offset: number) => indexByByte.get(Math.min(offset, bytes)) ?? index
+  const ranges: Range[] = []
+  for (const { start, end } of byteRanges) {
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start >= bytes) continue
+    ranges.push([nearest(start), nearest(end)])
+    if (ranges.length >= MAX_RANGES) break
+  }
+  return ranges
 }
 
 export function parseRgJsonLine(line: string, root: string): TextMatch | null {
@@ -68,13 +93,13 @@ export function parseRgJsonLine(line: string, root: string): TextMatch | null {
   const { path, lines, line_number: lineNumber, submatches } = event.data ?? {}
   if (typeof path?.text !== 'string' || typeof lines?.text !== 'string' || !Number.isInteger(lineNumber)) return null
 
-  const fullText = lines.text.replace(/\r?\n$/, '')
+  const shown = lines.text.replace(/\r?\n$/, '').slice(0, TEXT_LIMITS.maxColumns)
   const byteRanges = Array.isArray(submatches) ? submatches : []
   return {
     path: toAbsolute(root, path.text),
     line: lineNumber,
-    text: fullText.slice(0, TEXT_LIMITS.maxColumns),
-    ranges: clampRanges(byteRangesToIndices(lines.text, byteRanges))
+    text: shown,
+    ranges: clampRanges(byteRangesToIndices(shown, byteRanges))
   }
 }
 

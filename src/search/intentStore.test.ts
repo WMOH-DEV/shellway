@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { subTabForIntent, useSearchIntentStore } from './intentStore'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSessionStore } from '@/stores/sessionStore'
+import { INTENT_TTL_MS, sendIntent, subTabForIntent, useSearchIntentStore } from './intentStore'
 
 describe('useSearchIntentStore', () => {
   beforeEach(() => useSearchIntentStore.setState({ pending: {} }))
@@ -30,5 +31,27 @@ describe('subTabForIntent', () => {
     ['terminal-insert', 'terminal']
   ] as const)('%s opens %s', (kind, subTab) => {
     expect(subTabForIntent(kind)).toBe(subTab)
+  })
+})
+
+describe('intent lifetime', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useSearchIntentStore.setState({ pending: {} })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('drops an intent nobody consumed after the time limit', () => {
+    useSearchIntentStore.getState().push('s1', { kind: 'sftp-reveal', path: '/var/www' })
+    vi.advanceTimersByTime(INTENT_TTL_MS - 1)
+    expect(useSearchIntentStore.getState().pending.s1).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(useSearchIntentStore.getState().pending.s1).toHaveLength(0)
+  })
+
+  it('does not queue an intent for a connection that cannot be opened', () => {
+    useSessionStore.setState({ sessions: [] })
+    sendIntent('db-unknown', { kind: 'open-table', database: 'shop', table: 'orders', newTab: false })
+    expect(useSearchIntentStore.getState().pending['db-unknown']).toBeUndefined()
   })
 })

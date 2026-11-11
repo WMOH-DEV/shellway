@@ -30,7 +30,7 @@ const textReq = (overrides: Partial<TextSearchRequest> = {}): TextSearchRequest 
 describe('buildFileNameCommand', () => {
   it('limits depth, time and result count', () => {
     const { script } = buildFileNameCommand(fileReq())
-    expect(script.startsWith("cd '/var/www/shop' && timeout -k 2 8 sh -c ")).toBe(true)
+    expect(script.startsWith("cd '/var/www/shop' && exec timeout -k 2 8 sh -c ")).toBe(true)
     expect(script).toContain(`--max-depth ${FILE_LIMITS.maxDepth}`)
     expect(script).toContain(`-maxdepth ${FILE_LIMITS.maxDepth}`)
     expect(script).toContain(`head -n ${FILE_LIMITS.maxResults}`)
@@ -82,7 +82,7 @@ describe('buildTextCommand', () => {
   it('prefers rg with JSON output and falls back to grep', () => {
     const { script, engine } = buildTextCommand(textReq())
     expect(engine).toBe('rg')
-    expect(script.startsWith("cd '/var/www/shop' && timeout -k 2 20 sh -c ")).toBe(true)
+    expect(script.startsWith("cd '/var/www/shop' && exec timeout -k 2 20 sh -c ")).toBe(true)
     expect(script).toContain('@@engine rg')
     expect(script).toContain('@@engine grep')
     expect(script).toContain(`--json --no-messages --max-columns ${TEXT_LIMITS.maxColumns}`)

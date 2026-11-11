@@ -48,6 +48,8 @@ describe('local files provider', () => {
     const [folder] = await collect(createFilesProvider(), makeQuery('shop'))
     expect(folder.icon).toBe('folder')
     expect(folder.title).toBe('shop')
+    createFilesProvider().actions(folder)[0].run()
+    expect(useSearchIntentStore.getState().pending.s1).toEqual([{ kind: 'sftp-reveal', path: '/var/www/shop/' }])
   })
 
   it('reveals, opens in the editor and copies the path', async () => {

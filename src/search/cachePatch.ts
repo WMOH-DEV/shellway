@@ -124,6 +124,14 @@ function without<T>(record: Record<string, T>, key: string): Record<string, T> {
   return rest
 }
 
+function belongsToScope(resultId: string, scopeId: string): boolean {
+  return resultId === `session:${scopeId}` || resultId.includes(`:${scopeId}:`)
+}
+
+function withoutScopeIds<T>(record: Record<string, T>, scopeId: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([id]) => !belongsToScope(id, scopeId)))
+}
+
 export function applyPatch(s: SearchCacheSnapshot, patch: SearchCachePatch, now: number): SearchCacheSnapshot {
   if (patch.kind === 'usage') {
     const resultId = cleanText(patch.resultId, CACHE_LIMITS.resultId)
@@ -151,7 +159,14 @@ export function applyPatch(s: SearchCacheSnapshot, patch: SearchCachePatch, now:
     case 'paths':
       return withPaths(s, scopeId, patch.paths)
     case 'forget':
-      return { ...s, tables: without(s.tables, scopeId), servers: without(s.servers, scopeId), paths: without(s.paths, scopeId) }
+      return {
+        ...s,
+        tables: without(s.tables, scopeId),
+        servers: without(s.servers, scopeId),
+        paths: without(s.paths, scopeId),
+        usage: withoutScopeIds(s.usage, scopeId),
+        learned: Object.fromEntries(Object.entries(s.learned).map(([key, picks]) => [key, withoutScopeIds(picks, scopeId)]))
+      }
     default:
       return s
   }

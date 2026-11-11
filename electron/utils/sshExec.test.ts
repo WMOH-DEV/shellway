@@ -8,6 +8,7 @@ function fakeStream() {
   stream.stderr = new EventEmitter()
   stream.end = vi.fn()
   stream.destroy = vi.fn()
+  stream.signal = vi.fn()
   return stream
 }
 
@@ -37,6 +38,7 @@ describe('sshExec abort signal', () => {
     stream.emit('data', Buffer.from('partial'))
     controller.abort()
     await expect(pending).rejects.toBeInstanceOf(ExecAbortedError)
+    expect(stream.signal).toHaveBeenCalledWith('TERM')
     expect(stream.destroy).toHaveBeenCalledTimes(1)
   })
 

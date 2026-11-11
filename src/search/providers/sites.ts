@@ -31,6 +31,7 @@ function toResult(entry: SiteEntry, query: SearchQuery): SearchResult {
     title: entry.name,
     subtitle: `site · ${place}`,
     icon: 'site',
+    keywords: entry.root,
     hint: connected ? undefined : 'disconnected',
     scoreHints: { context: contextHint(entry, query), disconnected: !connected },
     payload: { scopeId: entry.scopeId, name: entry.name, root: entry.root }
@@ -55,7 +56,7 @@ export function createSitesProvider(): SearchProvider {
         { id: 'open', label: 'Open', role: 'primary', run: () => openServerRoute(scopeId, { section: 'sites', params: { site: name } }) }
       ]
       if (root) {
-        actions.push({ id: 'reveal', label: 'Reveal folder in SFTP', role: 'secondary', run: () => sendIntent(scopeId, { kind: 'sftp-reveal', path: root }) })
+        actions.push({ id: 'reveal', label: 'Reveal folder in SFTP', role: 'secondary', run: () => sendIntent(scopeId, { kind: 'sftp-reveal', path: `${root.replace(/\/+$/, '')}/` }) })
       }
       actions.push({ id: 'copy-name', label: 'Copy name', role: 'copy', run: () => copyText(name) })
       return actions

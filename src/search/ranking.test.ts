@@ -40,8 +40,15 @@ describe('textMatch', () => {
 })
 
 describe('scoreResult', () => {
-  it('drops results that do not match', () => {
-    expect(scoreResult(result('a', 'payments'), 'zzz')).toBe(0)
+  it('keeps provider matches on other fields at the lowest text tier', () => {
+    const indexed = scoreResult(result('a', 'Main server'), 'shop.example.com')
+    expect(indexed).toBeCloseTo(MATCH.indexed)
+    expect(indexed).toBeLessThan(scoreResult(result('b', 'shop.example.com'), 'shop.example.com'))
+  })
+
+  it('never drops a disconnected provider match', () => {
+    const ranked = rankResults([result('a', 'Main', 'sessions', { scoreHints: { disconnected: true } })], 'clients')
+    expect(ranked).toHaveLength(1)
   })
 
   it('weights tables above settings for the same match', () => {

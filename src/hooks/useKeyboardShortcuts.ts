@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { matchesBinding } from '@/stores/keybindingStore'
-import { useUIStore } from '@/stores/uiStore'
+import { isSearchOpen, useUIStore } from '@/stores/uiStore'
 import { openEmptyWindow } from '@/utils/windowHandoff'
 
 /**
@@ -17,6 +17,7 @@ function isTerminalCtrlKey(e: KeyboardEvent): boolean {
 export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (isSearchOpen()) return
       if (matchesBinding(e, 'global:newWindow')) {
         e.preventDefault()
         openEmptyWindow()
@@ -153,6 +154,10 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     return window.novadeck.window.onCloseRequest?.(() => {
+      if (isSearchOpen()) {
+        useUIStore.getState().closeSearch()
+        return
+      }
       const request = new CustomEvent(CLOSE_REQUEST_EVENT, { cancelable: true })
       window.dispatchEvent(request)
       if (!request.defaultPrevented) void window.novadeck.window.close()

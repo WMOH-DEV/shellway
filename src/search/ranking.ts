@@ -1,6 +1,6 @@
 import type { ProviderId, ResultGroup, ScoredResult, SearchResult } from './types'
 
-export const MATCH = { exact: 1, prefix: 0.85, wordStart: 0.7, substring: 0.55, keyword: 0.4, fuzzy: 0.3, none: 0 } as const
+export const MATCH = { exact: 1, prefix: 0.85, wordStart: 0.7, substring: 0.55, keyword: 0.4, fuzzy: 0.3, indexed: 0.25, none: 0 } as const
 
 export const TYPE_WEIGHTS: Record<ProviderId, number> = {
   tables: 1,
@@ -83,8 +83,7 @@ export function frequencyFromCount(count: number): number {
 }
 
 export function scoreResult(result: SearchResult, queryText: string, usage: UsageLookup = NO_USAGE): number {
-  const match = textMatch(result.title, queryText, result.keywords)
-  if (match === MATCH.none) return 0
+  const match = textMatch(result.title, queryText, result.keywords) || MATCH.indexed
   const hints = result.scoreHints
   const recency = Math.max(hints.recency ?? 0, usage.recency(result.id))
   const frequency = Math.max(hints.frequency ?? 0, usage.frequency(result.id))
@@ -101,7 +100,6 @@ export function scoreResult(result: SearchResult, queryText: string, usage: Usag
 export function rankResults(results: SearchResult[], queryText: string, usage: UsageLookup = NO_USAGE): ScoredResult[] {
   return results
     .map((r) => ({ ...r, score: scoreResult(r, queryText, usage) }))
-    .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
 }
 

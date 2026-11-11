@@ -28,7 +28,7 @@ function toResult(entry: SnippetEntry): SearchResult {
     subtitle: entry.category ? `snippet · ${entry.category}` : 'snippet',
     icon: 'snippet',
     hint: entry.shortcut || undefined,
-    keywords: entry.shortcut,
+    keywords: `${entry.shortcut} ${entry.category}`,
     scoreHints: {},
     payload: { command: entry.command }
   }

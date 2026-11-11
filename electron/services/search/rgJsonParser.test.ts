@@ -71,6 +71,17 @@ describe('parseRgJsonLine', () => {
     ])
   })
 
+  it('handles a huge minified line with thousands of submatches quickly', () => {
+    const text = 'ab '.repeat(200_000)
+    const submatches = Array.from({ length: 100_000 }, (_, i) => ({ match: { text: 'ab' }, start: i * 3, end: i * 3 + 2 }))
+    const started = performance.now()
+    const parsed = parseRgJsonLine(matchLine({ lines: { text }, submatches }), ROOT)!
+    expect(performance.now() - started).toBeLessThan(250)
+    expect(parsed.text.length).toBe(400)
+    expect(parsed.ranges.length).toBeLessThanOrEqual(50)
+    expect(parsed.ranges[1]).toEqual([3, 5])
+  })
+
   it('keeps a CRLF line free of the carriage return', () => {
     expect(parseRgJsonLine(matchLine({ lines: { text: 'x OrderRefunded\r\n' } }), ROOT)?.text).toBe('x OrderRefunded')
   })
@@ -91,6 +102,12 @@ describe('createLineSplitter', () => {
     const lines = [...splitter.push(full.slice(0, 40)), ...splitter.push(full.slice(40))]
     expect(lines).toHaveLength(1)
     expect(parseRgJsonLine(lines[0], ROOT)?.line).toBe(12)
+  })
+
+  it('drops the whole of an oversize line instead of emitting its tail', () => {
+    const splitter = createLineSplitter()
+    expect(splitter.push('x'.repeat(1024 * 1024 + 1))).toEqual([])
+    expect(splitter.push('./tail.php:3:not a real match\nnext\n')).toEqual(['next'])
   })
 
   it('strips carriage returns', () => {

@@ -29,7 +29,8 @@ function localProvider(id: SearchProvider['id'], scopes: SearchProvider['scopes'
     kind: 'local',
     scopes,
     async *search(query) {
-      yield query.text ? results : []
+      const text = query.text.toLowerCase()
+      yield text ? results.filter((r) => r.title.toLowerCase().includes(text)) : []
     },
     actions(result): SearchAction[] {
       if (id === 'tables') {

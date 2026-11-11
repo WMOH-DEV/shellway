@@ -21,7 +21,8 @@ export function runKeybinding(actionId: string): void {
   const combo = getBinding(actionId)
   if (!combo) return
   const isMac = navigator.platform?.includes('Mac') ?? false
-  const target: EventTarget = document.activeElement ?? window
+  const scope = KEYBINDING_ACTIONS.find((action) => action.id === actionId)?.scope
+  const target: EventTarget = (scope === 'terminal' ? document.activeElement : document.body) ?? window
   target.dispatchEvent(new KeyboardEvent('keydown', comboToKeyboardEventInit(combo, isMac)))
 }
 

@@ -58,7 +58,7 @@ describe('commands provider', () => {
     expect(useUIStore.getState().resolvedTheme).toBe('light')
   })
 
-  it('dispatches the bound keystroke on the active element', async () => {
+  it('dispatches SQL shortcuts on the document body so editor focus checks do not swallow them', async () => {
     const dispatched: KeyboardEvent[] = []
     class FakeKeyboardEvent {
       constructor(
@@ -67,7 +67,7 @@ describe('commands provider', () => {
       ) {}
     }
     vi.stubGlobal('KeyboardEvent', FakeKeyboardEvent)
-    vi.stubGlobal('document', { activeElement: { dispatchEvent: (e: KeyboardEvent) => dispatched.push(e) } })
+    vi.stubGlobal('document', { body: { dispatchEvent: (e: KeyboardEvent) => dispatched.push(e) }, activeElement: { dispatchEvent: () => {} } })
     const provider = createCommandsProvider()
     const [keyed] = await collect(provider, makeQuery('toggle sql sidebar'))
     provider.actions(keyed)[0].run()
@@ -82,6 +82,7 @@ describe('commands provider', () => {
     const [exportDb] = await collect(provider, makeQuery('export database', { context }))
     expect(exportDb.title).toBe('Export database shop…')
     expect(exportDb.scoreHints.context).toBe(1)
+    useConnectionStore.setState({ tabs: [makeTab({ activeSubTab: 'sql' })] })
     provider.actions(exportDb)[0].run()
     expect(useSearchIntentStore.getState().pending.s1).toEqual([{ kind: 'sql-action', action: 'export' }])
   })

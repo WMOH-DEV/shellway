@@ -35,7 +35,7 @@ export function toFileResult(rawPath: string, scopeId: string, query: SearchQuer
 export function fileActions(result: { payload: unknown }): SearchAction[] {
   const { scopeId, path, isDirectory } = result.payload as FilePayload
   const actions: SearchAction[] = [
-    { id: 'reveal', label: 'Reveal in SFTP', role: 'primary', run: () => sendIntent(scopeId, { kind: 'sftp-reveal', path }) }
+    { id: 'reveal', label: 'Reveal in SFTP', role: 'primary', run: () => sendIntent(scopeId, { kind: 'sftp-reveal', path: isDirectory ? `${path}/` : path }) }
   ]
   if (!isDirectory) {
     actions.push({ id: 'open-editor', label: 'Open in editor', role: 'secondary', run: () => sendIntent(scopeId, { kind: 'sftp-open', path }) })
