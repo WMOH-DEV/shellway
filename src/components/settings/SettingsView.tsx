@@ -14,7 +14,8 @@ import {
   Shield,
   Cpu,
   Bell,
-  Database
+  Database,
+  Search
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { applyAccentColor, applyDensity } from '@/utils/appearance'
@@ -30,6 +31,7 @@ import { toast } from '@/components/ui/Toast'
 import { FontPicker } from '@/components/settings/FontPicker'
 import { KeybindingsSection } from '@/components/settings/KeybindingsSection'
 import { SqlTabsSettings } from '@/components/settings/SqlTabsSettings'
+import { SearchSettings } from '@/components/settings/SearchSettings'
 import { useUIStore } from '@/stores/uiStore'
 import { useKeybindingStore } from '@/stores/keybindingStore'
 import { useUpdateStore } from '@/stores/updateStore'
@@ -59,6 +61,7 @@ const SECTIONS: TabItem[] = [
   { id: 'sql', label: 'SQL', icon: <Database size={13} /> },
   { id: 'connection', label: 'Connection', icon: <Wifi size={13} /> },
   { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={13} /> },
+  { id: 'search', label: 'Search', icon: <Search size={13} /> },
   { id: 'about', label: 'About', icon: <Info size={13} /> }
 ]
 
@@ -111,6 +114,7 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const { setTheme } = useUIStore()
+  const requestedSection = useUIStore((s) => s.settingsSection)
 
   useEffect(() => {
     if (open) {
@@ -119,6 +123,12 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
       })
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || !requestedSection) return
+    if (SECTIONS.some((section) => section.id === requestedSection)) setActiveSection(requestedSection)
+    useUIStore.setState({ settingsSection: null })
+  }, [open, requestedSection])
 
   const update = useCallback(
     async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -554,6 +564,10 @@ export function SettingsView({ open, onClose }: SettingsViewProps) {
 
           {activeSection === 'shortcuts' && (
             <KeybindingsSection />
+          )}
+
+          {activeSection === 'search' && (
+            <SearchSettings settings={settings} update={update} />
           )}
 
           {activeSection === 'about' && (
