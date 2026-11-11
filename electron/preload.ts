@@ -3,6 +3,7 @@ import type { FeatureWindowRef } from "../src/types/windowResources";
 import type { WebServerCheck } from "../src/utils/webServer/siteFolder";
 import type { CreateSiteContext, CreateSiteInput, CreateSiteSecrets, CreateSiteOutput, Leftover, NameCheck, ProjectCheckRequest, RepoFiles, ResumeMode, RunRecord } from "../src/types/createSite";
 import type { DeployOptions, DeployRecord, DeployResult, DetectResult, DoctorReport, RemoteDrift, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from "../src/types/deploy";
+import type { PortForwardEntry, PortForwardSpec, PortForwardStartResult } from "../src/types/portForward";
 import { serverApi } from "./preload/server";
 import { searchApi } from "./preload/search";
 import type { ActionResult, AlertSettings, CertbotAction, CloudflareStatus, InstallRoute, IssueRequest, IssueResult, NameReadiness, PrepFacts, SslReport, SslResult, SslMode, SwitchLeftover, SwitchPrepared, SwitchRequest, SwitchResult, VerifyResult, ZoneModeResult, ZonePreflight } from "../src/types/ssl";
@@ -687,33 +688,19 @@ const api = {
 
   // ── Port Forwarding ──
   portforward: {
-    add: (
-      connectionId: string,
-      rule: {
-        id: string;
-        type: "local" | "remote" | "dynamic";
-        name?: string;
-        sourceHost: string;
-        sourcePort: number;
-        destinationHost?: string;
-        destinationPort?: number;
-      },
-    ) =>
-      ipcRenderer.invoke("portforward:add", connectionId, rule) as Promise<{
-        success: boolean;
-        data?: unknown;
-        error?: string;
-      }>,
+    add: (connectionId: string, rule: PortForwardSpec) =>
+      ipcRenderer.invoke("portforward:add", connectionId, rule) as Promise<PortForwardStartResult>,
     remove: (connectionId: string, ruleId: string) =>
-      ipcRenderer.invoke(
-        "portforward:remove",
-        connectionId,
-        ruleId,
-      ) as Promise<boolean>,
+      ipcRenderer.invoke("portforward:remove", connectionId, ruleId) as Promise<boolean>,
     list: (connectionId: string) =>
-      ipcRenderer.invoke("portforward:list", connectionId) as Promise<
-        unknown[]
-      >,
+      ipcRenderer.invoke("portforward:list", connectionId) as Promise<PortForwardEntry[]>,
+    onChanged: (callback: (connectionId: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, connectionId: string) => callback(connectionId);
+      ipcRenderer.on("portforward:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("portforward:changed", handler);
+      };
+    },
   },
 
   // ── SQL Client ──
