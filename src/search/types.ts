@@ -1,6 +1,7 @@
 export type ProviderId =
   | 'commands'
   | 'sessions'
+  | 'databases'
   | 'tables'
   | 'queries'
   | 'history'
@@ -30,6 +31,7 @@ export interface SearchQuery {
   scope: ScopeId
   prefix: SearchPrefix | null
   serverFilter: ServerFilter
+  wholeServer: boolean
   context: SearchContext
 }
 

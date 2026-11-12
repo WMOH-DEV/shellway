@@ -51,8 +51,8 @@ function homeFilesProvider(): SearchProvider {
     id: 'files',
     kind: 'remote',
     scopes: ['files'],
-    async *search() {
-      setRemoteSearchStatus({ command: "fd -i -g '*zz*' in ~", server: 'Shop server', searchedHome: true })
+    async *search(query) {
+      setRemoteSearchStatus({ command: null, server: 'Shop server', folder: query.wholeServer ? '/' : '~' })
       yield []
     },
     actions: () => []
@@ -266,10 +266,17 @@ describe('SearchPalette', () => {
     expect(useUIStore.getState().searchOpen).toBe(true)
   })
 
-  it('explains a file search that found nothing in the home folder', async () => {
+  it('says where files were searched and can widen to the whole server', async () => {
     render(<SearchPalette />)
     fireEvent.change(input(), { target: { value: '/zz' } })
-    expect(await screen.findByText(/Searched the home folder on Shop server/)).toBeInTheDocument()
+    expect(await screen.findByText('Searched files in the home folder on Shop server')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search whole server' }))
+    expect(await screen.findByText('Searched all files on Shop server')).toBeInTheDocument()
+    expect(input()).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to current folder' }))
+    expect(await screen.findByText('Searched files in the home folder on Shop server')).toBeInTheDocument()
   })
 
   it('shows a no results message', async () => {

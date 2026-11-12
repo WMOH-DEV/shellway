@@ -5,7 +5,7 @@ import { showSubTab, tabForSession } from '../intentStore'
 import { memoIndex, buildCollection, searchCollection } from '../miniIndex'
 import { recencyFromTimestamp } from '../ranking'
 import type { SearchAction, SearchProvider, SearchQuery, SearchResult } from '../types'
-import { copyText, localSearch } from './shared'
+import { copyText, localSearch, tabHint } from './shared'
 
 const SUGGESTION_COUNT = 5
 const INDEXED_FIELDS = ['name', 'host', 'username', 'group']
@@ -32,12 +32,6 @@ function toEntry(session: Session): SessionEntry {
   }
 }
 
-function hintFor(sessionId: string): string | undefined {
-  const tab = tabForSession(sessionId)
-  if (!tab) return undefined
-  return tab.status === 'connected' ? 'connected' : 'tab open'
-}
-
 function toResult(entry: SessionEntry, now: number): SearchResult {
   const subtitle = `${entry.username}@${entry.host}:${entry.port}`
   return {
@@ -46,7 +40,7 @@ function toResult(entry: SessionEntry, now: number): SearchResult {
     title: entry.name,
     subtitle: entry.group ? `${subtitle} · ${entry.group}` : subtitle,
     icon: 'server',
-    hint: hintFor(entry.id),
+    hint: tabHint(entry.id),
     keywords: `${entry.host} ${entry.username} ${entry.group}`,
     scoreHints: { recency: recencyFromTimestamp(entry.lastConnected, now) },
     payload: { sessionId: entry.id, host: entry.host }

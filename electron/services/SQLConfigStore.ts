@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { createHash } from 'crypto'
 import { hostname } from 'os'
 import { encrypt, decrypt, generateMasterKey } from '../utils/encryption'
+import type { SavedDatabase } from '../../src/types/sql'
 
 /**
  * Stored SQL connection configuration — persisted per session (SSH or standalone DB).
@@ -126,6 +127,14 @@ export class SQLConfigStore {
     return true
   }
 
+  markUsed(sessionId: string): void {
+    const configs = this.store.get('configs', [])
+    const config = configs.find((c) => c.sessionId === sessionId)
+    if (!config) return
+    config.lastUsed = Date.now()
+    this.store.set('configs', configs)
+  }
+
   /** Update only the safe-mode field, leaving encrypted secrets untouched. */
   setSafeMode(sessionId: string, safeMode: string): boolean {
     const configs = this.store.get('configs', [])
@@ -144,12 +153,20 @@ export class SQLConfigStore {
     return this.store.get('configs', []).map((c) => this.decryptSecrets(c))
   }
 
-  /** Get all standalone database configs (sessionId starts with "db-"). */
-  getStandalone(): StoredSQLConfig[] {
+  listStandalone(): SavedDatabase[] {
     return this.store
       .get('configs', [])
       .filter((c) => c.sessionId.startsWith('db-'))
-      .map((c) => this.decryptSecrets(c))
+      .map(({ sessionId, connectionName, type, host, port, database, tag, lastUsed }) => ({
+        sessionId,
+        connectionName,
+        type,
+        host,
+        port,
+        database,
+        tag,
+        lastUsed
+      }))
   }
 
   // ── Key derivation ──

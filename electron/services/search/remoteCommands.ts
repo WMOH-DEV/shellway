@@ -44,6 +44,7 @@ function escapeGlob(text: string): string {
 }
 
 const HOME_DIR = '"$HOME"'
+const SYSTEM_DIRS = ['proc', 'sys', 'dev', 'run']
 
 function wrapped(root: string | null, seconds: number, inner: string): string {
   const run = `exec timeout -k 2 ${seconds} sh -c ${shellEscape(inner)}`
@@ -57,15 +58,16 @@ export function buildFileNameCommand(req: FileNameSearchRequest): { script: stri
   const excludes = validateGlobs(req.excludes, 'exclude')
   const pattern = shellEscape(`*${escapeGlob(text)}*`)
   const limit = `head -n ${FILE_LIMITS.maxResults}`
+  const systemDirs = root === '/' ? SYSTEM_DIRS : []
 
   const fdArgs = [
     `--type f --hidden --color never --max-depth ${FILE_LIMITS.maxDepth} --ignore-case --glob ${pattern}`,
+    ...systemDirs.map((dir) => `--exclude /${dir}`),
     ...excludes.map((glob) => `--exclude ${shellEscape(glob)}`),
     searchDir
   ].join(' ')
-  const prune = excludes.length
-    ? `\\( ${excludes.map((glob) => `-name ${shellEscape(glob)}`).join(' -o ')} \\) -prune -o `
-    : ''
+  const pruneTests = [...systemDirs.map((dir) => `-path ./${dir}`), ...excludes.map((glob) => `-name ${shellEscape(glob)}`)]
+  const prune = pruneTests.length ? `\\( ${pruneTests.join(' -o ')} \\) -prune -o ` : ''
   const findArgs = `${searchDir} -maxdepth ${FILE_LIMITS.maxDepth} ${prune}-type f -iname ${pattern} -print`
 
   const inner = [

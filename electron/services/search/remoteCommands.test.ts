@@ -50,6 +50,19 @@ describe('buildFileNameCommand', () => {
     expect(script).toContain('-prune -o -type f')
   })
 
+  it('skips system folders only when searching the whole server', () => {
+    const whole = buildFileNameCommand(fileReq({ root: '/', excludes: ['vendor'] })).script
+    for (const dir of ['proc', 'sys', 'dev', 'run']) {
+      expect(whole).toContain(`--exclude /${dir}`)
+      expect(whole).toContain(`-path ./${dir}`)
+    }
+    expect(whole).toContain("-path ./run -o -name '\\''vendor'\\'' \\) -prune -o -type f")
+
+    const folder = buildFileNameCommand(fileReq()).script
+    expect(folder).not.toContain('--exclude /proc')
+    expect(folder).not.toContain('-path ./proc')
+  })
+
   it('escapes glob metacharacters in the text', () => {
     const { script } = buildFileNameCommand(fileReq({ text: 'a*b?[c]{d}\\e' }))
     expect(script).toContain('*a\\*b\\?\\[c\\]\\{d\\}\\\\e*')

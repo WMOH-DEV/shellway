@@ -72,6 +72,10 @@ interface UIState {
   requestDatabaseConnect: () => void;
   clearDatabaseConnectRequest: () => void;
 
+  openDatabaseRequest: { sessionId: string; name: string } | null;
+  requestOpenDatabase: (sessionId: string, name: string) => void;
+  clearOpenDatabaseRequest: () => void;
+
   // ── Selected Session (disconnected preview in main area) ──
   selectedSessionId: string | null;
   setSelectedSessionId: (id: string | null) => void;
@@ -188,6 +192,10 @@ export const useUIStore = create<UIState>((set) => ({
   databaseConnectRequested: false,
   requestDatabaseConnect: () => set({ databaseConnectRequested: true }),
   clearDatabaseConnectRequest: () => set({ databaseConnectRequested: false }),
+
+  openDatabaseRequest: null,
+  requestOpenDatabase: (sessionId, name) => set({ openDatabaseRequest: { sessionId, name } }),
+  clearOpenDatabaseRequest: () => set({ openDatabaseRequest: null }),
 
   // ── Selected Session (disconnected preview) ──
   selectedSessionId: null,

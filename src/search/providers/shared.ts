@@ -1,4 +1,5 @@
 import { useConnectionStore } from '@/stores/connectionStore'
+import { savedDatabaseLabel, useSavedDatabaseStore } from '@/stores/savedDatabaseStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import type { ConnectionTab } from '@/types/session'
 import type { SearchQuery, SearchResult } from '../types'
@@ -25,6 +26,12 @@ export function tabForScope(scopeId: string): ConnectionTab | undefined {
   return openTabs().find((tab) => tab.sessionId === scopeId)
 }
 
+export function tabHint(scopeId: string): string | undefined {
+  const tab = tabForScope(scopeId)
+  if (!tab) return undefined
+  return tab.status === 'connected' ? 'connected' : 'tab open'
+}
+
 export function isScopeConnected(scopeId: string): boolean {
   return tabForScope(scopeId)?.status === 'connected'
 }
@@ -32,7 +39,10 @@ export function isScopeConnected(scopeId: string): boolean {
 export function scopeName(scopeId: string): string {
   const tab = tabForScope(scopeId)
   if (tab) return tab.sessionName
-  return useSessionStore.getState().sessions.find((s) => s.id === scopeId)?.name ?? 'Server'
+  const session = useSessionStore.getState().sessions.find((s) => s.id === scopeId)
+  if (session) return session.name
+  const database = useSavedDatabaseStore.getState().databases.find((db) => db.sessionId === scopeId)
+  return database ? savedDatabaseLabel(database) : 'Server'
 }
 
 export function uniqueScopeIds(): string[] {

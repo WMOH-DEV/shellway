@@ -386,6 +386,7 @@ export function registerSQLIPC(): void {
             scopeId: config.configSessionId ?? sqlSessionId,
             database: result.currentDatabase ?? config.database ?? "",
           });
+          if (config.configSessionId) sqlConfigStore.markUsed(config.configSessionId);
           return {
             success: true,
             tunnelPort:
@@ -670,7 +671,7 @@ export function registerSQLIPC(): void {
 
   ipcMain.handle("sql:config:getStandalone", () => {
     try {
-      const configs = sqlConfigStore.getStandalone();
+      const configs = sqlConfigStore.listStandalone();
       return { success: true, data: configs };
     } catch (err: any) {
       return { success: false, error: err.message };

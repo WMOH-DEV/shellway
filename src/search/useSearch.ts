@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSavedDatabaseStore } from '@/stores/savedDatabaseStore'
 import { useUIStore } from '@/stores/uiStore'
 import { providerInScope, providerKey, runSearch } from './broker'
 import { getUsageLookup } from './cacheClient'
@@ -12,6 +13,7 @@ import type { ProviderId, ScopeId, SearchAction, SearchProvider, SearchQuery, Se
 
 export const PROVIDER_SCOPE: Record<ProviderId, ScopeId> = {
   sessions: 'servers',
+  databases: 'servers',
   tables: 'tables',
   queries: 'queries',
   history: 'history',
@@ -53,6 +55,11 @@ const EMPTY_SNAPSHOT: Snapshot = {
   loading: false
 }
 
+export interface FileSearchPlace {
+  server: string
+  folder: string | null
+}
+
 export interface UseSearchResult {
   input: string
   setInput: (value: string) => void
@@ -65,7 +72,9 @@ export interface UseSearchResult {
   elapsedMs: number | null
   loading: boolean
   remoteCommand: string | null
-  searchedHomeOn: string | null
+  fileSearch: FileSearchPlace | null
+  wholeServer: boolean
+  setWholeServer: (value: boolean) => void
   parsed: ParsedInput
   actionsFor: (result: SearchResult) => SearchAction[]
 }
@@ -94,6 +103,7 @@ export function useSearch(open: boolean): UseSearchResult {
   const [input, setInput] = useState(() => useUIStore.getState().searchInitial)
   const [chipScope, setChipScopeState] = useState<ScopeId>('all')
   const [serverFilter, setServerFilter] = useState<ServerFilter>('current')
+  const [wholeServer, setWholeServer] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY_SNAPSHOT)
   const [remoteRunning, setRemoteRunning] = useState(false)
   const remoteStatus = useRemoteSearchStatus()
@@ -105,9 +115,11 @@ export function useSearch(open: boolean): UseSearchResult {
 
   useEffect(() => {
     if (!open) return
+    void useSavedDatabaseStore.getState().load()
     setInput(useUIStore.getState().searchInitial)
     setChipScopeState('all')
     setServerFilter('current')
+    setWholeServer(false)
   }, [open])
 
   const setChipScope = useCallback(
@@ -135,6 +147,7 @@ export function useSearch(open: boolean): UseSearchResult {
       scope: parsed.scope,
       prefix: parsed.prefix,
       serverFilter,
+      wholeServer,
       context: getSearchContext()
     }
     const active = providers.filter((p) => providerInScope(p, query.scope))
@@ -166,7 +179,7 @@ export function useSearch(open: boolean): UseSearchResult {
     }).then(() => publish(false))
 
     return () => controller.abort()
-  }, [open, input, parsed, serverFilter, providers])
+  }, [open, input, parsed, serverFilter, wholeServer, providers])
 
   const actionsFor = useCallback(
     (result: SearchResult) => providers.find((p) => p.id === result.providerId)?.actions(result) ?? [],
@@ -185,7 +198,9 @@ export function useSearch(open: boolean): UseSearchResult {
     elapsedMs: snapshot.elapsedMs,
     loading: snapshot.loading,
     remoteCommand: remoteRunning && remoteStatus.command ? `${remoteStatus.command} on ${remoteStatus.server ?? 'server'}` : null,
-    searchedHomeOn: remoteStatus.searchedHome ? remoteStatus.server : null,
+    fileSearch: remoteStatus.server ? { server: remoteStatus.server, folder: remoteStatus.folder } : null,
+    wholeServer,
+    setWholeServer,
     parsed,
     actionsFor
   }

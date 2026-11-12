@@ -62,6 +62,14 @@ describe('applyPatch', () => {
     expect(s.tables.s1).toBeUndefined()
   })
 
+  it('forgets a deleted saved database', () => {
+    let s = applyPatch(emptySnapshot(), { kind: 'usage', resultId: 'database:db-1', queryText: 'billing' }, NOW)
+    s = applyPatch(s, { kind: 'usage', resultId: 'database:db-2', queryText: 'shop' }, NOW)
+    s = applyPatch(s, { kind: 'forget', scopeId: 'db-1' }, NOW)
+    expect(Object.keys(s.usage)).toEqual(['database:db-2'])
+    expect(JSON.stringify(s.learned)).not.toContain('database:db-1')
+  })
+
   it('replaces a database table list on refresh so renamed and dropped tables disappear', () => {
     let s = applyPatch(emptySnapshot(), { kind: 'tables', scopeId: 's1', database: 'db', tables: [{ name: 'old_name', type: 'table', columns: [] }] }, NOW)
     s = applyPatch(s, { kind: 'tables', scopeId: 's1', database: 'db', tables: [{ name: 'new_name', type: 'table', columns: [] }] }, NOW)

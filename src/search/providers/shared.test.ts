@@ -93,6 +93,7 @@ describe('provider registry', () => {
     const keys = createProviders().map((p) => `${p.id}:${p.kind}`)
     expect(keys).toEqual([
       'sessions:local',
+      'databases:local',
       'tables:local',
       'queries:local',
       'history:local',
@@ -112,10 +113,11 @@ describe('provider registry', () => {
     expect(ids(['tables'])).not.toContain('tables')
     expect(ids(['tables'])).toContain('sessions')
     expect(ids(['servers'])).not.toContain('sessions')
+    expect(ids(['servers'])).not.toContain('databases')
     expect(ids(['files'])).not.toContain('files')
     expect(ids(['commands'])).not.toContain('snippets')
     expect(ids(['commands'])).not.toContain('commands')
     expect(ids(['sites'])).not.toContain('services')
-    expect(ids([])).toHaveLength(11)
+    expect(ids([])).toHaveLength(12)
   })
 })

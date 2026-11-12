@@ -12,6 +12,8 @@ import { AsyncQueue, delay, mergeStreams, MAX_RESULTS, openTabs } from './shared
 const MIN_TEXT_LENGTH = 2
 const DEBOUNCE_MS = 250
 const MAX_TARGETS = 3
+const SERVER_ROOT = '/'
+const HOME_FOLDER = '~'
 
 interface Target {
   tab: ConnectionTab
@@ -35,7 +37,7 @@ function pickTargets(query: SearchQuery): Target[] {
   const { activeTabId, activeSite, connectedTabIds } = query.context
   const connected = openTabs().filter((tab) => tab.type !== 'database' && connectedTabIds.includes(tab.id))
   const candidates = query.serverFilter === 'current' ? connected.filter((tab) => tab.id === activeTabId) : connected
-  return candidates.slice(0, MAX_TARGETS).map((tab) => ({ tab, root: rootFor(tab, activeSite) }))
+  return candidates.slice(0, MAX_TARGETS).map((tab) => ({ tab, root: query.wholeServer ? SERVER_ROOT : rootFor(tab, activeSite) }))
 }
 
 async function* searchTarget(target: Target, query: SearchQuery, signal: AbortSignal): AsyncGenerator<SearchResult[]> {
@@ -50,7 +52,7 @@ async function* searchTarget(target: Target, query: SearchQuery, signal: AbortSi
       .catch(() => null)
     if (!started) return
     searchId = started.searchId
-    setRemoteSearchStatus({ command: started.command, server: target.tab.sessionName, searchedHome: target.root === null })
+    setRemoteSearchStatus({ command: started.command })
     for (;;) {
       const event = await events.pull(signal)
       if (!event) return
@@ -85,12 +87,21 @@ async function* mergedTargets(targets: Target[], query: SearchQuery, signal: Abo
   }
 }
 
+function announce(targets: Target[]): void {
+  const several = targets.length > 1
+  setRemoteSearchStatus({
+    server: several ? `${targets.length} servers` : targets[0].tab.sessionName,
+    folder: several ? null : targets[0].root ?? HOME_FOLDER
+  })
+}
+
 async function* search(query: SearchQuery, signal: AbortSignal): AsyncGenerator<SearchResult[]> {
   if (query.text.length < MIN_TEXT_LENGTH) return
-  await delay(DEBOUNCE_MS, signal)
-  if (signal.aborted) return
   const targets = pickTargets(query)
   if (targets.length === 0) return
+  announce(targets)
+  await delay(DEBOUNCE_MS, signal)
+  if (signal.aborted) return
   const controller = linkedController(signal)
   try {
     yield* mergedTargets(targets, query, controller.signal)

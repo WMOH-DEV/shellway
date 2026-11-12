@@ -46,6 +46,8 @@ export function describeResult(result: SearchResult, snapshot: SearchCacheSnapsh
     }
     case 'files':
       return { kind: 'text', text: filePath(result) }
+    case 'databases':
+      return { kind: 'text', text: result.subtitle.split(SUBTITLE_SEPARATOR)[1] }
     case 'sessions':
       return { kind: 'text', text: result.subtitle.split(SUBTITLE_SEPARATOR)[0] }
     default:
