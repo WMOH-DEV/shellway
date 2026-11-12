@@ -35,6 +35,17 @@ export interface DatabaseConnectionConfig {
   connectionName?: string;
 }
 
+export interface SavedDatabase {
+  sessionId: string;
+  connectionName?: string;
+  type: DatabaseType;
+  host: string;
+  port: number;
+  database: string;
+  tag?: ConnectionTag;
+  lastUsed?: number;
+}
+
 // ── Schema introspection ──
 
 export interface SchemaDatabase {

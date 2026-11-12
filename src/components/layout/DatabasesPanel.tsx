@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Database, Plus, Search, X } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -6,16 +6,7 @@ import { getSQLConnectionState, useSQLStore } from "@/stores/sqlStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { applySearchCachePatch } from "@/search/cacheClient";
-
-/** Minimal shape returned by SQLConfigStore for standalone DB configs */
-interface SavedDBConfig {
-  sessionId: string;
-  connectionName?: string;
-  type: "mysql" | "postgres";
-  host: string;
-  port: number;
-  database: string;
-}
+import { savedDatabaseLabel, useSavedDatabaseStore } from "@/stores/savedDatabaseStore";
 
 interface DatabasesPanelProps {
   /** Open the SQL connect dialog to add a new standalone DB connection */
@@ -39,43 +30,12 @@ export function DatabasesPanel({
 }: DatabasesPanelProps) {
   const { tabs, activeTabId, setActiveTab, removeTab } = useConnectionStore();
 
-  // ── Saved standalone DB configs ──
-  // Initialize from localStorage cache so the list renders instantly on panel switch,
-  // then refresh from IPC in the background.
-  const SAVED_DBS_CACHE_KEY = "sql-saved-dbs";
-  const [savedDBs, setSavedDBs] = useState<SavedDBConfig[]>(() => {
-    try {
-      const cached = localStorage.getItem(SAVED_DBS_CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch { /* corrupt cache — start empty */ }
-    return [];
-  });
+  const savedDBs = useSavedDatabaseStore((s) => s.databases);
 
-  // Refresh saved configs only when the count of open DB tabs changes
-  // (new connection saved / tab closed)
   const dbTabCount = useMemo(
     () => tabs.filter((t) => t.type === "database").length,
     [tabs],
   );
-
-  const loadSavedDBs = useCallback(async () => {
-    try {
-      const result = await window.novadeck.sql.configGetStandalone();
-      if (result?.success && Array.isArray(result.data)) {
-        setSavedDBs(result.data as SavedDBConfig[]);
-        try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(result.data)); } catch {}
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSavedDBs();
-  }, [loadSavedDBs, dbTabCount]);
 
   // ── Search (hidden by default, toggle via icon — matches Sessions panel) ──
   const [searchQuery, setSearchQuery] = useState("");
@@ -116,11 +76,7 @@ export function DatabasesPanel({
   const filteredSavedDBs = useMemo(() => {
     if (!q) return savedDBsNotOpen;
     return savedDBsNotOpen.filter((db) => {
-      const label = (
-        db.connectionName ||
-        `${db.type.toUpperCase()} · ${db.database || db.host}`
-      ).toLowerCase();
-      return label.includes(q);
+      return savedDatabaseLabel(db).toLowerCase().includes(q);
     });
   }, [savedDBsNotOpen, q]);
 
@@ -145,11 +101,7 @@ export function DatabasesPanel({
         .configDelete(sessionId)
         .then(() => {
           applySearchCachePatch({ kind: "forget", scopeId: sessionId });
-          setSavedDBs((prev) => {
-            const updated = prev.filter((d) => d.sessionId !== sessionId);
-            try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(updated)); } catch {}
-            return updated;
-          });
+          useSavedDatabaseStore.getState().forget(sessionId);
         })
         .catch(() => {});
     },
@@ -298,9 +250,7 @@ export function DatabasesPanel({
                   Saved
                 </p>
                 {filteredSavedDBs.map((db) => {
-                  const label =
-                    db.connectionName ||
-                    `${db.type.toUpperCase()} · ${db.database || db.host}`;
+                  const label = savedDatabaseLabel(db);
                   return (
                     <button
                       key={db.sessionId}

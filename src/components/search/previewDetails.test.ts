@@ -44,4 +44,9 @@ describe('describeResult', () => {
   it('shows user and host of a server', () => {
     expect(describeResult(result('session:s1', 'sessions'), null)).toEqual({ kind: 'text', text: 'deploy@shop.example.com:22' })
   })
+
+  it('shows the address of a saved database', () => {
+    const database = result('database:db-1', 'databases', { subtitle: 'MySQL · db.example.com:3306 · billing' })
+    expect(describeResult(database, null)).toEqual({ kind: 'text', text: 'db.example.com:3306' })
+  })
 })

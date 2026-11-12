@@ -15,6 +15,7 @@ import { cn } from "@/utils/cn";
 import { useUIStore } from "@/stores/uiStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { savedDatabaseLabel, useSavedDatabaseStore } from "@/stores/savedDatabaseStore";
 import { SessionManager } from "@/components/sessions/SessionManager";
 import {
   SessionForm,
@@ -28,16 +29,6 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { toast } from "@/components/ui/Toast";
 import { SQL_SESSION_TILE } from "@/components/ui/decorativeColors";
 import type { Session } from "@/types/session";
-
-/** Minimal shape for a saved standalone DB config — used only for collapsed-view avatars */
-interface SavedDBConfig {
-  sessionId: string;
-  connectionName?: string;
-  type: "mysql" | "postgres";
-  host: string;
-  port: number;
-  database: string;
-}
 
 interface SidebarProps {
   onConnect: (
@@ -120,21 +111,7 @@ export function Sidebar({
     });
   }, [sessions]);
 
-  // ── Saved DB configs — only needed for collapsed-view avatars ──
-  // DatabasesPanel owns its own copy for the expanded view.
-  const SAVED_DBS_CACHE_KEY = "sql-saved-dbs";
-  const [savedDBsCollapsed, setSavedDBsCollapsed] = useState<SavedDBConfig[]>(
-    () => {
-      try {
-        const cached = localStorage.getItem(SAVED_DBS_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) return parsed;
-        }
-      } catch {}
-      return [];
-    },
-  );
+  const savedDBs = useSavedDatabaseStore((s) => s.databases);
 
   const dbTabCount = useMemo(
     () => tabs.filter((t) => t.type === "database").length,
@@ -142,28 +119,15 @@ export function Sidebar({
   );
 
   useEffect(() => {
-    let cancelled = false;
-    window.novadeck.sql
-      .configGetStandalone()
-      .then((result) => {
-        if (!cancelled && result?.success && Array.isArray(result.data)) {
-          setSavedDBsCollapsed(result.data as SavedDBConfig[]);
-          // Warm the cache so DatabasesPanel renders instantly on first open
-          try { localStorage.setItem(SAVED_DBS_CACHE_KEY, JSON.stringify(result.data)); } catch {}
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    void useSavedDatabaseStore.getState().load();
   }, [dbTabCount]);
 
   const savedDBsNotOpenCollapsed = useMemo(() => {
     const openIds = new Set(
       tabs.filter((t) => t.type === "database").map((t) => t.sessionId),
     );
-    return savedDBsCollapsed.filter((db) => !openIds.has(db.sessionId));
-  }, [savedDBsCollapsed, tabs]);
+    return savedDBs.filter((db) => !openIds.has(db.sessionId));
+  }, [savedDBs, tabs]);
 
   // ── Import / Export dialogs (shared across both panels) ──
   const { createSession, reload: reloadSessions } = useSession();
@@ -472,9 +436,7 @@ export function Sidebar({
             {/* Saved-but-not-open database avatars — databases panel only */}
             {sidebarPanel === "databases" &&
               savedDBsNotOpenCollapsed.map((db) => {
-                const label =
-                  db.connectionName ||
-                  `${db.type.toUpperCase()} · ${db.database || db.host}`;
+                const label = savedDatabaseLabel(db);
                 return (
                   <Tooltip key={db.sessionId} content={label} side="right">
                     <button
@@ -544,8 +506,7 @@ export function Sidebar({
         onClose={() => setImportDialogOpen(false)}
         onComplete={() => {
           reloadSessions();
-          // Invalidate saved-DBs cache so DatabasesPanel picks up imported standalone DB configs
-          localStorage.removeItem("sql-saved-dbs");
+          void useSavedDatabaseStore.getState().load();
         }}
       />
     </aside>

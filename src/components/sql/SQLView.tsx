@@ -1458,6 +1458,8 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
     sessionId,
     connectionId,
     ready: connectionStatus === 'connected' && !!sqlSessionId && !!connectionConfig,
+    canConnect: connectionStatus === 'disconnected' && !!savedConfig,
+    connect: handleQuickConnect,
     currentDatabase,
     switchDatabase: handleDatabaseSelected,
     openTable: openTableFromSearch,

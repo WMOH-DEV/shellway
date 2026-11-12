@@ -119,9 +119,9 @@ describe('remote files provider', () => {
 
   const connectedContext = { ...EMPTY_CONTEXT, activeTabId: 't1', activeSessionId: 's1', connectedTabIds: ['t1'] }
 
-  async function runSearch(text: string, signal?: AbortSignal) {
+  async function runSearch(text: string, signal?: AbortSignal, wholeServer = false) {
     const provider = createRemoteFilesProvider()
-    const pending = collect(provider, makeQuery(text, { context: connectedContext }), signal)
+    const pending = collect(provider, makeQuery(text, { context: connectedContext, wholeServer }), signal)
     await vi.advanceTimersByTimeAsync(250)
     return { pending, provider }
   }
@@ -164,15 +164,24 @@ describe('remote files provider', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(findFiles).toHaveBeenCalledTimes(1)
     expect(findFiles.mock.calls[0][0].root).toBeUndefined()
-    expect(useRemoteSearchStatus.getState().searchedHome).toBe(true)
+    expect(useRemoteSearchStatus.getState().folder).toBe('~')
     emit({ searchId: 'search-1', kind: 'done', truncated: false, timedOut: false })
     expect(await pending).toEqual([])
   })
 
-  it('does not report a home search when a folder is known', async () => {
+  it('reports the folder it searched', async () => {
     const { pending } = await runSearch('order')
     await vi.advanceTimersByTimeAsync(0)
-    expect(useRemoteSearchStatus.getState().searchedHome).toBe(false)
+    expect(useRemoteSearchStatus.getState()).toMatchObject({ folder: '/var/www/shop', server: 'Shop server' })
+    emit({ searchId: 'search-1', kind: 'done', truncated: false, timedOut: false })
+    await pending
+  })
+
+  it('searches from the server root when asked to search the whole server', async () => {
+    const { pending } = await runSearch('order', undefined, true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(findFiles.mock.calls[0][0].root).toBe('/')
+    expect(useRemoteSearchStatus.getState().folder).toBe('/')
     emit({ searchId: 'search-1', kind: 'done', truncated: false, timedOut: false })
     await pending
   })

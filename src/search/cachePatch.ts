@@ -125,7 +125,7 @@ function without<T>(record: Record<string, T>, key: string): Record<string, T> {
 }
 
 function belongsToScope(resultId: string, scopeId: string): boolean {
-  return resultId === `session:${scopeId}` || resultId.includes(`:${scopeId}:`)
+  return resultId === `session:${scopeId}` || resultId === `database:${scopeId}` || resultId.includes(`:${scopeId}:`)
 }
 
 function withoutScopeIds<T>(record: Record<string, T>, scopeId: string): Record<string, T> {

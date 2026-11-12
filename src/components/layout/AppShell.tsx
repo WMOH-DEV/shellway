@@ -210,6 +210,13 @@ export function AppShell({ children }: AppShellProps) {
     }
   }, [databaseConnectRequested, clearDatabaseConnectRequest, handleConnectDatabase])
 
+  const openDatabaseRequest = useUIStore((s) => s.openDatabaseRequest)
+  useEffect(() => {
+    if (!openDatabaseRequest) return
+    handleOpenSavedDatabase(openDatabaseRequest.sessionId, openDatabaseRequest.name)
+    useUIStore.getState().clearOpenDatabaseRequest()
+  }, [openDatabaseRequest, handleOpenSavedDatabase])
+
   // Listen for session connect requests from DisconnectedSessionView
   useEffect(() => {
     if (connectSessionId) {

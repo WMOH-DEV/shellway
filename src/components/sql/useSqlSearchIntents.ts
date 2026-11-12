@@ -7,6 +7,8 @@ interface SqlSearchIntentOptions {
   sessionId: string
   connectionId: string
   ready: boolean
+  canConnect: boolean
+  connect: () => void
   currentDatabase: string | null
   switchDatabase: (database: string) => Promise<void>
   openTable: (table: string, newTab: boolean) => void
@@ -31,12 +33,19 @@ function targetDatabase(intent: SearchIntent): string | null {
 }
 
 export function useSqlSearchIntents(options: SqlSearchIntentOptions): void {
-  const { sessionId, connectionId, ready, currentDatabase, switchDatabase } = options
+  const { sessionId, connectionId, ready, canConnect, currentDatabase, switchDatabase } = options
   const pending = useSearchIntentStore((s) => s.pending[sessionId])
   const [queue, setQueue] = useState<SearchIntent[]>([])
   const switchingTo = useRef<string | null>(null)
   const optionsRef = useRef(options)
   optionsRef.current = options
+  const connectRequested = !!pending?.some((i) => i.kind === 'sql-connect')
+
+  useEffect(() => {
+    if (!connectRequested || !canConnect) return
+    useSearchIntentStore.getState().take(sessionId, ['sql-connect'])
+    optionsRef.current.connect()
+  }, [connectRequested, canConnect, sessionId])
 
   useEffect(() => {
     if (!ready || !pending?.some((i) => SQL_INTENTS.includes(i.kind))) return

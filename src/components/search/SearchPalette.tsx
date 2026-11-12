@@ -8,7 +8,7 @@ import { recordSelection } from '@/search/cacheClient'
 import { PREFIX_LABELS } from '@/search/queryParser'
 import { useSearchSettingsStore } from '@/search/searchSettings'
 import type { ScopeId, ScoredResult, SearchAction, SearchPrefix, ServerFilter } from '@/search/types'
-import { useSearch } from '@/search/useSearch'
+import { useSearch, type FileSearchPlace } from '@/search/useSearch'
 import { cn } from '@/utils/cn'
 import { SearchPreview } from './SearchPreview'
 import { LIST_ID, optionId, SearchResultList } from './SearchResultList'
@@ -50,6 +50,29 @@ function resultsLabel(total: number, elapsedMs: number | null): string {
   return elapsedMs === null ? `${total} ${noun}` : `${total} ${noun} · ${elapsedMs} ms`
 }
 
+function describePlace({ server, folder }: FileSearchPlace, wholeServer: boolean): string {
+  if (wholeServer) return `Searched all files on ${server}`
+  if (folder === null) return `Searched files on ${server}`
+  if (folder === '~') return `Searched files in the home folder on ${server}`
+  return `Searched files in ${folder} on ${server}`
+}
+
+function FileSearchBar({ place, wholeServer, onChange }: { place: FileSearchPlace; wholeServer: boolean; onChange: (wholeServer: boolean) => void }) {
+  const canWiden = !wholeServer && place.folder !== '/'
+  return (
+    <div className="mx-2 mb-2 flex items-center gap-2 rounded-lg bg-nd-surface/60 px-2.5 py-1.5 text-xs text-nd-text-muted">
+      <span className="min-w-0 flex-1 truncate" title={place.folder ?? undefined}>
+        {describePlace(place, wholeServer)}
+      </span>
+      {(canWiden || wholeServer) && (
+        <button type="button" onClick={() => onChange(!wholeServer)} className="shrink-0 font-medium text-nd-accent hover:underline">
+          {wholeServer ? 'Back to current folder' : 'Search whole server'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function SearchPalette() {
   const open = useUIStore((s) => s.searchOpen)
   return open ? <PaletteDialog /> : null
@@ -58,7 +81,7 @@ export function SearchPalette() {
 function PaletteDialog() {
   const closeSearch = useUIStore((s) => s.closeSearch)
   const search = useSearch(true)
-  const { input, setInput, chipScope, setChipScope, serverFilter, setServerFilter, grouped, scopeCounts, elapsedMs, loading, remoteCommand, searchedHomeOn, parsed, actionsFor } = search
+  const { input, setInput, chipScope, setChipScope, serverFilter, setServerFilter, grouped, scopeCounts, elapsedMs, loading, remoteCommand, fileSearch, wholeServer, setWholeServer, parsed, actionsFor } = search
   const disabledScopes = useSearchSettingsStore((s) => s.disabledScopes)
   const activeTab = useConnectionStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -152,6 +175,11 @@ function PaletteDialog() {
     inputRef.current?.focus()
   }
 
+  const changeFileReach = (value: boolean) => {
+    setWholeServer(value)
+    inputRef.current?.focus()
+  }
+
   const connectAndSearch = () => {
     if (!activeTab) return
     useUIStore.getState().requestConnectSession(activeTab.sessionId)
@@ -200,7 +228,7 @@ function PaletteDialog() {
                 aria-activedescendant={active ? optionId(activeIndex) : undefined}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Search servers, tables, files, commands…"
+                placeholder="Search servers, databases, tables, files, commands…"
                 spellCheck={false}
                 autoComplete="off"
                 className="min-w-0 flex-1 bg-transparent text-[17px] text-nd-text-primary outline-none placeholder:text-nd-text-dim"
@@ -266,24 +294,18 @@ function PaletteDialog() {
                   <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-nd-text-muted">
                     {isEmptyQuery ? (
                       <>
-                        <span>Search servers, tables, saved queries, files, commands and settings.</span>
+                        <span>Search servers, databases, tables, saved queries, files, commands and settings.</span>
                         <span className="text-xs">Start with a prefix to narrow it down.</span>
                       </>
                     ) : (
                       !loading &&
                       !needsConnection && (
-                        <>
-                          <span>{`No results for "${parsed.text}"`}</span>
-                          {searchedHomeOn && (
-                            <span className="max-w-[360px] text-xs">
-                              {`Searched the home folder on ${searchedHomeOn}. Open a folder in SFTP or pick a site to search there.`}
-                            </span>
-                          )}
-                        </>
+                        <span>{`No results for "${parsed.text}"`}</span>
                       )
                     )}
                   </div>
                 )}
+                {fileSearch && !needsConnection && <FileSearchBar place={fileSearch} wholeServer={wholeServer} onChange={changeFileReach} />}
                 {needsConnection && (
                   <button
                     type="button"

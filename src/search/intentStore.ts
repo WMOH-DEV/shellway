@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useUIStore } from '@/stores/uiStore'
 import { useSessionStore } from '@/stores/sessionStore'
+import { savedDatabaseLabel, useSavedDatabaseStore } from '@/stores/savedDatabaseStore'
 import { toast } from '@/components/ui/Toast'
 import type { ConnectionTab } from '@/types/session'
 
@@ -11,6 +12,7 @@ export type SearchIntent =
   | { kind: 'open-table'; database: string; table: string; newTab: boolean }
   | { kind: 'open-sql'; sql: string; title: string; database?: string }
   | { kind: 'sql-action'; action: SqlIntentAction }
+  | { kind: 'sql-connect' }
   | { kind: 'sftp-reveal'; path: string }
   | { kind: 'sftp-open'; path: string; line?: number }
   | { kind: 'terminal-insert'; text: string }
@@ -21,7 +23,7 @@ type SubTab = ConnectionTab['activeSubTab']
 
 export const INTENT_TTL_MS = 60_000
 
-export const SQL_INTENTS: IntentKind[] = ['open-table', 'open-sql', 'sql-action']
+export const SQL_INTENTS: IntentKind[] = ['open-table', 'open-sql', 'sql-action', 'sql-connect']
 export const SFTP_INTENTS: IntentKind[] = ['sftp-reveal', 'sftp-open']
 export const TERMINAL_INTENTS: IntentKind[] = ['terminal-insert']
 
@@ -73,9 +75,26 @@ export function showSubTab(tabId: string, subTab: SubTab): void {
   if (tab.detachedSubTabs?.includes(subTab)) void window.novadeck.window.focusFeature({ tabId, subTab })
 }
 
+export function openSavedDatabase(sessionId: string): boolean {
+  const database = useSavedDatabaseStore.getState().databases.find((db) => db.sessionId === sessionId)
+  if (!database) return false
+  const tab = tabForSession(sessionId)
+  if (!tab || tab.status === 'disconnected') useSearchIntentStore.getState().push(sessionId, { kind: 'sql-connect' })
+  useUIStore.getState().requestOpenDatabase(sessionId, savedDatabaseLabel(database))
+  return true
+}
+
 export function sendIntent(sessionId: string, intent: SearchIntent): void {
   const tab = tabForSession(sessionId)
   const subTab = subTabForIntent(intent.kind)
+  if (tab?.detachedSubTabs?.includes(subTab)) {
+    showSubTab(tab.id, subTab)
+    return
+  }
+  if (tab?.status !== 'connected' && openSavedDatabase(sessionId)) {
+    useSearchIntentStore.getState().push(sessionId, intent)
+    return
+  }
   if (!tab) {
     if (!useSessionStore.getState().sessions.some((s) => s.id === sessionId)) {
       toast.info('Not connected', 'Open this connection first, then try again.')
@@ -83,10 +102,6 @@ export function sendIntent(sessionId: string, intent: SearchIntent): void {
     }
     useSearchIntentStore.getState().push(sessionId, intent)
     useUIStore.getState().requestConnectSession(sessionId)
-    return
-  }
-  if (tab.detachedSubTabs?.includes(subTab)) {
-    showSubTab(tab.id, subTab)
     return
   }
   useSearchIntentStore.getState().push(sessionId, intent)

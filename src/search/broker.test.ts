@@ -8,6 +8,7 @@ const query: SearchQuery = {
   scope: 'all',
   prefix: null,
   serverFilter: 'all',
+  wholeServer: false,
   context: { activeTabId: null, activeSessionId: null, activeDatabase: null, activeSite: null, connectedTabIds: [] }
 }
 

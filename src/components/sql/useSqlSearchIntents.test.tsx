@@ -16,12 +16,13 @@ function setup(overrides: Partial<Parameters<typeof useSqlSearchIntents>[0]> = {
     openQuery: vi.fn(),
     newQuery: vi.fn(),
     refresh: vi.fn(),
-    databaseAction: vi.fn()
+    databaseAction: vi.fn(),
+    connect: vi.fn()
   }
   const view = renderHook(
-    (props: { ready: boolean; currentDatabase: string | null }) =>
+    (props: { ready: boolean; currentDatabase: string | null; canConnect: boolean }) =>
       useSqlSearchIntents({ sessionId: SESSION, connectionId: CONNECTION, ...props, ...handlers, ...overrides }),
-    { initialProps: { ready: true, currentDatabase: 'shop' } }
+    { initialProps: { ready: true, currentDatabase: 'shop' as string | null, canConnect: false } }
   )
   return { handlers, view }
 }
@@ -45,13 +46,13 @@ describe('useSqlSearchIntents', () => {
 
   it('waits until the connection is ready and keeps the intent meanwhile', async () => {
     const { handlers, view } = setup()
-    view.rerender({ ready: false, currentDatabase: 'shop' })
+    view.rerender({ ready: false, currentDatabase: 'shop', canConnect: false })
 
     act(() => useSearchIntentStore.getState().push(SESSION, { kind: 'open-table', database: 'shop', table: 'orders', newTab: true }))
     expect(handlers.openTable).not.toHaveBeenCalled()
     expect(useSearchIntentStore.getState().pending[SESSION]).toHaveLength(1)
 
-    view.rerender({ ready: true, currentDatabase: 'shop' })
+    view.rerender({ ready: true, currentDatabase: 'shop', canConnect: false })
 
     await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', true))
     expect(handlers.openTable).toHaveBeenCalledTimes(1)
@@ -65,7 +66,7 @@ describe('useSqlSearchIntents', () => {
     await waitFor(() => expect(handlers.switchDatabase).toHaveBeenCalledWith('staging'))
     expect(handlers.openTable).not.toHaveBeenCalled()
 
-    view.rerender({ ready: true, currentDatabase: 'staging' })
+    view.rerender({ ready: true, currentDatabase: 'staging', canConnect: false })
 
     await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false))
     expect(handlers.switchDatabase).toHaveBeenCalledTimes(1)
@@ -118,5 +119,31 @@ describe('useSqlSearchIntents', () => {
     expect(handlers.openQuery).not.toHaveBeenCalled()
     expect(useSearchIntentStore.getState().pending[SESSION]).toHaveLength(1)
     expect(useSearchIntentStore.getState().pending.other).toHaveLength(1)
+  })
+
+  it('connects once when search asks and the saved connection is ready', async () => {
+    const { handlers, view } = setup()
+    view.rerender({ ready: false, currentDatabase: 'shop', canConnect: false })
+
+    act(() => useSearchIntentStore.getState().push(SESSION, { kind: 'sql-connect' }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(handlers.connect).not.toHaveBeenCalled()
+
+    view.rerender({ ready: false, currentDatabase: 'shop', canConnect: true })
+    await waitFor(() => expect(handlers.connect).toHaveBeenCalledTimes(1))
+    expect(useSearchIntentStore.getState().pending[SESSION]).toEqual([])
+
+    view.rerender({ ready: false, currentDatabase: 'shop', canConnect: false })
+    view.rerender({ ready: false, currentDatabase: 'shop', canConnect: true })
+    expect(handlers.connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a connect request when the connection is already open', async () => {
+    const { handlers } = setup()
+
+    act(() => useSearchIntentStore.getState().push(SESSION, { kind: 'sql-connect' }))
+
+    await waitFor(() => expect(useSearchIntentStore.getState().pending[SESSION]).toEqual([]))
+    expect(handlers.connect).not.toHaveBeenCalled()
   })
 })

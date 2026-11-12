@@ -5,6 +5,7 @@ export const MATCH = { exact: 1, prefix: 0.85, wordStart: 0.7, substring: 0.55, 
 export const TYPE_WEIGHTS: Record<ProviderId, number> = {
   tables: 1,
   sessions: 1,
+  databases: 1,
   queries: 0.95,
   sites: 0.9,
   commands: 0.9,
@@ -18,6 +19,7 @@ export const TYPE_WEIGHTS: Record<ProviderId, number> = {
 export const GROUP_LABELS: Record<ProviderId, string> = {
   tables: 'Tables',
   sessions: 'Servers',
+  databases: 'Databases',
   queries: 'Saved queries',
   sites: 'Sites',
   commands: 'Commands',
@@ -28,7 +30,7 @@ export const GROUP_LABELS: Record<ProviderId, string> = {
   settings: 'Settings'
 }
 
-const GROUP_ORDER: ProviderId[] = ['sessions', 'tables', 'queries', 'files', 'sites', 'services', 'commands', 'snippets', 'history', 'settings']
+const GROUP_ORDER: ProviderId[] = ['sessions', 'databases', 'tables', 'queries', 'files', 'sites', 'services', 'commands', 'snippets', 'history', 'settings']
 
 export const WEIGHTS = { recency: 0.25, frequency: 0.15, context: 0.2, learned: 0.3, disconnectedPenalty: 0.3 } as const
 export const BEST_MATCH_MARGIN = 0.1

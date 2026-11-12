@@ -5,6 +5,7 @@ import { emptySnapshot } from '../cachePatch'
 import { useSearchIntentStore } from '../intentStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useServerFactsStore } from '@/stores/serverFactsStore'
+import { useSavedDatabaseStore } from '@/stores/savedDatabaseStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { useSQLStore } from '@/stores/sqlStore'
@@ -41,7 +42,7 @@ export const EMPTY_CONTEXT: SearchContext = {
 }
 
 export function makeQuery(text: string, overrides: Partial<SearchQuery> = {}): SearchQuery {
-  return { raw: text, text, scope: 'all', prefix: null, serverFilter: 'all', context: EMPTY_CONTEXT, ...overrides }
+  return { raw: text, text, scope: 'all', prefix: null, serverFilter: 'all', wholeServer: false, context: EMPTY_CONTEXT, ...overrides }
 }
 
 export function resetSearchState(): void {
@@ -51,9 +52,10 @@ export function resetSearchState(): void {
   useConnectionStore.setState({ tabs: [], activeTabId: null })
   useServerFactsStore.setState({ byConnection: {} })
   useSessionStore.setState({ sessions: [] })
+  useSavedDatabaseStore.setState({ databases: [] })
   useSnippetStore.setState({ snippets: [] })
   useSQLStore.setState({ connections: {} })
-  useUIStore.setState({ connectSessionId: null, selectedSessionId: null })
+  useUIStore.setState({ connectSessionId: null, selectedSessionId: null, openDatabaseRequest: null })
 }
 
 export function stubBrowser(novadeck: Record<string, unknown> = {}): { writeText: ReturnType<typeof vi.fn> } {
