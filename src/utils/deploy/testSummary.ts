@@ -15,7 +15,8 @@ export function makeSummary(overrides: SummaryOverrides = {}): SiteSummary {
       mirrorHead: 'aaa', pending: '', behind: null, busy: false, currentSubject: '', remoteSubject: '', progress: null, cancelling: false,
       now: 1030, ...overrides.state
     },
-    history: overrides.history ?? []
+    history: overrides.history ?? [],
+    user: null
   }
 }
 

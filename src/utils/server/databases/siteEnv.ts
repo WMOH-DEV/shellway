@@ -7,13 +7,14 @@ import type { SiteEnv, SiteEnvFacts } from './types'
 const MAX_ENV_BYTES = 65536
 const ENCODED = 'b64:'
 
-const SCRIPT = `R="$HOME/.shellway-deploy"
+const SCRIPT = `PER_ROOT=$(cat <<'EOS'
+cd / || exit 1
+R=$1
 B="$R/bin/shellway-deploy"
-[ -x "$B" ] || { echo @@nodeploy; exit 0; }
 for c in "$R"/sites/*/site.conf; do
   [ -f "$c" ] || continue
   n=$(basename "$(dirname "$c")")
-  p=$("$B" env-path "$n" 2>/dev/null) || continue
+  p=$(SHELLWAY_DEPLOY_ROOT="$R" "$B" env-path "$n" 2>/dev/null) || continue
   echo "@@site $n"
   printf '%s\\n' "$p"
   if [ -f "$p" ] && [ -r "$p" ] && [ "$(wc -c < "$p")" -le ${MAX_ENV_BYTES} ] && b=$(base64 -w0 "$p"); then
@@ -22,6 +23,23 @@ for c in "$R"/sites/*/site.conf; do
     printf 'b64:%s\\n' "$b"
   fi
 done
+EOS
+)
+found=0
+if [ -x "$HOME/.shellway-deploy/bin/shellway-deploy" ]; then
+  found=1
+  sh -c "$PER_ROOT" sh "$HOME/.shellway-deploy"
+fi
+if [ "$(id -u)" = 0 ]; then
+  for name in $(getent passwd | while IFS=: read -r name _ uid _ _ home _; do
+    [ "$uid" -ge 1000 ] 2>/dev/null && [ "$uid" -lt 60000 ] && [ -x "$home/.shellway-deploy/bin/shellway-deploy" ] && echo "$name"
+  done); do
+    found=1
+    home=$(getent passwd "$name" | cut -d: -f6)
+    sudo -n -u "$name" -H sh -c "$PER_ROOT" sh "$home/.shellway-deploy"
+  done
+fi
+[ "$found" = 1 ] || echo @@nodeploy
 `
 
 function unquote(value: string): string {

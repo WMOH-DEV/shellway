@@ -13,7 +13,7 @@ import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPo
 import { pm2ServiceName, pm2SetupScript } from './pm2'
 import { installComposerScript, installPhpScript, phpNeed } from './php'
 import { laravelScaffoldScript, localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } from './scaffold'
-import { PROJECT_SHELL, ROOT_SHELL, createSiteScript, enableModulesScript, folderScript, placeholderFolderScript, sitePaths } from './siteScripts'
+import { PROJECT_SHELL, ROOT_SHELL, createSiteScript, createSiteUserScript, enableModulesScript, folderScript, placeholderFolderScript, sitePaths } from './siteScripts'
 import { TEMPLATES, siteFileText, usesPhp, type SiteTemplate } from './templates'
 import { siteNames } from './templates/shared'
 import { assertDomain, assertFolder, assertHealthPath, assertIpv4, assertOwner, assertPhpVersion, assertPort } from './validate'
@@ -27,6 +27,7 @@ const asRoot = (script: string): Pick<PlanAction, 'commands' | 'script'> => ({ c
 const MANUAL_DNS_NOTE = 'No Cloudflare zone for this domain. Create the record at your DNS provider, then press Check again.'
 
 const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
+  user: 'Site user',
   repo: 'Repository',
   scaffold: 'New project',
   php: 'PHP',
@@ -46,7 +47,7 @@ const TITLES: Record<Exclude<PlanActionId, 'site'>, string> = {
 
 export const actionTitle = (id: PlanActionId, driver: WebServerDriver): string => (id === 'site' ? `${driver.label} site` : TITLES[id])
 
-const MINUTES: Record<PlanActionId, number> = { repo: 0.25, scaffold: 1.5, php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3, jobs: 0.25 }
+const MINUTES: Record<PlanActionId, number> = { user: 0.25, repo: 0.25, scaffold: 1.5, php: 2, composer: 0.5, pm2: 0.5, folder: 0.25, pool: 0.25, modules: 0.25, site: 0.25, database: 0.25, dns: 0.5, https: 1, deploys: 0.25, env: 0.25, 'first-deploy': 3, jobs: 0.25 }
 
 function phpAction(input: CreateSiteInput, template: SiteTemplate, tools: ServerTools): PlanAction[] {
   if (!usesPhp(template)) return []
@@ -141,6 +142,18 @@ function scaffoldActions(input: CreateSiteInput, template: SiteTemplate): PlanAc
     chip: 'new',
     config: files.join('\n'),
     note: 'Written on this PC. Shellway never deletes the folder on this PC.'
+  })]
+}
+
+function siteUserActions({ owner, createOwner }: CreateSiteInput): PlanAction[] {
+  if (!createOwner) return []
+  return [action({
+    id: 'user',
+    title: TITLES.user,
+    summary: `Create the user ${assertOwner(owner)} with a home folder`,
+    chip: 'new',
+    ...asRoot(createSiteUserScript(owner)),
+    note: 'The site, its deploys, scheduler and queue worker run as this user. Shellway never deletes it.'
   })]
 }
 
@@ -390,6 +403,7 @@ function codeActions(input: CreateSiteInput, template: SiteTemplate, tools: Serv
 export function buildPlan(input: CreateSiteInput, tools: ServerTools, driver: WebServerDriver): PlanAction[] {
   const template = TEMPLATES[input.template]
   return [
+    ...siteUserActions(input),
     ...repoActions(input),
     ...phpAction(input, template, tools),
     ...composerAction(input, template, tools),

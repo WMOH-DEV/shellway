@@ -44,7 +44,8 @@ interface SiteListRowProps {
 function aliasText(entry: SiteEntry, user: string): string {
   const others = entry.hosts.filter((h) => h.name !== entry.domain)
   const alias = others.length === 1 && others[0].name === `www.${entry.domain}` ? '+ www' : others.length > 0 ? `+ ${others.length} more` : ''
-  return [alias, shortPath(entry.summary.config.path, user)].filter(Boolean).join(' · ')
+  const runsAs = entry.summary.user === null ? '' : `runs as ${entry.summary.user}`
+  return [alias, shortPath(entry.summary.config.path, user), runsAs].filter(Boolean).join(' · ')
 }
 
 function deploySub(entry: SiteEntry): string {
@@ -86,7 +87,7 @@ export function SiteListRow({ entry, pcDrift, inventory, user, now, starting, ha
           <span className="truncate font-mono text-[13px] font-medium text-nd-text-primary">{entry.domain ?? config.name}</span>
           <StackChip summary={summary} />
         </div>
-        <span className="truncate font-mono text-xs text-nd-text-muted">{aliasText(entry, user)}</span>
+        <span className="truncate font-mono text-xs text-nd-text-muted" title={aliasText(entry, user)}>{aliasText(entry, user)}</span>
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">

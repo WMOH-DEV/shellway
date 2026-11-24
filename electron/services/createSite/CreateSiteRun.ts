@@ -101,6 +101,7 @@ export class CreateSiteRun {
 
   private execute(action: PlanAction): Promise<void> {
     switch (action.id) {
+      case 'user': return this.install(action, `Creating the user ${this.input.owner} failed.`)
       case 'repo': return this.prepareRepo()
       case 'scaffold': return this.makeProject(action)
       case 'php': return this.install(action, `Installing PHP ${this.input.phpVersion} failed.`)

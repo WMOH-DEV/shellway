@@ -368,3 +368,18 @@ describe('buildPlan for a site without code', () => {
     expect(byId(actions, 'folder').script).toContain('index.html')
   })
 })
+
+describe('site user', () => {
+  it('creates a missing site user before anything else, as root', () => {
+    const [first] = buildPlan(baseInput({ owner: 'shop', createOwner: true }), allTools(), NGINX.driver)
+    expect(first).toMatchObject({ id: 'user', chip: 'new', commands: [ROOT_SHELL] })
+    expect(first.script).toContain("useradd -m -s /bin/bash 'shop'")
+    expect(first.script).toContain('shop is a system account')
+    expect(first.script).toContain('There is already a group called shop')
+    expect(first.script).toContain("if uid=$(id -u 'shop' 2>/dev/null); then")
+  })
+
+  it('adds no user step for an existing user', () => {
+    expect(buildPlan(baseInput(), allTools(), NGINX.driver).some((action) => action.id === 'user')).toBe(false)
+  })
+})

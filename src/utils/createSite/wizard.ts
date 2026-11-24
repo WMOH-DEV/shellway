@@ -15,7 +15,7 @@ import { existingDnsOf } from './existingDns'
 import { phpNeed } from './php'
 import { assertPoolOwner } from './phpPool'
 import { TEMPLATES, usesPhp } from './templates'
-import { assertBuildOutput, assertDomain, assertFolder, assertPort, assertSiteName } from './validate'
+import { assertBuildOutput, assertDomain, assertFolder, assertPort, assertSiteName, isValidOwner } from './validate'
 
 export const WIZARD_STEPS = ['site', 'stack', 'commands', 'domain', 'review'] as const
 
@@ -66,6 +66,8 @@ export interface CreateSiteDraft {
   repoPrivate: boolean
   githubOwner: string
   localParent: string
+  siteUser: string
+  newSiteUser: boolean
 }
 
 export interface NameCheckState {
@@ -81,6 +83,7 @@ const DEFAULT_OUTPUT_DIR = 'dist'
 const MAX_POLL_MINUTES = 60
 
 const ACTION_STEPS: Record<PlanActionId, WizardStep> = {
+  user: 'site',
   repo: 'site',
   scaffold: 'stack',
   php: 'stack',
@@ -120,7 +123,28 @@ function firstUsableTemplate(tools: ServerTools): TemplateId {
   return TEMPLATE_IDS.find((id) => templateAvailability(id, tools).state !== 'blocked') ?? 'blank'
 }
 
-export function newDraft(tools: ServerTools): CreateSiteDraft {
+export const DEFAULT_SITE_USER = 'deploy'
+
+export function defaultSiteUser(siteUsers: string[] | null): Pick<CreateSiteDraft, 'siteUser' | 'newSiteUser'> {
+  if (siteUsers === null) return { siteUser: '', newSiteUser: false }
+  const existing = siteUsers.includes(DEFAULT_SITE_USER) ? DEFAULT_SITE_USER : siteUsers[0]
+  return existing === undefined ? { siteUser: DEFAULT_SITE_USER, newSiteUser: true } : { siteUser: existing, newSiteUser: false }
+}
+
+export const ownerOf = (draft: Pick<CreateSiteDraft, 'siteUser'>, context: Pick<CreateSiteContext, 'owner' | 'siteUsers'>): string =>
+  context.siteUsers === null ? context.owner : draft.siteUser
+
+export function siteUserProblem({ siteUser, newSiteUser }: CreateSiteDraft, { siteUsers }: Pick<CreateSiteContext, 'siteUsers'>): string | null {
+  if (siteUsers === null) return null
+  if (siteUser === '') return 'Enter a name for the new site user'
+  if (!isValidOwner(siteUser)) return 'Site user: lowercase letters, digits, dots, dashes and underscores'
+  if (siteUser === 'root') return 'A site cannot run as root. Pick another site user.'
+  if (newSiteUser && siteUsers.includes(siteUser)) return `${siteUser} already exists. Pick it from the list instead.`
+  if (!newSiteUser && !siteUsers.includes(siteUser)) return `${siteUser} is no longer on this server. Pick another site user.`
+  return null
+}
+
+export function newDraft(tools: ServerTools, siteUsers: string[] | null = null): CreateSiteDraft {
   const { branch, sourceMode, pollMinutes } = newSite()
   const template = firstUsableTemplate(tools)
   return {
@@ -156,7 +180,8 @@ export function newDraft(tools: ServerTools): CreateSiteDraft {
     repoName: '',
     repoPrivate: true,
     githubOwner: '',
-    localParent: ''
+    localParent: '',
+    ...defaultSiteUser(siteUsers)
   }
 }
 
@@ -269,15 +294,17 @@ export function siteStepProblem(draft: CreateSiteDraft, check: NameCheckState | 
   if (nameProblem !== null) return nameProblem
   if (fails(() => assertSiteName(draft.siteName))) return 'Site name: lowercase letters, digits, dots and dashes'
   if (context.deploySiteNames.includes(draft.siteName)) return `There is already a site named ${draft.siteName}`
+  const userProblem = siteUserProblem(draft, context)
+  if (userProblem !== null) return userProblem
   if (fails(() => assertFolder(draft.folder))) return 'Enter the folder as a full path, such as /var/www/shop'
   return codeProblem(draft, project)
 }
 
-export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSiteContext, 'tools' | 'owner'>): string | null {
+export function stackStepProblem(draft: CreateSiteDraft, context: Pick<CreateSiteContext, 'tools' | 'owner' | 'siteUsers'>): string | null {
   if (!allowedTemplates(draft.codeSource).includes(draft.template)) {
     return draft.codeSource === 'new' ? `${TEMPLATES[draft.template].label} cannot start as a new project. Use your own repository for it.` : 'Pick Static site or PHP for a site without code'
   }
-  if (usesPhp(TEMPLATES[draft.template]) && fails(() => assertPoolOwner(context.owner))) {
+  if (usesPhp(TEMPLATES[draft.template]) && fails(() => assertPoolOwner(ownerOf(draft, context)))) {
     return `You are logged in as root, and PHP-FPM will not run a site as root. Log in as a regular user (Setup can create one), then open Create site again.`
   }
   return templateProblem(draft, context.tools)
@@ -365,7 +392,8 @@ export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: Cl
     includeWww: draft.includeWww,
     siteName: draft.siteName,
     folder: draft.folder,
-    owner: context.owner,
+    owner: ownerOf(draft, context),
+    createOwner: context.siteUsers !== null && draft.newSiteUser,
     codeSource: draft.codeSource,
     newRepo: isNew ? projectCheckRequest(draft).repo : null,
     localParent: isNew ? draft.localParent.trim() : null,

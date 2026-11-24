@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { CodeSource, ServerTools, TemplateId } from '@/types/createSite'
+import type { CodeSource, CreateSiteContext, ServerTools, TemplateId } from '@/types/createSite'
 import { defaultDatabase } from '@/utils/createSite/database'
 import { suggestStack, type StackSuggestion } from '@/utils/createSite/repoSuggest'
 import { isIssuableName } from '@/utils/ssl/https/issueCommands'
@@ -60,14 +60,14 @@ const autoFolder = (siteName: string): string => (siteName === '' ? '' : folderF
 
 export type CreateSitePrefill = Partial<Pick<CreateSiteDraft, 'domain' | 'template' | 'appPort'>>
 
-function prefilledDraft(tools: ServerTools, prefill: CreateSitePrefill): DraftFields {
-  const draft = { ...newDraft(tools), ...prefill }
+function prefilledDraft(tools: ServerTools, siteUsers: string[] | null, prefill: CreateSitePrefill): DraftFields {
+  const draft = { ...newDraft(tools, siteUsers), ...prefill }
   const siteName = draft.domain ? siteNameFromDomain(draft.domain) : draft.siteName
   return { ...draft, siteName, folder: autoFolder(siteName), includeWww: draft.domain ? wwwByDefault(draft.domain) : draft.includeWww }
 }
 
-export function useCreateSiteDraft(connectionId: string, sessionId: string, tools: ServerTools, prefill: CreateSitePrefill = {}): CreateSiteDraftModel {
-  const [fields, setFields] = useState<DraftFields>(() => prefilledDraft(tools, prefill))
+export function useCreateSiteDraft(connectionId: string, sessionId: string, { tools, siteUsers }: Pick<CreateSiteContext, 'tools' | 'siteUsers'>, prefill: CreateSitePrefill = {}): CreateSiteDraftModel {
+  const [fields, setFields] = useState<DraftFields>(() => prefilledDraft(tools, siteUsers, prefill))
   const [email, setEmail] = useState('')
   const [nameEdited, setNameEdited] = useState(false)
   const [folderEdited, setFolderEdited] = useState(false)

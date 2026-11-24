@@ -75,15 +75,15 @@ export function requireCoordinator(): DeployCoordinator {
 async function webServerCheck(connectionId: string, name: string) {
   const exec = execFor(connectionId)
   if (!exec) throw new Error('Not connected')
-  const site = (await requireCoordinator().service(connectionId).listSites()).find((s) => s.config.name === name)
+  const site = (await requireCoordinator().allSites(connectionId)).find((s) => s.config.name === name)
   if (!site) throw new Error(`Unknown site ${name}`)
   return readWebServerCheck(exec, site.config.path)
 }
 
 async function registerKey(connectionId: string, name: string, token: string | null, remember: boolean): Promise<{ alreadyAdded: boolean }> {
-  const service = requireCoordinator().service(connectionId)
-  const site = (await service.listSites()).find((s) => s.config.name === name)
+  const site = (await requireCoordinator().allSites(connectionId)).find((s) => s.config.name === name)
   if (!site) throw new Error(`Unknown site ${name}`)
+  const service = requireCoordinator().service(connectionId, site.user)
   const repo = parseGitHubRepo(site.config.repoUrl)
   if (!repo) throw new Error('Automatic key setup only works for GitHub repositories')
   const useToken = token ?? localStore!.githubToken()
@@ -107,12 +107,13 @@ export function registerDeployIPC(): void {
   coordinator.startWatching()
 
   const service = (connectionId: unknown) => requireCoordinator().service(str(connectionId, 'connection'))
+  const siteService = (connectionId: unknown, name: unknown) => requireCoordinator().siteService(str(connectionId, 'connection'), str(name, 'site'))
 
-  handle('deploy:runner-info', (c) => service(c).runnerInfo())
-  handle('deploy:install-runner', (c) => service(c).installRunner())
+  handle('deploy:runner-info', (c) => requireCoordinator().runnerInfo(str(c, 'connection')))
+  handle('deploy:install-runner', (c) => requireCoordinator().installRunner(str(c, 'connection')))
   handle('deploy:list', (c, s) => requireCoordinator().list(str(c, 'connection'), str(s, 'session')))
-  handle('deploy:save', (c, config) => service(c).saveSite(config as SiteConfig))
-  handle('deploy:remove', (c, name) => service(c).removeSite(str(name, 'site')))
+  handle('deploy:save', (c, config) => requireCoordinator().saveSite(str(c, 'connection'), config as SiteConfig))
+  handle('deploy:remove', async (c, name) => (await siteService(c, name)).removeSite(str(name, 'site')))
   handle('deploy:deploy', (c, name, options) => requireCoordinator().deploy(str(c, 'connection'), str(name, 'site'), deployOptions(options)))
   handle('deploy:preview', (c, name) => requireCoordinator().preview(str(c, 'connection'), str(name, 'site')))
   handle('deploy:rollback',(c, name, target) => requireCoordinator().rollback(str(c, 'connection'), str(name, 'site'), str(target, 'deploy')))
@@ -120,15 +121,15 @@ export function registerDeployIPC(): void {
   handle('deploy:cancel', (c, name) => requireCoordinator().cancel(str(c, 'connection'), str(name, 'site')))
   handle('deploy:resume', (c, name) => requireCoordinator().resume(str(c, 'connection'), str(name, 'site')))
   handle('deploy:apply', (c, name) => requireCoordinator().apply(str(c, 'connection'), str(name, 'site')))
-  handle('deploy:log', (c, name, id, offset) => service(c).readLog(str(name, 'site'), str(id, 'deploy'), typeof offset === 'number' ? offset : 0))
-  handle('deploy:doctor', (c, name) => service(c).doctor(str(name, 'site')))
+  handle('deploy:log', async (c, name, id, offset) => (await siteService(c, name)).readLog(str(name, 'site'), str(id, 'deploy'), typeof offset === 'number' ? offset : 0))
+  handle('deploy:doctor', async (c, name) => (await siteService(c, name)).doctor(str(name, 'site')))
   handle('deploy:web-check', (c, name) => webServerCheck(str(c, 'connection'), str(name, 'site')))
-  handle('deploy:keygen', (c, name) => service(c).keygen(str(name, 'site')))
-  handle('deploy:check-remote', (c, name) => service(c).checkRemote(str(name, 'site')))
-  handle('deploy:env-read', (c, name) => service(c).readEnv(str(name, 'site')))
-  handle('deploy:env-write', (c, name, content) => {
+  handle('deploy:keygen', async (c, name) => (await siteService(c, name)).keygen(str(name, 'site')))
+  handle('deploy:check-remote', async (c, name) => (await siteService(c, name)).checkRemote(str(name, 'site')))
+  handle('deploy:env-read', async (c, name) => (await siteService(c, name)).readEnv(str(name, 'site')))
+  handle('deploy:env-write', async (c, name, content) => {
     if (typeof content !== 'string') throw new Error('Invalid content')
-    return service(c).writeEnv(str(name, 'site'), content)
+    return (await siteService(c, name)).writeEnv(str(name, 'site'), content)
   })
   handle('deploy:detect', (c, path) => service(c).detect(str(path, 'path')))
   handle('deploy:register-key', (c, name, token, remember) =>

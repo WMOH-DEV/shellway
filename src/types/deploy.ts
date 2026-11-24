@@ -78,6 +78,12 @@ export interface SiteSummary {
   config: SiteConfig
   state: SiteState
   history: DeployRecord[]
+  user: string | null
+}
+
+export interface SiteUser {
+  name: string
+  hasRunner: boolean
 }
 
 export type SitePathKind = 'missing' | 'dir' | 'symlink' | 'foreign-symlink' | 'file'

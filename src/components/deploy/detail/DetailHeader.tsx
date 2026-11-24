@@ -81,6 +81,7 @@ export function DetailHeader({ connectionId, summary, pcDrift, starting, rollbac
       <SiteStatusBadge summary={summary} pcDrift={pcDrift} />
       <BehindChip summary={summary} pcDrift={pcDrift} />
       <NoHttpsChip connectionId={connectionId} path={config.path} healthUrl={config.healthUrl} />
+      {summary.user !== null && <span className="shrink-0 rounded px-1.5 py-px text-xs text-nd-text-muted">runs as {summary.user}</span>}
       <div className="flex-1" />
       {rollbackTo && (
         <Tooltip content={`Roll back to ${shortSha(rollbackTo.commit)}`}>

@@ -41,7 +41,7 @@ function failure(result: ExecResult, fallback: string): Error {
 }
 
 export class DeployService {
-  constructor(private readonly exec: RemoteExec) {}
+  constructor(private readonly exec: RemoteExec, private readonly user: string | null = null) {}
 
   static get bundledVersion(): number {
     return BUNDLED_VERSION
@@ -64,7 +64,7 @@ export class DeployService {
 
   async listSites(): Promise<SiteSummary[]> {
     const result = await this.run(`${RUNNER} dump`, { timeoutMs: LIST_TIMEOUT_MS }, 'Could not read sites')
-    return parseDump(result.stdout)
+    return parseDump(result.stdout).map((summary) => ({ ...summary, user: this.user }))
   }
 
   async saveSite(config: SiteConfig): Promise<void> {

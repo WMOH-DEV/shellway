@@ -9,6 +9,22 @@ export const ROOT_SHELL = 'sudo -n sh -s'
 
 export const PROJECT_SHELL = 'sh -s'
 
+export function createSiteUserScript(user: string): string {
+  const name = quote(assertOwner(user))
+  return [
+    'set -e',
+    `if uid=$(id -u ${name} 2>/dev/null); then`,
+    `  [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] || { echo "${user} is a system account. Pick another site user." >&2; exit 1; }`,
+    `  echo "${user} already exists"`,
+    `elif getent group ${name} >/dev/null; then`,
+    `  echo "There is already a group called ${user}. Pick another name." >&2; exit 1`,
+    'else',
+    `  useradd -m -s /bin/bash ${name}`,
+    'fi',
+    ''
+  ].join('\n')
+}
+
 export interface SitePaths {
   file: string
   enabledLink: string | null

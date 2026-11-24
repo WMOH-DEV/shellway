@@ -123,7 +123,7 @@ function CreateActions({ plan, fullSudo, starting, rechecking, onCreate, onReche
 }
 
 export function SetupFlow({ connectionId, sessionId, serverName, context, starting, startError, rechecking, prefill, onCancel, onStart, onRecheck }: SetupFlowProps) {
-  const model = useCreateSiteDraft(connectionId, sessionId, context.tools, prefill)
+  const model = useCreateSiteDraft(connectionId, sessionId, context, prefill)
   const [step, setStep] = useState<WizardStep>('site')
   const driver = driverFor(context.server)
   const zone = checkedZone(model)
@@ -163,7 +163,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
 
   return (
     <WizardFrame subtitle={model.draft.domain || `folder, ${driver.label}, DNS, HTTPS and deploys, in one go`} onBack={onCancel} aside={aside} footer={footer}>
-      {step === 'site' && <SiteStep model={model} tools={context.tools} serverIp={context.serverIp} />}
+      {step === 'site' && <SiteStep model={model} tools={context.tools} serverIp={context.serverIp} siteUsers={context.siteUsers} />}
       {step === 'stack' && <StackStep model={model} tools={context.tools} serverLabel={driver.label} serverName={serverName} />}
       {step === 'commands' && <CommandsStep model={model} connectionId={connectionId} server={context.server} tools={context.tools} />}
       {step === 'domain' && <DomainStep model={model} zone={zone} dns={dns} />}
