@@ -87,6 +87,7 @@ export interface CreateSiteInput {
   siteName: string
   folder: string
   owner: string
+  createOwner: boolean
   codeSource: CodeSource
   newRepo: NewRepo | null
   localParent: string | null
@@ -110,7 +111,7 @@ export interface CreateSiteInput {
   healthPath: string
 }
 
-export type PlanActionId = 'repo' | 'scaffold' | 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy' | 'jobs'
+export type PlanActionId = 'user' | 'repo' | 'scaffold' | 'php' | 'composer' | 'pm2' | 'folder' | 'pool' | 'modules' | 'site' | 'database' | 'dns' | 'https' | 'deploys' | 'env' | 'first-deploy' | 'jobs'
 
 export type PlanChip = 'new' | 'ready' | 'needs you' | 'installs' | 'blocked' | `${number} to enable`
 
@@ -202,6 +203,7 @@ export interface CreateSiteContext {
   tools: ServerTools
   serverIp: string | null
   owner: string
+  siteUsers: string[] | null
   fullSudo: boolean
   zones: CloudflareZoneRef[]
   dnsEdit: boolean

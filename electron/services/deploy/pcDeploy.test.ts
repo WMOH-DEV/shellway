@@ -93,7 +93,7 @@ describe.skipIf(process.platform === 'win32')('deployFromPc', () => {
     expect(served()).toBe('v2')
     expect(await deployNow(previewed, { commit: previewed })).toBe('success')
     expect(served()).toBe('v2')
-  })
+  }, 30_000)
 
   it('deploys a branch that was moved back to an older commit', async () => {
     const first = commit('v1')

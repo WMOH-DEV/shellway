@@ -96,9 +96,9 @@ function RepoNote({ read, model }: { read: RepoRead; model: CreateSiteDraftModel
   if (read.status === 'reading') return <p className="text-xs text-nd-text-muted">Reading the repository on this PC to suggest a stack…</p>
   if (read.status === 'failed') {
     return (
-      <div role="status" className="flex items-center gap-2 text-xs text-nd-text-muted">
-        <span className="min-w-0 truncate" title={read.error}>Could not read the repository from this PC, so pick the stack yourself. {read.error}</span>
-        <Button size="sm" variant="ghost" onClick={() => void model.readRepo()}>Try again</Button>
+      <div role="status" className="flex items-start gap-2 text-xs text-nd-text-muted">
+        <span className="min-w-0 flex-1 break-words">Could not read the repository from this PC, so pick the stack yourself. {read.error}</span>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void model.readRepo()}>Try again</Button>
       </div>
     )
   }

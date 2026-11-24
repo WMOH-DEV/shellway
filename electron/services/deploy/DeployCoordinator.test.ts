@@ -7,6 +7,8 @@ import type { DeployRecord } from '../../../src/types/deploy'
 import { DeployCoordinator, type CoordinatorDeps } from './DeployCoordinator'
 import { DeployService } from './DeployService'
 import { LocalGit } from './LocalGit'
+import type { RemoteExec } from './DeployService'
+import { SITE_USERS_SCRIPT } from './siteUser'
 import { fakeCrontab, git, localExec, makeSite } from './testFixtures'
 
 let base: string
@@ -183,5 +185,76 @@ describe.skipIf(process.platform === 'win32')('DeployCoordinator', () => {
     it('rejects an unknown site', async () => {
       await expect(coordinator.preview('c1', 'nope')).rejects.toThrow(/Unknown site/)
     })
+  })
+})
+
+const SUDO_AS = /^sudo -n -u (\S+) -H -- sh -c ([\s\S]*)$/
+
+describe.skipIf(process.platform === 'win32')('DeployCoordinator logged in as root', () => {
+  let userExec: RemoteExec
+  let sudoUsers: string[]
+
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'sw-coord-root-')))
+    origin = join(base, 'origin.git')
+    work = join(base, 'work')
+    mkdirSync(join(base, 'root-home'))
+    mkdirSync(join(base, 'deploy-home'))
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
+    execFileSync('git', ['init', '-q', '-b', 'main', work])
+    git(work, 'remote', 'add', 'origin', origin)
+    commit('v1')
+    const env = { ...process.env, SHELLWAY_CRONTAB: fakeCrontab(base).bin, SHELLWAY_CRON_PROCESSES: 'node' }
+    const rootExec = localExec({ ...env, HOME: join(base, 'root-home') })
+    userExec = localExec({ ...env, HOME: join(base, 'deploy-home') })
+    sudoUsers = []
+    const asRoot: RemoteExec = async (command, options) => {
+      if (options?.stdin === SITE_USERS_SCRIPT) return { stdout: 'deploy 1\nubuntu 0\n', stdoutBytes: 22, stderr: '', code: 0 }
+      const sudo = SUDO_AS.exec(command)
+      if (!sudo) return rootExec(command, options)
+      sudoUsers.push(sudo[1])
+      return userExec(`sh -c ${sudo[2]}`, options)
+    }
+    deps = {
+      execFor: () => asRoot,
+      local: { usesDeploy: () => true, markUsesDeploy: vi.fn(), lastSeen: () => 0, setLastSeen: vi.fn() },
+      git: new LocalGit(join(base, 'pc-cache'), { allowLocalRepos: true }),
+      notify: vi.fn(),
+      broadcast: vi.fn(),
+      trackIntervalMs: 100
+    }
+    coordinator = new DeployCoordinator(deps)
+  })
+
+  afterEach(() => rmSync(base, { recursive: true, force: true }))
+
+  it('lists the sites of other users and deploys them as their user', async () => {
+    const asDeploy = new DeployService(userExec)
+    await asDeploy.installRunner()
+    await asDeploy.saveSite(site())
+    expect(await coordinator.runnerInfo('c1')).toMatchObject({ installed: true })
+    const [listed] = await coordinator.list('c1', 's1')
+    expect(listed).toMatchObject({ user: 'deploy', config: { name: 'app' } })
+    sudoUsers = []
+    const id = await coordinator.deploy('c1', 'app')
+    expect(await finishedRecord()).toMatchObject({ id, status: 'success' })
+    expect(sudoUsers.length).toBeGreaterThan(0)
+    expect(new Set(sudoUsers)).toEqual(new Set(['deploy']))
+  })
+
+  it('updates the runner of every user that has one, and leaves root without one', async () => {
+    await new DeployService(userExec).installRunner()
+    await coordinator.installRunner('c1')
+    expect(await new DeployService(deps.execFor('c1')!).runnerInfo()).toMatchObject({ installed: false })
+    expect(await new DeployService(userExec).runnerInfo()).toMatchObject({ installed: true })
+  })
+
+  it('adds a new site to root\'s own runner, installing it first, and lists it next to the other users\' sites', async () => {
+    const asDeploy = new DeployService(userExec)
+    await asDeploy.installRunner()
+    await asDeploy.saveSite(site())
+    await coordinator.saveSite('c1', { ...site(), name: 'rootapp', path: join(base, 'rootapp') })
+    const listed = (await coordinator.list('c1', 's1')).map((summary) => [summary.config.name, summary.user])
+    expect(listed).toEqual(expect.arrayContaining([['app', 'deploy'], ['rootapp', null]]))
   })
 })

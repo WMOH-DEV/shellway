@@ -46,9 +46,12 @@ function DeploySettings({ model }: { model: CreateSiteDraftModel }) {
 function GitRepoFields({ model }: { model: CreateSiteDraftModel }) {
   const { draft, patch } = model
   return (
-    <div className="grid grid-cols-[1fr_160px] gap-3">
-      <Input label="Repository" placeholder="git@github.com:owner/repo.git" value={draft.repoUrl} onChange={(e) => patch({ repoUrl: e.target.value.trim() })} />
-      <Input label="Branch" value={draft.branch} onChange={(e) => patch({ branch: e.target.value.trim() })} />
+    <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-[1fr_160px] gap-3">
+        <Input label="Repository" placeholder="git@github.com:owner/repo.git" value={draft.repoUrl} onChange={(e) => patch({ repoUrl: e.target.value.trim() })} />
+        <Input label="Branch" value={draft.branch} onChange={(e) => patch({ branch: e.target.value.trim() })} />
+      </div>
+      <span className="text-2xs text-nd-text-muted">The server fetches the code with its own deploy key over SSH. This PC reads it with your git login: your SSH key first, then your HTTPS login for GitHub if there is no SSH key.</span>
     </div>
   )
 }

@@ -37,6 +37,7 @@ export const makeContext = (overrides: Partial<CreateSiteContext> = {}): CreateS
   tools: allTools(),
   serverIp: '203.0.113.10',
   owner: 'deploy',
+  siteUsers: null,
   fullSudo: true,
   zones: [{ id: 'zone-1', name: 'example.com' }],
   dnsEdit: true,

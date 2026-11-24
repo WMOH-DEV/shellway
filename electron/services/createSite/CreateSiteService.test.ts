@@ -122,6 +122,21 @@ describe('CreateSiteService', () => {
     await expect(makeService(fakeStore([])).start('c1', 'session-1', input, secrets)).rejects.toThrow(message)
   })
 
+  describe('site user', () => {
+    it('refuses another owner than the login user when not logged in as root', async () => {
+      await expect(makeService(fakeStore([])).start('c1', 'session-1', { ...INPUT, owner: 'shop' }, SECRETS)).rejects.toThrow('must be the user Shellway is logged in as (deploy)')
+    })
+
+    it('refuses root as the site user', async () => {
+      await expect(makeService(fakeStore([]), { user: 'root' }).start('c1', 'session-1', { ...INPUT, owner: 'root' }, SECRETS)).rejects.toThrow('cannot run as root')
+    })
+
+    it('refuses a user that does not exist unless Shellway creates it', async () => {
+      const service = makeService(fakeStore([]), { user: 'root' })
+      await expect(service.start('c1', 'session-1', { ...INPUT, owner: 'shop' }, SECRETS)).rejects.toThrow('There is no user shop')
+    })
+  })
+
   describe('deleting a finished site', () => {
     const finished = (changes: Partial<RunRecord> = {}) => storedRun({ phase: 'done', machineId: MACHINE, ...changes })
 
@@ -155,6 +170,11 @@ describe('CreateSiteService', () => {
       const store = fakeStore([finished(changes)])
       await expect(makeService(store).deleteSite('c1', 'run-1', typed)).rejects.toThrow(message)
       expect(store.save).not.toHaveBeenCalled()
+    })
+
+    it('lets root delete a site that runs as another user', async () => {
+      const store = fakeStore([finished()])
+      expect((await makeService(store, { user: 'root' }).deleteSite('c1', 'run-1', 'shop')).phase).toBe('removed')
     })
 
     it('lets a delete that failed be tried again', async () => {

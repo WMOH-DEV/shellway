@@ -1,9 +1,10 @@
-import type { DeployOptions, DeployRecord, ShipPreview, SiteSummary } from '../../../src/types/deploy'
+import type { DeployOptions, DeployRecord, RunnerInfo, ShipPreview, SiteConfig, SiteSummary } from '../../../src/types/deploy'
 import type { RemoteExec } from './DeployService'
 import { DeployService, newDeployId } from './DeployService'
 import type { DeployLocalStore } from './DeployLocalStore'
 import type { LocalGit } from './LocalGit'
 import { approvalArgs, deployFromPc } from './pcDeploy'
+import { asSiteUser, readSiteUsers } from './siteUser'
 
 export interface CoordinatorDeps {
   execFor: (connectionId: string) => RemoteExec | null
@@ -42,6 +43,9 @@ const ENV_TITLES: Partial<Record<DeployRecord['status'], string>> = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const uniqueByName = (summaries: SiteSummary[]): SiteSummary[] =>
+  summaries.filter((summary, index) => summaries.findIndex((other) => other.config.name === summary.config.name) === index)
+
 const newestFinish = (summary: SiteSummary): number =>
   summary.history.reduce((max, r) => Math.max(max, r.finished ?? 0), 0)
 
@@ -55,14 +59,54 @@ export class DeployCoordinator {
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
-  service(connectionId: string): DeployService {
+  service(connectionId: string, user: string | null = null): DeployService {
     const exec = this.deps.execFor(connectionId)
     if (!exec) throw new Error('Not connected')
-    return new DeployService(exec)
+    return new DeployService(user === null ? exec : asSiteUser(exec, user), user)
+  }
+
+  async siteService(connectionId: string, name: string): Promise<DeployService> {
+    return this.service(connectionId, await this.userOf(connectionId, name))
+  }
+
+  async saveSite(connectionId: string, config: SiteConfig): Promise<void> {
+    const service = await this.siteService(connectionId, config.name)
+    if (!(await service.runnerInfo()).installed) await service.installRunner()
+    await service.saveSite(config)
+  }
+
+  async runnerInfo(connectionId: string): Promise<RunnerInfo> {
+    const own = await this.service(connectionId).runnerInfo()
+    const others = await this.runnerUsers(connectionId)
+    if (others.length === 0) return own
+    const infos = [own, ...(await Promise.all(others.map((user) => this.service(connectionId, user).runnerInfo())))]
+    const versions = infos.flatMap(({ version }) => (version === null ? [] : [version]))
+    return { installed: true, version: versions.length > 0 ? Math.min(...versions) : null, bundledVersion: own.bundledVersion }
+  }
+
+  async installRunner(connectionId: string): Promise<void> {
+    const others = await this.runnerUsers(connectionId)
+    const own = this.service(connectionId)
+    if (others.length === 0 || (await own.runnerInfo()).installed) await own.installRunner()
+    for (const user of others) await this.service(connectionId, user).installRunner()
+  }
+
+  async allSites(connectionId: string): Promise<SiteSummary[]> {
+    const others = await this.runnerUsers(connectionId)
+    const own = this.service(connectionId)
+    if (others.length === 0) return own.listSites()
+    const ownSites = (await own.runnerInfo()).installed ? await own.listSites() : []
+    const otherSites = await Promise.all(others.map((user) => this.service(connectionId, user).listSites()))
+    return uniqueByName([ownSites, ...otherSites].flat())
+  }
+
+  async siteNames(connectionId: string): Promise<string[]> {
+    if (!(await this.runnerInfo(connectionId)).installed) return []
+    return (await this.allSites(connectionId)).map((site) => site.config.name)
   }
 
   async list(connectionId: string, sessionId: string): Promise<SiteSummary[]> {
-    const summaries = await this.service(connectionId).listSites()
+    const summaries = await this.allSites(connectionId)
     this.sites.set(connectionId, { sessionId, summaries })
     if (summaries.length > 0) this.deps.local.markUsesDeploy(sessionId)
     for (const summary of summaries) this.deps.local.setLastSeen(sessionId, summary.config.name, newestFinish(summary))
@@ -70,9 +114,8 @@ export class DeployCoordinator {
   }
 
   async deploy(connectionId: string, name: string, options: DeployOptions = {}): Promise<string> {
-    const service = this.service(connectionId)
-    const site = (await service.listSites()).find((s) => s.config.name === name)
-    if (!site) throw new Error(`Unknown site ${name}`)
+    const site = await this.findSite(connectionId, name)
+    const service = this.service(connectionId, site.user)
     if (site.state.busy) throw new Error('A deploy is already running for this site')
     const id = newDeployId()
     if (site.config.sourceMode === 'pc') {
@@ -86,49 +129,47 @@ export class DeployCoordinator {
   }
 
   async preview(connectionId: string, name: string): Promise<ShipPreview> {
-    const service = this.service(connectionId)
-    const site = (await service.listSites()).find((s) => s.config.name === name)
-    if (!site) throw new Error(`Unknown site ${name}`)
-    if (site.config.sourceMode === 'auto') return service.preview(name)
+    const site = await this.findSite(connectionId, name)
+    if (site.config.sourceMode === 'auto') return this.service(connectionId, site.user).preview(name)
     const { repoUrl, branch, migrationsPath } = site.config
     return this.deps.git.preview({ url: repoUrl, branch, live: site.state.current, pending: site.state.pending, migrationsPath })
   }
 
   async rollback(connectionId: string, name: string, targetId: string): Promise<string> {
     const id = newDeployId()
-    await this.service(connectionId).startRollback(name, targetId, id)
+    await (await this.siteService(connectionId, name)).startRollback(name, targetId, id)
     this.track(connectionId, name, id)
     return id
   }
 
   async approve(connectionId: string, name: string): Promise<string> {
     const id = newDeployId()
-    await this.service(connectionId).startApprove(name, id)
+    await (await this.siteService(connectionId, name)).startApprove(name, id)
     this.track(connectionId, name, id)
     return id
   }
 
   async apply(connectionId: string, name: string): Promise<string> {
     const id = newDeployId()
-    await this.service(connectionId).startApply(name, id)
+    await (await this.siteService(connectionId, name)).startApply(name, id)
     this.track(connectionId, name, id)
     return id
   }
 
   async cancel(connectionId: string, name: string): Promise<void> {
-    await this.service(connectionId).cancel(name)
+    await (await this.siteService(connectionId, name)).cancel(name)
     this.deps.broadcast('deploy:changed', connectionId)
   }
 
   async resume(connectionId: string, name: string): Promise<void> {
-    await this.service(connectionId).resume(name)
+    await (await this.siteService(connectionId, name)).resume(name)
     this.deps.broadcast('deploy:changed', connectionId)
   }
 
   async onConnected(connectionId: string, sessionId: string, label: string): Promise<void> {
     if (!this.deps.local.usesDeploy(sessionId)) return
     try {
-      const summaries = await this.service(connectionId).listSites()
+      const summaries = await this.allSites(connectionId)
       this.sites.set(connectionId, { sessionId, summaries })
       this.summariseMissed(sessionId, label, summaries)
       this.deps.broadcast('deploy:changed', connectionId)
@@ -177,11 +218,30 @@ export class DeployCoordinator {
     this.attemptedHeads.set(key, head)
     const id = newDeployId()
     try {
-      await deployFromPc(this.service(connectionId), this.deps.git, fresh.config, fresh.state, id, 'pc')
+      await deployFromPc(this.service(connectionId, fresh.user), this.deps.git, fresh.config, fresh.state, id, 'pc')
       this.track(connectionId, config.name, id)
     } catch (err) {
       this.deps.notify('Auto deploy could not start', `${config.name}: ${(err as Error).message}`)
     }
+  }
+
+  private async runnerUsers(connectionId: string): Promise<string[]> {
+    const exec = this.deps.execFor(connectionId)
+    if (!exec) throw new Error('Not connected')
+    const users = await readSiteUsers(exec)
+    return (users ?? []).filter((user) => user.hasRunner).map((user) => user.name)
+  }
+
+  private async userOf(connectionId: string, name: string): Promise<string | null> {
+    const cached = this.sites.get(connectionId)?.summaries.find((s) => s.config.name === name)
+    if (cached) return cached.user
+    return (await this.allSites(connectionId)).find((s) => s.config.name === name)?.user ?? null
+  }
+
+  private async findSite(connectionId: string, name: string): Promise<SiteSummary> {
+    const site = (await this.allSites(connectionId)).find((s) => s.config.name === name)
+    if (!site) throw new Error(`Unknown site ${name}`)
+    return site
   }
 
   private isNewHead(key: string, summary: SiteSummary, head: string): boolean {
@@ -207,7 +267,7 @@ export class DeployCoordinator {
     const entry = this.sites.get(connectionId)
     if (!entry) return undefined
     try {
-      entry.summaries = await this.service(connectionId).listSites()
+      entry.summaries = await this.allSites(connectionId)
     } catch {
       return undefined
     }
@@ -261,7 +321,7 @@ export class DeployCoordinator {
 
   private async findRecord(connectionId: string, name: string, id: string): Promise<DeployRecord | undefined> {
     try {
-      return (await this.service(connectionId).history(name)).find((r) => r.id === id)
+      return (await (await this.siteService(connectionId, name)).history(name)).find((r) => r.id === id)
     } catch {
       return undefined
     }

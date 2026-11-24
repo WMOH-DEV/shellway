@@ -6,16 +6,17 @@ import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
 import { needsDatabase, siteDatabase } from '../../../src/utils/createSite/database'
 import { leftoverSizesScript, leftoversOf, withSizes } from '../../../src/utils/createSite/deletion'
 import { deleteBlockedReason, isFinishedSite } from '../../../src/utils/createSite/runView'
-import { ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
+import { PROJECT_SHELL, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
 import { assertSecrets } from '../../../src/utils/createSite/env'
 import { buildPlan } from '../../../src/utils/createSite/plan'
-import { assertDomain } from '../../../src/utils/createSite/validate'
+import { assertDomain, assertOwner } from '../../../src/utils/createSite/validate'
 import { webServerDriver } from '../../../src/utils/webServer'
 import type { WebServerDriver } from '../../../src/utils/webServer/driver'
 import { siteServer } from '../../../src/utils/webServer/siteServer'
 import type { DeployCoordinator } from '../deploy/DeployCoordinator'
 import { RUNNER, type RemoteExec } from '../deploy/DeployService'
 import { validateSiteConfig } from '../deploy/siteFiles'
+import { asSiteUser, readSiteUsers } from '../deploy/siteUser'
 import { resolveAddresses } from '../ssl/dnsEdge'
 import type { SslCoordinator } from '../ssl/SslCoordinator'
 import { CreateSiteRun, newRunRecord } from './CreateSiteRun'
@@ -98,6 +99,10 @@ const driverFor = (server: SiteServer): WebServerDriver => webServerDriver(serve
 
 const serverAddress = (facts: ServerFacts): string | null => facts.addresses.find((address) => IPV4.test(address) && !address.startsWith('127.')) ?? null
 
+const ROOT_USER = 'root'
+
+const siteUserOf = (owner: string, login: string): string | null => (owner === login ? null : owner)
+
 function zoneFor(domain: string, zones: CloudflareZoneRef[]): CloudflareZoneRef | null {
   const matching = zones.filter((zone) => domain === zone.name || domain.endsWith(`.${zone.name}`))
   return matching.sort((a, b) => b.name.length - a.name.length)[0] ?? null
@@ -113,13 +118,14 @@ export class CreateSiteService {
   async context(connectionId: string): Promise<CreateSiteContext> {
     const exec = this.exec(connectionId)
     const { facts } = await this.deps.ssl.service(connectionId).readConfig()
-    const [tools, cloudflare, deploySiteNames] = await Promise.all([detectTools(exec, facts), this.deps.ssl.cloudflareStatus(), this.deploySiteNames(connectionId)])
+    const [tools, cloudflare, deploySiteNames, siteUsers] = await Promise.all([detectTools(exec, facts), this.deps.ssl.cloudflareStatus(), this.deps.deploy.siteNames(connectionId), readSiteUsers(exec)])
     const connected = cloudflare.saved && cloudflare.error === null
     return {
       server: serverOf(facts),
       tools,
       serverIp: serverAddress(facts),
       owner: facts.user,
+      siteUsers: siteUsers?.map((user) => user.name) ?? null,
       fullSudo: facts.sudo.full,
       zones: connected ? cloudflare.zones.map(({ id, name }) => ({ id, name })) : [],
       dnsEdit: connected && cloudflare.permissions.find((group) => group.id === 'dns-records')?.state !== 'missing',
@@ -156,11 +162,11 @@ export class CreateSiteService {
       const secrets = assertSecrets(input, rawSecrets)
       assertDatabaseMatches(input)
       assertCodeSource(input)
-      const ports = this.ports(connectionId, sessionId, this.deps.newId())
       const driver = driverFor(input.server)
       const invalid = input.codeSource === 'none' ? null : validateSiteConfig(deploySiteConfig(input))
       if (invalid) throw new Error(invalid)
-      await this.checkAgainstServer(connectionId, input)
+      const login = await this.checkAgainstServer(connectionId, input)
+      const ports = this.ports(connectionId, sessionId, this.deps.newId(), siteUserOf(input.owner, login))
       const plan = buildPlan(input, await ports.tools(), driver)
       const record = { ...newRunRecord(ports.runId, sessionId, input, plan, this.deps.now()), machineId: await this.machineId(connectionId) }
       this.deps.store.saveSecrets(record.id, secrets)
@@ -173,7 +179,10 @@ export class CreateSiteService {
     const record = this.stored(runId)
     if (record.phase !== 'failed' && record.phase !== 'stopped') throw new Error('This run is not waiting for you.')
     this.assertSameServer(connectionId, record.sessionId)
-    return this.begin(connectionId, async () => new CreateSiteRun(record, this.ports(connectionId, record.sessionId, runId), driverFor(record.server), this.deps.store.secrets(runId)), mode)
+    return this.begin(connectionId, async () => {
+      const ports = this.ports(connectionId, record.sessionId, runId, await this.siteUser(connectionId, record))
+      return new CreateSiteRun(record, ports, driverFor(record.server), this.deps.store.secrets(runId))
+    }, mode)
   }
 
   stop(runId: string): void {
@@ -216,12 +225,13 @@ export class CreateSiteService {
     return this.deps.store.forSession(sessionId).map((run) => this.settled(run)).filter((run) => run.phase !== 'removed')
   }
 
-  private async withRemoval(connectionId: string, { id, sessionId }: RunRecord, work: (ports: CreateSitePorts) => Promise<RunRecord>): Promise<RunRecord> {
+  private async withRemoval(connectionId: string, record: RunRecord, work: (ports: CreateSitePorts) => Promise<RunRecord>): Promise<RunRecord> {
+    const { id, sessionId } = record
     if (this.removing.has(id)) throw new Error('This site is already being removed.')
     this.claim(connectionId)
     this.removing.add(id)
     try {
-      return await work(this.ports(connectionId, sessionId, id))
+      return await work(this.ports(connectionId, sessionId, id, await this.siteUser(connectionId, record)))
     } finally {
       this.removing.delete(id)
       this.busy.delete(connectionId)
@@ -236,7 +246,7 @@ export class CreateSiteService {
 
   private async assertOwner(connectionId: string, { input }: RunRecord): Promise<void> {
     const { facts } = await this.deps.ssl.service(connectionId).readConfig()
-    if (facts.user !== input.owner) throw new Error(`This site belongs to ${input.owner}, but Shellway is logged in as ${facts.user}. Connect as ${input.owner} to remove it. Nothing was changed.`)
+    if (facts.user !== input.owner && facts.user !== ROOT_USER) throw new Error(`This site belongs to ${input.owner}, but Shellway is logged in as ${facts.user}. Connect as ${input.owner} to remove it. Nothing was changed.`)
   }
 
   private async assertSameMachine(connectionId: string, record: RunRecord): Promise<void> {
@@ -253,17 +263,34 @@ export class CreateSiteService {
     return fixed
   }
 
-  private async checkAgainstServer(connectionId: string, input: CreateSiteInput): Promise<void> {
+  private async siteUser(connectionId: string, { input }: RunRecord): Promise<string | null> {
+    const { facts } = await this.deps.ssl.service(connectionId).readConfig()
+    return siteUserOf(input.owner, facts.user)
+  }
+
+  private async checkSiteUser(connectionId: string, input: CreateSiteInput, login: string): Promise<void> {
+    if (login !== ROOT_USER) {
+      if (input.owner === login) return
+      throw new Error(`The site owner must be the user Shellway is logged in as (${login}).`)
+    }
+    if (assertOwner(input.owner) === ROOT_USER) throw new Error('A site cannot run as root. Pick another site user.')
+    if (input.createOwner) return
+    const users = (await readSiteUsers(this.exec(connectionId))) ?? []
+    if (!users.some((user) => user.name === input.owner)) throw new Error(`There is no user ${input.owner} on this server. Pick another site user, or let Shellway create it.`)
+  }
+
+  private async checkAgainstServer(connectionId: string, input: CreateSiteInput): Promise<string> {
     const { facts } = await this.deps.ssl.service(connectionId).readConfig()
     if (!sameServer(serverOf(facts), input.server)) throw new Error('The web server on this server changed. Open Create site again.')
-    if (facts.user !== input.owner) throw new Error(`The site owner must be the user Shellway is logged in as (${facts.user}).`)
-    if (input.dns === null || input.dns.zoneId === null) return
+    await this.checkSiteUser(connectionId, input, facts.user)
+    if (input.dns === null || input.dns.zoneId === null) return facts.user
     const { zoneId, zoneName } = input.dns
     if (!ZONE_ID.test(zoneId)) throw new Error('Invalid Cloudflare zone')
     const cloudflare = await this.deps.ssl.cloudflareStatus()
     const zone = cloudflare.zones.find((z) => z.id === zoneId)
     if (!zone || zone.name !== zoneName) throw new Error('That Cloudflare zone is not on the connected account.')
     if (zoneFor(assertDomain(input.domain), [zone]) === null) throw new Error(`${input.domain} is not in the ${zone.name} zone.`)
+    return facts.user
   }
 
   private async begin(connectionId: string, prepare: () => Promise<CreateSiteRun>, mode: 'start' | ResumeMode): Promise<RunRecord> {
@@ -305,12 +332,6 @@ export class CreateSiteService {
     return exec
   }
 
-  private async deploySiteNames(connectionId: string): Promise<string[]> {
-    const service = this.deps.deploy.service(connectionId)
-    if (!(await service.runnerInfo()).installed) return []
-    return (await service.listSites()).map((site) => site.config.name)
-  }
-
   private dnsPort(): DnsPort | null {
     const client = this.deps.ssl.dnsClient()
     if (!client) return null
@@ -321,9 +342,9 @@ export class CreateSiteService {
     }
   }
 
-  private deployPort(connectionId: string, sessionId: string, say: (command: string) => void): DeployPort {
+  private deployPort(connectionId: string, sessionId: string, siteUser: string | null, say: (command: string) => void): DeployPort {
     const coordinator = this.deps.deploy
-    const service = () => coordinator.service(connectionId)
+    const service = () => coordinator.service(connectionId, siteUser)
     return {
       ensureRunner: async () => {
         say(`${RUNNER} version`)
@@ -334,7 +355,7 @@ export class CreateSiteService {
       },
       siteNames: () => {
         say(`${RUNNER} dump`)
-        return this.deploySiteNames(connectionId)
+        return coordinator.siteNames(connectionId)
       },
       save: async (config) => {
         say(`write "$HOME/.shellway-deploy/sites/${config.name}/" site.conf, steps.build and steps.activate, then ${RUNNER} sync-cron`)
@@ -371,16 +392,17 @@ export class CreateSiteService {
     }
   }
 
-  private ports(connectionId: string, sessionId: string, runId: string): CreateSitePorts & { runId: string } {
+  private ports(connectionId: string, sessionId: string, runId: string, siteUser: string | null): CreateSitePorts & { runId: string } {
     const exec = this.exec(connectionId)
+    const siteExec = siteUser === null ? exec : asSiteUser(exec, siteUser)
     const ssl = this.deps.ssl
     const output = (chunk: string) => this.deps.broadcast('create-site:output', { runId, chunk })
     const say = (command: string) => output(`$ ${command}\n`)
     return {
       runId,
-      exec,
+      exec: (command, options) => (command === PROJECT_SHELL ? siteExec : exec)(command, options),
       dns: this.dnsPort(),
-      deploy: this.deployPort(connectionId, sessionId, say),
+      deploy: this.deployPort(connectionId, sessionId, siteUser, say),
       project: this.deps.project,
       tools: async () => {
         const { facts } = await ssl.service(connectionId).readConfig()

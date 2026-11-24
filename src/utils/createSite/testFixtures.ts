@@ -47,6 +47,7 @@ export function baseInput(overrides: Partial<CreateSiteInput> = {}): CreateSiteI
     siteName: 'shop',
     folder: '/var/www/shop',
     owner: 'deploy',
+    createOwner: false,
     codeSource: 'git',
     newRepo: null,
     localParent: null,

@@ -147,7 +147,8 @@ export function parseDump(text: string): SiteSummary[] {
   return splitDump(text).map(({ name, sections }) => ({
     config: parseSiteFiles(name, sections.CONF.join('\n'), sections.BUILD.join('\n'), sections.ACTIVATE.join('\n')),
     state: parseState(sections.STATUS.join('\n')),
-    history: parseHistory(sections.HISTORY.join('\n'))
+    history: parseHistory(sections.HISTORY.join('\n')),
+    user: null
   }))
 }
 

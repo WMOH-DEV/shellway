@@ -13,7 +13,7 @@ import { hasHttpsRisk, siteRuntime } from './model/siteView'
 import { Chip } from '../../kit'
 import type { ServerSectionContext } from '../types'
 import { httpsRoute, keyRoute, SITE_TABS, siteRoute, siteTab, sitesRoute, type SiteTab } from './routes'
-import { DeployChip, StackChip } from './siteChips'
+import { DeployChip, SiteUserChip, StackChip } from './siteChips'
 import { SiteTabBody } from './SiteTabBody'
 import type { SitesData } from './useSitesData'
 import type { CreateRuns } from './useCreateRuns'
@@ -87,6 +87,7 @@ function Header({ ctx, data, entry, runs, onShip }: Pick<SitePageProps, 'ctx' | 
       <StackChip summary={summary} />
       {runtime && <Chip dense mono>{runtime}</Chip>}
       <DeployChip summary={summary} pcDrift={pcDrift} />
+      <SiteUserChip summary={summary} />
       {plain && (
         <button type="button" onClick={() => ctx.navigate(httpsRoute(plain.id, config.name))} className="rounded bg-nd-warning/12 px-1.5 py-px text-xs text-nd-warning-fg hover:bg-nd-warning/20">
           No HTTPS · Add

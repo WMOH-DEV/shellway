@@ -8,6 +8,7 @@ import {
   commandsKey,
   commandsOf,
   commandsStepProblem,
+  defaultSiteUser,
   dnsInput,
   projectCheckKey,
   domainStepProblem,
@@ -29,6 +30,7 @@ const context = (overrides: Partial<CreateSiteContext> = {}): ServerContext => (
   tools: allTools(),
   serverIp: '203.0.113.10',
   owner: 'deploy',
+  siteUsers: null,
   fullSudo: true,
   zones: [{ id: 'zone-1', name: 'example.com' }],
   dnsEdit: true,
@@ -318,5 +320,38 @@ describe('stepForAction', () => {
     expect(stepForAction('folder')).toBe('site')
     expect(stepForAction('dns')).toBe('domain')
     expect(stepForAction('deploys')).toBe('commands')
+  })
+})
+
+describe('site user when logged in as root', () => {
+  const asRoot = (siteUsers: string[]) => context({ owner: 'root', siteUsers })
+
+  it('picks deploy when it exists, else the first user, else a new deploy user', () => {
+    expect(defaultSiteUser(null)).toEqual({ siteUser: '', newSiteUser: false })
+    expect(defaultSiteUser(['ubuntu', 'deploy'])).toEqual({ siteUser: 'deploy', newSiteUser: false })
+    expect(defaultSiteUser(['ubuntu'])).toEqual({ siteUser: 'ubuntu', newSiteUser: false })
+    expect(defaultSiteUser([])).toEqual({ siteUser: 'deploy', newSiteUser: true })
+  })
+
+  it('runs the site as the picked user and lets PHP sites continue', () => {
+    const picked = draft(defaultSiteUser(['deploy']))
+    expect(toInput(picked, asRoot(['deploy']), ZONE)).toMatchObject({ owner: 'deploy', createOwner: false })
+    expect(stackStepProblem(picked, asRoot(['deploy']))).toBeNull()
+  })
+
+  it('asks Shellway to create a new user', () => {
+    expect(toInput(draft({ siteUser: 'shop', newSiteUser: true }), asRoot([]), ZONE)).toMatchObject({ owner: 'shop', createOwner: true })
+  })
+
+  it('blocks root, bad names and a new user that already exists', () => {
+    expect(siteStepProblem(draft({ siteUser: '', newSiteUser: true }), checked(), asRoot(['deploy']))).toBe('Enter a name for the new site user')
+    expect(siteStepProblem(draft({ siteUser: 'root' }), checked(), asRoot(['deploy']))).toMatch(/cannot run as root/)
+    expect(siteStepProblem(draft({ siteUser: 'Bad Name', newSiteUser: true }), checked(), asRoot([]))).toMatch(/Site user/)
+    expect(siteStepProblem(draft({ siteUser: 'deploy', newSiteUser: true }), checked(), asRoot(['deploy']))).toMatch(/already exists/)
+    expect(siteStepProblem(draft({ siteUser: 'gone' }), checked(), asRoot(['deploy']))).toBe('gone is no longer on this server. Pick another site user.')
+  })
+
+  it('keeps the login user as owner when not root', () => {
+    expect(toInput(draft({ siteUser: 'other' }), context(), ZONE)).toMatchObject({ owner: 'deploy', createOwner: false })
   })
 })

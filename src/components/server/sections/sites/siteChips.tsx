@@ -23,3 +23,7 @@ export function DeployChip({ summary, pcDrift }: { summary: SiteSummary; pcDrift
 export function StackChip({ summary }: { summary: SiteSummary }) {
   return <Chip dense tone="info">{STACK_LABELS[siteStack(summary)]}</Chip>
 }
+
+export function SiteUserChip({ summary }: { summary: SiteSummary }) {
+  return summary.user === null ? null : <Chip dense mono>runs as {summary.user}</Chip>
+}
