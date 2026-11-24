@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SQL_INTENTS, useSearchIntentStore, type SearchIntent, type SqlIntentAction } from '@/search/intentStore'
 import { getSQLConnectionState } from '@/stores/sqlStore'
+import type { TableFilterRequest } from '@/types/sql'
 import type { DatabaseContextAction } from './SchemaSidebar'
 
 interface SqlSearchIntentOptions {
@@ -11,7 +12,7 @@ interface SqlSearchIntentOptions {
   connect: () => void
   currentDatabase: string | null
   switchDatabase: (database: string) => Promise<void>
-  openTable: (table: string, newTab: boolean) => void
+  openTable: (table: string, newTab: boolean, filter?: TableFilterRequest) => void
   openQuery: (sql: string, title: string) => void
   newQuery: () => void
   refresh: () => void
@@ -76,7 +77,7 @@ export function useSqlSearchIntents(options: SqlSearchIntentOptions): void {
 function run(intent: SearchIntent, o: SqlSearchIntentOptions): void {
   switch (intent.kind) {
     case 'open-table':
-      o.openTable(intent.table, intent.newTab)
+      o.openTable(intent.table, intent.newTab, intent.filter)
       return
     case 'open-sql':
       o.openQuery(intent.sql, intent.title)

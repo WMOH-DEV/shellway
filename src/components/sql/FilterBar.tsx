@@ -110,8 +110,7 @@ interface FilterBarProps {
   /** Apply filters. When `singleFilterId` is provided (Enter / per-row Apply),
    *  only that filter is applied. When omitted (Apply All), all enabled filters apply. */
   onApply: (singleFilterId?: string) => void
-  /** ID of a filter whose value input should be auto-focused (e.g. added externally via column right-click) */
-  externalFocusFilterId?: string | null
+  externalFocusRequest?: { filterId: string } | null
   /** Whether the currently displayed data was fetched with active filters.
    *  Used to decide whether removing all filters should auto-refresh. */
   isDataFiltered?: boolean
@@ -259,6 +258,7 @@ const FilterRow = React.memo(function FilterRow({
         <>
           <div className="flex-1 min-w-[60px]">
             <Input
+              ref={valueInputRef}
               value={filter.value}
               onChange={(e) => onUpdate(filter.id, { value: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') onApply(filter.id) }}
@@ -379,7 +379,7 @@ export const FilterBar = React.memo(function FilterBar({
   columns,
   onFiltersChange,
   onApply,
-  externalFocusFilterId,
+  externalFocusRequest,
   isDataFiltered,
   match,
   onMatchChange,
@@ -387,16 +387,13 @@ export const FilterBar = React.memo(function FilterBar({
   const activeCount = filters.filter((f) => f.enabled).length
 
   // Track which filter's value input should be auto-focused.
-  // Set by internal "Add Filter" button or by external `externalFocusFilterId` prop
+  // Set by internal "Add Filter" button or by the external `externalFocusRequest` prop
   // (e.g. filter added via column header right-click).
   const [autoFocusFilterId, setAutoFocusFilterId] = useState<string | null>(null)
 
-  // Pick up externally-requested focus
   useEffect(() => {
-    if (externalFocusFilterId) {
-      setAutoFocusFilterId(externalFocusFilterId)
-    }
-  }, [externalFocusFilterId])
+    if (externalFocusRequest) setAutoFocusFilterId(externalFocusRequest.filterId)
+  }, [externalFocusRequest])
 
   // Clear auto-focus flag after it's been consumed
   useEffect(() => {

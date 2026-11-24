@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SearchCacheSnapshot } from '@/types/search'
 import type { SearchResult } from '@/search/types'
-import { describeResult } from './previewDetails'
+import { describeResult, FILTER_SYNTAX } from './previewDetails'
 
 const snapshot: SearchCacheSnapshot = {
   version: 1,
@@ -23,6 +23,10 @@ describe('describeResult', () => {
 
   it('finds the table of a column result', () => {
     expect(describeResult(result('column:s1:shop:orders.status', 'tables'), snapshot)).toEqual({ kind: 'columns', columns: ['id', 'status'] })
+  })
+
+  it('shows the filter syntax for a filter result', () => {
+    expect(describeResult(result('filter:s1:shop:orders.status:contains:', 'filters'), snapshot)).toEqual({ kind: 'text', text: FILTER_SYNTAX })
   })
 
   it('shows nothing when the table is not cached', () => {

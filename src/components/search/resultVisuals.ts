@@ -6,6 +6,7 @@ import {
   Columns,
   Database,
   File,
+  Filter,
   Folder,
   Globe,
   History,
@@ -34,5 +35,6 @@ export const RESULT_VISUALS: Record<ResultIcon, Visual> = {
   site: { Icon: Globe, tone: 'text-nd-chart-emerald' },
   service: { Icon: Cog, tone: 'text-nd-chart-orange' },
   snippet: { Icon: Braces, tone: 'text-nd-chart-yellow' },
-  setting: { Icon: Settings, tone: 'text-nd-text-secondary' }
+  setting: { Icon: Settings, tone: 'text-nd-text-secondary' },
+  filter: { Icon: Filter, tone: 'text-nd-chart-blue' }
 }

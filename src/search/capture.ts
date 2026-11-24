@@ -5,6 +5,7 @@ import { useSQLStore } from '@/stores/sqlStore'
 import type { SearchCachePatch } from '@/types/search'
 import { applySearchCachePatch } from './cacheClient'
 import { snapshotFromFacts } from './providers/serverEntities'
+import { forgetRecentFilters } from './recentFilters'
 import { toCachedTables } from './providers/tables'
 
 const DEBOUNCE_MS = 500
@@ -79,6 +80,7 @@ function forgetSession(sessionId: string): void {
     if (key.includes(`:${sessionId}`)) lastSent.delete(key)
   }
   applySearchCachePatch({ kind: 'forget', scopeId: sessionId })
+  forgetRecentFilters(sessionId)
 }
 
 function watchSessions(): () => void {

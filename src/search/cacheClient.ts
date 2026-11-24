@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { SearchCachePatch, SearchCacheSnapshot } from '@/types/search'
 import { applyPatch, emptySnapshot, learnedKey, normalizeSnapshot } from './cachePatch'
 import { frequencyFromCount, recencyFromTimestamp, type UsageLookup } from './ranking'
+import { clearRecentFilters } from './recentFilters'
+import { parseTableCommand } from './tableCommand'
 import type { SearchResult } from './types'
 
 interface SearchCacheState {
@@ -50,6 +52,7 @@ export function applySearchCachePatch(patch: SearchCachePatch): void {
 
 export async function clearSearchCache(): Promise<void> {
   await window.novadeck.search.cacheClear()
+  clearRecentFilters()
   useSearchCacheStore.setState({ snapshot: emptySnapshot() })
 }
 
@@ -67,5 +70,6 @@ export function getUsageLookup(): UsageLookup {
 }
 
 export function recordSelection(result: SearchResult, queryText: string): void {
+  if (result.providerId === 'filters' || parseTableCommand(queryText)) return
   applySearchCachePatch({ kind: 'usage', resultId: result.id, queryText })
 }

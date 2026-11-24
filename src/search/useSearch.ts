@@ -14,6 +14,7 @@ import type { ProviderId, ScopeId, SearchAction, SearchProvider, SearchQuery, Se
 export const PROVIDER_SCOPE: Record<ProviderId, ScopeId> = {
   sessions: 'servers',
   databases: 'servers',
+  filters: 'tables',
   tables: 'tables',
   queries: 'queries',
   history: 'history',

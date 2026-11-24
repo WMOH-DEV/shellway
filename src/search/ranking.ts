@@ -3,6 +3,7 @@ import type { ProviderId, ResultGroup, ScoredResult, SearchResult } from './type
 export const MATCH = { exact: 1, prefix: 0.85, wordStart: 0.7, substring: 0.55, keyword: 0.4, fuzzy: 0.3, indexed: 0.25, none: 0 } as const
 
 export const TYPE_WEIGHTS: Record<ProviderId, number> = {
+  filters: 1,
   tables: 1,
   sessions: 1,
   databases: 1,
@@ -17,6 +18,7 @@ export const TYPE_WEIGHTS: Record<ProviderId, number> = {
 }
 
 export const GROUP_LABELS: Record<ProviderId, string> = {
+  filters: 'Filters',
   tables: 'Tables',
   sessions: 'Servers',
   databases: 'Databases',
@@ -30,7 +32,7 @@ export const GROUP_LABELS: Record<ProviderId, string> = {
   settings: 'Settings'
 }
 
-const GROUP_ORDER: ProviderId[] = ['sessions', 'databases', 'tables', 'queries', 'files', 'sites', 'services', 'commands', 'snippets', 'history', 'settings']
+const GROUP_ORDER: ProviderId[] = ['filters', 'sessions', 'databases', 'tables', 'queries', 'files', 'sites', 'services', 'commands', 'snippets', 'history', 'settings']
 
 export const WEIGHTS = { recency: 0.25, frequency: 0.15, context: 0.2, learned: 0.3, disconnectedPenalty: 0.3 } as const
 export const BEST_MATCH_MARGIN = 0.1
@@ -85,8 +87,8 @@ export function frequencyFromCount(count: number): number {
 }
 
 export function scoreResult(result: SearchResult, queryText: string, usage: UsageLookup = NO_USAGE): number {
-  const match = textMatch(result.title, queryText, result.keywords) || MATCH.indexed
   const hints = result.scoreHints
+  const match = hints.exact ? MATCH.exact : textMatch(result.title, queryText, result.keywords) || MATCH.indexed
   const recency = Math.max(hints.recency ?? 0, usage.recency(result.id))
   const frequency = Math.max(hints.frequency ?? 0, usage.frequency(result.id))
   return (
