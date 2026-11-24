@@ -125,6 +125,22 @@ describe('tables provider', () => {
     expect(writeText).toHaveBeenCalledWith('customers')
   })
 
+  it('opens a column result with a filter on that column, ready to type in', async () => {
+    seedLiveShop()
+    const provider = createTablesProvider()
+    const column = (await collect(provider, makeQuery('status'))).find((r) => r.id === 'column:s1:shop:orders.status')!
+    provider.actions(column).find((a) => a.role === 'primary')!.run()
+    expect(useSearchIntentStore.getState().pending.s1).toEqual([
+      {
+        kind: 'open-table',
+        database: 'shop',
+        table: 'orders',
+        newTab: false,
+        filter: { kind: 'filters', filters: [{ column: 'status', operator: 'contains', value: '' }] }
+      }
+    ])
+  })
+
   it('caps results at 50', async () => {
     seedLiveShop()
     useSQLStore.getState().setTables(

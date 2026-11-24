@@ -38,10 +38,19 @@ describe('useSqlSearchIntents', () => {
 
     act(() => useSearchIntentStore.getState().push(SESSION, { kind: 'open-table', database: 'shop', table: 'orders', newTab: false }))
 
-    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false))
+    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false, undefined))
     expect(handlers.openTable).toHaveBeenCalledTimes(1)
     expect(handlers.switchDatabase).not.toHaveBeenCalled()
     expect(useSearchIntentStore.getState().pending[SESSION]).toEqual([])
+  })
+
+  it('passes a filter from search along with the table', async () => {
+    const { handlers } = setup()
+    const filter = { kind: 'row' as const, value: '42' }
+
+    act(() => useSearchIntentStore.getState().push(SESSION, { kind: 'open-table', database: 'shop', table: 'orders', newTab: false, filter }))
+
+    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false, filter))
   })
 
   it('waits until the connection is ready and keeps the intent meanwhile', async () => {
@@ -54,7 +63,7 @@ describe('useSqlSearchIntents', () => {
 
     view.rerender({ ready: true, currentDatabase: 'shop', canConnect: false })
 
-    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', true))
+    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', true, undefined))
     expect(handlers.openTable).toHaveBeenCalledTimes(1)
   })
 
@@ -68,7 +77,7 @@ describe('useSqlSearchIntents', () => {
 
     view.rerender({ ready: true, currentDatabase: 'staging', canConnect: false })
 
-    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false))
+    await waitFor(() => expect(handlers.openTable).toHaveBeenCalledWith('orders', false, undefined))
     expect(handlers.switchDatabase).toHaveBeenCalledTimes(1)
   })
 

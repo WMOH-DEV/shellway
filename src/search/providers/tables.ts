@@ -22,7 +22,7 @@ interface TableEntry {
   path: string
 }
 
-interface TableSource {
+export interface TableSource {
   scopeId: string
   database: string
   tables: CachedTable[]
@@ -84,10 +84,14 @@ function entriesOf(source: TableSource): TableEntry[] {
   })
 }
 
-function buildEntries(): TableEntry[] {
+export function tableSources(): TableSource[] {
   const live = liveSources()
   const covered = new Set(live.map((s) => `${s.scopeId}\n${s.database}`))
-  return [...live, ...cachedSources(covered)].flatMap(entriesOf)
+  return [...live, ...cachedSources(covered)]
+}
+
+function buildEntries(): TableEntry[] {
+  return tableSources().flatMap(entriesOf)
 }
 
 function currentCollection(): Collection<TableEntry> {
@@ -101,7 +105,7 @@ function currentCollection(): Collection<TableEntry> {
 
 const COLUMN_WEIGHT = 0.75
 
-function contextHint(entry: TableEntry, query: SearchQuery): number {
+export function contextHint(entry: { scopeId: string; database: string }, query: SearchQuery): number {
   if (entry.scopeId !== query.context.activeSessionId) return 0
   return entry.database === query.context.activeDatabase ? 1 : 0.5
 }
@@ -146,10 +150,12 @@ interface TablePayload {
   scopeId: string
   database: string
   table: string
+  column: string | null
 }
 
-function openTable({ scopeId, database, table }: TablePayload, newTab: boolean): void {
-  sendIntent(scopeId, { kind: 'open-table', database, table, newTab })
+function openTable({ scopeId, database, table, column }: TablePayload, newTab: boolean): void {
+  const filter = column === null ? undefined : { kind: 'filters' as const, filters: [{ column, operator: 'contains' as const, value: '' }] }
+  sendIntent(scopeId, { kind: 'open-table', database, table, newTab, filter })
 }
 
 export function createTablesProvider(): SearchProvider {

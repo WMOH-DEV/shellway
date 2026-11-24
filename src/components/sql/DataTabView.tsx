@@ -19,8 +19,17 @@ import {
   type TableViewMode,
 } from "@/components/sql/PaginationBar";
 import { FilterBar } from "@/components/sql/FilterBar";
-import { buildWhereClause } from "@/utils/sqlFilterBuilder";
+import { buildWhereClause, filtersForApplyAll, hasCriteria, NO_VALUE_OPERATORS } from "@/utils/sqlFilterBuilder";
 import { useSQLConnection, useSQLStore } from "@/stores/sqlStore";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { recordRecentFilter } from "@/search/recentFilters";
+import {
+  handoffKey,
+  mergeHandoff,
+  toFilterSpec,
+  useFilterHandoffStore,
+  type FilterHandoff,
+} from "./filterHandoff";
 import { useSafeModeGate } from "./SafeModeGate";
 import { setSqlTabSnapshot } from "@/stores/sqlTabSnapshotStore";
 import {
@@ -343,6 +352,7 @@ export const DataTabView = React.memo(function DataTabView({
     useState<PaginationState>(defaultPagination);
   const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
   const [filters, setFilters] = useState<TableFilter[]>([]);
+  const [focusRequest, setFocusRequest] = useState<{ filterId: string } | null>(null);
   const [filterMatch, setFilterMatch] = useState<FilterMatch>("any");
   const filterMatchRef = useRef<FilterMatch>("any");
   const hasChosenFilterMatchRef = useRef(false);
@@ -716,6 +726,48 @@ export const DataTabView = React.memo(function DataTabView({
     [table, schema, dbType, sqlSessionId],
   );
 
+  const handoffSlot = handoffKey(connectionId, currentDatabase ?? "", table);
+
+  const recordApplied = useCallback(
+    (applied: TableFilter[]) => {
+      const scopeId = useConnectionStore.getState().tabs.find((t) => t.id === connectionId)?.sessionId;
+      const active = applied.filter((f) => f.enabled && hasCriteria(f));
+      if (!scopeId || !currentDatabase || active.length === 0) return;
+      recordRecentFilter({ scopeId, database: currentDatabase, table, match: filterMatchRef.current, filters: active.map(toFilterSpec) });
+    },
+    [connectionId, currentDatabase, table],
+  );
+
+  const startupHandoffRef = useRef<{ slot: string; handoff: FilterHandoff } | null>(null);
+
+  const takeActiveHandoff = () => {
+    const isActive = useSQLStore.getState().connections[connectionId]?.activeTabId === tabId;
+    return isActive ? useFilterHandoffStore.getState().take(handoffSlot) : null;
+  };
+
+  const claimStartupHandoff = () => {
+    const taken = takeActiveHandoff();
+    if (taken) startupHandoffRef.current = { slot: handoffSlot, handoff: taken };
+    const kept = startupHandoffRef.current;
+    return kept?.slot === handoffSlot ? kept.handoff : null;
+  };
+
+  const applyHandoff = (current: TableFilter[], handoff: FilterHandoff) => {
+    const merged = mergeHandoff(current, handoff.filters, () => crypto.randomUUID());
+    if (handoff.match) {
+      filterMatchRef.current = handoff.match;
+      setFilterMatch(handoff.match);
+      saveFilterMatch(filtersKey, handoff.match);
+    }
+    if (filtersKey) {
+      try {
+        localStorage.setItem(filtersKey, JSON.stringify(merged.filters));
+      } catch {}
+    }
+    if (merged.focusId) setFocusRequest({ filterId: merged.focusId });
+    return merged;
+  };
+
   // ── Initial load ──
 
   useEffect(() => {
@@ -747,8 +799,18 @@ export const DataTabView = React.memo(function DataTabView({
       }
     }
 
+    const startupHandoff = claimStartupHandoff();
+    const incoming = startupHandoff ? applyHandoff(savedFilters, startupHandoff) : null;
+    if (incoming) {
+      setViewMode("data");
+      savedFilters = incoming.filters;
+      if (incoming.apply) {
+        promoteThisTab();
+        recordApplied(savedFilters);
+      }
+    }
     const restoredSort = initialViewStateRef.current?.sortKeys ?? [];
-    const restoredPage = initialViewStateRef.current?.page ?? 1;
+    const restoredPage = incoming?.apply ? 1 : initialViewStateRef.current?.page ?? 1;
     setPagination({ ...defaultPagination(), page: restoredPage });
     setSortKeys(restoredSort);
     setFilters(savedFilters);
@@ -767,11 +829,12 @@ export const DataTabView = React.memo(function DataTabView({
     // queries from firing. Only the real mount's queries execute, eliminating
     // duplicate queries on the shared MySQL connection.
     const initTimer = setTimeout(() => {
+      startupHandoffRef.current = null;
       executeQuery({
         page: restoredPage,
         pageSize: DEFAULT_PAGE_SIZE,
         sortKeys: restoredSort,
-        currentFilters: savedFilters,
+        currentFilters: filtersForApplyAll(savedFilters),
       });
 
       // Fetch all table metadata in a single query (columns, indexes, foreign keys).
@@ -928,9 +991,6 @@ export const DataTabView = React.memo(function DataTabView({
     ],
   );
 
-  // Track filter ID that needs auto-focus (set when adding filter from column header right-click)
-  const [focusFilterId, setFocusFilterId] = useState<string | null>(null);
-
   // Header context menu → add a filter for a specific column
   const handleFilterColumn = useCallback(
     (column: string) => {
@@ -942,7 +1002,7 @@ export const DataTabView = React.memo(function DataTabView({
         operator: "contains",
         value: "",
       };
-      setFocusFilterId(id);
+      setFocusRequest({ filterId: id });
       setFilters((prev) => {
         const updated = [...prev, newFilter];
         // Persist immediately so the new filter row survives tab/app close
@@ -956,6 +1016,20 @@ export const DataTabView = React.memo(function DataTabView({
     },
     [filtersKey, columns],
   );
+
+  useEffect(() => {
+    const handleFocusFilter = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.connectionId !== connectionId || detail?.tabId !== tabId) return;
+      setViewMode("data");
+      const typable = filtersRef.current.filter((f) => !NO_VALUE_OPERATORS.has(f.operator));
+      const target = typable.find((f) => f.enabled) ?? typable[0];
+      if (target) setFocusRequest({ filterId: target.id });
+      else if (columns[0]) handleFilterColumn(columns[0].name);
+    };
+    window.addEventListener("sql:focus-filter", handleFocusFilter);
+    return () => window.removeEventListener("sql:focus-filter", handleFocusFilter);
+  }, [connectionId, tabId, columns, handleFilterColumn]);
 
   // Refs always hold latest values so callbacks never use stale closures
   const filtersRef = useRef<TableFilter[]>(filters);
@@ -1017,6 +1091,7 @@ export const DataTabView = React.memo(function DataTabView({
         filtersToApply = filtersRef.current;
       }
 
+      recordApplied(filtersToApply);
       executeQuery({
         page: 1,
         pageSize: pagination.pageSize,
@@ -1032,8 +1107,22 @@ export const DataTabView = React.memo(function DataTabView({
       filtersKey,
       promoteThisTab,
       saveViewState,
+      recordApplied,
     ],
   );
+
+  const handoffWaiting = useFilterHandoffStore((s) => handoffSlot in s.pending);
+  const isActiveTab = useSQLStore((s) => s.connections[connectionId]?.activeTabId === tabId);
+  useEffect(() => {
+    if (!handoffWaiting || !isActiveTab) return;
+    const handoff = takeActiveHandoff();
+    if (!handoff) return;
+    const incoming = applyHandoff(filtersRef.current, handoff);
+    setViewMode("data");
+    filtersRef.current = incoming.filters;
+    setFilters(incoming.filters);
+    if (incoming.apply) handleFiltersApply();
+  }, [handoffWaiting, isActiveTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -2133,7 +2222,7 @@ export const DataTabView = React.memo(function DataTabView({
           columns={filterColumns}
           onFiltersChange={handleFiltersChange}
           onApply={handleFiltersApply}
-          externalFocusFilterId={focusFilterId}
+          externalFocusRequest={focusRequest}
           isDataFiltered={isDataFiltered}
           match={filterMatch}
           onMatchChange={handleFilterMatchChange}

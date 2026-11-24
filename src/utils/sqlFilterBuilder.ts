@@ -2,7 +2,7 @@ import type { TableFilter, DatabaseType, FilterOperator, FilterMatch } from '@/t
 
 export const NO_VALUE_OPERATORS = new Set<FilterOperator>(['is_null', 'is_not_null'])
 
-function hasCriteria(filter: TableFilter): boolean {
+export function hasCriteria(filter: Pick<TableFilter, 'operator' | 'value' | 'value2'>): boolean {
   if (NO_VALUE_OPERATORS.has(filter.operator)) return true
   if (filter.value.trim() === '') return false
   return filter.operator !== 'between' || (filter.value2 ?? '').trim() !== ''

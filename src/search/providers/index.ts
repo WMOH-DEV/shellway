@@ -2,6 +2,7 @@ import type { ScopeId, SearchProvider } from '../types'
 import { createCommandsProvider } from './commands'
 import { createDatabasesProvider } from './databases'
 import { createFilesProvider } from './files'
+import { createFiltersProvider } from './filters'
 import { createHistoryProvider } from './history'
 import { createQueriesProvider } from './queries'
 import { createRemoteFilesProvider } from './remoteFiles'
@@ -16,6 +17,7 @@ export function createProviders(): SearchProvider[] {
   return [
     createSessionsProvider(),
     createDatabasesProvider(),
+    createFiltersProvider(),
     createTablesProvider(),
     createQueriesProvider(),
     createHistoryProvider(),

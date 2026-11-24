@@ -210,4 +210,20 @@ export function useSQLShortcuts(
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [addQueryTab, applyChanges, undoLastChange, toggleViewMode])
+
+  useEffect(() => {
+    const handleFocusFilter = (e: KeyboardEvent) => {
+      if (!isActiveRef.current || !sqlSessionRef.current || isSearchOpen() || !matchesBinding(e, 'sql:focusFilter')) return
+      const target = e.target as HTMLElement | null
+      if (target?.closest('.monaco-editor, .ag-cell-edit-wrapper, [role="dialog"]')) return
+      const conn = getSQLConnectionState(connectionIdRef.current)
+      const activeTab = conn.tabs.find((t) => t.id === conn.activeTabId)
+      if (activeTab?.type !== 'data') return
+      e.preventDefault()
+      e.stopPropagation()
+      window.dispatchEvent(new CustomEvent('sql:focus-filter', { detail: { connectionId: connectionIdRef.current, tabId: activeTab.id } }))
+    }
+    window.addEventListener('keydown', handleFocusFilter, true)
+    return () => window.removeEventListener('keydown', handleFocusFilter, true)
+  }, [])
 }

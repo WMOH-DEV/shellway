@@ -1,4 +1,5 @@
 export type ProviderId =
+  | 'filters'
   | 'commands'
   | 'sessions'
   | 'databases'
@@ -49,6 +50,7 @@ export type ResultIcon =
   | 'service'
   | 'snippet'
   | 'setting'
+  | 'filter'
 
 export interface ScoreHints {
   recency?: number
@@ -56,6 +58,7 @@ export interface ScoreHints {
   context?: number
   disconnected?: boolean
   weight?: number
+  exact?: boolean
 }
 
 export interface SearchResult {

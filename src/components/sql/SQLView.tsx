@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense, memo
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { toast } from '@/components/ui/Toast'
 import {
   Database,
   Plug,
@@ -19,7 +20,7 @@ import {
   HardDrive,
 } from 'lucide-react'
 import { SQLQueryLog } from './SQLQueryLog'
-import { useSQLConnection, getSQLConnectionState, isOpeningDatabase } from '@/stores/sqlStore'
+import { useSQLConnection, getSQLConnectionState, hasStagedChanges, isOpeningDatabase } from '@/stores/sqlStore'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { SQLSidebar } from './SQLSidebar'
 import type { TableContextAction, DatabaseContextAction } from './SchemaSidebar'
@@ -48,7 +49,8 @@ import { SafeModeMenu } from './SafeModeMenu'
 import { resolveDefaultSafeMode } from './SafeModeGate'
 import { useSQLShortcuts } from './useSQLShortcuts'
 import { useSqlSearchIntents } from './useSqlSearchIntents'
-import type { ClosedSQLTab, SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode } from '@/types/sql'
+import type { ClosedSQLTab, SQLTab, SchemaColumn, QueryHistoryEntry, RunningQuery, HealDecision, ResolutionRequest, SafeMode, TableFilterRequest } from '@/types/sql'
+import { handoffFor, handoffKey, rowKeyColumn, useFilterHandoffStore } from './filterHandoff'
 
 // ── Lazy-loaded heavy sub-components ──
 const LazyDataTabView = lazy(() => import('./DataTabView'))
@@ -1443,15 +1445,25 @@ const SQLView = memo(function SQLView({ connectionId, sessionId, isStandalone }:
   }, [sqlSessionId])
 
   const openTableFromSearch = useCallback(
-    (table: string, newTab: boolean) => {
-      const existing = tabs.find((t) => t.type === 'data' && t.table === table && t.database === currentDatabase)
-      if (newTab || (!existing && selectedTable === table)) handleOpenInNewTab(table)
-      else {
-        if (existing) setActiveTab(existing.id)
-        setSelectedTable(table)
+    (table: string, newTab: boolean, filter?: TableFilterRequest) => {
+      const open = () => {
+        const existing = tabs.find((t) => t.type === 'data' && t.table === table && t.database === currentDatabase)
+        const keepsEdits = !!filter && !!existing && hasStagedChanges(getSQLConnectionState(connectionId), existing)
+        if (newTab || keepsEdits || (!existing && selectedTable === table)) handleOpenInNewTab(table)
+        else {
+          if (existing) setActiveTab(existing.id)
+          setSelectedTable(table)
+        }
       }
+      if (!filter) return open()
+      const key = handoffKey(connectionId, currentDatabase ?? '', table)
+      void handoffFor(filter, () => (sqlSessionId ? rowKeyColumn(sqlSessionId, table) : Promise.resolve(null))).then((handoff) => {
+        if (handoff) useFilterHandoffStore.getState().push(key, handoff)
+        else toast.info('No row key', `${table} has no single primary key or id column. Filter by a column instead, like ${table}.column=value.`)
+        open()
+      })
     },
-    [tabs, currentDatabase, selectedTable, handleOpenInNewTab, setActiveTab, setSelectedTable]
+    [tabs, currentDatabase, selectedTable, handleOpenInNewTab, setActiveTab, setSelectedTable, connectionId, sqlSessionId]
   )
 
   useSqlSearchIntents({

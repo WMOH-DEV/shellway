@@ -8,6 +8,7 @@ export type PreviewBody =
   | { kind: 'none' }
 
 const SUBTITLE_SEPARATOR = ' · '
+export const FILTER_SYNTAX = 'table.column value · = != > < >= <= · null !null · table:id'
 
 function payloadString(payload: unknown, key: string): string | null {
   if (typeof payload !== 'object' || payload === null) return null
@@ -37,6 +38,8 @@ export function describeResult(result: SearchResult, snapshot: SearchCacheSnapsh
       const columns = tableColumns(result, snapshot)
       return columns.length > 0 ? { kind: 'columns', columns } : { kind: 'none' }
     }
+    case 'filters':
+      return { kind: 'text', text: FILTER_SYNTAX }
     case 'queries':
     case 'history':
       return { kind: 'code', text: payloadString(result.payload, 'sql') ?? result.title }

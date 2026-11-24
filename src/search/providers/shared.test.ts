@@ -94,6 +94,7 @@ describe('provider registry', () => {
     expect(keys).toEqual([
       'sessions:local',
       'databases:local',
+      'filters:local',
       'tables:local',
       'queries:local',
       'history:local',
@@ -111,6 +112,7 @@ describe('provider registry', () => {
     const providers = createProviders()
     const ids = (disabled: Parameters<typeof enabledProviders>[1]) => enabledProviders(providers, disabled).map((p) => p.id)
     expect(ids(['tables'])).not.toContain('tables')
+    expect(ids(['tables'])).not.toContain('filters')
     expect(ids(['tables'])).toContain('sessions')
     expect(ids(['servers'])).not.toContain('sessions')
     expect(ids(['servers'])).not.toContain('databases')
@@ -118,6 +120,6 @@ describe('provider registry', () => {
     expect(ids(['commands'])).not.toContain('snippets')
     expect(ids(['commands'])).not.toContain('commands')
     expect(ids(['sites'])).not.toContain('services')
-    expect(ids([])).toHaveLength(12)
+    expect(ids([])).toHaveLength(13)
   })
 })

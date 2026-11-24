@@ -8,6 +8,7 @@ import {
   useSearchCacheStore
 } from './cacheClient'
 import { frequencyFromCount } from './ranking'
+import { useRecentFiltersStore } from './recentFilters'
 import type { SearchResult } from './types'
 
 const result = (id: string): SearchResult => ({ id, providerId: 'tables', title: id, subtitle: '', icon: 'table', scoreHints: {}, payload: null })
@@ -36,6 +37,19 @@ describe('cacheClient', () => {
     applySearchCachePatch({ kind: 'paths', scopeId: 's1', paths: ['/var/www/shop/index.php'] })
     expect(useSearchCacheStore.getState().snapshot!.paths.s1).toEqual(['/var/www/shop/index.php'])
     expect(cacheApply).toHaveBeenCalledWith({ kind: 'paths', scopeId: 's1', paths: ['/var/www/shop/index.php'] })
+  })
+
+  it('keeps filter values out of the stored usage', () => {
+    recordSelection({ ...result('filter:s1:shop:users.email:equals:a@b.com'), providerId: 'filters' }, 'users.email=a@b.com')
+    recordSelection(result('column:s1:shop:users.email'), 'users.email=a@b.com')
+    expect(cacheApply).not.toHaveBeenCalled()
+    expect(useSearchCacheStore.getState().snapshot).toEqual(emptySnapshot())
+  })
+
+  it('clears recent filters with the search index', async () => {
+    useRecentFiltersStore.setState({ entries: [{ scopeId: 's1', database: 'shop', table: 'orders', match: 'any', at: 1, filters: [{ column: 'status', operator: 'equals', value: 'paid' }] }] })
+    await clearSearchCache()
+    expect(useRecentFiltersStore.getState().entries).toEqual([])
   })
 
   it('swallows IPC errors', () => {

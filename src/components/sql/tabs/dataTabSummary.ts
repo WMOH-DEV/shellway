@@ -1,4 +1,4 @@
-import type { FilterOperator, SortKey, TableFilter } from '@/types/sql'
+import type { FilterOperator, FilterSpec, SortKey, TableFilter } from '@/types/sql'
 
 const OPERATOR_LABELS: Partial<Record<FilterOperator, string>> = {
   equals: '=',
@@ -18,7 +18,7 @@ const OPERATOR_LABELS: Partial<Record<FilterOperator, string>> = {
 const SAMPLE_FIELD_COUNT = 4
 const MAX_CELL_LENGTH = 40
 
-function describeFilter({ column, operator, value, value2 }: TableFilter): string {
+export function describeFilter({ column, operator, value, value2 }: FilterSpec): string {
   switch (operator) {
     case 'is_null':
       return `${column} is null`

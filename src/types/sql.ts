@@ -218,6 +218,12 @@ export interface TableFilter {
   value2?: string;
 }
 
+export type FilterSpec = Omit<TableFilter, "id" | "enabled">;
+
+export type TableFilterRequest =
+  | { kind: "filters"; filters: FilterSpec[]; match?: FilterMatch }
+  | { kind: "row"; value: string };
+
 // ── Sort ──
 
 export interface SortKey {

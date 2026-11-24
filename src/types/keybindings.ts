@@ -72,6 +72,7 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'sql:undoChange',     label: 'Undo Last Change',         scope: 'sql', defaultCombo: 'CmdOrCtrl+Z' },
   { id: 'sql:cycleTabType',   label: 'Cycle Tab Type',          scope: 'sql', defaultCombo: 'CmdOrCtrl+.' },
   { id: 'sql:refresh',        label: 'Refresh Data',            scope: 'sql', defaultCombo: 'F5' },
+  { id: 'sql:focusFilter',    label: 'Filter Table',            scope: 'sql', defaultCombo: 'CmdOrCtrl+F' },
 ]
 
 /** Scope display labels */

@@ -5,11 +5,12 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { savedDatabaseLabel, useSavedDatabaseStore } from '@/stores/savedDatabaseStore'
 import { toast } from '@/components/ui/Toast'
 import type { ConnectionTab } from '@/types/session'
+import type { TableFilterRequest } from '@/types/sql'
 
 export type SqlIntentAction = 'export' | 'import' | 'backup' | 'restore' | 'refresh' | 'create-table' | 'new-query'
 
 export type SearchIntent =
-  | { kind: 'open-table'; database: string; table: string; newTab: boolean }
+  | { kind: 'open-table'; database: string; table: string; newTab: boolean; filter?: TableFilterRequest }
   | { kind: 'open-sql'; sql: string; title: string; database?: string }
   | { kind: 'sql-action'; action: SqlIntentAction }
   | { kind: 'sql-connect' }

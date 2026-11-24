@@ -262,7 +262,7 @@ function tabsStateOf(conn: SQLConnectionSlice): TabsState {
   return { tabs: conn.tabs, activeTabId: conn.activeTabId, mru: conn.mru, closed: conn.closedTabs }
 }
 
-function hasStagedChanges(conn: SQLConnectionSlice, tab: SQLTab): boolean {
+export function hasStagedChanges(conn: SQLConnectionSlice, tab: SQLTab): boolean {
   return (
     tab.type === 'data' &&
     conn.stagedChanges.some((c) => c.tabId === tab.id || (!c.tabId && c.table === tab.table))

@@ -61,7 +61,7 @@ export function SearchPreview({ result, actions, onRun }: SearchPreviewProps) {
           {body.text}
         </pre>
       )}
-      {body.kind === 'text' && <span className="break-all font-mono text-xs text-nd-text-secondary">{body.text}</span>}
+      {body.kind === 'text' && <span className="break-all font-mono text-xs text-nd-text-secondary [font-variant-ligatures:none]">{body.text}</span>}
 
       <div className="flex-1" />
 
