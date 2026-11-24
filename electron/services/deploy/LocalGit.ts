@@ -6,6 +6,7 @@ import { join } from 'path'
 import { promisify } from 'util'
 import type { RepoFiles } from '../../../src/types/createSite'
 import type { ShipCommit, ShipFile, ShipFileStatus, ShipPreview } from '../../../src/types/deploy'
+import { githubHttpsUrl, isHttpUrl, parseGitHubRepo } from '../../../src/utils/deploy/githubRepo'
 import { isMigrationPath, makeShipPreview, orderFiles, PREVIEW_COMMIT_CAP, PREVIEW_FILE_CAP } from './previewShape'
 import { isValidBranch } from './siteFiles'
 
@@ -16,6 +17,7 @@ const gitEnv = (): NodeJS.ProcessEnv => ({ ...process.env, GIT_TERMINAL_PROMPT: 
 const REMOTE_PROTOCOLS = ['https', 'ssh', 'git'].flatMap((name) => ['-c', `protocol.${name}.allow=always`])
 const REMOTE_URL = /^(https:\/\/|ssh:\/\/|git:\/\/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)[^\s]+$/
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/
+const SSH_AUTH_FAILED = /Permission denied \(publickey\)|Host key verification failed/
 const NO_IDENTITY = /tell me who you are|empty ident|unable to auto-detect email/i
 const ROOT_FILE_CAP = 500
 const READ_FILE_CAP = 64 * 1024
@@ -73,6 +75,12 @@ export function parseDiff(stdout: string, migrationsPath: string): ShipFile[] {
   })
 }
 
+export function httpsRetryUrl(url: string, error: Error): string | null {
+  const github = parseGitHubRepo(url)
+  if (github === null || isHttpUrl(url) || !SSH_AUTH_FAILED.test(error.message)) return null
+  return githubHttpsUrl(github)
+}
+
 function gitError(err: unknown, fallback: string): Error {
   const stderr = (err as { stderr?: string }).stderr?.trim()
   return new Error(stderr || (err as Error).message || fallback)
@@ -101,7 +109,7 @@ export class LocalGit {
 
   async lsRemote(url: string, branch: string): Promise<string> {
     this.assertRemote(url, branch)
-    const { stdout } = await this.git([...this.protocols, 'ls-remote', '--', url, `refs/heads/${branch}`], NETWORK_TIMEOUT_MS, 'Could not reach the repository')
+    const { stdout } = await this.remoteGit(url, (target) => ['ls-remote', '--', target, `refs/heads/${branch}`], 'Could not reach the repository')
     const head = stdout.split('\t')[0].trim()
     if (!head) throw new Error(`Branch ${branch} was not found`)
     return head
@@ -114,7 +122,7 @@ export class LocalGit {
       mkdirSync(this.cacheDir, { recursive: true })
       await this.git(['init', '--bare', '-q', mirror], LOCAL_TIMEOUT_MS, 'Could not create the local cache')
     }
-    await this.git([...this.protocols, '--git-dir', mirror, 'fetch', '-q', '--', url, `+refs/heads/${branch}:refs/heads/${branch}`], NETWORK_TIMEOUT_MS, 'Could not fetch the repository')
+    await this.remoteGit(url, (target) => ['--git-dir', mirror, 'fetch', '-q', '--', target, `+refs/heads/${branch}:refs/heads/${branch}`], 'Could not fetch the repository')
     const { stdout } = await this.git(['--git-dir', mirror, 'rev-parse', `refs/heads/${branch}`], LOCAL_TIMEOUT_MS, 'Branch missing after fetch')
     return stdout.trim()
   }
@@ -173,7 +181,7 @@ export class LocalGit {
 
   async remoteHeads(url: string): Promise<string[]> {
     this.assertUrl(url)
-    const { stdout } = await this.git([...this.protocols, 'ls-remote', '--heads', '--', url], NETWORK_TIMEOUT_MS, 'Could not reach the repository')
+    const { stdout } = await this.remoteGit(url, (target) => ['ls-remote', '--heads', '--', target], 'Could not reach the repository')
     return stdout.split('\n').filter(Boolean).map((line) => line.split('\t')[1] ?? '')
   }
 
@@ -268,6 +276,20 @@ export class LocalGit {
 
   private mirrorPath(url: string): string {
     return join(this.cacheDir, `${createHash('sha256').update(url).digest('hex').slice(0, 16)}.git`)
+  }
+
+  private async remoteGit(url: string, args: (target: string) => string[], fallback: string): Promise<{ stdout: string }> {
+    try {
+      return await this.git([...this.protocols, ...args(url)], NETWORK_TIMEOUT_MS, fallback)
+    } catch (err) {
+      const https = httpsRetryUrl(url, err as Error)
+      if (https === null) throw err
+      try {
+        return await this.git([...this.protocols, ...args(https)], NETWORK_TIMEOUT_MS, fallback)
+      } catch (httpsErr) {
+        throw new Error(`Over SSH: ${(err as Error).message} Over HTTPS: ${(httpsErr as Error).message}`)
+      }
+    }
   }
 
   private async git(args: string[], timeout: number, fallback: string): Promise<{ stdout: string }> {

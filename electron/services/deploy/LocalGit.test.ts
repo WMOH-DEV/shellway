@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process'
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LocalGit, type PreviewRequest } from './LocalGit'
+import { LocalGit, httpsRetryUrl, type PreviewRequest } from './LocalGit'
 
 const gitEnv = { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' }
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: { ...process.env, ...gitEnv } }).toString().trim()
@@ -267,5 +267,30 @@ describe('LocalGit preview', () => {
     expect(preview.commits).toHaveLength(50)
     expect(preview.files).toHaveLength(200)
     expect(preview.files[0].path).toBe('database/migrations/zzz_last.php')
+  }, 30_000)
+})
+
+describe('httpsRetryUrl', () => {
+  const denied = new Error('git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.')
+
+  it.each([
+    ['git@github.com:acme/app.git'],
+    ['git@github.com:acme/app'],
+    ['ssh://git@github.com/acme/app.git']
+  ])('retries %s over HTTPS when this PC has no GitHub SSH key', (url) => {
+    expect(httpsRetryUrl(url, denied)).toBe('https://github.com/acme/app.git')
+  })
+
+  it('retries when the GitHub host key is not trusted yet', () => {
+    expect(httpsRetryUrl('git@github.com:acme/app.git', new Error('Host key verification failed.'))).toBe('https://github.com/acme/app.git')
+  })
+
+  it('does not retry other failures', () => {
+    expect(httpsRetryUrl('git@github.com:acme/app.git', new Error('ERROR: Repository not found.'))).toBeNull()
+  })
+
+  it('does not retry URLs that are already HTTPS or not on GitHub', () => {
+    expect(httpsRetryUrl('https://github.com/acme/app.git', denied)).toBeNull()
+    expect(httpsRetryUrl('git@gitlab.com:acme/app.git', denied)).toBeNull()
   })
 })
