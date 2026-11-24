@@ -84,7 +84,7 @@ function PlanFooterNote({ plan, fullSudo }: { plan: PlanAction[]; fullSudo: bool
 function NextActions({ step, problem, onNext }: { step: FormStep; problem: string | null; onNext: () => void }) {
   return (
     <>
-      <span className="max-w-[50%] truncate text-xs text-nd-text-muted" title={problem ?? undefined}>{problem ?? NEXT_HINTS[step]}</span>
+      <span className="min-w-0 max-w-[60%] text-right text-xs text-nd-text-muted">{problem ?? NEXT_HINTS[step]}</span>
       <Button variant="primary" onClick={onNext} disabled={problem !== null}>Continue <ArrowRight size={13} /></Button>
     </>
   )
@@ -148,7 +148,7 @@ export function SetupFlow({ connectionId, sessionId, serverName, context, starti
     <>
       <Button onClick={back} disabled={starting}>{stepIndex === 0 ? 'Cancel' : 'Back'}</Button>
       <div className="flex-1" />
-      {startError && <span role="alert" className="max-w-[40%] truncate text-xs text-nd-error-fg" title={startError}>{startError}</span>}
+      {startError && <span role="alert" className="min-w-0 max-w-[60%] break-words text-right text-xs text-nd-error-fg">{startError}</span>}
       {isFormStep(step) && <NextActions step={step} problem={stepProblem(step, model, context)} onNext={next} />}
       {plan !== null && <CreateActions plan={plan} fullSudo={context.fullSudo} starting={starting} rechecking={rechecking} onCreate={(ready) => startWith(ready)} onRecheck={onRecheck} />}
     </>
