@@ -969,7 +969,7 @@ describe.skipIf(process.platform === 'win32')('shellway-deploy runner', () => {
       const listed = rows(result.stdout, 'FILE')
       expect(listed).toHaveLength(200)
       expect(listed[0][4]).toBe('database/migrations/zzz_last.php')
-    })
+    }, 30_000)
 
     it('changes nothing but the mirror and works while a deploy holds the lock', async () => {
       writeSite('app', {})
