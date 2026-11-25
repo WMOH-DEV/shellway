@@ -3,8 +3,8 @@ import type { DeployStep, SourceMode } from '@/types/deploy'
 import { newSite, siteNameFromPath } from '../deploy/presets'
 import { defaultCommands, type DeployCommands } from './deploySite'
 import { generatePassword } from '../server/databases/password'
-import { databaseChoices, defaultDatabase, needsDatabase, siteDatabase, type DatabaseChoice } from './database'
-import { generateAppKey, writesEnv } from './env'
+import { databaseChoices, defaultDatabase, existingDatabaseProblem, needsDatabase, serverEngines, siteDatabase, type DatabaseChoice, type ExistingDatabase } from './database'
+import { generateAppKey, isAppKey, writesEnv } from './env'
 import { ALL_JOBS, NO_JOBS, availableJobs } from './laravelJobs'
 import { phpVersionFor, type StackSuggestion } from './repoSuggest'
 import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from './scaffold'
@@ -55,6 +55,9 @@ export interface CreateSiteDraft {
   suggestedEnvText: string
   dbPassword: string
   appKey: string
+  existingDatabase: ExistingDatabase
+  existingDbPassword: string
+  ownAppKey: string
   jobs: LaravelJobs
   staticBuild: boolean
   outputDir: string
@@ -170,6 +173,9 @@ export function newDraft(tools: ServerTools, siteUsers: string[] | null = null):
     suggestedEnvText: '',
     dbPassword: generatePassword(),
     appKey: generateAppKey(),
+    existingDatabase: { engine: serverEngines(template, tools)[0] ?? 'mysql', name: '', user: '' },
+    existingDbPassword: '',
+    ownAppKey: '',
     jobs: availableJobs(tools, ALL_JOBS),
     staticBuild: false,
     outputDir: DEFAULT_OUTPUT_DIR,
@@ -314,9 +320,26 @@ export function commandsStepProblem(draft: CreateSiteDraft, tools: ServerTools, 
   if (draft.codeSource === 'none') return null
   if (staleCommands(draft, server)) return 'Earlier settings changed after you edited the commands. Use the new defaults or keep yours.'
   if (draft.database === 'none' && needsDatabase(draft.template)) return 'Laravel runs its migrations on every deploy, so pick a database. SQLite needs no server.'
+  if (draft.database === 'existing') return existingDraftProblem(draft, tools)
   if (draft.database !== 'none' && !databaseChoices(draft.template, tools).includes(draft.database)) return 'Pick a database this server has'
-  return null
+  return appKeyProblem(draft)
 }
+
+function existingDraftProblem(draft: CreateSiteDraft, tools: ServerTools): string | null {
+  if (draft.codeSource === 'new') return "A new project can't use an existing database: its first deploy would run the new project's migrations on it."
+  if (!serverEngines(draft.template, tools).includes(draft.existingDatabase.engine)) return 'Pick a database server this server has'
+  return existingDatabaseProblem(draft.existingDatabase, draft.existingDbPassword) ?? appKeyProblem(draft)
+}
+
+function appKeyProblem(draft: CreateSiteDraft): string | null {
+  const own = draft.ownAppKey.trim()
+  if (draft.template !== 'laravel' || own === '' || isAppKey(own)) return null
+  return 'The app key should look like base64:… with 44 characters after it. Copy APP_KEY from your current .env.'
+}
+
+export const appKeyOf = (draft: Pick<CreateSiteDraft, 'appKey' | 'ownAppKey'>): string => draft.ownAppKey.trim() || draft.appKey
+
+export const databaseOf = (draft: CreateSiteDraft): ReturnType<typeof siteDatabase> => siteDatabase(draft.database, draft, draft.existingDatabase)
 
 export function domainStepProblem(draft: CreateSiteDraft): string | null {
   return isValidEmail(draft.email.trim()) ? null : "Enter an email for Let's Encrypt"
@@ -373,8 +396,8 @@ export const commandsOf = (draft: CreateSiteDraft, server: SiteServer): DeployCo
 
 export function toSecrets(draft: CreateSiteDraft, input: CreateSiteInput): CreateSiteSecrets {
   return {
-    dbPassword: input.database !== null && input.database.engine !== 'sqlite' ? draft.dbPassword : null,
-    appKey: input.template === 'laravel' ? draft.appKey : null,
+    dbPassword: input.database !== null && input.database.engine !== 'sqlite' ? (draft.database === 'existing' ? draft.existingDbPassword : draft.dbPassword) : null,
+    appKey: input.template === 'laravel' ? appKeyOf(draft) : null,
     envText: draft.envText
   }
 }
@@ -385,7 +408,7 @@ const filledSteps = (steps: DeployStep[]): DeployStep[] =>
 export function toInput(draft: CreateSiteDraft, context: ServerContext, zone: CloudflareZoneRef | null): CreateSiteInput {
   const hasCode = draft.codeSource !== 'none'
   const { buildSteps, activateSteps } = commandsOf(draft, context.server)
-  const database = hasCode ? siteDatabase(draft.database, draft) : null
+  const database = hasCode ? databaseOf(draft) : null
   const isNew = draft.codeSource === 'new'
   return {
     domain: draft.domain,

@@ -7,7 +7,13 @@ import { sqlScript } from '../server/databases/sqlStep'
 import { deployRootOf } from './siteScripts'
 import { assertOwner } from './validate'
 
-export type DatabaseChoice = DatabaseEngine | 'none'
+export type DatabaseChoice = DatabaseEngine | 'existing' | 'none'
+
+export interface ExistingDatabase {
+  engine: ServerDatabaseEngine
+  name: string
+  user: string
+}
 
 const DB_HOST = 'localhost'
 const MAX_USER_LENGTH = 32
@@ -25,6 +31,25 @@ export function databaseChoices(template: TemplateId, tools: ServerTools): Datab
   if (!SERVER_DATABASE_STACKS.has(template)) return []
   const servers = (['mysql', 'postgresql'] as const).filter((engine) => tools.databases[engine])
   return SQLITE_STACKS.has(template) ? [...servers, 'sqlite'] : servers
+}
+
+export function serverEngines(template: TemplateId, tools: ServerTools): ServerDatabaseEngine[] {
+  return databaseChoices(template, tools).filter((engine): engine is ServerDatabaseEngine => engine !== 'sqlite')
+}
+
+export const isExistingDatabase = (database: SiteDatabase): boolean => 'existing' in database
+
+const PRINTABLE = /^[\x20-\x7E]+$/
+
+export const isExistingDbPassword = (password: string): boolean =>
+  password.length <= 128 && PRINTABLE.test(password) && !/['\\]/.test(password) && password.trim() === password
+
+export const existingDatabaseProblem = ({ name, user }: ExistingDatabase, password: string): string | null => {
+  if (!DB_NAME.test(name)) return 'Enter the database name. It can use letters, digits and _.'
+  if (!DB_USER.test(user)) return 'Enter the database user. It can use letters, digits and _.'
+  if (password === '') return 'Enter the password of the database user.'
+  if (!isExistingDbPassword(password)) return "The password can't contain ' or \\, start or end with a space, or be longer than 128 characters."
+  return null
 }
 
 export const needsDatabase = (template: TemplateId): boolean => template === 'laravel'
@@ -46,14 +71,18 @@ export function databaseNames(siteName: string): { name: string; user: string } 
 
 export const sqlitePath = (folder: string): string => `${deployRootOf(folder)}/shared/database.sqlite`
 
-export function siteDatabase(choice: DatabaseChoice, input: Pick<CreateSiteInput, 'siteName' | 'folder'>): SiteDatabase | null {
+export function siteDatabase(choice: DatabaseChoice, input: Pick<CreateSiteInput, 'siteName' | 'folder'>, existing: ExistingDatabase | null = null): SiteDatabase | null {
   if (choice === 'none') return null
+  if (choice === 'existing') return existing === null ? null : { engine: existing.engine, name: existing.name, user: existing.user, existing: true }
   if (choice === 'sqlite') return { engine: 'sqlite', path: sqlitePath(input.folder) }
   return { engine: choice, ...databaseNames(input.siteName) }
 }
 
-export const databaseLabel = (database: SiteDatabase): string =>
-  database.engine === 'sqlite' ? `SQLite file ${database.path}` : `${engineLabel(database.engine)} database ${database.name}, user ${database.user}`
+export function databaseLabel(database: SiteDatabase): string {
+  if (database.engine === 'sqlite') return `SQLite file ${database.path}`
+  const which = isExistingDatabase(database) ? 'your existing ' : ''
+  return `${which}${engineLabel(database.engine)} database ${database.name}, user ${database.user}`
+}
 
 export const DATABASE_CHECKED = 'shellway: database name is free'
 
@@ -117,6 +146,27 @@ export function createDatabaseScript(database: SiteDatabase, owner: string, pass
   return createServerDatabaseScript(database.engine, database.name, database.user, secret)
 }
 
+const LOGIN_CHECK: Record<ServerDatabaseEngine, (name: string, user: string, password: string) => string> = {
+  mysql: (name, user, password) => `MYSQL_PWD=${quote(password)} runuser -u nobody -- mysql -h ${DB_HOST} -u ${quote(user)} -D ${quote(name)} --batch -N -e 'SELECT 1' >/dev/null`,
+  postgresql: (name, user, password) => `PGPASSWORD=${quote(password)} runuser -u nobody -- psql -X -h 127.0.0.1 -U ${quote(user)} -d ${quote(name)} -tAc 'SELECT 1' >/dev/null`
+}
+
+export function checkExistingDatabaseScript(database: ExistingDatabase, password: string | null): string {
+  const name = assertMatches(database.name, DB_NAME, 'database name')
+  const user = assertMatches(database.user, DB_USER, 'database user')
+  const secret = password === null ? MASK : password
+  if (password !== null && !isExistingDbPassword(password)) throw new Error('The database password is not valid')
+  return [
+    'set -e',
+    'cd /tmp',
+    `if ! ${LOGIN_CHECK[database.engine](name, user, secret)}; then`,
+    ...refuse(`Could not log in to the ${engineLabel(database.engine)} database ${name} as ${user}. Check the name, user and password. Shellway did not change the database.`),
+    'fi',
+    `echo ${quote(`Logged in to ${name} as ${user}.`)}`,
+    ''
+  ].join('\n')
+}
+
 export function removeDatabaseScript(database: SiteDatabase): string {
   if (database.engine === 'sqlite') {
     const file = quote(database.path)
@@ -124,6 +174,10 @@ export function removeDatabaseScript(database: SiteDatabase): string {
   }
   return ['set -e', 'cd /tmp', sqlScript(database.engine, dropStatements(database.engine, database.name, database.user))].join('\n')
 }
+
+const PLAIN_ENV_VALUE = /^[A-Za-z0-9_]*$/
+
+const envQuoted = (value: string): string => (value === MASK || PLAIN_ENV_VALUE.test(value) ? value : `'${value}'`)
 
 export function databaseEnv(database: SiteDatabase | null, password: string): [string, string][] {
   if (database === null) return []
@@ -135,7 +189,7 @@ export function databaseEnv(database: SiteDatabase | null, password: string): [s
     ['DB_PORT', isMysql ? '3306' : '5432'],
     ['DB_DATABASE', database.name],
     ['DB_USERNAME', database.user],
-    ['DB_PASSWORD', password]
+    ['DB_PASSWORD', isExistingDatabase(database) ? envQuoted(password) : password]
   ]
 }
 

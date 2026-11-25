@@ -1,5 +1,5 @@
 import type { Leftover, RunRecord } from '@/types/createSite'
-import { databaseSizeCommand, engineLabel, manualDropCommand } from './database'
+import { databaseSizeCommand, engineLabel, isExistingDatabase, manualDropCommand } from './database'
 import { keptResources, type RemovalStep } from './removal'
 import { deployRootOf } from './siteScripts'
 import { assertFolder, assertSiteName } from './validate'
@@ -44,7 +44,7 @@ function folderLeftover(record: RunRecord): ServerLeftover[] {
 
 function databaseLeftover({ created }: RunRecord): ServerLeftover[] {
   const { database } = created
-  if (database === null) return []
+  if (database === null || isExistingDatabase(database)) return []
   const sizeCommand = databaseSizeCommand(database)
   if (database.engine === 'sqlite') return [{ id: 'database', title: `The SQLite database ${database.path}, inside the site folder`, command: null, size: null, sizeCommand }]
   const title = `The ${engineLabel(database.engine)} database ${database.name} with every table and row, and its user ${database.user}`

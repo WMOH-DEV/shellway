@@ -6,7 +6,7 @@ import { repoLabel } from '../deploy/siteDetail'
 import { issueCommand, stagingCommand } from '../ssl/https/issueCommands'
 import { pluralize } from '../ssl/time'
 import type { WebServerDriver } from '../webServer/driver'
-import { createDatabaseScript, databaseLabel } from './database'
+import { checkExistingDatabaseScript, createDatabaseScript, databaseLabel, isExistingDatabase } from './database'
 import { envPathOf, managedEnv, maskedEnvLines } from './env'
 import { createJobsScript, cronText, jobFiles, unitText } from './laravelJobs'
 import { assertPoolOwner, createPoolScript, poolLayout, poolText } from './phpPool'
@@ -252,6 +252,10 @@ function siteAction(input: CreateSiteInput, template: SiteTemplate, driver: WebS
 function databaseActions(input: CreateSiteInput): PlanAction[] {
   const { database } = input
   if (database === null) return []
+  if (database.engine !== 'sqlite' && isExistingDatabase(database)) {
+    const note = 'Shellway creates nothing here and never removes this database. It logs in with your details first and stops if that fails. Your migrations run on this database at every deploy, starting with the first one.'
+    return [action({ id: 'database', title: TITLES.database, summary: databaseLabel(database), chip: 'ready', ...asRoot(checkExistingDatabaseScript(database, null)), note })]
+  }
   const note = database.engine === 'sqlite'
     ? 'Kept in the shared folder, outside the releases, so it survives every deploy. Only the site user can read it.'
     : `Refuses if the name is taken. The password is generated for this site and written only to its env file. Run as root with the ${database.engine === 'mysql' ? 'mysql' : 'psql'} client.`

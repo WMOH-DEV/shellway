@@ -8,7 +8,7 @@ import { localProjectPath, placeholderPage, scaffoldFiles, scaffoldsOnServer } f
 import { TEMPLATES, siteFileText } from '../../../src/utils/createSite/templates'
 import { siteNames } from '../../../src/utils/createSite/templates/shared'
 import { assertLineage, assertSiteName } from '../../../src/utils/createSite/validate'
-import { DATABASE_CHECKED, createDatabaseScript } from '../../../src/utils/createSite/database'
+import { DATABASE_CHECKED, checkExistingDatabaseScript, createDatabaseScript, isExistingDatabase } from '../../../src/utils/createSite/database'
 import { envFileText, envPathOf, privateEnvFileScript } from '../../../src/utils/createSite/env'
 import { matchesPlan } from '../../../src/utils/createSite/existingDns'
 import { jobFiles } from '../../../src/utils/createSite/laravelJobs'
@@ -260,6 +260,11 @@ export class CreateSiteRun {
   private async createDatabase(action: PlanAction): Promise<void> {
     const database = this.input.database
     if (database === null) return
+    if (database.engine !== 'sqlite' && isExistingDatabase(database)) {
+      const check = checkExistingDatabaseScript(database, this.neededSecrets().dbPassword)
+      this.mustSucceed(await this.rootScript(check, ROOT_TIMEOUT_MS, action.script ?? check), 'Shellway could not log in to the database.')
+      return
+    }
     const script = createDatabaseScript(database, this.input.owner, this.neededSecrets().dbPassword)
     const result = await this.rootScript(script, ROOT_TIMEOUT_MS, action.script ?? script)
     if (this.record.created.database === null && result.stdout.includes(DATABASE_CHECKED)) this.created({ database })

@@ -40,13 +40,16 @@ const exec: RemoteExec = (command, options = {}) => new Promise<ExecResult>((res
 
 const asRoot = (script: string): string => spawnSync(DOCKER, ['exec', '-i', '-u', 'root', BOX, 'sh', '-s'], { input: script, encoding: 'utf8' }).stdout
 
-const TEST_SITES = ['itlaravel', 'itplaceholder', 'itspa', 'itdelete', 'itedited']
+const TEST_SITES = ['itlaravel', 'itplaceholder', 'itspa', 'itdelete', 'itedited', 'itexisting', 'itexistingbad']
+const LIVE = { engine: 'mysql' as const, name: 'itlive_db', user: 'itlive_app', existing: true as const }
+const LIVE_PASSWORD = `p@ss w$rd"#!x`
 
 const clearTestSites = (): void => {
   asRoot(TEST_SITES.map((name) => `systemctl disable --now shellway-${name}-queue.service 2>/dev/null
 mysql -e 'DROP DATABASE IF EXISTS ${name}; DROP USER IF EXISTS ${name}@localhost;'
 rm -rf /var/www/${name} /var/www/${name}-deploy /etc/php/8.3/fpm/pool.d/${name}.conf /etc/nginx/sites-available/${name}.conf /etc/nginx/sites-enabled/${name}.conf /etc/cron.d/shellway-${name} /etc/systemd/system/shellway-${name}-queue.service
-`).join('') + 'systemctl daemon-reload\nnginx -s reload\nkill -USR2 "$(cat /run/php/php8.3-fpm.pid)"\n')
+`).join('') + `mysql -e "DROP DATABASE IF EXISTS ${LIVE.name}; DROP USER IF EXISTS ${LIVE.user}@localhost;"
+` + 'systemctl daemon-reload\nnginx -s reload\nkill -USR2 "$(cat /run/php/php8.3-fpm.pid)"\n')
 }
 
 const fetchSite = (domain: string): string => asRoot(`curl -s -H 'Host: ${domain}' http://127.0.0.1/\n`)
@@ -130,6 +133,40 @@ describe.skipIf(!ENABLED)('Create site on a Docker server', () => {
     expect(asRoot('ls /etc/php/8.3/fpm/pool.d/itlaravel.conf /etc/nginx/sites-available/itlaravel.conf /etc/cron.d/shellway-itlaravel /etc/systemd/system/shellway-itlaravel-queue.service /var/www/itlaravel-deploy/shared/.env 2>/dev/null; echo end\n').trim()).toBe('end')
     expect(asRoot("mysql -N -e \"select count(*) from mysql.user where user = 'itlaravel'\"\n").trim()).toBe('0')
     expect(asRoot('systemctl is-active php8.3-fpm nginx\n').trim()).toBe('active\nactive')
+  }, LONG_MS)
+
+  it('uses an existing database without creating, changing or removing it', async () => {
+    asRoot(`mysql <<'SQL'
+CREATE DATABASE ${LIVE.name};
+CREATE USER '${LIVE.user}'@'localhost' IDENTIFIED BY '${LIVE_PASSWORD}';
+GRANT ALL ON ${LIVE.name}.* TO '${LIVE.user}'@'localhost';
+CREATE TABLE ${LIVE.name}.orders (id INT);
+INSERT INTO ${LIVE.name}.orders VALUES (7);
+SQL
+`)
+    const site = { domain: 'itexisting.example.com', siteName: 'itexisting', folder: '/var/www/itexisting' }
+    asRoot("[ -e /root/.my.cnf ] || printf '[client]\\npassword=not_the_app_password\\n' > /root/.my.cnf\n")
+    const { record, log, sitePorts } = await createSite({ ...site, database: LIVE }, { ...SECRETS, dbPassword: LIVE_PASSWORD }).finally(() => asRoot("grep -q not_the_app_password /root/.my.cnf && rm -f /root/.my.cnf\n"))
+    expect(record.phase, failure(record, log)).toBe('done')
+    expect(record.created.database).toBeNull()
+    expect(log.join('')).not.toContain(LIVE_PASSWORD)
+    const env = asRoot('cat /var/www/itexisting-deploy/shared/.env\n')
+    expect(env).toContain(`DB_DATABASE=${LIVE.name}\n`)
+    expect(env).toContain(`DB_USERNAME=${LIVE.user}\n`)
+    expect(env).toContain(`DB_PASSWORD='${LIVE_PASSWORD}'\n`)
+    expect(asRoot("mysql -N -e \"select count(*) from mysql.user where user = 'itexisting'\"; mysql -N -e 'show databases' | grep -c '^itexisting$'\n").trim().split('\n')).toEqual(['0', '0'])
+
+    const removed = await removeCreated(record, sitePorts, NGINX.driver)
+    expect(removed.error ?? '').not.toContain(LIVE.name)
+    expect(asRoot(`mysql ${LIVE.name} -N -e 'select id from orders'; mysql -N -e "select count(*) from mysql.user where user = '${LIVE.user}'"\n`).trim().split('\n')).toEqual(['7', '1'])
+  }, LONG_MS)
+
+  it('stops before writing anything for the app when it cannot log in to the existing database', async () => {
+    const site = { domain: 'itexistingbad.example.com', siteName: 'itexistingbad', folder: '/var/www/itexistingbad' }
+    const { record } = await createSite({ ...site, database: LIVE }, { ...SECRETS, dbPassword: 'wrong_password_1' })
+    expect(record.phase).toBe('failed')
+    expect(record.error).toContain('Could not log in')
+    expect(asRoot('ls /var/www/itexistingbad-deploy/shared/.env 2>/dev/null; echo end\n').trim()).toBe('end')
   }, LONG_MS)
 
   it('makes a site with no code yet that serves its placeholder page, then removes it', async () => {

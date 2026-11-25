@@ -1,9 +1,10 @@
 import { isAbsolute, posix } from 'path'
-import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, Leftover, NameCheck, ProjectCheckRequest, ResumeMode, RunRecord, SiteServer } from '../../../src/types/createSite'
+import type { CloudflareZoneRef, CreateSiteContext, CreateSiteInput, CreateSiteSecrets, Leftover, NameCheck, ProjectCheckRequest, ResumeMode, RunRecord, SiteDatabase, SiteServer } from '../../../src/types/createSite'
 import { NEW_PROJECT_TEMPLATES, NO_CODE_TEMPLATES, githubSshUrlOf } from '../../../src/utils/createSite/scaffold'
 import type { ServerFacts } from '../../../src/types/ssl'
 import { deploySiteConfig } from '../../../src/utils/createSite/deploySite'
-import { needsDatabase, siteDatabase } from '../../../src/utils/createSite/database'
+import { checkExistingDatabaseScript, needsDatabase, siteDatabase } from '../../../src/utils/createSite/database'
+import { DB_NAME, DB_USER } from '../../../src/utils/server/databases/identifiers'
 import { leftoverSizesScript, leftoversOf, withSizes } from '../../../src/utils/createSite/deletion'
 import { deleteBlockedReason, isFinishedSite } from '../../../src/utils/createSite/runView'
 import { PROJECT_SHELL, ROOT_SHELL } from '../../../src/utils/createSite/siteScripts'
@@ -56,10 +57,19 @@ function interrupted(record: RunRecord): RunRecord {
   return { ...record, steps, phase: 'failed', error: CLOSED_MID_STEP }
 }
 
+function existingDatabaseOf(database: { engine: unknown; name: unknown; user: unknown }): SiteDatabase | null {
+  const { engine, name, user } = database
+  const valid = (engine === 'mysql' || engine === 'postgresql') && typeof name === 'string' && DB_NAME.test(name) && typeof user === 'string' && DB_USER.test(user)
+  return valid ? { engine, name, user, existing: true } : null
+}
+
 function assertDatabaseMatches(input: CreateSiteInput): void {
   const { database } = input
   if (database === null && input.codeSource !== 'none' && needsDatabase(input.template)) throw new Error('Laravel needs a database for its migrations')
-  if (database !== null && JSON.stringify(database) !== JSON.stringify(siteDatabase(database.engine, input))) throw new Error('Invalid database settings')
+  if (database === null) return
+  const expected = 'existing' in database ? existingDatabaseOf(database) : siteDatabase(database.engine, input)
+  if (JSON.stringify(database) !== JSON.stringify(expected)) throw new Error('Invalid database settings')
+  if ('existing' in database && input.codeSource === 'new') throw new Error("A new project can't use an existing database")
 }
 
 const GITHUB_NAME = /^[A-Za-z0-9._-]{1,100}$/
@@ -166,6 +176,7 @@ export class CreateSiteService {
       const invalid = input.codeSource === 'none' ? null : validateSiteConfig(deploySiteConfig(input))
       if (invalid) throw new Error(invalid)
       const login = await this.checkAgainstServer(connectionId, input)
+      await this.checkExistingDatabase(connectionId, input, secrets)
       const ports = this.ports(connectionId, sessionId, this.deps.newId(), siteUserOf(input.owner, login))
       const plan = buildPlan(input, await ports.tools(), driver)
       const record = { ...newRunRecord(ports.runId, sessionId, input, plan, this.deps.now()), machineId: await this.machineId(connectionId) }
@@ -277,6 +288,13 @@ export class CreateSiteService {
     if (input.createOwner) return
     const users = (await readSiteUsers(this.exec(connectionId))) ?? []
     if (!users.some((user) => user.name === input.owner)) throw new Error(`There is no user ${input.owner} on this server. Pick another site user, or let Shellway create it.`)
+  }
+
+  private async checkExistingDatabase(connectionId: string, input: CreateSiteInput, secrets: CreateSiteSecrets): Promise<void> {
+    const { database } = input
+    if (database === null || database.engine === 'sqlite' || !('existing' in database)) return
+    const result = await this.exec(connectionId)(ROOT_SHELL, { stdin: checkExistingDatabaseScript(database, secrets.dbPassword), timeoutMs: PROBE_TIMEOUT_MS })
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'Shellway could not log in to the database.')
   }
 
   private async checkAgainstServer(connectionId: string, input: CreateSiteInput): Promise<string> {
