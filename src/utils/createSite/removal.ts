@@ -1,6 +1,6 @@
 import type { CreatedDnsRecord, CreatedResources, DnsRecordPlan, RunRecord, SiteServer } from '@/types/createSite'
 import type { WebServerDriver } from '../webServer/driver'
-import { databaseLabel, removeDatabaseScript } from './database'
+import { databaseLabel, isExistingDatabase, removeDatabaseScript } from './database'
 import { jobFiles, removeJobsScript } from './laravelJobs'
 import { stopAppScript } from './pm2'
 import { removePoolScript } from './phpPool'
@@ -90,7 +90,7 @@ function envFileSteps({ envFile }: CreatedResources): RemovalStep[] {
 }
 
 function databaseSteps({ database }: CreatedResources): RemovalStep[] {
-  if (database === null) return []
+  if (database === null || isExistingDatabase(database)) return []
   const title = database.engine === 'sqlite' ? `SQLite file ${database.path} and everything in it` : `${databaseLabel(database)}, with every table and row in it`
   return [{ kind: 'database', title, command: ROOT_SHELL, script: removeDatabaseScript(database) }]
 }

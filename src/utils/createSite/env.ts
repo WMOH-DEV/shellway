@@ -1,7 +1,7 @@
 import type { CreateSiteInput, CreateSiteSecrets, TemplateId } from '@/types/createSite'
 import { setEnvKeys, type EnvEntry } from '../server/databases/env'
 import { DB_PASSWORD, MASK } from '../server/databases/identifiers'
-import { databaseEnv } from './database'
+import { databaseEnv, isExistingDatabase, isExistingDbPassword } from './database'
 import { deployRootOf } from './siteScripts'
 import { quote } from '../server/jobs/shell'
 import { assertDomain, assertFolder, assertSiteName } from './validate'
@@ -56,6 +56,8 @@ export const envFileText = (facts: EnvFacts, secrets: CreateSiteSecrets, base = 
 export const writesEnv = (facts: EnvFacts, userText: string): boolean =>
   stackUsesEnv(facts.template) && (managedEnv(facts, null).length > 0 || userText.trim() !== '')
 
+export const isAppKey = (value: string): boolean => APP_KEY.test(value)
+
 export function generateAppKey(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
   return `base64:${btoa(String.fromCharCode(...bytes))}`
@@ -65,7 +67,8 @@ function secretsProblem(input: CreateSiteInput, secrets: CreateSiteSecrets): str
   const { database } = input
   const needsPassword = database !== null && database.engine !== 'sqlite'
   if (needsPassword !== (secrets.dbPassword !== null)) return 'The database password does not match the database choice.'
-  if (secrets.dbPassword !== null && !DB_PASSWORD.test(secrets.dbPassword)) return 'The database password is not valid.'
+  const passwordValid = database !== null && database.engine !== 'sqlite' && isExistingDatabase(database) ? isExistingDbPassword : (value: string) => DB_PASSWORD.test(value)
+  if (secrets.dbPassword !== null && !passwordValid(secrets.dbPassword)) return 'The database password is not valid.'
   if ((input.template === 'laravel') !== (secrets.appKey !== null)) return 'The app key does not match the stack.'
   if (secrets.appKey !== null && !APP_KEY.test(secrets.appKey)) return 'The app key is not valid.'
   if (new TextEncoder().encode(secrets.envText).length > MAX_ENV_BYTES) return 'The env settings are too long.'

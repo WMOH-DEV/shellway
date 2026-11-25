@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import type { DatabaseEngine, ServerTools } from '@/types/createSite'
-import { databaseChoices, databaseNames, engineLabel, needsDatabase, siteDatabase, sqlitePath, type DatabaseChoice } from '@/utils/createSite/database'
+import { Input } from '@/components/ui/Input'
+import type { DatabaseEngine, ServerDatabaseEngine, ServerTools } from '@/types/createSite'
+import { databaseChoices, databaseNames, engineLabel, needsDatabase, serverEngines, sqlitePath, type DatabaseChoice } from '@/utils/createSite/database'
 import { envPathOf, isSecretKey, managedEnv, stackUsesEnv } from '@/utils/createSite/env'
 import { MASK } from '@/utils/server/databases/identifiers'
+import { appKeyOf, databaseOf } from '@/utils/createSite/wizard'
 import { Choice, Section } from '../setup/SiteSections'
 import type { CreateSiteDraftModel } from './useCreateSiteDraft'
 
@@ -22,9 +24,37 @@ function engineHint(engine: DatabaseEngine, model: CreateSiteDraftModel): string
 
 const NO_DATABASE = { value: 'none' as const, label: 'No database', hint: 'Shellway creates none. You can add one later from the Server tab.' }
 
-function databaseOptions(engines: DatabaseEngine[], model: CreateSiteDraftModel): { value: DatabaseChoice; label: string; hint: string }[] {
+const EXISTING_DATABASE = { value: 'existing' as const, label: 'Existing database', hint: 'One already on this server. Shellway creates nothing, checks it can log in, and never removes it.' }
+
+function databaseOptions(engines: DatabaseEngine[], model: CreateSiteDraftModel, tools: ServerTools): { value: DatabaseChoice; label: string; hint: string }[] {
   const options = engines.map((engine) => ({ value: engine as DatabaseChoice, label: engineLabel(engine), hint: engineHint(engine, model) }))
-  return needsDatabase(model.draft.template) ? options : [...options, NO_DATABASE]
+  const offersExisting = model.draft.codeSource !== 'new' && serverEngines(model.draft.template, tools).length > 0
+  const withExisting = offersExisting ? [...options, EXISTING_DATABASE] : options
+  return needsDatabase(model.draft.template) ? withExisting : [...withExisting, NO_DATABASE]
+}
+
+function ExistingDatabaseFields({ model, tools }: SectionProps) {
+  const { draft, patch } = model
+  const existing = draft.existingDatabase
+  const engines = serverEngines(draft.template, tools)
+  const set = (change: Partial<typeof existing>) => patch({ existingDatabase: { ...existing, ...change } })
+  return (
+    <div className="flex flex-col gap-2">
+      {engines.length > 1 && (
+        <Choice<ServerDatabaseEngine>
+          value={existing.engine}
+          options={engines.map((engine) => ({ value: engine, label: engineLabel(engine), hint: 'On this server' }))}
+          onChange={(engine) => set({ engine })}
+        />
+      )}
+      <div className="grid grid-cols-3 gap-2">
+        <Input label="Database name" spellCheck={false} value={existing.name} onChange={(e) => set({ name: e.target.value.trim() })} />
+        <Input label="User" spellCheck={false} value={existing.user} onChange={(e) => set({ user: e.target.value.trim() })} />
+        <Input label="Password" type="password" value={draft.existingDbPassword} onChange={(e) => patch({ existingDbPassword: e.target.value })} />
+      </div>
+      <span className="text-2xs text-nd-text-muted">Use the same details your current app has in its .env. Your migrations run on this database at every deploy, starting with the first one.</span>
+    </div>
+  )
 }
 
 function SecretValue({ name, value }: { name: string; value: string }) {
@@ -45,7 +75,8 @@ export function DatabaseSection({ model, tools }: SectionProps) {
   const missingServer = !tools.databases.mysql && !tools.databases.postgresql
   return (
     <Section title="Database">
-      <Choice value={model.draft.database} options={databaseOptions(engines, model)} onChange={(database) => model.patch({ database })} />
+      <Choice value={model.draft.database} options={databaseOptions(engines, model, tools)} onChange={(database) => model.patch({ database })} />
+      {model.draft.database === 'existing' && <ExistingDatabaseFields model={model} tools={tools} />}
       {missingServer && <span className="text-2xs text-nd-text-muted">No MySQL or PostgreSQL on this server. Install one from the Server tab to use it here.</span>}
     </Section>
   )
@@ -54,8 +85,9 @@ export function DatabaseSection({ model, tools }: SectionProps) {
 export function EnvironmentSection({ model }: { model: CreateSiteDraftModel }) {
   const { draft, patch } = model
   if (!stackUsesEnv(draft.template)) return null
-  const facts = { ...draft, database: siteDatabase(draft.database, draft) }
-  const managed = managedEnv(facts, { appKey: draft.appKey, dbPassword: draft.dbPassword })
+  const facts = { ...draft, database: databaseOf(draft) }
+  const dbPassword = draft.database === 'existing' ? draft.existingDbPassword : draft.dbPassword
+  const managed = managedEnv(facts, { appKey: appKeyOf(draft), dbPassword })
   return (
     <Section title="Environment (.env)">
       <span className="text-2xs text-nd-text-muted">
@@ -72,6 +104,12 @@ export function EnvironmentSection({ model }: { model: CreateSiteDraftModel }) {
               </div>
             ))}
           </dl>
+        </div>
+      )}
+      {draft.template === 'laravel' && (
+        <div className="flex flex-col gap-1">
+          <Input label="Your app key (optional)" type="password" spellCheck={false} placeholder="base64:…" value={draft.ownAppKey} onChange={(e) => patch({ ownAppKey: e.target.value.trim() })} />
+          <span className="text-2xs text-nd-text-muted">Leave empty for a new key. If this site uses an existing database, paste APP_KEY from your current app, or data it encrypted can't be read and everyone is logged out.</span>
         </div>
       )}
       <label className="flex flex-col gap-1">

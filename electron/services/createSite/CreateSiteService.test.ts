@@ -26,14 +26,16 @@ function fakeStore(records: RunRecord[]): RunStore {
 
 const MACHINE = '0123456789abcdef0123456789abcdef'
 
-function makeService(store: RunStore, facts: Partial<ServerFacts> = {}, machine = MACHINE) {
+type FakeExec = (command: string, options?: { stdin?: unknown }) => Promise<{ code: number; stdout: string; stderr: string; stdoutBytes: number }>
+
+function makeService(store: RunStore, facts: Partial<ServerFacts> = {}, machine = MACHINE, exec?: FakeExec) {
   const ssl = {
     service: () => ({ readConfig: async () => ({ facts: { nginx: '1.24', apache: null, serving: 'nginx', user: 'deploy', ...facts }, blocks: [] }) }),
     cloudflareStatus: async () => ({ saved: true, error: null, zones: [{ id: 'z1', name: 'example.com' }], permissions: [] }),
     dnsClient: () => null
   } as unknown as SslCoordinator
   return new CreateSiteService({
-    execFor: () => vi.fn(async (command: string) => ({ code: 0, stdout: command.includes('machine-id') ? `${machine}\n` : '', stderr: '', stdoutBytes: 0 })),
+    execFor: () => vi.fn(exec ?? (async (command: string) => ({ code: 0, stdout: command.includes('machine-id') ? `${machine}\n` : '', stderr: '', stdoutBytes: 0 }))),
     sessionOf: () => 'session-1',
     ssl,
     deploy: {} as DeployCoordinator,
@@ -97,6 +99,35 @@ describe('CreateSiteService', () => {
 
   it('refuses a database whose names or path were not made from the site name', async () => {
     const input = { ...INPUT, database: { engine: 'mysql' as const, name: 'mysql', user: 'root' } }
+    await expect(makeService(fakeStore([])).start('c1', 'session-1', input, SECRETS)).rejects.toThrow('Invalid database settings')
+  })
+
+  describe('with an existing database', () => {
+    const existing = { ...INPUT, database: { engine: 'mysql' as const, name: 'shop_live', user: 'shop_app', existing: true as const } }
+
+    it('logs in to it before the run exists, and stops there when the details are wrong', async () => {
+      const store = fakeStore([])
+      const stdins: string[] = []
+      const exec: FakeExec = async (_command, options = {}) => {
+        const stdin = typeof options.stdin === 'string' ? options.stdin : ''
+        stdins.push(stdin)
+        const refused = stdin.includes('MYSQL_PWD')
+        return { code: refused ? 3 : 0, stdout: '', stderr: refused ? 'Could not log in to the MySQL database shop_live as shop_app.' : '', stdoutBytes: 0 }
+      }
+      await expect(makeService(store, {}, MACHINE, exec).start('c1', 'session-1', existing, SECRETS)).rejects.toThrow('Could not log in to the MySQL database shop_live')
+      expect(stdins.find((stdin) => stdin.includes('MYSQL_PWD'))).toContain(`MYSQL_PWD='${SECRETS.dbPassword}' runuser -u nobody --`)
+      expect(store.save).not.toHaveBeenCalled()
+      expect(store.saveSecrets).not.toHaveBeenCalled()
+    })
+
+    it('refuses it for a new project, whose migrations would run on it', async () => {
+      const input = { ...existing, codeSource: 'new' as const }
+      await expect(makeService(fakeStore([])).start('c1', 'session-1', input, SECRETS)).rejects.toThrow("A new project can't use an existing database")
+    })
+  })
+
+  it('refuses an existing database with names that are not plain identifiers', async () => {
+    const input = { ...INPUT, database: { engine: 'mysql' as const, name: 'shop; DROP', user: 'app', existing: true as const } }
     await expect(makeService(fakeStore([])).start('c1', 'session-1', input, SECRETS)).rejects.toThrow('Invalid database settings')
   })
 

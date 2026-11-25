@@ -40,6 +40,7 @@ function answer(command: string, stdin: string) {
   if (stdin.includes('sha256sum')) return stdin.includes('-le-ssl') && !httpsDone ? ok('shellway: not there\n') : ok(`${httpsDone ? SHA_AFTER_HTTPS : SHA}  file\n`)
   if (stdin.includes(FOLDER_CREATED)) return failAt === 'folder' ? failed('/var/www/shop already exists. Nothing was changed.') : ok(`${FOLDER_CREATED}\n`)
   if (stdin.includes('/etc/cron.d/')) return failAt === 'jobs' ? failed('/etc/cron.d/shellway-shop already exists. Nothing was changed.') : ok()
+  if (stdin.includes('MYSQL_PWD')) return failAt === 'database' ? failed('Could not log in to the MySQL database shop_live as shop_app.') : ok('Logged in to shop_live as shop_app.\n')
   if (stdin.includes('CREATE DATABASE')) return failAt === 'database' ? failed('A database or user named shop already exists. Nothing was changed.') : ok(`${DATABASE_CHECKED}\n`)
   if (stdin.includes('pool.d')) return failAt === 'pool' ? failed('PHP-FPM rejected the new pool. It was removed.') : ok()
   if (stdin.includes('a2enmod')) return failAt === 'modules' ? failed('ERROR: Module x does not exist!') : ok()
@@ -193,6 +194,30 @@ describe('CreateSiteRun', () => {
     ports.exec = vi.fn(async () => { throw new Error('Connection lost') })
     const retried = await startRun(NGINX).run('start')
     expect(retried.created.database).toBeNull()
+  })
+
+  describe('with an existing database', () => {
+    const existing = { database: { engine: 'mysql' as const, name: 'shop_live', user: 'shop_app', existing: true as const } }
+
+    it('only logs in to it, never records it as created, and writes its details to the env file', async () => {
+      const record = await startRun(NGINX, existing).run('start')
+      expect(record.phase).toBe('done')
+      expect(record.created.database).toBeNull()
+      expect(calls.some((call) => /CREATE (DATABASE|USER)|DROP /.test(call.stdin))).toBe(false)
+      expect(calls.find((call) => call.stdin.includes('MYSQL_PWD'))?.stdin).toContain(`MYSQL_PWD='${PASSWORD}'`)
+      expect(output).not.toContain(PASSWORD)
+      const [, content] = vi.mocked(ports.deploy.writeEnv).mock.calls[0]
+      expect(content).toContain('DB_DATABASE=shop_live\n')
+      expect(content).toContain('DB_USERNAME=shop_app\n')
+    })
+
+    it('stops before the env file and the first deploy when it cannot log in', async () => {
+      failAt = 'database'
+      const record = await startRun(NGINX, existing).run('start')
+      expect(record.phase).toBe('failed')
+      expect(record.error).toContain('Could not log in')
+      expect(vi.mocked(ports.deploy.writeEnv)).not.toHaveBeenCalled()
+    })
   })
 
   it('will not write the env file or deploy into a folder this run did not create', async () => {

@@ -18,6 +18,7 @@ export type ServerDatabaseEngine = Exclude<DatabaseEngine, 'sqlite'>
 
 export type SiteDatabase =
   | { engine: ServerDatabaseEngine; name: string; user: string }
+  | { engine: ServerDatabaseEngine; name: string; user: string; existing: true }
   | { engine: 'sqlite'; path: string }
 
 export interface CreateSiteSecrets {
